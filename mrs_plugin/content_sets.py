@@ -159,6 +159,8 @@ def load_content_set(directory=None, content_set_path=None, **kwargs):
         replace (bool): Replace the content set, if it already exists.
         open_api_ui (bool): Upload the REST service's OpenAPI UI instead of
             a directory's files. Default False.
+        requires_auth (bool): Whether the content set and its files require
+            authentication. By default they do, except the OpenAPI UI.
         session (object): The database session to use.
         send_gui_message (object): The function to send a message to the GUI.
 
@@ -185,6 +187,7 @@ def load_content_set(directory=None, content_set_path=None, **kwargs):
                 replace=kwargs.get("replace", False),
                 send_gui_message=kwargs.get("send_gui_message"),
                 open_api_ui=kwargs.get("open_api_ui", False),
+                requires_auth=kwargs.get("requires_auth"),
             )
 
         if lib.core.get_interactive_default():

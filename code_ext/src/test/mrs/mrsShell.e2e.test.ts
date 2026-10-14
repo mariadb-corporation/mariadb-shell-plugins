@@ -343,7 +343,7 @@ describe.runIf(shell !== undefined)("REST SQL against a real shell", () => {
                 comments: "uploaded",
             };
             const upload = await tools.loadContentSet(connectionId, folder,
-                "/web", "/e2e", values.ignoreList, false);
+                "/web", "/e2e", values.ignoreList, false, values.requiresAuth);
             expect(upload.files).toHaveLength(1);
             const [created] = await api.contentSets(scope, "/e2e");
             await api.run(scope, contentSetStatements(values,

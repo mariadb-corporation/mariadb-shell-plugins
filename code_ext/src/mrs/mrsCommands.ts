@@ -1228,11 +1228,12 @@ export class MrsCommands {
                         }
                         const upload = openApiUi
                             ? await tools.loadOpenApiUi(scope.connectionId,
-                                path, values.servicePath)
+                                path, values.servicePath, values.requiresAuth)
                             : await tools.loadContentSet(
                                 scope.connectionId, values.directory, path,
                                 values.servicePath, values.ignoreList,
-                                values.loadScripts ? undefined : false);
+                                values.loadScripts ? undefined : false,
+                                values.requiresAuth);
                         // The upload makes the set as the plugin does; its
                         // settings are this dialog's, applied once it
                         // exists.

@@ -281,3 +281,51 @@ def test_load_content_set_uploads_the_open_api_ui(phone_book, offline_swagger):
         assert {enabled for _, enabled in files.values()} == {1}
     finally:
         session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")
+
+
+def auth_settings(session, content_set_path):
+    """Whether the content set and each of its files require authentication."""
+    rows = session.run_sql(
+        lib.core.metadata_sql(
+            session,
+            """SELECT cs.requires_auth, f.request_path, f.requires_auth
+        FROM <metadata>.content_file f
+            JOIN <metadata>.content_set cs
+                ON cs.id = f.content_set_id
+            JOIN <metadata>.service se ON se.id = cs.service_id
+        WHERE cs.request_path = ? AND se.url_context_root = '/test'""",
+        ),
+        [content_set_path],
+    ).fetch_all()
+    return {row[0] for row in rows}, {row[1]: row[2] for row in rows}
+
+
+def test_requires_auth_is_set_on_the_set_and_every_file(phone_book):
+    """A file has a setting of its own, which the set's does not change."""
+    session = phone_book["session"]
+
+    with tempfile.TemporaryDirectory() as directory:
+        write_file(directory, "index.html", "<html></html>")
+        write_file(directory, "app.js", "1")
+
+        for requires_auth, expected in ((False, 0), (True, 1)):
+            load_content_set(directory, "/auth", service_path="/test",
+                             requires_auth=requires_auth, replace=True,
+                             session=session)
+            sets, files = auth_settings(session, "/auth")
+            assert sets == {expected}
+            assert set(files.values()) == {expected}, files
+        session.run_sql("DROP REST CONTENT SET /auth FROM SERVICE /test")
+
+
+def test_the_open_api_ui_needs_no_sign_in(phone_book, offline_swagger):
+    """Signing in is its own Authorize button."""
+    session = phone_book["session"]
+
+    load_content_set(service_path="/test", open_api_ui=True, session=session)
+    try:
+        sets, files = auth_settings(session, "/openApiUi")
+        assert sets == {0}
+        assert set(files.values()) == {0}
+    finally:
+        session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")

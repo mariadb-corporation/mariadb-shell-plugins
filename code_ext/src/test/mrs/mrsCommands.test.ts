@@ -1598,6 +1598,7 @@ describe("content sets", () => {
                     service_path: "/myService",
                     ignore_list: values.ignoreList,
                     load_scripts: false,
+                    requires_auth: values.requiresAuth,
                     replace: true,
                 },
                 timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
@@ -1655,7 +1656,8 @@ describe("content sets", () => {
             name: "mrs.load_content_set",
             args: {
                 connection_id: "uuid-1", content_set_path: "/openApiUi",
-                service_path: "/myService", open_api_ui: true, replace: true,
+                service_path: "/myService", open_api_ui: true,
+                requires_auth: false, replace: true,
             },
             timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
         }]);

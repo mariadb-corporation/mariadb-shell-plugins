@@ -928,14 +928,30 @@ def get_folder_mrs_script_definitions(
 DEFAULT_IGNORE_LIST = "*node_modules/*, */.*"
 
 
+def _authentication(requires_auth):
+    """The AUTHENTICATION clause for requires_auth, or nothing for None."""
+    if requires_auth is None:
+        return ""
+    return " AUTHENTICATION " + ("REQUIRED" if requires_auth else "NOT REQUIRED")
+
+
 def content_file_statement(
-    request_path, service_path, content_set_path, data: bytes, options: dict
+    request_path,
+    service_path,
+    content_set_path,
+    data: bytes,
+    options: dict,
+    requires_auth=None,
 ):
     """Returns the CREATE REST CONTENT FILE statement for a file.
 
     UTF-8 text without backslashes is sent as is, everything else base64
     encoded as BINARY CONTENT, so the statement reads the same with and
     without the NO_BACKSLASH_ESCAPES SQL mode.
+
+    A file has an AUTHENTICATION setting of its own, which the content
+    set's does not change, so requires_auth sets it here; None leaves the
+    server's default, which requires authentication.
     """
     try:
         text = data.decode("utf-8")
@@ -954,6 +970,7 @@ def content_file_statement(
         + (f" SERVICE {core.quote_service_path(service_path)}" if service_path else "")
         + f" CONTENT SET {core.quote_ident(content_set_path)}\n    {content}\n"
         f"    OPTIONS {json.dumps(options)}"
+        + _authentication(requires_auth)
     )
 
 
@@ -999,6 +1016,7 @@ def load_content_set(
     replace=False,
     send_gui_message=None,
     open_api_ui=False,
+    requires_auth=None,
 ):
     """Uploads the files of a directory to a content set via REST SQL.
 
@@ -1010,7 +1028,11 @@ def load_content_set(
     With open_api_ui, there is no directory: the files are the service's
     OpenAPI UI, Swagger UI downloaded and patched for it (see
     :mod:`mrs_plugin.lib.open_api_ui`), in a temporary folder that is
-    removed afterwards.
+    removed afterwards. It is served without authentication unless
+    requires_auth says otherwise: signing in is the UI's own Authorize.
+
+    requires_auth sets whether the content set and each of its files
+    require authentication; None leaves the server's default, which does.
 
     Returns:
         A dict with the uploaded files and the result message of the last
@@ -1042,6 +1064,7 @@ def load_content_set(
                 load_scripts=False,
                 replace=replace,
                 send_gui_message=send_gui_message,
+                requires_auth=False if requires_auth is None else requires_auth,
             )
 
     if directory is None:
@@ -1058,7 +1081,10 @@ def load_content_set(
     )
 
     create = "CREATE OR REPLACE" if replace else "CREATE"
-    session.run_sql(f"{create} REST CONTENT SET {content_set_ref}{on_service}")
+    session.run_sql(
+        f"{create} REST CONTENT SET {content_set_ref}{on_service}"
+        + _authentication(requires_auth)
+    )
 
     files = []
     holds_scripts = False
@@ -1079,6 +1105,7 @@ def load_content_set(
                 content_set_path,
                 data,
                 {"last_modification": file_last_modification(full_name)},
+                requires_auth,
             )
         )
         files.append(request_path)

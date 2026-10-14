@@ -419,6 +419,7 @@ def register_mrs_tools(server, function_groups=()) -> None:
         load_scripts: Optional[bool] = None,
         replace: bool = False,
         open_api_ui: bool = False,
+        requires_auth: Optional[bool] = None,
     ) -> Optional[dict]:
         """Uploads the files of a directory as a REST content set.
 
@@ -444,6 +445,9 @@ def register_mrs_tools(server, function_groups=()) -> None:
             replace: Replace the content set if it exists.
             open_api_ui: Upload the REST service's OpenAPI UI instead of a
                 directory's files.
+            requires_auth: Whether the content set and each of its files
+                require authentication. By default they do, except the
+                OpenAPI UI, which signs in with its Authorize button.
 
         Returns:
             A dict with the request paths of the uploaded files and a
@@ -476,6 +480,7 @@ def register_mrs_tools(server, function_groups=()) -> None:
                     service_path=service_path,
                     ignore_list=ignore_list,
                     load_scripts=load_scripts,
+                    requires_auth=requires_auth,
                 ),
             ),
         )
