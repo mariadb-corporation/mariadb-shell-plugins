@@ -133,6 +133,7 @@ export class RestdTreeProvider
         // A collapsed view lists nothing on its own, so the next lookup
         // reads the list afresh rather than one from before the change.
         this.#listed = undefined;
+        this.#reuseListed = false;
         this.#onDidChangeTreeData.fire(undefined);
     }
 

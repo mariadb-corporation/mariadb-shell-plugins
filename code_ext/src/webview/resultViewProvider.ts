@@ -545,7 +545,7 @@ export class ResultViewProvider
         // to stand in front of the connection being worked on.
         this.#claimIfUnset(event.connection);
 
-        if (event.connection === this.#active) {
+        if (this.#isShown(event.connection)) {
             await this.#sendState();
         }
     }
@@ -568,9 +568,22 @@ export class ResultViewProvider
         this.#mergeActions(results, [row]);
         this.#claimIfUnset(connection);
 
-        if (connection === this.#active) {
+        if (this.#isShown(connection)) {
             await this.#sendState();
         }
+    }
+
+    /**
+     * Whether a connection's actions are on show: the active one's, and
+     * General Actions', which are shown among every connection's.
+     *
+     * @param connection The connection.
+     *
+     * @returns Whether a change of its actions needs the view sent again.
+     */
+    #isShown(connection: string): boolean {
+        return this.#active !== undefined && (connection === this.#active
+            || connection === GENERAL_ACTIONS);
     }
 
     /**
@@ -1591,29 +1604,40 @@ export class ResultViewProvider
      * Puts back the actions kept by an earlier session, the connection
      * with the newest of them on show.
      *
-     * @returns Nothing.
+     * @returns Nothing. What cannot be read is logged and left out: it
+     *          runs as the extension activates, which it must not stop.
      */
     #restore(): void {
-        const saved = this.storage?.get<ISavedActions>(ACTIONS_STATE_KEY);
-        if (saved === undefined || typeof saved.connections !== "object") {
-            return;
-        }
-
         let newest: { connection: string; seq: number } | undefined;
-        for (const [connection, rows] of Object.entries(saved.connections)) {
-            if (!Array.isArray(rows)) {
-                continue;
+        try {
+            const saved = this.storage?.get<ISavedActions>(ACTIONS_STATE_KEY);
+            if (typeof saved?.connections !== "object"
+                || saved.connections === null) {
+                return;
             }
-            const results = this.#resultsFor(connection);
-            results.actions = rows.map((row) => {
-                const seq = row.seq ?? 0;
-                this.#sequence = Math.max(this.#sequence, seq);
-                if (newest === undefined || seq > newest.seq) {
-                    newest = { connection, seq };
-                }
 
-                return restoredRow(row, `saved-${String(seq)}`);
-            });
+            for (const [connection, rows] of Object.entries(
+                saved.connections)) {
+                if (!Array.isArray(rows)) {
+                    continue;
+                }
+                const restored = rows.filter((row) => {
+                    return typeof row === "object" && row !== null
+                        && typeof row.seq === "number"
+                        && typeof row.message === "string";
+                }).map((row) => {
+                    const seq = row.seq!;
+                    this.#sequence = Math.max(this.#sequence, seq);
+                    if (newest === undefined || seq > newest.seq) {
+                        newest = { connection, seq };
+                    }
+
+                    return restoredRow(row, `saved-${String(seq)}`);
+                });
+                this.#resultsFor(connection).actions = restored;
+            }
+        } catch (error) {
+            this.log(`Could not restore the actions: ${errorText(error)}`);
         }
         if (newest !== undefined) {
             this.#claimIfUnset(newest.connection);

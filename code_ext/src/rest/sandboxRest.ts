@@ -329,8 +329,12 @@ export const followSandbox = async (
                     return change === "start" && followed.url !== undefined
                         ? `Serves ${followed.url}` : undefined;
                 },
-                // Why a daemon did not come up is in its own log.
-                logOf: () => { return Promise.resolve(outcome.log_path); },
+                // Why a daemon did not come up is in its own log - but
+                // not after a delete, which took its folder along.
+                logOf: () => {
+                    return Promise.resolve(change === "delete"
+                        ? undefined : outcome.log_path);
+                },
             }).catch(() => { /* its row says why */ });
         }
     } finally {

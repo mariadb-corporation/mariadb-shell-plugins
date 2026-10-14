@@ -1625,6 +1625,11 @@ describe("ResultViewProvider", () => {
                     statement: "", message: "Creating Sandbox\u2026",
                     kind: "pending", children: [],
                 });
+                // Put up while another connection is on show, it is sent.
+                expect(lastState(view)?.connection).toBe("dba@localhost:3310");
+                expect(lastState(view)?.actions.map((row) => {
+                    return row.id;
+                })).toContain("group-1");
                 await provider.appendEvent(anEvent({ label: "1" }));
                 await provider.selectSession("UI Backend");
 
