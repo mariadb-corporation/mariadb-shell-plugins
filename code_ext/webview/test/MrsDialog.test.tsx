@@ -1559,6 +1559,21 @@ describe("a new REST schema's REST Objects tab", () => {
             expect(box!.checked).toBe(false);
         });
 
+        it("ticks nothing while busy", async () => {
+            const [box] = await loadDrawn();
+            await send({ type: "busy", busy: true });
+
+            const row = host.querySelector<HTMLElement>(".tabulator-row")!;
+            await act(async () => { row.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+
+            box!.focus();
+            await act(async () => { box!.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+            // The click the keyboard gave it is undone.
+            expect(box!.checked).toBe(false);
+        });
+
         it("ticks a row clicked anywhere", async () => {
             await loadDrawn();
             const row = host.querySelectorAll<HTMLElement>(".tabulator-row")[1]!;

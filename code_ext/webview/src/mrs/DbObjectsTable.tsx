@@ -154,10 +154,17 @@ export const DbObjectsTable = (props: {
     // Tabulator's callbacks are made once; they read what is current.
     const latestRows = useRef(rows);
     latestRows.current = rows;
-    const toggle = useRef<(key: string) => void>(() => { /* set below */ });
+    // Whether the row was ticked or unticked: not while the dialog is
+    // busy, as nothing else in it can be changed then.
+    const toggle = useRef<(key: string) => boolean>(() => { return false; });
     toggle.current = (key) => {
+        if (props.ctx.busy) {
+            return false;
+        }
         props.ctx.set("restObjects",
             withKeys(selected, [key], !selected.includes(key)));
+
+        return true;
     };
 
     useEffect(() => {
@@ -180,8 +187,11 @@ export const DbObjectsTable = (props: {
             // What changed while it was being built.
             void instance.replaceData(latestRows.current);
         });
-        instance.on("rowClick", (_event, row) => {
-            toggle.current((row.getData() as IDbObjectRow).key);
+        instance.on("rowClick", (event, row) => {
+            if (!toggle.current((row.getData() as IDbObjectRow).key)) {
+                // A box the keyboard clicked has ticked itself already.
+                event.preventDefault();
+            }
         });
         table.current = instance;
 
