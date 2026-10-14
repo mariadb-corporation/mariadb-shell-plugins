@@ -26,6 +26,7 @@ from mrs_plugin.lib import core
 
 import base64
 import os
+import tempfile
 import re
 import json
 import pathlib
@@ -956,6 +957,38 @@ def content_file_statement(
     )
 
 
+def _open_api_ui_service(session, service_path):
+    """The service an OpenAPI UI is for: its name and request path.
+
+    The one named - by its full path, `devs@/path` included, or its request
+    path alone - or the current one.
+    """
+    from mrs_plugin.lib import services
+
+    if service_path is None:
+        service = services.get_current_service(session)
+    else:
+        service = next(
+            (
+                candidate
+                for candidate in services.get_services(session)
+                if service_path
+                in (candidate.get("full_service_path"), candidate.get("url_context_root"))
+            ),
+            None,
+        )
+    if service is None:
+        raise ValueError(
+            f"There is no REST service {service_path}."
+            if service_path is not None
+            else "There is no current REST service. Pass service_path."
+        )
+
+    return service.get("name") or service["url_context_root"], service[
+        "url_context_root"
+    ]
+
+
 def load_content_set(
     session,
     directory,
@@ -965,6 +998,7 @@ def load_content_set(
     load_scripts=None,
     replace=False,
     send_gui_message=None,
+    open_api_ui=False,
 ):
     """Uploads the files of a directory to a content set via REST SQL.
 
@@ -973,10 +1007,45 @@ def load_content_set(
     SET ... LOAD TYPESCRIPT SCRIPTS. With load_scripts None, the scripts are
     registered if the directory holds any.
 
+    With open_api_ui, there is no directory: the files are the service's
+    OpenAPI UI, Swagger UI downloaded and patched for it (see
+    :mod:`mrs_plugin.lib.open_api_ui`), in a temporary folder that is
+    removed afterwards.
+
     Returns:
         A dict with the uploaded files and the result message of the last
         statement
     """
+    if open_api_ui:
+        if directory is not None:
+            raise ValueError(
+                "An OpenAPI UI content set is made of downloaded files: pass "
+                "no directory with open_api_ui."
+            )
+        from mrs_plugin.lib import open_api_ui as ui
+
+        name, root = _open_api_ui_service(session, service_path)
+        with tempfile.TemporaryDirectory(prefix="mrs-openapi-ui-") as temp_dir:
+            ui.prepare(
+                temp_dir,
+                name,
+                root,
+                content_set_path,
+                send_gui_message=send_gui_message,
+            )
+            return load_content_set(
+                session,
+                temp_dir,
+                content_set_path,
+                service_path=service_path,
+                ignore_list="",
+                load_scripts=False,
+                replace=replace,
+                send_gui_message=send_gui_message,
+            )
+
+    if directory is None:
+        raise ValueError("Pass the directory whose files to upload.")
     directory = os.path.abspath(os.path.expanduser(directory))
     if not os.path.isdir(directory):
         raise ValueError(f"The given directory '{directory}' does not exist.")

@@ -36,7 +36,7 @@ via MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 
 def register_mrs_tools(server, function_groups=()) -> None:
@@ -412,19 +412,28 @@ def register_mrs_tools(server, function_groups=()) -> None:
     async def load_content_set(
         ctx: Context,
         connection_id: str,
-        directory: str,
-        content_set_path: str,
+        directory: Optional[str] = None,
+        content_set_path: Optional[str] = None,
         service_path: Optional[str] = None,
         ignore_list: Optional[str] = None,
         load_scripts: Optional[bool] = None,
         replace: bool = False,
+        open_api_ui: bool = False,
     ) -> Optional[dict]:
         """Uploads the files of a directory as a REST content set.
 
+        Or, with open_api_ui, the REST service's OpenAPI UI: Swagger UI,
+        downloaded from github.com and patched to show the service's OpenAPI
+        catalog (<service path>/open-api-catalog/) and to sign in with the
+        REST Daemon. It is then served at the content set's path, by default
+        /openApiUi, to a published service's users.
+
         Args:
             connection_id: The UUID returned by db.connect.
-            directory: The directory holding the files.
-            content_set_path: The request path of the content set.
+            directory: The directory holding the files. Leave empty with
+                open_api_ui.
+            content_set_path: The request path of the content set. Required
+                unless open_api_ui is set, which defaults it to /openApiUi.
             service_path: The request path of the REST service. Defaults to
                 the current one.
             ignore_list: Comma-separated file patterns to ignore, matched
@@ -433,12 +442,27 @@ def register_mrs_tools(server, function_groups=()) -> None:
             load_scripts: Register the MRS scripts of the files. By default
                 they are registered if the directory holds any.
             replace: Replace the content set if it exists.
+            open_api_ui: Upload the REST service's OpenAPI UI instead of a
+                directory's files.
 
         Returns:
             A dict with the request paths of the uploaded files and a
             message.
         """
-        await general.require_allowed_path(ctx, directory)
+        if open_api_ui:
+            if directory is not None:
+                raise tool_error(
+                    "An OpenAPI UI is downloaded, not read from a directory: "
+                    "leave directory empty with open_api_ui."
+                )
+        else:
+            if directory is None or content_set_path is None:
+                raise tool_error(
+                    "Pass the directory and the content_set_path, or "
+                    "open_api_ui to upload the REST service's OpenAPI UI."
+                )
+            await general.require_allowed_path(ctx, directory)
+
         return await _on_session(
             ctx,
             connection_id,
@@ -447,6 +471,7 @@ def register_mrs_tools(server, function_groups=()) -> None:
                 content_set_path,
                 session=session,
                 replace=replace,
+                open_api_ui=open_api_ui,
                 **_kwargs(
                     service_path=service_path,
                     ignore_list=ignore_list,
