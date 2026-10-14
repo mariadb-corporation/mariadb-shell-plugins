@@ -1500,6 +1500,16 @@ describe("a new REST schema's REST Objects", () => {
         expect(nameSearch("a_tor")("actor")).toBe(true);
         expect(nameSearch("act.r")("actor")).toBe(false);
         expect(nameSearch("")("anything")).toBe(true);
+        // A backslash makes the next character a plain one, as in LIKE;
+        // checked against the server's LIKE on 3311.
+        expect(nameSearch("film\\_")("film_list")).toBe(true);
+        expect(nameSearch("film\\_")("filmXlist")).toBe(false);
+        expect(nameSearch("film\\%")("film%x")).toBe(true);
+        expect(nameSearch("film\\%")("film_list")).toBe(false);
+        expect(nameSearch("a\\\\b")("a\\b")).toBe(true);
+        expect(nameSearch("\\a")("actor")).toBe(true);
+        // One typed last is an escape still being typed.
+        expect(nameSearch("film\\")("film_list")).toBe(true);
     });
 
     it("filter by type and name together", () => {

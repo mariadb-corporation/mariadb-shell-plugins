@@ -760,19 +760,30 @@ export const dbObjectKey = (object: { name: string; type: string }): string => {
 /**
  * What the REST Objects tab's name search matches: names starting with
  * what was typed, as `LIKE '<typed>%'` does - `%` and `_` keep their
- * meaning, and case is ignored, as the server's default collations do.
+ * meaning, `\` makes the character after it a plain one, and case is
+ * ignored, as the server's default collations do. A `\` typed last is
+ * an escape not finished yet, and is left out.
  *
  * @param typed What was typed.
  *
  * @returns Whether a name matches.
  */
 export const nameSearch = (typed: string): (name: string) => boolean => {
-    const pattern = `${typed}%`.split("").map((char) => {
-        return char === "%" ? ".*"
-            : char === "_" ? "."
-                : char.replace(/[.*+?^${}()|[\]\\]/u, "\\$&");
-    }).join("");
-    const expression = new RegExp(`^${pattern}$`, "isu");
+    const literal = (char: string): string => {
+        return char.replace(/[.*+?^${}()|[\]\\]/u, "\\$&");
+    };
+    const chars = [...typed];
+    let pattern = "";
+    for (let i = 0; i < chars.length; i += 1) {
+        const char = chars[i]!;
+        if (char === "\\") {
+            i += 1;
+            pattern += i < chars.length ? literal(chars[i]!) : "";
+        } else {
+            pattern += char === "%" ? ".*" : char === "_" ? "." : literal(char);
+        }
+    }
+    const expression = new RegExp(`^${pattern}.*$`, "isu");
 
     return (name) => { return expression.test(name); };
 };
