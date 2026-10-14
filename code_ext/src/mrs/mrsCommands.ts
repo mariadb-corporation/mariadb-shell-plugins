@@ -871,7 +871,7 @@ export class MrsCommands {
                 const columns = await this.host.api.columnsOfEach(scope,
                     ticked.map((object) => {
                         return {
-                            kind: object.type, schema: dbSchema,
+                            objectType: object.type, schema: dbSchema,
                             name: object.name,
                         };
                     }));
@@ -986,10 +986,8 @@ export class MrsCommands {
             : await this.host.api.object(scope, object.object_type,
                 service.full_service_path, schema.request_path,
                 object.request_path);
-        const columnsKind = objectType === "PROCEDURE" || objectType === "FUNCTION"
-            ? objectType : "TABLE";
-        const columns = await this.host.api.columns(scope,
-            objectType === "VIEW" ? "VIEW" : columnsKind, dbSchema, dbObject);
+        const columns = await this.host.api.columns(scope, objectType,
+            dbSchema, dbObject);
         const mappings = stored?.data_mappings ?? [];
         let document = buildDocument(objectType, dbSchema, dbObject, columns,
             mappings, defaultClassName(service.full_service_path,

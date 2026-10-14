@@ -131,14 +131,22 @@ FROM (
 };
 
 /**
- * @param kind TABLE, VIEW, PROCEDURE or FUNCTION.
+ * @param objectType The database object's type: VIEW, PROCEDURE or
+ *        FUNCTION, and anything else is read as a TABLE.
  * @param schema The database schema.
  * @param name The database object.
  *
  * @returns The statement reading its columns and references, or its
  *          parameters.
  */
-const columnsSql = (kind: string, schema: string, name: string): string => {
+export const columnsSql = (
+    objectType: string,
+    schema: string,
+    name: string,
+): string => {
+    const kind = ["VIEW", "PROCEDURE", "FUNCTION"].includes(objectType)
+        ? objectType : "TABLE";
+
     return `SHOW REST COLUMNS FROM ${kind} ${qualifiedName(schema, name)} `
         + "FORMAT=JSON";
 };
@@ -537,7 +545,8 @@ export class MrsApi {
 
     /**
      * @param scope Where to look.
-     * @param kind TABLE, VIEW, PROCEDURE or FUNCTION.
+     * @param objectType The database object's type, as {@link columnsSql}
+     *        takes it.
      * @param schema The database schema.
      * @param name The database object.
      *
@@ -545,18 +554,18 @@ export class MrsApi {
      */
     public async columns(
         scope: IMrsScope,
-        kind: string,
+        objectType: string,
         schema: string,
         name: string,
     ): Promise<IMrsColumns> {
         return await this.json<IMrsColumns>(scope,
-            columnsSql(kind, schema, name));
+            columnsSql(objectType, schema, name));
     }
 
     /**
      * @param scope Where to look.
-     * @param objects Database objects: each one's kind - TABLE, VIEW,
-     *        PROCEDURE or FUNCTION - schema and name.
+     * @param objects Database objects: each one's type, as
+     *        {@link columnsSql} takes it, schema and name.
      *
      * @returns Each one's columns and references, or its parameters, in
      *          their order: read as one script, one round trip for any
@@ -564,13 +573,17 @@ export class MrsApi {
      */
     public async columnsOfEach(
         scope: IMrsScope,
-        objects: ReadonlyArray<{ kind: string; schema: string; name: string }>,
+        objects: ReadonlyArray<{
+            objectType: string;
+            schema: string;
+            name: string;
+        }>,
     ): Promise<IMrsColumns[]> {
         if (objects.length === 0) {
             return [];
         }
         const results = await this.run(scope, objects.map((object) => {
-            return columnsSql(object.kind, object.schema, object.name);
+            return columnsSql(object.objectType, object.schema, object.name);
         }));
 
         return results.map((result) => {

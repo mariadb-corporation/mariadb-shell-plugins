@@ -27,6 +27,7 @@ import type { IToolCaller } from "../../mcp/mariaDbApi.js";
 import type { IToolResult } from "../../mcp/protocol.js";
 import type { IMrsAction } from "../../mrs/mrsActions.js";
 import {
+    columnsSql,
     dbObjectsSql,
     MRS_TOOL_TIMEOUT_MS,
     MRS_UPLOAD_TIMEOUT_MS,
@@ -1139,6 +1140,17 @@ describe("REST schemas", () => {
             expect(done.statements?.map((statement) => {
                 return statement.sql.split(/\s+/u).slice(0, 3).join(" ");
             })).toEqual(["CREATE REST SCHEMA", "CREATE REST VIEW"]);
+        });
+
+    it("reads columns by one mapping of object type, for every dialog",
+        () => {
+            // The REST object dialog and a new schema's REST objects both
+            // read through it.
+            expect(["TABLE", "VIEW", "PROCEDURE", "FUNCTION", "BASE TABLE"]
+                .map((type) => {
+                    return columnsSql(type, "s", "o").split(" ")[4];
+                })).toEqual(["TABLE", "VIEW", "PROCEDURE", "FUNCTION",
+                "TABLE"]);
         });
 
     it("lists a database schema's objects past group_concat_max_len",
