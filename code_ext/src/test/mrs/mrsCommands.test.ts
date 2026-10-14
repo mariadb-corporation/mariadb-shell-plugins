@@ -109,6 +109,7 @@ import {
     setWarningMessageAnswer,
     Uri,
     warningMessageCalls,
+    warningMessages,
     webviewPanels,
 } from "../mocks/vscode.js";
 
@@ -1138,6 +1139,39 @@ describe("REST schemas", () => {
             expect(done.statements?.map((statement) => {
                 return statement.sql.split(/\s+/u).slice(0, 3).join(" ");
             })).toEqual(["CREATE REST SCHEMA", "CREATE REST VIEW"]);
+        });
+
+    it("still creates a REST schema where its objects cannot be listed",
+        async () => {
+            for (const failure of ["error", "cut"] as const) {
+                shown = [];
+                warningMessages.length = 0;
+                const { api, log } = await setup({
+                    ...CONFIGURED,
+                    [SERVICES]: [service],
+                    // A list longer than group_concat_max_len is cut short.
+                    ...(failure === "cut"
+                        ? { [dbObjectsSql("sakila")]: '[{"name": "act' } : {}),
+                });
+                if (failure === "error") {
+                    api.errors[dbObjectsSql("sakila")] = "Unknown column 'x'";
+                }
+
+                await run("mariadb.mrs.addSchema", dbSchemaNode);
+
+                // Opened without the REST Objects tab, and says why.
+                const spec = dialog();
+                expect(spec.context).toEqual({ services: ["/myService"] });
+                expect(warningMessages).toHaveLength(1);
+                expect(warningMessages[0]).toMatch(/^MariaDB: The objects of `sakila` could not be listed, so the REST schema is created without REST objects: /u);
+                expect(log.lines.at(-1)).toMatch(
+                    /^Failed to list the objects of `sakila`: /u);
+
+                await expect(spec.save(spec.values)).resolves.toBeUndefined();
+                expect(api.sent.some((sql) => {
+                    return sql.startsWith("CREATE REST SCHEMA /sakila");
+                })).toBe(true);
+            }
         });
 
     it("keeps the REST objects ticked to the database schema listed",

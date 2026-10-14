@@ -22,7 +22,7 @@ import {
     type ConnectionManager,
 } from "../connections/connectionManager.js";
 import { reportError } from "../errorMessages.js";
-import { counted } from "../text.js";
+import { counted, errorText } from "../text.js";
 import type { IConnectionNode, IObjectNode, ISchemaNode } from "../tree/connectionsModel.js";
 import type {
     IMrsAuthAppGroupNode,
@@ -81,6 +81,7 @@ import {
     type IConfigureValues,
     type IContentSetContext,
     type IContentSetDialogValues,
+    type IDbObject,
     type IObjectContext,
     type IObjectDialogValues,
     type ISchemaContext,
@@ -818,14 +819,28 @@ export class MrsCommands {
 
             return;
         }
+        // A new one can be created with REST objects for any of the
+        // database schema's objects at once. Where they cannot be listed,
+        // it can still be created on its own, without that tab.
+        let dbObjects: IDbObject[] | undefined;
+        if (schema === undefined) {
+            try {
+                dbObjects = await this.host.api.dbObjects(scope, dbSchema);
+            } catch (error) {
+                const message = errorText(error);
+                this.host.log("Failed to list the objects of "
+                    + `\`${dbSchema}\`: ${message}`);
+                void vscode.window.showWarningMessage("MariaDB: The objects "
+                    + `of \`${dbSchema}\` could not be listed, so the REST `
+                    + `schema is created without REST objects: ${message}`);
+            }
+        }
         const context: ISchemaContext = {
             services: services.map((candidate) => {
                 return candidate.full_service_path;
             }),
             ...(schema === undefined
-                // A new one can be created with REST objects for any of
-                // the database schema's objects at once.
-                ? { dbObjects: await this.host.api.dbObjects(scope, dbSchema) }
+                ? (dbObjects === undefined ? {} : { dbObjects })
                 : { existingPath: schema.request_path }),
         };
 
