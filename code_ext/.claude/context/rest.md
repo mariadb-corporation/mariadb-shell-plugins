@@ -68,6 +68,23 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - `ui-test/tests/07-restd.test.ts`, suite `restd` (`npm run
   ui-test:restd`): needs a mariadb-restd where the server looks for one.
 
+## The HTTPS certificate (2026-10-14)
+
+- **The box:** New Sandbox's REST section and the Set Up MariaDB REST Daemon
+  dialog offer "Register the REST Daemon's HTTPS certificate with the
+  system", ticked by default.
+  - It is offered only while the system does not trust it yet: the panel
+    asks `rest.get_certificate_status` as it loads (`restCertificateTrusted`
+    in the sandbox dialog's load message, `certificateTrusted` in the restd
+    dialog's context).
+  - A status that cannot be read offers the box. That does no harm:
+    registering a trusted certificate does nothing.
+- **Its step:** "Registering the HTTPS Certificate" is a sub-row of its own,
+  and in the sandbox flow the last one, so a cancelled system dialog fails
+  only that row.
+- **The UI tests untick it** (`declineCertificate`). Ticked, it would bring
+  up a system dialog no test can answer.
+
 ## Gotchas
 
 - **The extension calls `rest.start_restd` / `stop_restd` /

@@ -70,6 +70,7 @@ const FIELD_TABS: Record<SandboxField, Tab> = {
     restServicePath: "Basic",
     restUserName: "Basic",
     restUserPassword: "Basic",
+    trustRestCertificate: "Basic",
 };
 
 export const SandboxEditor = (): preact.JSX.Element => {
@@ -78,6 +79,8 @@ export const SandboxEditor = (): preact.JSX.Element => {
     const [tab, setTab] = useState<Tab>("Basic");
     const [takenPorts, setTakenPorts] = useState<number[]>([]);
     const [versions, setVersions] = useState<string[]>([]);
+    // Trusted already, the certificate needs no box to register it.
+    const [certificateTrusted, setCertificateTrusted] = useState(false);
     const [createError, setCreateError] =
         useState<string | undefined>(undefined);
     const [busy, setBusy] = useState(false);
@@ -104,6 +107,7 @@ export const SandboxEditor = (): preact.JSX.Element => {
                     setFields(message.fields);
                     setTakenPorts(message.takenPorts);
                     setVersions(message.versions);
+                    setCertificateTrusted(message.restCertificateTrusted);
                     setCreateError(undefined);
                     setTouched(new Set());
                     break;
@@ -164,7 +168,8 @@ export const SandboxEditor = (): preact.JSX.Element => {
 
     const text = (
         key: Exclude<SandboxField,
-            "ssl" | "mcpAccess" | "generatePassword" | "configureRest">,
+            "ssl" | "mcpAccess" | "generatePassword" | "configureRest"
+            | "trustRestCertificate">,
         options: {
             placeholder?: string;
             type?: string;
@@ -394,6 +399,39 @@ export const SandboxEditor = (): preact.JSX.Element => {
                                         ref: restPassword,
                                     })}
                                 </Field>
+                                {certificateTrusted ? null : (
+                                    <>
+                                        <label class="checkbox rest-certificate">
+                                            <input
+                                                type="checkbox"
+                                                name="trustRestCertificate"
+                                                checked={fields
+                                                    .trustRestCertificate}
+                                                disabled={busy}
+                                                onChange={(event) => {
+                                                    update(
+                                                        "trustRestCertificate",
+                                                        (event.target as
+                                                            HTMLInputElement)
+                                                            .checked);
+                                                }}
+                                            />
+                                            <span>
+                                                Register the REST Daemon's
+                                                HTTPS certificate with the
+                                                system
+                                            </span>
+                                        </label>
+                                        <p class="note rest-note">
+                                            So that browsers trust
+                                            https://localhost. macOS and
+                                            Windows ask you to confirm it
+                                            in a system dialog; it is needed
+                                            only once, for every REST
+                                            Daemon on this machine.
+                                        </p>
+                                    </>
+                                )}
                             </>
                         ) : null}
                     </section>

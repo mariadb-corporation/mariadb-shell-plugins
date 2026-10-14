@@ -496,6 +496,17 @@ starts it; it keeps running when the MCP server ends.
 | `rest.stop_restd` | Stops a deployment's daemon |
 | `rest.delete_restd_config` | Stops a daemon, drops the server account it was given and deletes its deployment |
 | `rest.get_restd_status` | Lists the deployments, running and stopped |
+| `rest.get_certificate_status` | Says whether the system trusts the daemons' HTTPS certificate |
+| `rest.trust_certificate` | Has the system trust that certificate, once for every daemon |
+
+Every REST Daemon on the machine serves one HTTPS certificate for `localhost`
+(`127.0.0.1` and `::1` too), signed by a local certificate authority. The first
+`rest.configure_restd` makes both, in `~/.mariadb-restd/web-certs`
+(`%APPDATA%\MariaDB\mariadb-restd\web-certs` on Windows), and every setup after it
+uses them. `rest.trust_certificate` adds the authority to the user's own store: the
+login keychain on macOS and the user's Root store on Windows, where the system asks
+the user to confirm, and the NSS database Chromium-based browsers read on Linux. An
+agent is asked first, through MCP elicitation.
 
 `rest.configure_restd`, in this order:
 

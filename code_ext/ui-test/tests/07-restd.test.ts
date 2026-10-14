@@ -19,7 +19,7 @@ import * as assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { request } from "node:https";
 
-import { By } from "vscode-extension-tester";
+import { By, type WebView } from "vscode-extension-tester";
 
 import {
     CONNECTION,
@@ -61,6 +61,30 @@ const SETUP_TIMEOUT = 2 * DEPLOY_TIMEOUT;
 
 const REST_SANDBOX = `Sandbox localhost:${String(SECOND_PORT)}`;
 const SECOND_SANDBOX_ROW = `localhost:${String(SECOND_PORT)}`;
+
+/**
+ * Unticks a dialog's box to register the HTTPS certificate, where it is
+ * offered: ticked, it would bring up the system's own dialog, which no
+ * test can answer. It is offered only while the system does not trust the
+ * certificate yet.
+ *
+ * @param view The dialog.
+ * @param name The box's name.
+ *
+ * @returns Whether it was offered.
+ */
+const declineCertificate = async (
+    view: WebView,
+    name: string,
+): Promise<boolean> => {
+    const boxes = await view.findWebElements(By.css(`input[name='${name}']`));
+    if (boxes.length === 0) {
+        return false;
+    }
+    await setChecked(view, name, false);
+
+    return true;
+};
 
 /** Shows General Actions in the panel, where the sandbox rows go. */
 const showGeneralActions = async (): Promise<void> => {
@@ -116,6 +140,7 @@ describe("The MariaDB REST Daemon", () => {
             await setChecked(view, "configureRest", true);
             // MRS wants a special character, which _ is not.
             await setFieldByCaption(view, "REST User Password", "UiTest-dba-1");
+            await declineCertificate(view, "trustRestCertificate");
             await screenshot("07-new-sandbox-rest");
             await submitDialog(view, "Create", DEPLOY_TIMEOUT,
                 "Deploying the sandbox. A server version this machine does "
@@ -177,6 +202,7 @@ describe("The MariaDB REST Daemon", () => {
                 return await isDialogOpen("Set Up MariaDB REST Daemon");
             }, "the setup dialog");
         await inDialog("Set Up MariaDB REST Daemon", async (view) => {
+            await declineCertificate(view, "trustCertificate");
             await screenshot("07-restd-setup");
             // The stored password, as the field's hint says.
             await submitDialog(view, "Set Up", SETUP_TIMEOUT);

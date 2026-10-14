@@ -57,6 +57,13 @@ const restApi = (
         start: () => { return answer("start", DEPLOYMENT); },
         stop: () => { return answer("stop", DEPLOYMENT); },
         delete: () => { return answer("delete", "Deleted"); },
+        certificateStatus: () => {
+            return Promise.resolve({ exists: true, trusted: false, ca_path: "/c" });
+        },
+        trustCertificate: () => {
+            return answer("trust", { trusted: true, changed: true,
+                ca_path: "/certs/rootCA.crt" });
+        },
     };
 };
 
@@ -96,7 +103,7 @@ const createHost = (fail: string[] = []): {
 };
 
 const REST = { servicePath: "/myService/v1", userName: "dba",
-    password: "Secret1!" };
+    password: "Secret1!", trustCertificate: false };
 
 describe("deploySandboxWithRest", () => {
     it("deploys, sets the daemon up, then the REST objects, in one action",
@@ -193,6 +200,34 @@ describe("deploySandboxWithRest", () => {
             expect(last()).toMatchObject({ kind: "error",
                 jumpToRowId: failed.id });
         });
+});
+
+describe("registering the HTTPS certificate", () => {
+    it("is the last step, where it was asked for", async () => {
+        const { host, calls, last } = createHost();
+
+        await (await deploySandboxWithRest(host, { port: 3311, password: "p" },
+            { ...REST, trustCertificate: true })).rest;
+
+        expect(calls.at(-1)).toBe("trust");
+        expect(last().children?.at(-1)).toMatchObject({
+            kind: "info", message: "Registered the HTTPS Certificate",
+            statement: "Trusted by this system: /certs/rootCA.crt",
+        });
+    });
+
+    it("leaves everything else done when the dialog is cancelled", async () => {
+        const { host, last } = createHost(["trust"]);
+
+        const deployed = await deploySandboxWithRest(host,
+            { port: 3311, password: "p" }, { ...REST, trustCertificate: true });
+
+        expect(await deployed.rest).toBe(false);
+        const steps = last().children!;
+        expect(steps.slice(0, -1).every((row) => { return row.kind === "info"; }))
+            .toBe(true);
+        expect(steps.at(-1)).toMatchObject({ kind: "error" });
+    });
 });
 
 describe("followSandbox", () => {

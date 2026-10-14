@@ -84,6 +84,44 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   listens on its port; and `test_a_sandbox_really_gets_a_rest_daemon`
   (`--e2e`), which uses the real binary.
 
+## The HTTPS certificate (2026-10-14)
+
+- **One certificate for every daemon** (the user's design): `lib/restd_certs.py`
+  makes a local CA and a `localhost` server certificate, which the first
+  `configure_restd` creates in `<deployments root>/web-certs`.
+  - The server certificate names `localhost`, `127.0.0.1` and `::1`.
+  - Both are valid for 824 days, under macOS's 825-day limit, and are made
+    anew 30 days before they end.
+  - The CA's private key is not kept.
+  - `restd.setup(..., certificate=)` passes `http_server.ssl_cert` and
+    `ssl_key`, so the setup makes no certificate of its own.
+- **Why not restd's own certificate:** its CA's common name is
+  `MySQL_Router_Auto_Generated_CA_Certificate` in every deployment. Its
+  server certificate has no subject alternative names, which browsers
+  require for `localhost`.
+- **Registering it:** `rest.trust_certificate` does what the MySQL Shell
+  for VS Code's welcome wizard did.
+  - macOS: `security add-trusted-cert -r trustRoot -k <login keychain>`,
+    with the system's authorization dialog.
+  - Windows: `certutil.exe -addstore -user -f ROOT`, with the Security
+    Warning dialog.
+  - Linux: NSS `certutil` into `~/.pki/nssdb`, without a dialog.
+  - Unlike the wizard, it checks the exit code and then whether the CA is
+    trusted, so a cancelled dialog is an error. The wizard took one for
+    success. A dialog may wait 600 s.
+  - An agent is asked first, through elicitation; in `--gui` mode the user's
+    ticked box is the consent.
+- **`rest.get_certificate_status`** makes nothing. The dialogs ask it so
+  that they offer the box only while the CA is not trusted.
+- **Trust is checked with the system itself:**
+  - macOS: `security verify-cert -c server.crt -p ssl -s localhost`. A
+    cancelled authorization leaves the certificate in the keychain,
+    untrusted.
+  - Windows: the SHA-1 fingerprint from `certutil -verifystore -user ROOT`.
+  - Linux: the SHA-1 fingerprint from NSS `certutil -L`.
+- **Tested:** the real-daemon e2e test checks that the daemon serves exactly
+  `web-certs/server.crt`. The OS dialogs were not exercised by a test.
+
 ## Gotchas
 
 - **A JWT secret from `token_urlsafe` can start with `-`**, which restd's

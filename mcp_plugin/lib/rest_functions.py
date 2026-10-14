@@ -31,7 +31,7 @@ import os
 import re
 from typing import Optional
 
-from mcp_plugin.lib import db_functions, general, restd, restd_install
+from mcp_plugin.lib import db_functions, general, restd, restd_certs, restd_install
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # The part of a metadata schema's name its roles are named after; the roles
@@ -273,6 +273,56 @@ def register_rest_tools(server, function_groups=()) -> None:
         await _require_deployment_access(ctx, directory)
         return await anyio.to_thread.run_sync(lambda: restd.stop(directory))
 
+    @tool(name="rest.get_certificate_status")
+    def get_certificate_status() -> dict:
+        """Says whether this system trusts the REST Daemons' HTTPS certificate.
+
+        Asks the system itself, so a certificate that is stored but not
+        trusted counts as not trusted. Makes nothing: before the first REST
+        Daemon setup there is no certificate yet.
+
+        Returns:
+            'exists' (whether the first setup made it), 'trusted', and
+            'ca_path', the local certificate authority's certificate.
+        """
+        ca_path = os.path.join(restd_certs.certs_dir(), restd_certs.CA_FILE)
+        exists = os.path.isfile(ca_path)
+        return {
+            "exists": exists,
+            "trusted": exists and restd_certs.is_trusted(),
+            "ca_path": ca_path,
+        }
+
+    @tool(name="rest.trust_certificate")
+    async def trust_certificate(ctx: Context) -> dict:
+        """Has this system trust the HTTPS certificate of the REST Daemons.
+
+        Every REST Daemon on this machine serves one certificate, made by the
+        first setup and signed by a local certificate authority. Trusting
+        that authority once makes browsers accept every daemon's
+        https://localhost address. It is added to the user's own store - the
+        login keychain on macOS, the Root store on Windows, the NSS database
+        on Linux - and macOS and Windows ask the user to confirm in a system
+        dialog. Nothing is done where it is trusted already.
+
+        Returns:
+            'trusted' (True), 'changed' (whether it was added now) and
+            'ca_path', the authority's certificate.
+        """
+        def trusted():
+            restd_certs.ensure()
+            return restd_certs.is_trusted()
+
+        if await anyio.to_thread.run_sync(trusted):
+            return {"trusted": True, "changed": False,
+                    "ca_path": os.path.join(restd_certs.certs_dir(),
+                                            restd_certs.CA_FILE)}
+        # A trusted root is the user's to grant; Linux asks nothing itself.
+        if not general.is_gui_mode() and not await _confirm_trust(ctx):
+            raise tool_error("The certificate was not trusted: the user did not confirm.")
+
+        return await anyio.to_thread.run_sync(restd_certs.trust)
+
     @tool(name="rest.delete_restd_config")
     async def delete_restd_config(
         ctx: Context,
@@ -348,6 +398,34 @@ def register_rest_tools(server, function_groups=()) -> None:
     # it sets a daemon up for a connection opened with db.connect.
     if general.FUNCTION_GROUP_DB in function_groups:
         _register_configure_restd(tool, Context, anyio, _sandbox_base_dir)
+
+
+async def _confirm_trust(ctx) -> bool:
+    """Asks the user, via MCP elicitation, whether to trust the local CA."""
+    if ctx is None:
+        return False
+
+    from pydantic import BaseModel, Field
+
+    class ConfirmTrust(BaseModel):
+        trust: bool = Field(
+            default=False,
+            description="Trust the REST Daemons' local certificate authority?",
+        )
+
+    try:
+        result = await ctx.elicit(
+            message=(
+                "Have this system trust the local certificate authority of the "
+                "MariaDB REST Daemons, so that browsers accept their "
+                f"https://localhost addresses? ({restd_certs.certs_dir()})"
+            ),
+            schema=ConfirmTrust,
+        )
+    except Exception:  # noqa: BLE001 - client may not support elicitation
+        return False
+
+    return result.action == "accept" and getattr(result.data, "trust", False)
 
 
 async def _confirm_install(ctx) -> bool:
@@ -523,6 +601,9 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             elif not restd.is_port_free(daemon_port, restd.taken_ports(base_dir)):
                 raise tool_error(f"Port {daemon_port} is in use.")
 
+            # The one certificate every daemon here serves, made by the
+            # first setup: trusted once, it is trusted for all of them.
+            certificate = restd_certs.ensure()
             output = restd.setup(
                 executable,
                 directory,
@@ -530,6 +611,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                 secret,
                 daemon_port,
                 schema,
+                certificate=certificate,
                 record={
                     "connection_uri": uri,
                     "host": connection.get("host") or "localhost",

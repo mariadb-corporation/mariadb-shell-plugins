@@ -1642,6 +1642,11 @@ export interface IRestdDialogValues {
     password: string;
     /** Chosen only where the server has several. */
     metadataSchema: string;
+    /**
+     * Whether the system is to trust the REST Daemons' HTTPS certificate;
+     * offered only while it does not.
+     */
+    trustCertificate: boolean;
 }
 
 /** What the dialog is opened on. */
@@ -1655,6 +1660,8 @@ export interface IRestdContext {
      * creates `mariadb_rest_service`.
      */
     metadataSchemas: string[];
+    /** Whether the system trusts the REST Daemons' HTTPS certificate. */
+    certificateTrusted: boolean;
 }
 
 /**
@@ -1668,6 +1675,7 @@ export const restdDefaults = (context: IRestdContext): IRestdDialogValues => {
         password: "",
         metadataSchema: context.metadataSchemas.length === 1
             ? context.metadataSchemas[0]! : "",
+        trustCertificate: true,
     };
 };
 

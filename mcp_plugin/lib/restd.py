@@ -788,6 +788,7 @@ def setup(
     metadata_schema: str = DEFAULT_METADATA_SCHEMA,
     record: Optional[dict] = None,
     timeout: float = SETUP_TIMEOUT,
+    certificate: Optional[dict] = None,
 ) -> str:
     """Runs ``mariadb-restd --setup`` into a folder.
 
@@ -804,6 +805,9 @@ def setup(
         metadata_schema (str): The REST metadata schema it will serve.
         record (dict): What to keep in the deployment's deployment.json.
         timeout (float): Seconds the setup may take.
+        certificate (dict): The HTTPS certificate to serve, its `cert` and
+            `key` paths (see :mod:`mcp_plugin.lib.restd_certs`); the setup
+            makes one of its own when None.
 
     Returns:
         str: What the setup printed.
@@ -828,6 +832,11 @@ def setup(
         command += ["--socket", connection["socket"]]
     if metadata_schema != DEFAULT_METADATA_SCHEMA:
         command += ["--metadata-schema", metadata_schema]
+    if certificate is not None:
+        command += [
+            f"--conf-set-option=http_server.ssl_cert={certificate['cert']}",
+            f"--conf-set-option=http_server.ssl_key={certificate['key']}",
+        ]
 
     # --setup creates the deployment's folder but not the one it is in, the
     # first time ~/.mariadb-restd itself.

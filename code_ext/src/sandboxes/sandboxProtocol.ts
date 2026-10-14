@@ -42,6 +42,11 @@ export interface ISandboxLoadMessage {
      * PATH as the one choice offered - and the one started on.
      */
     versions: string[];
+    /**
+     * Whether this system trusts the REST Daemons' HTTPS certificate
+     * already, in which case the dialog does not offer to register it.
+     */
+    restCertificateTrusted: boolean;
 }
 
 /** A deploy that did not go through; the dialog stays open. */

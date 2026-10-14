@@ -76,6 +76,8 @@ export interface ISandboxEditorHost {
         options: ISandboxDeployOptions,
         rest: ISandboxRestOptions,
     ): Promise<string>;
+    /** Whether the system trusts the REST Daemons' HTTPS certificate. */
+    certificateTrusted?(): Promise<boolean>;
     /** Called after a sandbox was deployed, with the server's message. */
     onCreated(message: string): void;
     /**
@@ -210,9 +212,12 @@ export class SandboxEditorPanel {
                 // connection names is merely not suggested - that server may
                 // be long gone, and the shell says so if it is not.
                 const takenPorts = this.host.store.ports;
-                const [versions, connectionPorts] = await Promise.all([
-                    this.#versions(), this.#connectionPorts(),
-                ]);
+                const [versions, connectionPorts, certificateTrusted] =
+                    await Promise.all([
+                        this.#versions(), this.#connectionPorts(),
+                        this.#certificateTrusted(),
+                    ]);
+                this.#restCertificateTrusted = certificateTrusted;
                 // A new sandbox starts on the newest major version - the
                 // server on the PATH is whatever happens to be installed,
                 // and is a choice rather than the default.
@@ -226,6 +231,7 @@ export class SandboxEditorPanel {
                     ),
                     takenPorts,
                     versions: offered,
+                    restCertificateTrusted: certificateTrusted,
                 });
                 break;
             }
@@ -247,6 +253,25 @@ export class SandboxEditorPanel {
      *
      * @returns The latest release of every series, or nothing.
      */
+    /** Whether the REST Daemons' certificate was trusted when it loaded. */
+    #restCertificateTrusted = false;
+
+    /**
+     * @returns Whether the system trusts the REST Daemons' HTTPS
+     *          certificate already; false where that cannot be told, which
+     *          only offers the box that is not needed.
+     */
+    async #certificateTrusted(): Promise<boolean> {
+        try {
+            return await this.host.certificateTrusted?.() ?? false;
+        } catch (error) {
+            this.host.log("Could not tell whether the REST Daemon certificate "
+                + `is trusted: ${errorText(error)}`);
+
+            return false;
+        }
+    }
+
     async #versions(): Promise<string[]> {
         try {
             return await this.host.store.availableVersions();
@@ -298,7 +323,7 @@ export class SandboxEditorPanel {
             return;
         }
 
-        const rest = sandboxRestOptions(fields);
+        const rest = sandboxRestOptions(fields, this.#restCertificateTrusted);
         this.#post({ type: "busy", busy: true });
         try {
             const deploy = async (): Promise<string> => {

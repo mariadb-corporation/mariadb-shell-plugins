@@ -979,6 +979,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         work,
                     ));
                 },
+                certificateTrusted: async () => {
+                    return (await (await restApi()).certificateStatus())
+                        .trusted;
+                },
                 deployWithRest: async (options, rest) => {
                     // The steps go on after the dialog closes; the panel
                     // stays where they can be watched until the last one.

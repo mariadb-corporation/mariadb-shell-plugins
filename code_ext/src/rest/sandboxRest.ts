@@ -202,6 +202,22 @@ export const deploySandboxWithRest = async (
                 }
             });
 
+            // Last: a dialog the user cancels leaves everything else done.
+            if (rest.trustCertificate) {
+                await group.step({
+                    doing: "Registering the HTTPS Certificate",
+                    done: "Registered the HTTPS Certificate",
+                }, "rest.trust_certificate()", async () => {
+                    return (await host.restApi()).trustCertificate();
+                }, {
+                    detail: (trust) => {
+                        return trust.changed
+                            ? `Trusted by this system: ${trust.ca_path}`
+                            : "Trusted already";
+                    },
+                });
+            }
+
             group.finish(`${setup.url}${rest.servicePath}`);
 
             return true;

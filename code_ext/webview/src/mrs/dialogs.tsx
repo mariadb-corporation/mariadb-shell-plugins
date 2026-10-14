@@ -975,6 +975,20 @@ const restd: IDialogDefinition = {
                         + "GRANT OPTION. Empty for the password stored with "
                         + "the connection."}
                 />
+                {context.certificateTrusted ? null : (
+                    <div class="group">
+                        <CheckBox
+                            ctx={ctx}
+                            field="trustCertificate"
+                            label={"Register the REST Daemon's HTTPS "
+                                + "certificate with the system"}
+                            hint={"So that browsers trust https://localhost. "
+                                + "macOS and Windows ask you to confirm it in "
+                                + "a system dialog; it is needed only once, "
+                                + "for every REST Daemon on this machine."}
+                        />
+                    </div>
+                )}
                 {context.metadataSchemas.length > 1 ? (
                     <StringSelect
                         ctx={ctx}

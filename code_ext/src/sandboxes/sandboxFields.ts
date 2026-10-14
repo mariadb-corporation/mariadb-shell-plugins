@@ -72,6 +72,11 @@ export interface ISandboxFields {
     /** The REST user who can sign in to it. */
     restUserName: string;
     restUserPassword: string;
+    /**
+     * Whether the system is to trust the REST Daemons' HTTPS certificate,
+     * so browsers accept https://localhost; offered only while it does not.
+     */
+    trustRestCertificate: boolean;
 }
 
 /** The fields a problem can be about, so the dialog can mark the one. */
@@ -136,6 +141,7 @@ export const emptySandboxFields = (
         restServicePath: "/myService/v1",
         restUserName: "dba",
         restUserPassword: "",
+        trustRestCertificate: true,
     };
 };
 
@@ -193,6 +199,8 @@ export interface ISandboxRestOptions {
     servicePath: string;
     userName: string;
     password: string;
+    /** Whether to have the system trust the HTTPS certificate. */
+    trustCertificate: boolean;
 }
 
 /**
@@ -489,6 +497,7 @@ const restFieldProblem = (
  */
 export const sandboxRestOptions = (
     fields: ISandboxFields,
+    certificateTrusted = false,
 ): ISandboxRestOptions | undefined => {
     if (!fields.configureRest) {
         return undefined;
@@ -502,6 +511,8 @@ export const sandboxRestOptions = (
         servicePath: fields.restServicePath.trim(),
         userName: fields.restUserName.trim(),
         password: fields.restUserPassword,
+        // Not where it is trusted already: the box was not even shown.
+        trustCertificate: fields.trustRestCertificate && !certificateTrusted,
     };
 };
 

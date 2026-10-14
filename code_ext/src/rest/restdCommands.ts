@@ -146,10 +146,19 @@ export class RestdCommands {
         } catch {
             // No REST metadata: the setup creates it.
         }
+        let certificateTrusted = false;
+        try {
+            certificateTrusted = (await (await this.host.restApi())
+                .certificateStatus()).trusted;
+        } catch {
+            // Offered then, which does no harm: registering a trusted
+            // certificate does nothing.
+        }
         const context: IRestdContext = {
             server: `${fields.host}:${fields.port}`,
             user: fields.user || "root",
             metadataSchemas,
+            certificateTrusted,
         };
 
         MrsDialogPanel.show(this.host.extensionUri, {
@@ -216,6 +225,20 @@ export class RestdCommands {
                         `restd-setup-${context.server}`, errorText(error));
                 },
             });
+            if (values.trustCertificate && !context.certificateTrusted) {
+                await group.step({
+                    doing: "Registering the HTTPS Certificate",
+                    done: "Registered the HTTPS Certificate",
+                }, "rest.trust_certificate()", async () => {
+                    return (await this.host.restApi()).trustCertificate();
+                }, {
+                    detail: (trust) => {
+                        return trust.changed
+                            ? `Trusted by this system: ${trust.ca_path}`
+                            : "Trusted already";
+                    },
+                });
+            }
             group.finish(setup.url);
         } catch (error) {
             group.finish();

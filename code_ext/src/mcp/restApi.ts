@@ -51,6 +51,23 @@ export interface IRestdSetup extends IRestdDeployment {
     setup_output: string;
 }
 
+/** Whether this system trusts the REST Daemons' HTTPS certificate. */
+export interface IRestdCertificateStatus {
+    /** Whether the first setup has made it. */
+    exists: boolean;
+    trusted: boolean;
+    /** The local certificate authority's certificate. */
+    ca_path: string;
+}
+
+/** What `rest.trust_certificate` did. */
+export interface IRestdCertificateTrust {
+    trusted: boolean;
+    /** Whether it was registered now, rather than trusted already. */
+    changed: boolean;
+    ca_path: string;
+}
+
 /** What `rest.configure_restd` is asked to set up. */
 export interface IRestdConfigureOptions {
     /** A connection to the server, opened with `db.connect`. */
@@ -77,6 +94,12 @@ export const RESTD_SETUP_TIMEOUT_MS = 20 * 60 * 1000;
  */
 export const RESTD_LIFECYCLE_TIMEOUT_MS = 2 * 60 * 1000;
 
+/**
+ * How long registering the certificate may take: macOS and Windows wait
+ * for the user to answer their dialog.
+ */
+export const RESTD_TRUST_TIMEOUT_MS = 11 * 60 * 1000;
+
 /** The `rest.*` tools, as typed calls. */
 export interface IRestApi {
     getStatus(): Promise<IRestdDeployment[]>;
@@ -84,6 +107,8 @@ export interface IRestApi {
     start(directory: string): Promise<IRestdDeployment>;
     stop(directory: string): Promise<IRestdDeployment>;
     delete(directory: string, connectionId?: string): Promise<string>;
+    certificateStatus(): Promise<IRestdCertificateStatus>;
+    trustCertificate(): Promise<IRestdCertificateTrust>;
 }
 
 /** The REST Daemon tools of the MariaDB MCP server. */
@@ -153,6 +178,30 @@ export class RestApi implements IRestApi {
 
         return decodeObject<IRestdDeployment>(name, await this.caller.callTool(
             name, { directory }, RESTD_LIFECYCLE_TIMEOUT_MS));
+    }
+
+    /**
+     * @returns Whether this system trusts the one HTTPS certificate every
+     *          REST Daemon here serves. Makes nothing.
+     */
+    public async certificateStatus(): Promise<IRestdCertificateStatus> {
+        const name = "rest.get_certificate_status";
+
+        return decodeObject<IRestdCertificateStatus>(name,
+            await this.caller.callTool(name, {}));
+    }
+
+    /**
+     * Has this system trust the REST Daemons' HTTPS certificate: macOS and
+     * Windows ask the user to confirm in a dialog of their own.
+     *
+     * @returns What was done; nothing where it was trusted already.
+     */
+    public async trustCertificate(): Promise<IRestdCertificateTrust> {
+        const name = "rest.trust_certificate";
+
+        return decodeObject<IRestdCertificateTrust>(name,
+            await this.caller.callTool(name, {}, RESTD_TRUST_TIMEOUT_MS));
     }
 
     /**

@@ -125,3 +125,7 @@ input.invalid ~ .field-hint,
     grid-column: 1 / -1;
     margin-top: -0.25rem;
 }
+
+.rest-certificate {
+    grid-column: 1 / -1;
+}

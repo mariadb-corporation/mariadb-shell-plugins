@@ -1685,13 +1685,14 @@ describe("the OpenAPI UI", () => {
 
 describe("the Set Up MariaDB REST Daemon dialog", () => {
     const context = (schemas: string[]) => {
-        return { server: "db1:3306", user: "admin", metadataSchemas: schemas };
+        return { server: "db1:3306", user: "admin", metadataSchemas: schemas,
+            certificateTrusted: false };
     };
 
     it("serves the one metadata schema there is", () => {
         expect(restdDefaults(context(["mariadb_rest_service"])))
             .toEqual({ port: "", password: "",
-                metadataSchema: "mariadb_rest_service" });
+                metadataSchema: "mariadb_rest_service", trustCertificate: true });
         expect(restdDefaults(context([])).metadataSchema).toBe("");
     });
 
@@ -1703,11 +1704,12 @@ describe("the Set Up MariaDB REST Daemon dialog", () => {
                 .map((problem) => { return problem.field; }))
                 .toEqual(["metadataSchema"]);
             expect(validateDialog("restd", { port: "0", password: "",
-                metadataSchema: "" }, context([]))
+                metadataSchema: "", trustCertificate: false }, context([]))
                 .map((problem) => { return problem.field; }))
                 .toEqual(["port"]);
             expect(validateDialog("restd", { port: "8443", password: "",
-                metadataSchema: "" }, context([]))).toEqual([]);
+                metadataSchema: "", trustCertificate: false }, context([])))
+                .toEqual([]);
         });
 });
 

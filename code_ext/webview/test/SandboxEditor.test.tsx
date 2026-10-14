@@ -53,6 +53,7 @@ const load = async (takenPorts: number[] = []): Promise<void> => {
         fields: emptySandboxFields("3310", "12.3.2"),
         takenPorts,
         versions: ["12.3.2", "11.8.9"],
+        restCertificateTrusted: false,
     });
 };
 
@@ -278,6 +279,7 @@ describe("SandboxEditor", () => {
                 fields: emptySandboxFields("3310"),
                 takenPorts: [],
                 versions: [],
+                restCertificateTrusted: false,
             });
             await openVersions();
 
@@ -670,6 +672,26 @@ describe("SandboxEditor's REST Service", () => {
         expect(fieldOf("REST User Password").textContent).toContain(
             "minimum authentication string length");
     });
+
+    it("offers to register the HTTPS certificate while it is not trusted",
+        async () => {
+            await mount();
+            await load();
+            await setRest(true);
+
+            const box = host.querySelector<HTMLInputElement>(
+                "input[name=trustRestCertificate]");
+            expect(box?.checked).toBe(true);
+            expect(box?.closest("label")?.textContent?.replace(/\s+/gu, " ")
+                .trim()).toBe(
+                "Register the REST Daemon's HTTPS certificate with the system");
+
+            await send({ type: "load", fields: emptySandboxFields("3310"),
+                takenPorts: [], versions: [], restCertificateTrusted: true });
+            await setRest(true);
+            expect(host.querySelector("input[name=trustRestCertificate]"))
+                .toBeNull();
+        });
 
     it("posts its fields on Create", async () => {
         await mount();

@@ -397,6 +397,8 @@ def test_setting_up_needs_the_db_group():
         "rest.start_restd",
         "rest.stop_restd",
         "rest.delete_restd_config",
+        "rest.trust_certificate",
+        "rest.get_certificate_status",
     }
     assert set(_tools(["rest"])) == always
     assert set(_tools()) == always | {"rest.configure_restd"}
@@ -771,6 +773,11 @@ def test_a_sandbox_really_gets_a_rest_daemon():
                 assert daemon["port"] == port * 10
                 assert daemon["status"] == "running"
                 assert served(daemon["url"])
+                # The one certificate of every daemon here, for localhost.
+                served_pem = ssl.get_server_certificate(("localhost", daemon["port"]))
+                with open(os.path.join(restd_certs.certs_dir(), "server.crt")) as f:
+                    assert ssl.PEM_cert_to_DER_cert(served_pem) == \
+                        ssl.PEM_cert_to_DER_cert(f.read())
                 await call("db.close", {"connection_id": connection_id})
 
                 await call("sandbox.stop", {"port": port, "password": "Sandbox1!"})
@@ -815,3 +822,151 @@ def test_a_listed_deployment_needs_no_allowed_path(fake_restd, home, monkeypatch
     with pytest.raises(Exception, match="not allowed"):
         asyncio.run(tools["rest.stop_restd"](None, elsewhere))
     assert asked == [elsewhere]
+
+
+# --- the HTTPS certificate -----------------------------------------------------
+
+from mcp_plugin.lib import restd_certs
+
+
+def test_one_certificate_is_made_for_every_daemon(home):
+    """In web-certs, for localhost; kept while it is good, made anew near its end."""
+    from cryptography import x509
+
+    paths = restd_certs.ensure()
+
+    assert os.path.dirname(paths["cert"]) == restd_certs.certs_dir()
+    assert restd_certs.certs_dir() == os.path.join(restd.deployments_root(), "web-certs")
+    cert = restd_certs._load(paths["cert"])
+    names = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert names.get_values_for_type(x509.DNSName) == ["localhost"]
+    assert [str(ip) for ip in names.get_values_for_type(x509.IPAddress)] == [
+        "127.0.0.1", "::1"]
+    assert cert.issuer == restd_certs._load(paths["ca"]).subject
+    # macOS refuses longer ones.
+    assert (cert.not_valid_after_utc - cert.not_valid_before_utc).days <= 825
+    if os.name != "nt":
+        assert os.stat(paths["key"]).st_mode & 0o077 == 0
+    # The CA's own key is not kept.
+    assert sorted(os.listdir(restd_certs.certs_dir())) == [
+        "rootCA.crt", "server.crt", "server.key"]
+
+    first = restd_certs.ca_fingerprint()
+    restd_certs.ensure()
+    assert restd_certs.ca_fingerprint() == first
+
+    # Near its end, a new one.
+    import pytest as _pytest
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(restd_certs, "RENEW_DAYS", 10_000)
+        restd_certs.ensure()
+    assert restd_certs.ca_fingerprint() != first
+
+
+def test_the_setup_is_given_the_certificate(fake_restd, home, tmp_path):
+    executable, runs = fake_restd
+    paths = restd_certs.ensure()
+
+    restd.setup(executable, str(tmp_path / "d"),
+                {"user": "root", "host": "127.0.0.1", "port": 3311}, "pw",
+                helpers.find_free_port(), certificate=paths)
+
+    (run,) = runs()
+    assert f"--conf-set-option=http_server.ssl_cert={paths['cert']}" in run["argv"]
+    assert f"--conf-set-option=http_server.ssl_key={paths['key']}" in run["argv"]
+
+
+def _store(monkeypatch, platform, answers):
+    """A trust store answering commands from a table; records them."""
+    commands = []
+
+    def run(command, timeout=60):
+        commands.append(command)
+        for prefix, answer in answers:
+            if command[: len(prefix)] == prefix:
+                return answer(commands) if callable(answer) else answer
+        return 0, ""
+
+    monkeypatch.setattr(restd_certs, "_platform", lambda: platform)
+    monkeypatch.setattr(restd_certs, "_run", run)
+    return commands
+
+
+def test_macos_trusts_the_ca_in_the_login_keychain(home, monkeypatch):
+    """add-trusted-cert, which brings up the system's authorization dialog."""
+    added = []
+    commands = _store(monkeypatch, "macos", [
+        (["security", "verify-cert"], lambda _: (0, "") if added else (1, "")),
+        (["security", "add-trusted-cert"], lambda _: added.append(1) or (0, "")),
+    ])
+
+    report = restd_certs.trust()
+
+    assert report["changed"] is True
+    (add,) = [c for c in commands if c[1] == "add-trusted-cert"]
+    assert add[:4] == ["security", "add-trusted-cert", "-r", "trustRoot"]
+    assert add[-1] == os.path.join(restd_certs.certs_dir(), "rootCA.crt")
+    assert add[4:6] == ["-k", os.path.join(str(home), "Library", "Keychains",
+                                           "login.keychain-db")]
+    # Trusted already: nothing is asked again.
+    commands.clear()
+    assert restd_certs.trust()["changed"] is False
+    assert all(c[1] != "add-trusted-cert" for c in commands)
+
+
+def test_a_cancelled_dialog_is_reported(home, monkeypatch):
+    """The old wizard took a cancelled dialog for success."""
+    _store(monkeypatch, "macos", [
+        (["security", "verify-cert"], (1, "")),
+        (["security", "add-trusted-cert"], (1, "SecTrustSettingsSetTrustSettings: "
+                                                "The authorization was canceled by the user.")),
+    ])
+
+    with pytest.raises(Exception, match="confirmation was cancelled"):
+        restd_certs.trust()
+
+
+def test_windows_trusts_the_ca_in_the_users_root_store(home, monkeypatch):
+    restd_certs.ensure()
+    fingerprint = restd_certs.ca_fingerprint()
+    spaced = " ".join(fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2))
+    added = []
+    commands = _store(monkeypatch, "windows", [
+        (["certutil.exe", "-verifystore"],
+         lambda _: (0, f"Cert Hash(sha1): {spaced}\n") if added else (1, "")),
+        (["certutil.exe", "-addstore"], lambda _: added.append(1) or (0, "")),
+    ])
+
+    assert restd_certs.trust()["changed"] is True
+    (add,) = [c for c in commands if c[1] == "-addstore"]
+    assert add[:6] == ["certutil.exe", "-addstore", "-user", "-f", "ROOT",
+                       os.path.join(restd_certs.certs_dir(), "rootCA.crt")]
+
+
+def test_the_trust_tool_asks_an_agent_first(home, monkeypatch, gui_mode):
+    calls = []
+    monkeypatch.setattr(restd_certs, "is_trusted", lambda: False)
+    monkeypatch.setattr(restd_certs, "trust", lambda: calls.append(1) or {
+        "trusted": True, "changed": True, "ca_path": "x"})
+    tools = _tools()
+
+    # In the extension, the box the user ticked is the consent.
+    assert asyncio.run(tools["rest.trust_certificate"](None))["changed"] is True
+    # An agent with no client to ask is refused.
+    monkeypatch.setattr(general, "is_gui_mode", lambda: False)
+    with pytest.raises(Exception, match="did not confirm"):
+        asyncio.run(tools["rest.trust_certificate"](None))
+    assert calls == [1]
+
+
+def test_the_certificate_status_makes_nothing(home, monkeypatch):
+    status = _tools()["rest.get_certificate_status"]
+
+    assert status()["exists"] is False
+    assert status()["trusted"] is False
+    assert not os.path.exists(restd_certs.certs_dir())
+
+    restd_certs.ensure()
+    monkeypatch.setattr(restd_certs, "is_trusted", lambda: True)
+    assert status() == {"exists": True, "trusted": True,
+                        "ca_path": os.path.join(restd_certs.certs_dir(), "rootCA.crt")}

@@ -385,7 +385,7 @@ describe("the REST Service fields", () => {
         expect(emptySandboxFields()).toMatchObject({
             configureRest: false, restdPort: "",
             restServicePath: "/myService/v1", restUserName: "dba",
-            restUserPassword: "",
+            restUserPassword: "", trustRestCertificate: true,
         });
     });
 
@@ -434,8 +434,11 @@ describe("the REST Service fields", () => {
         () => {
             expect(sandboxRestOptions(rest())).toEqual({
                 servicePath: "/myService/v1", userName: "dba",
-                password: "Secret1!",
+                password: "Secret1!", trustCertificate: true,
             });
+            // Trusted already, it is not registered again.
+            expect(sandboxRestOptions(rest(), true)?.trustCertificate)
+                .toBe(false);
             expect(sandboxRestOptions(rest({ restdPort: " 9443 " })))
                 .toMatchObject({ restdPort: 9443 });
         });
