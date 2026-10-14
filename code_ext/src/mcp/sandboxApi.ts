@@ -16,7 +16,7 @@
  */
 
 import type { IToolCaller } from "./mariaDbApi.js";
-import { decodeList, decodeScalar } from "./protocol.js";
+import { decodeList, decodeObject, decodeScalar } from "./protocol.js";
 
 /** Whether a sandbox's server is up, as `sandbox.list_instances` says. */
 export type SandboxStatus = "running" | "stopped";
@@ -27,6 +27,28 @@ export interface ISandboxInstance {
     /** `major.minor.patch`, or null where the shell cannot tell. */
     version: string | null;
     status: SandboxStatus;
+}
+
+/**
+ * What became of one of a sandbox's REST Daemons as the sandbox was
+ * started, stopped or deleted. What `rest.get_restd_status` says of it,
+ * where that could still be read.
+ */
+export interface ISandboxRestdOutcome {
+    directory: string;
+    port?: number;
+    url?: string;
+    log_path?: string;
+    /** Why it failed, or null where it worked. */
+    error: string | null;
+}
+
+/** What `sandbox.start`, `sandbox.stop` and `sandbox.delete` answer. */
+export interface ISandboxChange {
+    /** The server's confirmation. */
+    message: string;
+    /** The sandbox's REST Daemons, which follow it. */
+    restd: ISandboxRestdOutcome[];
 }
 
 /** What `sandbox.deploy` is asked to build. */
@@ -70,19 +92,32 @@ export const DEPLOY_TIMEOUT_MS = 30 * 60 * 1000;
  */
 export const LIFECYCLE_TIMEOUT_MS = 3 * 60 * 1000;
 
+/**
+ * Decodes what a start, stop or delete answered.
+ *
+ * @param name The tool.
+ * @param result Its answer.
+ *
+ * @returns It, with no REST Daemons where the server predates them and
+ *          answers with its message alone.
+ */
+const decodeChange = (
+    name: string,
+    result: Parameters<typeof decodeObject>[1],
+): ISandboxChange => {
+    const answer = decodeObject<ISandboxChange | string>(name, result);
+
+    return typeof answer === "string" ? { message: answer, restd: [] } : answer;
+};
+
 /** The `sandbox.*` tools the Sandboxes view uses, as typed calls. */
 export interface ISandboxApi {
     listInstances(port?: number): Promise<ISandboxInstance[]>;
     listAvailableVersions(series?: string): Promise<string[]>;
-    /**
-     * @param quiet Whether the deploy is reported by its caller instead,
-     *              as one step of more: a wrapper that reports calls
-     *              leaves it alone then.
-     */
-    deploy(options: ISandboxDeployOptions, quiet?: boolean): Promise<string>;
-    start(port: number): Promise<string>;
-    stop(port: number): Promise<string>;
-    delete(port: number): Promise<string>;
+    deploy(options: ISandboxDeployOptions): Promise<string>;
+    start(port: number): Promise<ISandboxChange>;
+    stop(port: number): Promise<ISandboxChange>;
+    delete(port: number): Promise<ISandboxChange>;
 }
 
 /**
@@ -168,12 +203,12 @@ export class SandboxApi implements ISandboxApi {
      *
      * @param port The instance's port.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async start(port: number): Promise<string> {
+    public async start(port: number): Promise<ISandboxChange> {
         const name = "sandbox.start";
 
-        return decodeScalar(name, await this.caller.callTool(
+        return decodeChange(name, await this.caller.callTool(
             name, { port }, LIFECYCLE_TIMEOUT_MS));
     }
 
@@ -182,12 +217,12 @@ export class SandboxApi implements ISandboxApi {
      *
      * @param port The instance's port.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async stop(port: number): Promise<string> {
+    public async stop(port: number): Promise<ISandboxChange> {
         const name = "sandbox.stop";
 
-        return decodeScalar(name, await this.caller.callTool(
+        return decodeChange(name, await this.caller.callTool(
             name, { port }, LIFECYCLE_TIMEOUT_MS));
     }
 
@@ -196,12 +231,12 @@ export class SandboxApi implements ISandboxApi {
      *
      * @param port The instance's port.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async delete(port: number): Promise<string> {
+    public async delete(port: number): Promise<ISandboxChange> {
         const name = "sandbox.delete";
 
-        return decodeScalar(name, await this.caller.callTool(
+        return decodeChange(name, await this.caller.callTool(
             name, { port }, LIFECYCLE_TIMEOUT_MS));
     }
 }

@@ -212,7 +212,7 @@ describe("SandboxApi", () => {
             expect(LIFECYCLE_TIMEOUT_MS).toBeGreaterThan(60_000);
         });
 
-    it("returns the server's confirmation", async () => {
+    it("returns the server's confirmation alone, from an older server", async () => {
         const caller = createCaller({
             "sandbox.start": {
                 content: [{
@@ -224,7 +224,24 @@ describe("SandboxApi", () => {
             },
         });
 
-        expect(await new SandboxApi(caller).start(3310))
-            .toBe("Sandbox instance on port 3310 started.");
+        // As a server from before the REST Daemons answers.
+        expect(await new SandboxApi(caller).start(3310)).toEqual({
+            message: "Sandbox instance on port 3310 started.", restd: [],
+        });
+    });
+
+    it("returns what became of the sandbox's REST Daemons", async () => {
+        const answer = {
+            message: "Sandbox instance on port 3310 stopped.",
+            restd: [{ directory: "/s/3310/mariadb-restd", port: 8443,
+                error: "will not stop" }],
+        };
+        const caller = createCaller({
+            "sandbox.stop": {
+                content: [{ type: "text", text: JSON.stringify(answer) }],
+            },
+        });
+
+        expect(await new SandboxApi(caller).stop(3310)).toEqual(answer);
     });
 });

@@ -77,6 +77,7 @@ import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { withDefaultScheme } from "./connections/connectionUri.js";
 import type {
     ISandboxApi,
+    ISandboxChange,
     ISandboxDeployOptions,
 } from "./mcp/sandboxApi.js";
 import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
@@ -342,14 +343,18 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // kept with the API it was built over, as `ConnectionManager.api` does.
     let loggedSandboxApi: { plain: ISandboxApi; logging: ISandboxApi } |
         undefined;
-    const sandboxApi = async (): Promise<ISandboxApi> => {
+    const plainSandboxApi = async (): Promise<ISandboxApi> => {
         if (session.sandboxApi === undefined) {
             await starter.start();
         }
-        const plain = session.sandboxApi;
-        if (plain === undefined) {
+        if (session.sandboxApi === undefined) {
             throw new Error("The MCP server is not running.");
         }
+
+        return session.sandboxApi;
+    };
+    const sandboxApi = async (): Promise<ISandboxApi> => {
+        const plain = await plainSandboxApi();
 
         if (loggedSandboxApi?.plain !== plain) {
             loggedSandboxApi = {
@@ -398,7 +403,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // sandbox's action.
     const followHost = {
         put: putAction,
-        restApi,
+        deployments: () => { return restdTree.deployments(); },
         // As a deploy's steps do: the panel stays where they show.
         hold: () => { return resultView.holdGeneralActions(); },
     };
@@ -407,7 +412,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const follow = async (
         node: ISandboxNode,
         change: SandboxChange,
-        work: () => Promise<void>,
+        work: () => Promise<ISandboxChange>,
     ): Promise<void> => {
         try {
             await followSandbox(followHost, node.port, change, work);
@@ -418,8 +423,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // What a sandbox deployed with the REST Service is set up through.
     const sandboxRestHost = {
         put: putAction,
-        deploy: (options: ISandboxDeployOptions) => {
-            return sandboxStore.deploy(options, true);
+        // Not through the store's API, which puts up a row of its own:
+        // the deploy is one step of the REST action.
+        deploy: async (options: ISandboxDeployOptions) => {
+            try {
+                return await (await plainSandboxApi()).deploy(options);
+            } finally {
+                await sandboxStore.settle(options.port);
+            }
         },
         connect: (uri: string) => {
             return connections.connect(uri, UI_BACKEND_SESSION);
@@ -1052,8 +1063,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 }
 
                 await guard(log, async () => {
-                    await follow(node, "start",
-                        async () => { await sandboxes.start(node); });
+                    await follow(node, "start", () => {
+                        return sandboxes.start(node);
+                    });
                 });
             },
         ),
@@ -1067,8 +1079,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
 
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
-                    await follow(node, "stop",
-                        async () => { await sandboxes.stop(node); });
+                    await follow(node, "stop", () => {
+                        return sandboxes.stop(node);
+                    });
                 });
             },
         ),
@@ -1102,8 +1115,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
                     try {
-                        await follow(node, "delete",
-                            async () => { await sandboxes.delete(node); });
+                        await follow(node, "delete", () => {
+                            return sandboxes.delete(node);
+                        });
                     } finally {
                         // Even a failed delete may have got as far as
                         // removing the connection.

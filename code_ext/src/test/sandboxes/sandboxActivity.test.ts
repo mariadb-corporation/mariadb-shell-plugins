@@ -34,8 +34,12 @@ const api: ISandboxApi = {
     },
     listAvailableVersions: () => { return Promise.resolve(["12.3.2"]); },
     deploy: () => { return Promise.resolve("Sandbox deployed."); },
-    start: (port) => { return Promise.resolve(`Started ${port}.`); },
-    stop: (port) => { return Promise.resolve(`Stopped ${port}.`); },
+    start: (port) => {
+        return Promise.resolve({ message: `Started ${port}.`, restd: [] });
+    },
+    stop: (port) => {
+        return Promise.resolve({ message: `Stopped ${port}.`, restd: [] });
+    },
     delete: () => { return Promise.reject(new Error("It is running.")); },
 };
 

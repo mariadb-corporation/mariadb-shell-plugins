@@ -41,6 +41,7 @@ this machine does not have yet.
 
 # cSpell:ignore mysqlsh MariaDB mcpserver sandboxlib mariadbd openssl
 
+import contextlib
 import inspect
 import os
 from typing import Optional
@@ -136,6 +137,29 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """The folders of the sandbox's REST Daemons: one per metadata schema."""
         base_dir = sandbox_dir or shell.options["sandboxDir"]
         return restd.sandbox_deployment_dirs(base_dir, port)
+
+    def _follow_restd(port: int, sandbox_dir: Optional[str], act) -> list:
+        """Does the same to each of a sandbox's REST Daemons.
+
+        A daemon that fails is reported, not raised: the sandbox's own
+        change goes on either way.
+
+        Returns:
+            list: Per daemon, what restd.status reports of it, plus 'error'
+            (None where it worked).
+        """
+        outcomes = []
+        for restd_dir in _restd_dirs(port, sandbox_dir):
+            outcome = {"directory": restd_dir}
+            try:
+                outcome.update(act(restd_dir))
+                outcome["error"] = None
+            except Exception as error:  # noqa: BLE001 - reported, not fatal
+                with contextlib.suppress(Exception):
+                    outcome.update(restd.status(restd_dir))
+                outcome["error"] = str(error)
+            outcomes.append(outcome)
+        return outcomes
 
     def _sandbox_connection_uri(port: int) -> str:
         """Returns the connection URI for the root account of a sandbox.
@@ -309,8 +333,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         sandbox_dir: Optional[str] = None,
         mariadbd_path: Optional[str] = None,
         timeout: Optional[int] = None,
-    ) -> str:
+    ) -> dict:
         """Starts an existing MariaDB sandbox instance on localhost.
+
+        Its REST Daemons, if it has any, are started after it.
 
         Args:
             port: The port of the instance to start.
@@ -320,7 +346,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             timeout: Seconds to wait for the instance to start. Defaults to 60.
 
         Returns:
-            A message confirming the instance was started.
+            'message', confirming the instance was started, and 'restd', one
+            entry per REST Daemon of the sandbox: its 'directory', 'port',
+            'url', 'status' and 'log_path', and 'error' where it did not
+            start (the instance is started all the same).
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.start(
@@ -336,14 +365,16 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # After the server: the daemon reads the REST metadata as it starts.
         # A daemon that does not come up leaves the sandbox started; the
         # message says why, and rest.start_restd can try again.
-        for restd_dir in _restd_dirs(port, sandbox_dir):
-            try:
-                started = restd.start(None, restd_dir)
-                message += f" Its REST Daemon serves {started['url']}."
-            except Exception as error:  # noqa: BLE001 - reported, not fatal
-                message += f" Its REST Daemon did not start: {error}"
+        outcomes = _follow_restd(
+            port, sandbox_dir, lambda restd_dir: restd.start(None, restd_dir)
+        )
+        for outcome in outcomes:
+            if outcome["error"] is None:
+                message += f" Its REST Daemon serves {outcome['url']}."
+            else:
+                message += f" Its REST Daemon did not start: {outcome['error']}"
 
-        return message
+        return {"message": message, "restd": outcomes}
 
     @tool(name="sandbox.stop")
     async def stop(
@@ -352,8 +383,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         sandbox_dir: Optional[str] = None,
         password: Optional[str] = None,
         timeout: Optional[int] = None,
-    ) -> str:
+    ) -> dict:
         """Gracefully stops a running sandbox instance on localhost.
+
+        Its REST Daemons, if it has any, are stopped before it.
 
         Args:
             port: The port of the instance to stop.
@@ -362,12 +395,13 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             timeout: Seconds to wait for the instance to stop. Defaults to 60.
 
         Returns:
-            A message confirming the instance was stopped.
+            'message', confirming the instance was stopped, and 'restd', one
+            entry per REST Daemon of the sandbox, as sandbox.start has them.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         # Before the server, which it would otherwise keep reconnecting to.
-        for restd_dir in _restd_dirs(port, sandbox_dir):
-            restd.stop(restd_dir)
+        # A daemon that will not stop does not keep the server running.
+        outcomes = _follow_restd(port, sandbox_dir, restd.stop)
         sandbox.stop(
             port,
             _options(
@@ -376,10 +410,13 @@ def register_sandbox_tools(server, function_groups=()) -> None:
                 timeout=timeout,
             ),
         )
-        return f"Sandbox instance on port {port} stopped."
+        return {
+            "message": f"Sandbox instance on port {port} stopped.",
+            "restd": outcomes,
+        }
 
     @tool(name="sandbox.kill")
-    async def kill(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
+    async def kill(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> dict:
         """Forcefully kills the process of a running sandbox instance.
 
         Use sandbox.stop for a graceful shutdown.
@@ -389,16 +426,19 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             sandbox_dir: Path where the instance is located.
 
         Returns:
-            A message confirming the instance was killed.
+            'message', confirming the instance was killed, and 'restd', one
+            entry per REST Daemon of the sandbox, as sandbox.start has them.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
-        for restd_dir in _restd_dirs(port, sandbox_dir):
-            restd.stop(restd_dir)
+        outcomes = _follow_restd(port, sandbox_dir, restd.stop)
         sandbox.kill(port, _options(sandboxDir=sandbox_dir))
-        return f"Sandbox instance on port {port} killed."
+        return {
+            "message": f"Sandbox instance on port {port} killed.",
+            "restd": outcomes,
+        }
 
     @tool(name="sandbox.delete")
-    async def delete(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
+    async def delete(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> dict:
         """Deletes an existing sandbox instance on localhost.
 
         The instance must be stopped before it can be deleted. Its REST
@@ -409,7 +449,8 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             sandbox_dir: Path where the instance is located.
 
         Returns:
-            A message confirming the instance was deleted.
+            'message', confirming the instance was deleted, and 'restd', one
+            entry per REST Daemon deleted with it, as sandbox.start has them.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         # The daemon's folder is inside the sandbox's, so deleting the sandbox
@@ -417,9 +458,9 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # folder that is gone, and on Windows would keep the delete from
         # finishing. Not while the server runs, though: then the delete is
         # refused, and the daemon is left as it was.
+        outcomes = []
         if not _is_listening(port):
-            for restd_dir in _restd_dirs(port, sandbox_dir):
-                restd.stop(restd_dir)
+            outcomes = _follow_restd(port, sandbox_dir, restd.stop)
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
 
         # Remove the connection registered for this instance by deploy, if any,
@@ -434,7 +475,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             if uri is not None:
                 config.delete_connection(uri, kind)
 
-        return f"Sandbox instance on port {port} deleted."
+        return {
+            "message": f"Sandbox instance on port {port} deleted.",
+            "restd": outcomes,
+        }
 
     # Sync, and with no ctx or sandbox_dir: it only ever looks in the default
     # sandbox path, so there is no path to authorize and nothing to ask.

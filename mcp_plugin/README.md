@@ -353,7 +353,9 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 A sandbox can have a MariaDB REST Daemon (see [REST Daemon tools](#rest-daemon-tools-rest)).
 It follows the sandbox: `sandbox.start` starts it after the server, `sandbox.stop` and
 `sandbox.kill` stop it first, and `sandbox.delete` stops it before the sandbox's folder,
-which holds it, is deleted.
+which holds it, is deleted. These four tools answer with a `message` and a `restd` list,
+one entry per daemon with its `directory`, `port`, `url`, `log_path` and an `error` where
+it failed; a daemon that fails does not fail the sandbox's call.
 
 #### Deploying a specific server version
 

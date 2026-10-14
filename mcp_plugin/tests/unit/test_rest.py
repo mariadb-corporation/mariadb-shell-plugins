@@ -644,8 +644,11 @@ def test_a_sandboxs_daemon_follows_it(fake_restd, tmp_path, monkeypatch, gui_mod
     monkeypatch.setattr(sandbox_functions, "_is_listening", lambda port: False)
 
     try:
-        message = asyncio.run(tools["sandbox.start"](None, 3311, sandbox_dir=sandboxes))
-        assert f"serves https://localhost:{port}" in message
+        result = asyncio.run(tools["sandbox.start"](None, 3311, sandbox_dir=sandboxes))
+        assert f"serves https://localhost:{port}" in result["message"]
+        assert [(o["port"], o["status"], o["error"]) for o in result["restd"]] == [
+            (port, "running", None)
+        ]
         assert restd.status(directory)["status"] == "running"
 
         asyncio.run(tools["sandbox.stop"](None, 3311, sandbox_dir=sandboxes))
@@ -669,10 +672,35 @@ def test_a_daemon_that_does_not_start_leaves_the_sandbox_started(
     monkeypatch.setenv("FAKE_RESTD_MODE", "start-fails")
     tools = _sandbox_tools(monkeypatch, [])
 
-    message = asyncio.run(tools["sandbox.start"](None, 3311, sandbox_dir=sandboxes))
+    result = asyncio.run(tools["sandbox.start"](None, 3311, sandbox_dir=sandboxes))
 
-    assert message.startswith("Sandbox instance on port 3311 started.")
-    assert "Its REST Daemon did not start" in message
+    assert result["message"].startswith("Sandbox instance on port 3311 started.")
+    assert "Its REST Daemon did not start" in result["message"]
+    [outcome] = result["restd"]
+    assert outcome["error"]
+    assert outcome["directory"] == restd.sandbox_deployment_dir(sandboxes, 3311)
+    assert outcome["log_path"]
+
+
+def test_a_daemon_that_does_not_stop_does_not_keep_the_sandbox(
+    fake_restd, tmp_path, monkeypatch, gui_mode
+):
+    """Reported per daemon; the sandbox is stopped all the same."""
+    executable, _ = fake_restd
+    monkeypatch.setenv("PATH", f"{os.path.dirname(executable)}:/usr/bin:/bin")
+    sandboxes = str(tmp_path / "sandboxes")
+    _set_up(executable, restd.sandbox_deployment_dir(sandboxes, 3311))
+    calls = []
+    tools = _sandbox_tools(monkeypatch, calls)
+
+    def refuse(directory):
+        raise RuntimeError("will not stop")
+
+    monkeypatch.setattr(restd, "stop", refuse)
+    result = asyncio.run(tools["sandbox.stop"](None, 3311, sandbox_dir=sandboxes))
+
+    assert calls == [("stop", 3311)]
+    assert [outcome["error"] for outcome in result["restd"]] == ["will not stop"]
 
 
 # --- the install ---------------------------------------------------------------
@@ -777,7 +805,7 @@ def test_a_sandbox_really_gets_a_rest_daemon():
                 await call("sandbox.stop", {"port": port, "password": "Sandbox1!"})
                 assert not served(daemon["url"])
                 started = await call("sandbox.start", {"port": port})
-                assert "Its REST Daemon serves" in helpers.tool_payload(started)
+                assert "Its REST Daemon serves" in helpers.tool_payload(started)["message"]
                 assert served(daemon["url"])
 
                 listed = helpers.tool_payload(await call("rest.get_restd_status"))

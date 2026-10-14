@@ -61,19 +61,19 @@ const createApi = (instances: ISandboxInstance[] = []): IFakeSandboxApi => {
             api.calls.push(`start ${port}`);
             await api.hold;
 
-            return `started ${port}`;
+            return { message: `started ${port}`, restd: [] };
         },
         stop: (port) => {
             api.calls.push(`stop ${port}`);
 
             return api.failing === "stop"
                 ? Promise.reject(new Error("stop failed"))
-                : Promise.resolve(`stopped ${port}`);
+                : Promise.resolve({ message: `stopped ${port}`, restd: [] });
         },
         delete: (port) => {
             api.calls.push(`delete ${port}`);
 
-            return Promise.resolve(`deleted ${port}`);
+            return Promise.resolve({ message: `deleted ${port}`, restd: [] });
         },
     };
 
@@ -239,7 +239,7 @@ describe("SandboxesTreeProvider", () => {
             .rejects.toThrow("already starting…");
 
         release();
-        expect(await starting).toBe("started 3320");
+        expect((await starting).message).toBe("started 3320");
         expect(await provider.getChildren()).toEqual([
             nodeOf({ ...stopped, status: "running" }),
         ]);

@@ -92,9 +92,9 @@ const createHost = (options: {
             return options.deploy?.(deploy)
                 ?? Promise.resolve(`Deployed on port ${deploy.port}.`);
         },
-        start: () => { return Promise.resolve(""); },
-        stop: () => { return Promise.resolve(""); },
-        delete: () => { return Promise.resolve(""); },
+        start: () => { return Promise.resolve({ message: "", restd: [] }); },
+        stop: () => { return Promise.resolve({ message: "", restd: [] }); },
+        delete: () => { return Promise.resolve({ message: "", restd: [] }); },
     };
 
     const store = new SandboxStore(() => { return Promise.resolve(api); });

@@ -162,10 +162,7 @@ export const createLoggingSandboxApi = (
         },
         // Always a row of its own, whatever the setting: it can take
         // minutes, and goes on when its dialog is closed.
-        deploy: async (options, quiet) => {
-            if (quiet === true) {
-                return api.deploy(options);
-            }
+        deploy: async (options) => {
             deploys += 1;
             const state = {
                 id: `sandbox-deploy-${String(deploys)}`, port: options.port,
@@ -189,17 +186,17 @@ export const createLoggingSandboxApi = (
         },
         start: (port) => {
             return watch(`sandbox.start(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.start(port); });
         },
         stop: (port) => {
             return watch(`sandbox.stop(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.stop(port); });
         },
         delete: (port) => {
             return watch(`sandbox.delete(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.delete(port); });
         },
     };

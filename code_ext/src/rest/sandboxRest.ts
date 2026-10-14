@@ -18,7 +18,7 @@
 import { GENERAL_ACTIONS } from "../connections/connectionActivity.js";
 import type { IMariaDbApi } from "../mcp/types.js";
 import type { IRestApi, IRestdDeployment, IRestdSetup } from "../mcp/restApi.js";
-import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
+import type { ISandboxChange, ISandboxDeployOptions } from "../mcp/sandboxApi.js";
 import {
     DEFAULT_AUTH_APP,
     defaultAuthAppStatements,
@@ -40,10 +40,9 @@ import { ActionGroup, type ActionPutter } from "./actionGroup.js";
  * it as it is started, stopped and deleted, its steps rows of the
  * sandbox's action.
  *
- * The MCP server's sandbox tools start, stop and delete the daemon on
- * their own (so an agent's sandbox does the same); the extension makes
- * the same calls first, which do nothing where they are done already,
- * so that each is a row the user sees, with its error where it failed.
+ * The MCP server's sandbox tools start, stop and delete the daemons on
+ * their own, so an agent's sandbox does the same, and say how each went:
+ * the extension makes its rows of that.
  */
 
 /** What the REST steps need from the extension. */
@@ -252,7 +251,8 @@ export type SandboxChange = "start" | "stop" | "delete";
 /** What following a sandbox needs from the extension. */
 export interface IRestdFollowHost {
     put: ActionPutter;
-    restApi(): Promise<IRestApi>;
+    /** The REST Daemons as last listed: no call to the server. */
+    deployments(): Promise<IRestdDeployment[]>;
     /**
      * Keeps the Actions tab on General Actions while the steps run, where
      * the panel is there by default; returns what lets go of it.
@@ -268,13 +268,14 @@ const CHANGE_WORDS: Record<SandboxChange, [string, string]> = {
 };
 
 /**
- * Starts, stops or deletes a sandbox, and its REST Daemon with it where it
- * has one: the daemon after the server when starting - it reads the REST
- * metadata as it starts - and before it otherwise. One action of the
- * Actions tab, a row for each.
+ * Starts, stops or deletes a sandbox, reporting what became of its REST
+ * Daemons with it: the server's sandbox tools start them after the server
+ * and stop them before it, and say how each went. One action of the
+ * Actions tab, a row for the sandbox and one for each daemon.
  *
  * A sandbox without a daemon is changed as it always was, reporting
- * nothing new.
+ * nothing new. Whether it has one is told by the daemons last listed;
+ * one listed since is reported once the call says so.
  *
  * @param host The extension.
  * @param port The sandbox's port.
@@ -285,68 +286,61 @@ export const followSandbox = async (
     host: IRestdFollowHost,
     port: number,
     change: SandboxChange,
-    work: () => Promise<void>,
+    work: () => Promise<ISandboxChange>,
 ): Promise<void> => {
-    let deployment: IRestdDeployment | undefined;
+    let known = false;
     try {
-        deployment = (await (await host.restApi()).getStatus())
-            .find((found) => { return found.sandbox_port === port; });
+        known = (await host.deployments()).some((deployment) => {
+            return deployment.sandbox_port === port;
+        });
     } catch {
         // A server without the rest group: there is no daemon to follow.
     }
-    if (deployment === undefined) {
-        await work();
 
-        return;
-    }
-
-    const release = host.hold?.();
     const [doing, done] = CHANGE_WORDS[change];
-    const target = deployment;
     const sandbox = `Sandbox on port ${String(port)}`;
-    const daemon = `REST Daemon on port ${String(target.port)}`;
     const sandboxWords = { doing: `${doing} ${sandbox}`, done: `${done} ${sandbox}` };
-    const group = new ActionGroup(host.put, GENERAL_ACTIONS, sandboxWords);
-    const sandboxStep = (): Promise<void> => {
-        return group.step(sandboxWords,
-            `sandbox.${change}(port=${String(port)})`, work);
-    };
-    const restdStep = async (): Promise<void> => {
-        const api = await host.restApi();
-        await group.step({
-            doing: `${doing} ${daemon}`,
-            done: `${done} ${daemon}`,
-        }, change === "delete"
-            ? `rest.delete_restd_config(directory='${target.directory}', `
-            + "drop_accounts=False)"
-            : `rest.${change}_restd(directory='${target.directory}')`,
-        async () => {
-            if (change === "start") {
-                await api.start(target.directory);
-            } else if (change === "stop") {
-                await api.stop(target.directory);
-            } else {
-                await api.delete(target.directory);
-            }
-        }, {
-            // Why a daemon did not come up is in its own log.
-            logOf: () => { return Promise.resolve(target.log_path); },
-        });
-    };
+    const call = `sandbox.${change}(port=${String(port)})`;
+    const release = known ? host.hold?.() : undefined;
+    let group = known
+        ? new ActionGroup(host.put, GENERAL_ACTIONS, sandboxWords)
+        : undefined;
 
     try {
-        if (change === "start") {
-            await sandboxStep();
-            // The sandbox is up whether or not its daemon follows.
-            await restdStep().catch(() => { /* its row says why */ });
-        } else {
-            // A daemon that will not stop does not keep the sandbox
-            // running: the server's own stop stops it in any case.
-            await restdStep().catch(() => { /* its row says why */ });
-            await sandboxStep();
+        const changed = group === undefined
+            ? await work()
+            : await group.step(sandboxWords, call, work);
+        if (changed.restd.length === 0) {
+            return;
+        }
+        if (group === undefined) {
+            group = new ActionGroup(host.put, GENERAL_ACTIONS, sandboxWords);
+            await group.step(sandboxWords, call, () => {
+                return Promise.resolve(changed);
+            });
+        }
+
+        for (const outcome of changed.restd) {
+            const daemon = outcome.port === undefined
+                ? `REST Daemon in ${outcome.directory}`
+                : `REST Daemon on port ${String(outcome.port)}`;
+            await group.step({
+                doing: `${doing} ${daemon}`, done: `${done} ${daemon}`,
+            }, outcome.directory, () => {
+                return outcome.error === null
+                    ? Promise.resolve(outcome)
+                    : Promise.reject(new Error(outcome.error));
+            }, {
+                detail: (followed) => {
+                    return change === "start" && followed.url !== undefined
+                        ? `Serves ${followed.url}` : undefined;
+                },
+                // Why a daemon did not come up is in its own log.
+                logOf: () => { return Promise.resolve(outcome.log_path); },
+            }).catch(() => { /* its row says why */ });
         }
     } finally {
-        group.finish();
+        group?.finish();
         release?.();
     }
 };

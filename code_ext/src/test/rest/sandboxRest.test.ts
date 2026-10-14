@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { IRestApi, IRestdDeployment } from "../../mcp/restApi.js";
+import type { ISandboxRestdOutcome } from "../../mcp/sandboxApi.js";
 import type { IMariaDbApi } from "../../mcp/types.js";
 import {
     deploySandboxWithRest,
@@ -231,86 +232,78 @@ describe("registering the HTTPS certificate", () => {
 });
 
 describe("followSandbox", () => {
-    const followHost = (calls: string[], deployments = [DEPLOYMENT],
-        fail: string[] = []) => {
+    const followHost = (deployments = [DEPLOYMENT]) => {
         let last: IActionRow | undefined;
         return {
             host: {
                 put: (_connection: string, row: IActionRow) => { last = row; },
-                restApi: () => {
-                    return Promise.resolve(restApi(calls, fail, deployments));
-                },
+                deployments: () => { return Promise.resolve(deployments); },
             },
             last: () => { return last; },
         };
     };
+    const outcome = (error: string | null = null): ISandboxRestdOutcome => {
+        return {
+            directory: DEPLOYMENT.directory, port: DEPLOYMENT.port,
+            url: DEPLOYMENT.url, log_path: DEPLOYMENT.log_path, error,
+        };
+    };
+    const changed = (restd: ISandboxRestdOutcome[]) => {
+        return () => { return Promise.resolve({ message: "done", restd }); };
+    };
 
-    it("holds the Actions tab while its steps run", async () => {
-        const calls: string[] = [];
-        const { host } = followHost(calls);
-        const holds: string[] = [];
+    it("makes a row of each daemon the sandbox's call followed", async () => {
+        const { host, last } = followHost();
 
-        await followSandbox({
-            ...host,
-            hold: () => {
-                holds.push("held");
-                return () => { holds.push("released"); };
-            },
-        }, 3311, "stop", async () => { holds.push("sandbox"); });
+        await followSandbox(host, 3311, "start", changed([outcome()]));
 
-        expect(holds).toEqual(["held", "sandbox", "released"]);
+        expect(last()?.children?.map((row) => {
+            return [row.message, row.statement];
+        })).toEqual([
+            ["Started Sandbox on port 3311", "sandbox.start(port=3311)"],
+            ["Started REST Daemon on port 33110", `Serves ${DEPLOYMENT.url}`],
+        ]);
+        expect(last()?.kind).toBe("info");
     });
 
-    it("starts the daemon after the sandbox", async () => {
-        const calls: string[] = [];
-        const { host, last } = followHost(calls);
+    it("leaves the sandbox changed where its daemon failed", async () => {
+        const { host, last } = followHost();
 
-        await followSandbox(host, 3311, "start", async () => {
-            calls.push("sandbox");
+        await followSandbox(host, 3311, "stop",
+            changed([outcome("will not stop")]));
+
+        expect(last()?.children?.at(-1)).toMatchObject({ kind: "error",
+            message: "Stopping REST Daemon on port 33110 failed: will not stop",
+            logPath: DEPLOYMENT.log_path });
+    });
+
+    it("reports a sandbox's failure in its row", async () => {
+        const { host, last } = followHost();
+
+        await expect(followSandbox(host, 3311, "delete", () => {
+            return Promise.reject(new Error("It is running."));
+        })).rejects.toThrow("It is running.");
+
+        expect(last()).toMatchObject({ kind: "error" });
+        expect(last()?.children).toHaveLength(1);
+    });
+
+    it("changes a sandbox without a daemon as before, reporting nothing",
+        async () => {
+            const { host, last } = followHost([]);
+
+            await followSandbox(host, 3311, "stop", changed([]));
+
+            expect(last()).toBeUndefined();
         });
 
-        expect(calls).toEqual(["sandbox", "start"]);
+    it("reports a daemon set up since the list was read", async () => {
+        const { host, last } = followHost([]);
+
+        await followSandbox(host, 3311, "start", changed([outcome()]));
+
         expect(last()?.children?.map((row) => { return row.message; }))
             .toEqual(["Started Sandbox on port 3311",
                 "Started REST Daemon on port 33110"]);
     });
-
-    it("stops and deletes the daemon before the sandbox", async () => {
-        for (const change of ["stop", "delete"] as const) {
-            const calls: string[] = [];
-            const { host } = followHost(calls);
-
-            await followSandbox(host, 3311, change, async () => {
-                calls.push("sandbox");
-            });
-
-            expect(calls).toEqual([change, "sandbox"]);
-        }
-    });
-
-    it("leaves the sandbox started where its daemon does not start",
-        async () => {
-            const calls: string[] = [];
-            const { host, last } = followHost(calls, [DEPLOYMENT], ["start"]);
-
-            await followSandbox(host, 3311, "start", async () => {
-                calls.push("sandbox");
-            });
-
-            expect(last()?.children?.at(-1)).toMatchObject({ kind: "error",
-                logPath: DEPLOYMENT.log_path });
-        });
-
-    it("changes a sandbox without a daemon as before, reporting nothing",
-        async () => {
-            const calls: string[] = [];
-            const { host, last } = followHost(calls, []);
-
-            await followSandbox(host, 3311, "stop", async () => {
-                calls.push("sandbox");
-            });
-
-            expect(calls).toEqual(["sandbox"]);
-            expect(last()).toBeUndefined();
-        });
 });

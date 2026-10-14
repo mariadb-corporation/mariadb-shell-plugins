@@ -41,10 +41,13 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - **Sandbox hooks live in the `sandbox.*` tools**, not only in the extension,
   so an agent deleting a sandbox never leaves a daemon serving from a deleted
   folder. They work whether or not `rest` is served. `sandbox.start` starts
-  the daemon after the server and reports a failure in its message without
-  failing; stop/kill stop it first; delete stops it (only if the server is not
-  running, else the delete is refused and nothing is touched) and the
-  sandbox's rmtree removes the folder.
+  the daemon after the server; stop/kill stop it first; delete stops it (only
+  if the server is not running, else the delete is refused and nothing is
+  touched) and the sandbox's rmtree removes the folder. A daemon that fails
+  never fails the sandbox's call. The four tools answer `{message, restd}`:
+  `restd` has one entry per daemon (`restd.status` of it, plus `error`, None
+  where it worked), which the extension makes its Actions rows of, so it
+  makes no daemon calls of its own (2026-10-14).
 - **Delete drops the generated account** (`mariadb_restd_<random>`, matched by
   pattern, so an account the user named is never dropped) and the
   `rest_daemon` row, through a `connection_id`; `drop_accounts=False` deletes

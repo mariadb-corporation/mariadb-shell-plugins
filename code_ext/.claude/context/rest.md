@@ -90,11 +90,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Gotchas
 
-- **The extension calls `rest.start_restd` / `stop_restd` /
-  `delete_restd_config` although the MCP sandbox tools do the same**: the
-  server's hooks are what keeps an agent's sandbox right; the extension's
-  calls (which do nothing where it is done already) are what gives each
-  step its row, with its error.
+- **The extension makes no daemon calls of its own for a sandbox's start,
+  stop or delete**: the MCP sandbox tools follow every daemon of the sandbox
+  and answer `{message, restd}`, and `followSandbox` makes a row of each
+  `restd` entry (with its log where it failed). Whether to put the action's
+  group up front is told by the REST Daemons view's cached list; a daemon
+  it does not know of yet gets its rows once the call says so.
 - **The panel stays on General Actions while a sandbox's steps run**
   (2026-10-14, the user's call): the REST steps open a connection to the
   new sandbox, and the first connection to report anything takes over a
@@ -102,7 +103,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   holdGeneralActions()` blocks that until the last step ends; the deploy
   with the REST Service and `followSandbox` hold it. A connection the user
   picked is never touched.
-- **A grouped deploy is `deploy(options, quiet=true)`**: the logging
-  sandbox API leaves its own row out then, or the deploy would show twice.
+- **A grouped deploy calls the plain sandbox API** (`plainSandboxApi` in
+  `extension.ts`), not the logging one, which would put up a row of its
+  own; `SandboxStore.settle(port)` then updates the Sandboxes view.
 - **The connection's REST Daemon lives in the real `~/.mariadb-restd`**
   during the UI test too; the test deletes it again.
