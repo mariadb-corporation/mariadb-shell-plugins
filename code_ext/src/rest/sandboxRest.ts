@@ -30,6 +30,7 @@ import {
     sandboxConnectionUri,
     type ISandboxRestOptions,
 } from "../sandboxes/sandboxFields.js";
+import { errorText } from "../text.js";
 import { ActionGroup, type ActionPutter } from "./actionGroup.js";
 
 /**
@@ -96,10 +97,34 @@ const runSql = async (
  *
  * @returns What its row says it came to.
  */
-const setupDetail = (setup: IRestdSetup): string => {
+export const setupDetail = (setup: IRestdSetup): string => {
     return `Serves ${setup.url}`
         + (setup.installed ? ", mariadb-restd was installed" : "")
         + ` (${setup.directory})`;
+};
+
+/**
+ * Has this system trust the REST Daemons' HTTPS certificate, as a step.
+ *
+ * @param group The action it is a step of.
+ * @param restApi The REST API.
+ */
+export const trustCertificateStep = async (
+    group: ActionGroup,
+    restApi: () => Promise<IRestApi>,
+): Promise<void> => {
+    await group.step({
+        doing: "Registering the HTTPS Certificate",
+        done: "Registered the HTTPS Certificate",
+    }, "rest.trust_certificate()", async () => {
+        return (await restApi()).trustCertificate();
+    }, {
+        detail: (trust) => {
+            return trust.changed
+                ? `Trusted by this system: ${trust.ca_path}`
+                : "Trusted already";
+        },
+    });
 };
 
 /**
@@ -124,17 +149,15 @@ export const deploySandboxWithRest = async (
     rest: ISandboxRestOptions,
 ): Promise<ISandboxRestDeploy> => {
     const port = String(options.port);
-    const group = new ActionGroup(host.put, GENERAL_ACTIONS, {
+    const words = {
         doing: `Creating Sandbox on port ${port}`,
         done: `Created Sandbox on port ${port}`,
-    });
+    };
+    const group = new ActionGroup(host.put, GENERAL_ACTIONS, words);
 
     let message: string;
     try {
-        message = await group.step({
-            doing: `Creating Sandbox on port ${port}`,
-            done: `Created Sandbox on port ${port}`,
-        }, deployCall(options), () => {
+        message = await group.step(words, deployCall(options), () => {
             return host.deploy(options);
         }, { detail: (said) => { return said; } });
     } catch (error) {
@@ -165,7 +188,7 @@ export const deploySandboxWithRest = async (
                 detail: setupDetail,
                 logOf: async (error) => {
                     return host.writeLog(`restd-setup-${port}`,
-                        error instanceof Error ? error.message : String(error));
+                        errorText(error));
                 },
             });
 
@@ -204,17 +227,8 @@ export const deploySandboxWithRest = async (
 
             // Last: a dialog the user cancels leaves everything else done.
             if (rest.trustCertificate) {
-                await group.step({
-                    doing: "Registering the HTTPS Certificate",
-                    done: "Registered the HTTPS Certificate",
-                }, "rest.trust_certificate()", async () => {
-                    return (await host.restApi()).trustCertificate();
-                }, {
-                    detail: (trust) => {
-                        return trust.changed
-                            ? `Trusted by this system: ${trust.ca_path}`
-                            : "Trusted already";
-                    },
+                await trustCertificateStep(group, () => {
+                    return host.restApi();
                 });
             }
 
@@ -246,19 +260,11 @@ export interface IRestdFollowHost {
     hold?(): () => void;
 }
 
-const CHANGE_WORDS: Record<SandboxChange, {
-    sandbox: [string, string];
-    restd: [string, string];
-}> = {
-    start: {
-        sandbox: ["Starting", "Started"], restd: ["Starting", "Started"],
-    },
-    stop: {
-        sandbox: ["Stopping", "Stopped"], restd: ["Stopping", "Stopped"],
-    },
-    delete: {
-        sandbox: ["Deleting", "Deleted"], restd: ["Deleting", "Deleted"],
-    },
+/** What a change is called while it runs and once done. */
+const CHANGE_WORDS: Record<SandboxChange, [string, string]> = {
+    start: ["Starting", "Started"],
+    stop: ["Stopping", "Stopped"],
+    delete: ["Deleting", "Deleted"],
 };
 
 /**
@@ -295,25 +301,21 @@ export const followSandbox = async (
     }
 
     const release = host.hold?.();
-    const words = CHANGE_WORDS[change];
+    const [doing, done] = CHANGE_WORDS[change];
     const target = deployment;
     const sandbox = `Sandbox on port ${String(port)}`;
     const daemon = `REST Daemon on port ${String(target.port)}`;
-    const group = new ActionGroup(host.put, GENERAL_ACTIONS, {
-        doing: `${words.sandbox[0]} ${sandbox}`,
-        done: `${words.sandbox[1]} ${sandbox}`,
-    });
+    const sandboxWords = { doing: `${doing} ${sandbox}`, done: `${done} ${sandbox}` };
+    const group = new ActionGroup(host.put, GENERAL_ACTIONS, sandboxWords);
     const sandboxStep = (): Promise<void> => {
-        return group.step({
-            doing: `${words.sandbox[0]} ${sandbox}`,
-            done: `${words.sandbox[1]} ${sandbox}`,
-        }, `sandbox.${change}(port=${String(port)})`, work);
+        return group.step(sandboxWords,
+            `sandbox.${change}(port=${String(port)})`, work);
     };
     const restdStep = async (): Promise<void> => {
         const api = await host.restApi();
         await group.step({
-            doing: `${words.restd[0]} ${daemon}`,
-            done: `${words.restd[1]} ${daemon}`,
+            doing: `${doing} ${daemon}`,
+            done: `${done} ${daemon}`,
         }, change === "delete"
             ? `rest.delete_restd_config(directory='${target.directory}', `
             + "drop_accounts=False)"

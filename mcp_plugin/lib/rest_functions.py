@@ -36,7 +36,7 @@ from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # The part of a metadata schema's name its roles are named after; the roles
 # carry the schema's prefix and postfix around it.
-_METADATA_BASE_NAME = "mariadb_rest_service"
+_METADATA_BASE_NAME = restd.DEFAULT_METADATA_SCHEMA
 _ROLES = ("meta_provider", "data_provider")
 
 
@@ -285,7 +285,7 @@ def register_rest_tools(server, function_groups=()) -> None:
             'exists' (whether the first setup made it), 'trusted', and
             'ca_path', the local certificate authority's certificate.
         """
-        ca_path = os.path.join(restd_certs.certs_dir(), restd_certs.CA_FILE)
+        ca_path = restd_certs.ca_path()
         exists = os.path.isfile(ca_path)
         return {
             "exists": exists,
@@ -315,8 +315,7 @@ def register_rest_tools(server, function_groups=()) -> None:
 
         if await anyio.to_thread.run_sync(trusted):
             return {"trusted": True, "changed": False,
-                    "ca_path": os.path.join(restd_certs.certs_dir(),
-                                            restd_certs.CA_FILE)}
+                    "ca_path": restd_certs.ca_path()}
         # A trusted root is the user's to grant; Linux asks nothing itself.
         if not general.is_gui_mode() and not await _confirm_trust(ctx):
             raise tool_error("The certificate was not trusted: the user did not confirm.")
@@ -402,58 +401,26 @@ def register_rest_tools(server, function_groups=()) -> None:
 
 async def _confirm_trust(ctx) -> bool:
     """Asks the user, via MCP elicitation, whether to trust the local CA."""
-    if ctx is None:
-        return False
-
-    from pydantic import BaseModel, Field
-
-    class ConfirmTrust(BaseModel):
-        trust: bool = Field(
-            default=False,
-            description="Trust the REST Daemons' local certificate authority?",
-        )
-
-    try:
-        result = await ctx.elicit(
-            message=(
-                "Have this system trust the local certificate authority of the "
-                "MariaDB REST Daemons, so that browsers accept their "
-                f"https://localhost addresses? ({restd_certs.certs_dir()})"
-            ),
-            schema=ConfirmTrust,
-        )
-    except Exception:  # noqa: BLE001 - client may not support elicitation
-        return False
-
-    return result.action == "accept" and getattr(result.data, "trust", False)
+    return await general.confirm(
+        ctx,
+        "Have this system trust the local certificate authority of the "
+        "MariaDB REST Daemons, so that browsers accept their "
+        f"https://localhost addresses? ({restd_certs.certs_dir()})",
+        "trust",
+        "Trust the REST Daemons' local certificate authority?",
+    )
 
 
 async def _confirm_install(ctx) -> bool:
     """Asks the user, via MCP elicitation, whether to install mariadb-restd."""
-    if ctx is None:
-        return False
-
-    from pydantic import BaseModel, Field
-
-    class ConfirmInstall(BaseModel):
-        install: bool = Field(
-            default=False,
-            description="Download and install the latest mariadb-restd release?",
-        )
-
-    try:
-        result = await ctx.elicit(
-            message=(
-                "The MariaDB REST Daemon (mariadb-restd) is not installed. "
-                "Download and install its latest release into "
-                f"{restd.install_prefix()}?"
-            ),
-            schema=ConfirmInstall,
-        )
-    except Exception:  # noqa: BLE001 - client may not support elicitation
-        return False
-
-    return result.action == "accept" and getattr(result.data, "install", False)
+    return await general.confirm(
+        ctx,
+        "The MariaDB REST Daemon (mariadb-restd) is not installed. "
+        "Download and install its latest release into "
+        f"{restd.install_prefix()}?",
+        "install",
+        "Download and install the latest mariadb-restd release?",
+    )
 
 
 def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
@@ -545,7 +512,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             prepare
         )
 
-        executable = restd.find_restd(restd_path)
+        executable = await anyio.to_thread.run_sync(restd.find_restd, restd_path)
         installed = False
         if executable is None:
             if not general.is_gui_mode() and not await _confirm_install(ctx):
@@ -555,7 +522,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                     "Install it, or pass restd_path."
                 )
             await anyio.to_thread.run_sync(restd_install.install)
-            executable = restd.find_restd()
+            executable = await anyio.to_thread.run_sync(restd.find_restd)
             if executable is None:
                 raise tool_error(
                     f"{restd.RESTD_NAME} was installed but is not in "
@@ -566,15 +533,15 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
         def work():
             # One daemon per server and metadata schema, whatever account
             # the connection uses.
+            host = connection.get("host") or "localhost"
+            server_port = connection.get("port") or 3306
             if sandbox_port is not None:
                 directory = restd.sandbox_deployment_dir(
                     base_dir, sandbox_port, schema
                 )
             else:
                 directory = restd.connection_deployment_dir(
-                    connection.get("host") or "localhost",
-                    connection.get("port") or 3306,
-                    schema,
+                    host, server_port, schema
                 )
             if restd.is_deployment(directory):
                 raise tool_error(
@@ -617,8 +584,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                 certificate=certificate,
                 record={
                     "connection_uri": uri,
-                    "host": connection.get("host") or "localhost",
-                    "server_port": connection.get("port") or 3306,
+                    "host": host,
+                    "server_port": server_port,
                     "sandbox_port": sandbox_port,
                     "created": general.utc_timestamp(),
                 },

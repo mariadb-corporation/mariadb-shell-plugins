@@ -41,11 +41,6 @@ export interface IRestdNode extends IRestdDeployment {
     action?: RestdAction;
 }
 
-const ACTION_CAPTIONS: Record<RestdAction, string> = {
-    starting: "starting…",
-    stopping: "stopping…",
-    deleting: "deleting…",
-};
 
 /**
  * @param node A deployment.
@@ -71,7 +66,7 @@ export class RestdTreeItem extends vscode.TreeItem {
 
         const state = node.action === undefined
             ? node.status
-            : ACTION_CAPTIONS[node.action];
+            : `${node.action}…`;
         this.description = `port ${String(node.port)} · ${state}`;
         this.tooltip = `REST Daemon serving ${restdServerLabel(node)}\n`
             + `URL: ${node.url}\n`
@@ -110,6 +105,8 @@ export class RestdTreeProvider
     readonly #actions = new Map<string, RestdAction>();
     /** The deployments as last listed, for whoever needs them in between. */
     #listed?: IRestdDeployment[];
+    /** The next redraw shows #listed again rather than listing afresh. */
+    #reuseListed = false;
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
@@ -154,7 +151,9 @@ export class RestdTreeProvider
         }
 
         try {
-            const deployments = await this.list();
+            const reuse = this.#reuseListed ? this.#listed : undefined;
+            this.#reuseListed = false;
+            const deployments = reuse ?? await this.list();
             this.#listed = deployments;
             this.#viewState.listed();
 
@@ -209,11 +208,13 @@ export class RestdTreeProvider
     ): Promise<T> {
         if (this.#actions.has(node.directory)) {
             throw new Error(`The REST Daemon is already `
-                + `${ACTION_CAPTIONS[this.#actions.get(node.directory)!]}`);
+                + `${this.#actions.get(node.directory)!}…`);
         }
 
         this.#actions.set(node.directory, action);
-        this.refresh();
+        // Only the row's caption changes: no need to ask the server.
+        this.#reuseListed = true;
+        this.#onDidChangeTreeData.fire(undefined);
         try {
             return await work();
         } finally {

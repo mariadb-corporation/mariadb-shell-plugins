@@ -148,6 +148,23 @@ export const requestPathProblems = (
         : [{ field, message: "The request path must start with /." }];
 };
 
+/** The highest port there is. */
+export const MAX_PORT = 65535;
+
+/**
+ * @param port A port as typed, empty for the default.
+ *
+ * @returns What is wrong with it, or undefined.
+ */
+export const portProblem = (port: string): string | undefined => {
+    const text = port.trim();
+
+    return text !== "" && (!/^\d+$/u.test(text) || Number(text) === 0
+        || Number(text) > MAX_PORT)
+        ? `The port must be between 1 and ${String(MAX_PORT)}.`
+        : undefined;
+};
+
 /**
  * @param password A REST user's password.
  * @param field The field holding it.
@@ -1690,12 +1707,9 @@ export const validateRestd = (
     context: IRestdContext,
 ): IDialogProblem[] => {
     const problems: IDialogProblem[] = [];
-    const port = values.port.trim();
-    if (port !== "" && (!/^\d+$/.test(port) || Number(port) === 0
-        || Number(port) > 65535)) {
-        problems.push({
-            field: "port", message: "The port must be between 1 and 65535.",
-        });
+    const badPort = portProblem(values.port);
+    if (badPort !== undefined) {
+        problems.push({ field: "port", message: badPort });
     }
     if (context.metadataSchemas.length > 1 && values.metadataSchema === "") {
         problems.push({

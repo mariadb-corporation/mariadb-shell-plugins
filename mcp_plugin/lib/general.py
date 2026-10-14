@@ -994,37 +994,41 @@ async def require_allowed_path(ctx, path) -> None:
 
 
 async def _confirm_trust_path(ctx, path) -> bool:
-    """Asks the user, via MCP elicitation, whether to trust the given path.
+    """Asks the user, via MCP elicitation, whether to trust the given path."""
+    return await confirm(
+        ctx,
+        f"The path '{path}' is not in the MCP server's list of allowed "
+        "paths. Trust it as an allowed path?",
+        "trust",
+        f"Add '{path}' to the allowed paths and continue?",
+    )
+
+
+async def confirm(ctx, message: str, field: str, description: str) -> bool:
+    """Asks the user a yes/no question via MCP elicitation.
 
     Args:
         ctx: The MCP request context, or ``None``.
-        path: The filesystem path to ask about.
+        message (str): The question.
+        field (str): The name of the one boolean field the client shows.
+        description (str): That field's description.
 
     Returns:
-        True if the user confirmed the path should be trusted; False if the
-        user declined or cancelled, or if the client does not support
-        elicitation.
+        True if the user accepted and ticked the field; False if the user
+        declined or cancelled, or if the client does not support elicitation.
     """
     if ctx is None:
         return False
 
-    from pydantic import BaseModel, Field
+    from pydantic import Field, create_model
 
-    class ConfirmTrustPath(BaseModel):
-        trust: bool = Field(
-            default=False,
-            description=f"Add '{path}' to the allowed paths and continue?",
-        )
+    schema = create_model(
+        "Confirm", **{field: (bool, Field(default=False, description=description))}
+    )
 
     try:
-        result = await ctx.elicit(
-            message=(
-                f"The path '{path}' is not in the MCP server's list of allowed "
-                "paths. Trust it as an allowed path?"
-            ),
-            schema=ConfirmTrustPath,
-        )
+        result = await ctx.elicit(message=message, schema=schema)
     except Exception:  # noqa: BLE001 - client may not support elicitation
         return False
 
-    return result.action == "accept" and getattr(result.data, "trust", False)
+    return result.action == "accept" and getattr(result.data, field, False)

@@ -15,8 +15,9 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { parseConnectionUri } from "../connections/connectionUri.js";
+import { DEFAULT_PORT, parseConnectionUri } from "../connections/connectionUri.js";
 import type { IRestdDeployment } from "../mcp/restApi.js";
+import { DEFAULT_METADATA_SCHEMA } from "../mrs/mrsDialogs.js";
 
 /**
  * Which local REST Daemon serves a connection's REST services, so that a
@@ -28,9 +29,6 @@ import type { IRestdDeployment } from "../mcp/restApi.js";
  * server it was set up for (`host`, `server_port`) and the metadata schema
  * it serves, which is what a connection is matched on.
  */
-
-/** The metadata schema a daemon serves unless told otherwise. */
-export const DEFAULT_METADATA_SCHEMA = "mariadb_rest_service";
 
 /** The names of this machine a connection can use: one server on all. */
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -63,7 +61,7 @@ export const restdFor = (
     metadataSchema: string = DEFAULT_METADATA_SCHEMA,
 ): IRestdDeployment | undefined => {
     const server = parseConnectionUri(uri);
-    const port = Number(server.port || "3306");
+    const port = Number(server.port || DEFAULT_PORT);
     const matching = deployments.filter((deployment) => {
         return deployment.host !== null
             && sameHost(deployment.host) === sameHost(server.host)

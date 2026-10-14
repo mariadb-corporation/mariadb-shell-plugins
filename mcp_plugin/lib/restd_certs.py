@@ -66,10 +66,15 @@ def certs_dir() -> str:
     return os.path.join(restd.deployments_root(), CERTS_DIR_NAME)
 
 
+def ca_path() -> str:
+    """The local certificate authority's certificate, made or not."""
+    return os.path.join(certs_dir(), CA_FILE)
+
+
 def _paths() -> dict:
     folder = certs_dir()
     return {
-        "ca": os.path.join(folder, CA_FILE),
+        "ca": ca_path(),
         "cert": os.path.join(folder, SERVER_CERT_FILE),
         "key": os.path.join(folder, SERVER_KEY_FILE),
     }

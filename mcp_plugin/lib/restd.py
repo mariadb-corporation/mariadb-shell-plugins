@@ -50,6 +50,7 @@ Three things about mariadb-restd decide how it is driven here:
 
 # cSpell:ignore mysqlsh MariaDB restd keyring setsid ROUTER
 
+import collections
 import configparser
 import json
 import os
@@ -63,7 +64,7 @@ import time
 import urllib.parse
 from typing import Optional
 
-from mcp_plugin.lib import general
+from mcp_plugin.lib import config, general
 from mcp_plugin.lib.tool_registrar import tool_error
 
 # The executable, as the packages name it.
@@ -256,21 +257,20 @@ def _version_key(name: str) -> tuple:
     return (1, tuple(int(part) for part in parts)) if parts else (0, ())
 
 
-def _managed_binaries() -> list:
-    """The executables of the installed releases, newest first."""
+def _newest_managed_binary() -> Optional[str]:
+    """The executable of the newest installed release, or None."""
     prefix = install_prefix()
     try:
         names = os.listdir(prefix)
     except OSError:
-        return []
+        return None
 
-    binaries = []
     for name in sorted(names, key=_version_key, reverse=True):
         candidate = os.path.join(prefix, name, "bin", _binary_name())
         if os.path.isfile(candidate):
-            binaries.append(candidate)
+            return candidate
 
-    return binaries
+    return None
 
 
 def _is_executable(path: str) -> bool:
@@ -321,8 +321,7 @@ def find_restd(restd_path: Optional[str] = None) -> Optional[str]:
         if _is_executable(linked):
             return linked
 
-    binaries = _managed_binaries()
-    return binaries[0] if binaries else None
+    return _newest_managed_binary()
 
 
 def searched_places() -> str:
@@ -479,13 +478,6 @@ def read_deployment(directory: str) -> dict:
     }
 
 
-def _write_deployment_file(directory: str, record: dict) -> None:
-    path = os.path.join(directory, DEPLOYMENT_FILE)
-    with open(path + ".tmp", "w", encoding="utf-8") as file:
-        json.dump(record, file, indent=2)
-    os.replace(path + ".tmp", path)
-
-
 def deployment_dirs(sandbox_base_dir: Optional[str] = None) -> list:
     """Lists the folders of every deployment this plugin knows of.
 
@@ -601,7 +593,7 @@ def _remove_pid_file(directory: str) -> None:
 def _tail(path: str, lines: int = _LOG_TAIL_LINES) -> str:
     try:
         with open(path, encoding="utf-8", errors="replace") as file:
-            return "".join(file.readlines()[-lines:]).strip()
+            return "".join(collections.deque(file, maxlen=lines)).strip()
     except OSError:
         return ""
 
@@ -905,7 +897,7 @@ def setup(
             f"{output}"
         )
 
-    _write_deployment_file(directory, record or {})
+    config.write_json_file(os.path.join(directory, DEPLOYMENT_FILE), record or {})
     return output
 
 

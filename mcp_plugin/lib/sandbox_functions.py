@@ -43,7 +43,6 @@ this machine does not have yet.
 
 import inspect
 import os
-import socket
 from typing import Optional
 
 from mcp_plugin.lib import config, general, restd, sandbox_servers
@@ -67,11 +66,7 @@ def _is_listening(port: int) -> bool:
     running, so a status reported here agrees with what sandbox.stop and
     sandbox.delete will find.
     """
-    try:
-        with socket.create_connection(("localhost", port), timeout=1.0):
-            return True
-    except OSError:
-        return False
+    return restd.is_listening(port)
 
 
 # The part of sandbox.deploy's description only a --gui server gives, with the

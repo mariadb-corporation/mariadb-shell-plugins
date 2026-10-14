@@ -21,7 +21,11 @@ import {
     usesSshTunnel,
 } from "../connections/connectionUri.js";
 import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
-import { passwordProblems, servicePathProblem } from "../mrs/mrsDialogs.js";
+import {
+    passwordProblems,
+    portProblem,
+    servicePathProblem,
+} from "../mrs/mrsDialogs.js";
 
 /**
  * The New Sandbox dialog's fields and what they turn into. Pure, so the
@@ -144,9 +148,6 @@ export const emptySandboxFields = (
         trustRestCertificate: true,
     };
 };
-
-/** The highest port there is. */
-export const MAX_PORT = 65535;
 
 /**
  * The port a REST Daemon gets when none is typed, a sandbox's as any
@@ -426,15 +427,11 @@ const restFieldProblem = (
     sandboxPort: number,
 ): ISandboxFieldProblem | undefined => {
     if (fields.restdPort.trim() !== "") {
-        const restdPort = wholeNumber(fields.restdPort);
-        if (restdPort === undefined || restdPort === 0
-            || restdPort > MAX_PORT) {
-            return {
-                field: "restdPort",
-                message: `The port must be between 1 and ${MAX_PORT}.`,
-            };
+        const badPort = portProblem(fields.restdPort);
+        if (badPort !== undefined) {
+            return { field: "restdPort", message: badPort };
         }
-        if (restdPort === sandboxPort) {
+        if (Number(fields.restdPort.trim()) === sandboxPort) {
             return {
                 field: "restdPort",
                 message: "The REST Daemon needs a port of its own.",

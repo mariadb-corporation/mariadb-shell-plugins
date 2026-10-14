@@ -17,10 +17,10 @@
 
 import { formatTime } from "../sql/executionService.js";
 import { errorText } from "../text.js";
+import type { ActionPutter } from "../sandboxes/sandboxActivity.js";
 import type { IActionRow } from "../webview/protocol.js";
 
-/** Puts up a row of the Actions tab, or replaces the one with its id. */
-export type ActionPutter = (connection: string, row: IActionRow) => void;
+export type { ActionPutter };
 
 /** What a step, or the whole, is called while it runs and once done. */
 export interface IStepWords {
@@ -30,6 +30,12 @@ export interface IStepWords {
     done: string;
 }
 
+/** What a step came to, from its result, and the log a failure names. */
+export interface IStepOptions<T> {
+    detail?: (value: T) => string | undefined;
+    logOf?: (error: unknown) => Promise<string | undefined>;
+}
+
 /** One step, as its row shows it. */
 interface IStep {
     id: string;
@@ -37,7 +43,6 @@ interface IStep {
     /** The call it makes, the row's Information. */
     call: string;
     when: Date;
-    pending: boolean;
     /** What it came to, in place of the call once done. */
     detail?: string;
     error?: string;
@@ -78,11 +83,6 @@ export class ActionGroup {
         this.#show();
     }
 
-    /** Whether a step failed. */
-    public get failed(): boolean {
-        return this.#steps.some((step) => { return step.error !== undefined; });
-    }
-
     /**
      * Runs one step, its row pending while it does.
      *
@@ -98,21 +98,17 @@ export class ActionGroup {
         words: IStepWords,
         call: string,
         work: () => Promise<T>,
-        options: {
-            detail?: (value: T) => string | undefined;
-            logOf?: (error: unknown) => Promise<string | undefined>;
-        } = {},
+        options: IStepOptions<T> = {},
     ): Promise<T> {
         const step: IStep = {
             id: `${this.#id}-${String(this.#steps.length + 1)}`,
-            words, call, when: new Date(), pending: true,
+            words, call, when: new Date(),
         };
         this.#steps.push(step);
         this.#show();
 
         try {
             const value = await work();
-            step.pending = false;
             step.elapsedMs = Date.now() - step.when.getTime();
             const detail = options.detail?.(value);
             if (detail !== undefined) {
@@ -122,7 +118,6 @@ export class ActionGroup {
 
             return value;
         } catch (error) {
-            step.pending = false;
             step.elapsedMs = Date.now() - step.when.getTime();
             step.error = errorText(error);
             const logPath = await options.logOf?.(error).catch(() => {
@@ -150,6 +145,8 @@ export class ActionGroup {
     #show(): void {
         const base = { connection: this.connection, connectionLabel: "" };
         const children = this.#steps.map((step): IActionRow => {
+            const stepPending = step.elapsedMs === undefined;
+
             return {
                 ...base,
                 id: step.id,
@@ -157,12 +154,12 @@ export class ActionGroup {
                 role: "statement",
                 statement: step.error === undefined
                     ? step.detail ?? step.call : step.call,
-                message: step.pending
+                message: stepPending
                     ? `${step.words.doing}…`
                     : step.error === undefined
                         ? step.words.done
                         : `${step.words.doing} failed: ${step.error}`,
-                kind: step.pending ? "pending"
+                kind: stepPending ? "pending"
                     : step.error === undefined ? "info" : "error",
                 ...(step.elapsedMs === undefined
                     ? {} : { elapsedMs: step.elapsedMs }),
@@ -174,7 +171,9 @@ export class ActionGroup {
             return step.error !== undefined;
         });
         const pending = this.#finished === undefined
-            || this.#steps.some((step) => { return step.pending; });
+            || this.#steps.some((step) => {
+                return step.elapsedMs === undefined;
+            });
         const errors = this.#steps.filter((step) => {
             return step.error !== undefined;
         }).length;

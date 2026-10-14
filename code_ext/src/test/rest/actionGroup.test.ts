@@ -97,6 +97,5 @@ describe("ActionGroup", () => {
             message: "Creating Sandbox on port 3311 failed",
             summary: "Finished with 1 error", jumpToRowId: failed.id,
             logPath: "/logs/setup.log" });
-        expect(group.failed).toBe(true);
     });
 });

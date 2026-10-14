@@ -34,6 +34,7 @@ import {
     type IUserContext,
     type MrsDialogKind,
 } from "../../../src/mrs/mrsDialogs.js";
+import { DEFAULT_RESTD_PORT } from "../../../src/sandboxes/sandboxFields.js";
 import { DataMappingEditor } from "./DataMappingEditor.js";
 import { DbObjectsTable } from "./DbObjectsTable.js";
 import {
@@ -952,7 +953,7 @@ const restd: IDialogDefinition = {
         + "installed, it is downloaded first, which can take a few minutes.",
     main: (ctx, extras) => {
         const context = extras.context as IRestdContext;
-        const port = String(extras.values.port ?? "").trim() || "8443";
+        const port = String(extras.values.port ?? "").trim() || String(DEFAULT_RESTD_PORT);
 
         return (
             <section class="grid">
@@ -960,9 +961,9 @@ const restd: IDialogDefinition = {
                     ctx={ctx}
                     field="port"
                     caption="REST Daemon Port"
-                    placeholder="8443"
+                    placeholder={String(DEFAULT_RESTD_PORT)}
                     hint={"TCP/IP Port the REST Daemon is serving the "
-                        + "endpoints. Empty for 8443, or the next free "
+                        + `endpoints. Empty for ${String(DEFAULT_RESTD_PORT)}, or the next free `
                         + `port after it: https://localhost:${port}`}
                 />
                 <TextField

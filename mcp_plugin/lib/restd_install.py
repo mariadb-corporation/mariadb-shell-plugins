@@ -99,23 +99,22 @@ def install(tag: str = None) -> str:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         if os.name == "nt":
-            path = os.path.join(temp_dir, "install.ps1")
-            with open(path, "wb") as file:
-                file.write(script)
-            command = [
+            file_name = "install.ps1"
+            runner = [
                 "powershell.exe",
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                path,
             ]
         else:
-            path = os.path.join(temp_dir, "install.sh")
-            with open(path, "wb") as file:
-                file.write(script)
-            command = ["/bin/bash", path]
+            file_name = "install.sh"
+            runner = ["/bin/bash"]
+        path = os.path.join(temp_dir, file_name)
+        with open(path, "wb") as file:
+            file.write(script)
+        command = runner + [path]
 
         try:
             completed = subprocess.run(

@@ -34,10 +34,13 @@ import type { IConnectionNode } from "../tree/connectionsModel.js";
 import {
     restdServerLabel,
     type IRestdNode,
+    type RestdAction,
     type RestdTreeProvider,
 } from "../tree/restdTreeProvider.js";
 import { errorText } from "../text.js";
-import { ActionGroup, type ActionPutter } from "./actionGroup.js";
+import { ActionGroup, type ActionPutter, type IStepOptions,
+    type IStepWords } from "./actionGroup.js";
+import { setupDetail, trustCertificateStep } from "./sandboxRest.js";
 
 /** What the REST Daemon commands need from the extension. */
 export interface IRestdCommandsHost {
@@ -138,6 +141,15 @@ export class RestdCommands {
      * @param node The connection's row.
      */
     public async setUp(node: IConnectionNode): Promise<void> {
+        // The certificate does not depend on the connection: asked for
+        // at the same time.
+        const trusted = this.host.restApi().then(async (api) => {
+            return (await api.certificateStatus()).trusted;
+        }).catch(() => {
+            // Offered then, which does no harm: registering a trusted
+            // certificate does nothing.
+            return false;
+        });
         const connectionId = await this.host.connect(node.uri);
         const fields = parseConnectionUri(node.uri);
         let metadataSchemas: string[] = [];
@@ -146,14 +158,7 @@ export class RestdCommands {
         } catch {
             // No REST metadata: the setup creates it.
         }
-        let certificateTrusted = false;
-        try {
-            certificateTrusted = (await (await this.host.restApi())
-                .certificateStatus()).trusted;
-        } catch {
-            // Offered then, which does no harm: registering a trusted
-            // certificate does nothing.
-        }
+        const certificateTrusted = await trusted;
         const context: IRestdContext = {
             server: `${fields.host}:${fields.port}`,
             user: fields.user || "root",
@@ -215,28 +220,15 @@ export class RestdCommands {
                         ? {} : { metadataSchema: values.metadataSchema }),
                 });
             }, {
-                detail: (done) => {
-                    return `Serves ${done.url}`
-                        + (done.installed ? ", mariadb-restd was installed" : "")
-                        + ` (${done.directory})`;
-                },
+                detail: setupDetail,
                 logOf: (error) => {
                     return writeRestdLog(this.host.logFolder,
                         `restd-setup-${context.server}`, errorText(error));
                 },
             });
             if (values.trustCertificate && !context.certificateTrusted) {
-                await group.step({
-                    doing: "Registering the HTTPS Certificate",
-                    done: "Registered the HTTPS Certificate",
-                }, "rest.trust_certificate()", async () => {
-                    return (await this.host.restApi()).trustCertificate();
-                }, {
-                    detail: (trust) => {
-                        return trust.changed
-                            ? `Trusted by this system: ${trust.ca_path}`
-                            : "Trusted already";
-                    },
+                await trustCertificateStep(group, () => {
+                    return this.host.restApi();
                 });
             }
             group.finish(setup.url);
@@ -257,30 +249,50 @@ export class RestdCommands {
         const words = change === "start"
             ? { doing: `Starting ${daemon}`, done: `Started ${daemon}` }
             : { doing: `Stopping ${daemon}`, done: `Stopped ${daemon}` };
-        await this.host.tree.run(node,
-            change === "start" ? "starting" : "stopping", async () => {
-                const group = new ActionGroup(this.host.put, GENERAL_ACTIONS,
-                    words);
-                try {
-                    await group.step(words,
-                        `rest.${change}_restd(directory='${node.directory}')`,
-                        async () => {
-                            const api = await this.host.restApi();
-                            await (change === "start"
-                                ? api.start(node.directory)
-                                : api.stop(node.directory));
-                        }, {
-                            logOf: () => {
-                                return Promise.resolve(node.log_path);
-                            },
-                        });
-                } catch (error) {
-                    this.host.showActions(GENERAL_ACTIONS);
-                    throw error;
-                } finally {
-                    group.finish();
-                }
+        await this.#singleStep(node, change === "start" ? "starting" : "stopping",
+            words, `rest.${change}_restd(directory='${node.directory}')`,
+            async () => {
+                const api = await this.host.restApi();
+                await (change === "start"
+                    ? api.start(node.directory)
+                    : api.stop(node.directory));
+            }, {
+                logOf: () => {
+                    return Promise.resolve(node.log_path);
+                },
             });
+    }
+
+    /**
+     * Runs a row's action as a General Action of one step, the row busy
+     * while it does; brings the Actions tab up where it fails.
+     *
+     * @param node The row.
+     * @param state What the row shows while it runs.
+     * @param words What the action is called.
+     * @param call The call it makes.
+     * @param work The step.
+     * @param options As ActionGroup.step takes them.
+     */
+    async #singleStep<T>(
+        node: IRestdNode,
+        state: RestdAction,
+        words: IStepWords,
+        call: string,
+        work: () => Promise<T>,
+        options: IStepOptions<T> = {},
+    ): Promise<void> {
+        await this.host.tree.run(node, state, async () => {
+            const group = new ActionGroup(this.host.put, GENERAL_ACTIONS, words);
+            try {
+                await group.step(words, call, work, options);
+            } catch (error) {
+                this.host.showActions(GENERAL_ACTIONS);
+                throw error;
+            } finally {
+                group.finish();
+            }
+        });
     }
 
     /**
@@ -328,23 +340,14 @@ export class RestdCommands {
 
         const daemon = `REST Daemon on port ${String(node.port)}`;
         const words = { doing: `Deleting ${daemon}`, done: `Deleted ${daemon}` };
-        await this.host.tree.run(node, "deleting", async () => {
-            const group = new ActionGroup(this.host.put, GENERAL_ACTIONS, words);
-            try {
-                await group.step(words, "rest.delete_restd_config("
-                    + `directory='${node.directory}'`
-                    + (connectionId === undefined ? ", drop_accounts=False" : "")
-                    + ")", async () => {
-                    return (await this.host.restApi()).delete(node.directory,
-                        connectionId);
-                }, { detail: (said) => { return said; } });
-            } catch (error) {
-                this.host.showActions(GENERAL_ACTIONS);
-                throw error;
-            } finally {
-                group.finish();
-            }
-        });
+        await this.#singleStep(node, "deleting", words,
+            "rest.delete_restd_config("
+            + `directory='${node.directory}'`
+            + (connectionId === undefined ? ", drop_accounts=False" : "")
+            + ")", async () => {
+                return (await this.host.restApi()).delete(node.directory,
+                    connectionId);
+            }, { detail: (said) => { return said; } });
     }
 
     /**
