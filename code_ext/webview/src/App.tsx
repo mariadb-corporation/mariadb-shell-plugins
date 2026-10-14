@@ -1075,6 +1075,14 @@ export const App = (): JSX.Element => {
                             availableResultIds={availableResultIds}
                             onJumpToResult={jumpToResult}
                             onGoToStatement={goToStatement}
+                            onOpenLog={(row) => {
+                                if (row.logPath !== undefined) {
+                                    post({
+                                        type: "openLog",
+                                        path: row.logPath,
+                                    });
+                                }
+                            }}
                             onCopyText={(text) => {
                                 post({ type: "copyToClipboard", text });
                             }}

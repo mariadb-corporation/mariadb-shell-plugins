@@ -179,6 +179,20 @@ const onCopy = (text: string): void => {
 };
 
 describe("formatMessageCell", () => {
+    it("offers the log of a row that names one, with the Tasks view's icon",
+        () => {
+            const rendered = formatMessageCell(cell(row({
+                kind: "error", logPath: "/logs/t1.log",
+            })), new Set(), onCopy);
+            const button = rendered.querySelector<HTMLButtonElement>(".openLog");
+
+            expect(button?.className)
+                .toBe("openLog codicon codicon-go-to-file");
+            expect(button?.title).toBe("Open the log");
+            expect(formatMessageCell(cell(row()), new Set(), onCopy)
+                .querySelector(".openLog")).toBeNull();
+        });
+
     it("offers a go-to arrow for a row that knows where its statement is",
         () => {
             const rendered = formatMessageCell(cell(row({
@@ -585,6 +599,17 @@ describe("buildActionColumns", () => {
             source: { uri: "file:///q.sql", line: 0, character: 0 },
             jumpToRowId: "run1-2",
         }), new Set())).toBe("goTo");
+    });
+
+    it("takes the log button as opening the log", () => {
+        // Not the row's statement: the button is what was clicked.
+        expect(actionClick(clickOn("openLog"), row({
+            logPath: "/logs/t1.log",
+            source: { uri: "file:///q.sql", line: 3, character: 0 },
+        }), new Set())).toBe("log");
+        expect(actionClick(clickOn("actionMessageContent"),
+            row({ role: "event", logPath: "/logs/t1.log" }), new Set()))
+            .toBeUndefined();
     });
 
     it("does nothing on a row that knows nowhere to go", () => {

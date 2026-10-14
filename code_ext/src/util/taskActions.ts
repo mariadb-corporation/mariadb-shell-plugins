@@ -149,6 +149,10 @@ export const taskSummary = (tracked: ITrackedTask): string => {
  * @param tracked The task.
  * @param children The rows under it: the call, then its messages.
  * @param label Which connection open on the URI it is filed under.
+ * @param timing When it started and, once over, how long it took.
+ * @param logPath The task's log, which a failed task's row offers to
+ *                open: it holds every message, where the row keeps the
+ *                last few.
  *
  * @returns The row.
  */
@@ -157,6 +161,7 @@ export const taskActionRow = (
     children: IActionRow[],
     label: string,
     timing: { started: Date; elapsedMs?: number },
+    logPath?: string,
 ): IActionRow => {
     const { state } = tracked;
     const finished = isFinished(state.status) || tracked.interrupted === true;
@@ -191,6 +196,7 @@ export const taskActionRow = (
             : {}),
         ...(timing.elapsedMs === undefined
             ? {} : { elapsedMs: timing.elapsedMs }),
+        ...(kind === "error" && logPath !== undefined ? { logPath } : {}),
     };
 };
 
@@ -211,11 +217,14 @@ export class TaskActionLog {
      * @param label Which connection open on a URI the tasks are filed
      *              under: the one the commands open them with.
      * @param now The time; the server's has whole seconds only.
+     * @param logPathOf Where a task's log is, for a failed task's row to
+     *                  open.
      */
     public constructor(
         private readonly put: (connection: string, row: IActionRow) => void,
         private readonly label: string,
         private readonly now: () => Date = () => { return new Date(); },
+        private readonly logPathOf?: (taskId: string) => string,
     ) { }
 
     /** Makes the ids of starts that failed unique. */
@@ -323,7 +332,7 @@ export class TaskActionLog {
                 ...(finished
                     ? { elapsedMs: now.getTime() - task.started.getTime() }
                     : {}),
-            }));
+            }, this.logPathOf?.(taskId)));
         if (finished) {
             this.#tasks.delete(taskId);
         }

@@ -741,6 +741,11 @@ export class ResultViewProvider
                 break;
             }
 
+            case "openLog": {
+                await this.#openLog(message.path);
+                break;
+            }
+
             case "revealStatement":
             case "copyToClipboard":
             case "saveValue":
@@ -752,6 +757,39 @@ export class ResultViewProvider
                 }, false);
                 break;
             }
+        }
+    }
+
+    /**
+     * Opens the log an action row names, in an editor.
+     *
+     * Only a log one of the rows names: the page asks for a path, and a
+     * path it made up is not one to open.
+     *
+     * @param file The log.
+     *
+     * @returns Once it is open, or the user was told why not.
+     */
+    async #openLog(file: string): Promise<void> {
+        const named = (rows: IActionRow[] | undefined): boolean => {
+            return (rows ?? []).some((row) => {
+                return row.logPath === file || named(row.children);
+            });
+        };
+        if (![...this.#byConnection.values()].some((results) => {
+            return named(results.actions);
+        })) {
+            return;
+        }
+
+        try {
+            const document = await vscode.workspace.openTextDocument(
+                vscode.Uri.file(file));
+            await vscode.window.showTextDocument(document, { preview: true });
+        } catch (error) {
+            this.log(`Could not open the log ${file}: ${errorText(error)}`);
+            void vscode.window.showInformationMessage(
+                `The log ${file} could not be opened.`);
         }
     }
 

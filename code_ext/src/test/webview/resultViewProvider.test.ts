@@ -39,6 +39,7 @@ import {
     fileDialogs,
     files,
     MockWebviewView,
+    openedDocuments,
     openedWith,
     ViewColumn,
     resetVscodeMock,
@@ -1573,6 +1574,33 @@ describe("ResultViewProvider", () => {
                 // Nothing threw the panel open for it.
                 expect(view.shown).toBeFalsy();
             });
+
+        it("opens the log a row names, and no other file", async () => {
+            const { provider, view } = createWithSessions();
+            view.webview.receive({ type: "ready" });
+            await provider.putAction("General Actions", {
+                id: "group-1", time: "12:00:00.000",
+                connection: "General Actions", role: "run", statement: "",
+                message: "Creating Sandbox on port 3311 failed",
+                kind: "error",
+                children: [{
+                    id: "group-1-2", time: "12:00:00.000",
+                    connection: "General Actions", role: "statement",
+                    statement: "", message: "Setting up failed",
+                    kind: "error", logPath: "/logs/setup.log",
+                }],
+            });
+            const opened = openedDocuments.length;
+
+            view.webview.receive({ type: "openLog", path: "/etc/passwd" });
+            view.webview.receive({ type: "openLog", path: "/logs/setup.log" });
+
+            await vi.waitFor(() => {
+                expect(openedDocuments.slice(opened).map((document) => {
+                    return document.uri.fsPath;
+                })).toEqual(["/logs/setup.log"]);
+            });
+        });
 
         it("brings up a connection's actions at its newest failure",
             async () => {

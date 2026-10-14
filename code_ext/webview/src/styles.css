@@ -866,7 +866,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
  * column can put to better use, and the panel area is short of it.
  */
 .jumpToResult,
-.goToStatement {
+.goToStatement,
+.openLog {
     border: none;
     border-radius: 2px;
     width: 16px;
@@ -878,7 +879,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 .jumpToResult:hover,
-.goToStatement:hover {
+.goToStatement:hover,
+.openLog:hover {
     background: var(--vscode-toolbar-hoverBackground);
     color: var(--vscode-textLink-activeForeground);
 }

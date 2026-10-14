@@ -210,6 +210,11 @@ export interface IActionRow {
      * offering to jump to it.
      */
     resultId?: string;
+    /**
+     * A log that tells more than the row has room for, set where an
+     * action failed and its log says why: a task's, a REST Daemon's.
+     */
+    logPath?: string;
 }
 
 /**
@@ -381,6 +386,8 @@ export type WebviewMessage =
     | { type: "minimize"; resultId: string; rows: IEditableRow[] }
     /** Put the cursor on the statement an action row came from. */
     | { type: "revealStatement"; source: IStatementSource }
+    /** Open the log an action row names, in an editor. */
+    | { type: "openLog"; path: string }
     /** Show another connection's actions and results. */
     | { type: "selectConnection"; connection: string }
     /**
