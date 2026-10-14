@@ -191,6 +191,21 @@ def register_rest_tools(server, function_groups=()) -> None:
             os.path.expanduser(sandbox_dir or shell.options["sandboxDir"])
         )
 
+    async def _require_deployment_access(ctx, directory: str) -> None:
+        """Authorizes a deployment folder a tool is to work on.
+
+        One the server lists - a sandbox's in the default sandbox path, or
+        one in the deployments root, where rest.configure_restd puts them
+        without asking - needs no allowed path: refusing what the server
+        made itself would only have the agent ask the user to trust a
+        folder they never chose. Any other folder is checked as every
+        path argument is.
+        """
+        resolved = os.path.abspath(os.path.expanduser(directory))
+        if resolved in restd.deployment_dirs(_sandbox_base_dir()):
+            return
+        await general.require_allowed_path(ctx, directory)
+
     @tool(name="rest.get_restd_status")
     def get_restd_status() -> list:
         """Lists the REST Daemon deployments, and whether each is running.
@@ -232,7 +247,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The deployment's status, as rest.get_restd_status reports it.
         """
-        await general.require_allowed_path(ctx, directory)
+        await _require_deployment_access(ctx, directory)
         await general.require_allowed_path(ctx, restd_path)
 
         def work():
@@ -255,7 +270,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The deployment's status, as rest.get_restd_status reports it.
         """
-        await general.require_allowed_path(ctx, directory)
+        await _require_deployment_access(ctx, directory)
         return await anyio.to_thread.run_sync(lambda: restd.stop(directory))
 
     @tool(name="rest.delete_restd_config")
@@ -284,7 +299,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             A message saying what was deleted.
         """
-        await general.require_allowed_path(ctx, directory)
+        await _require_deployment_access(ctx, directory)
         if not restd.is_deployment(directory):
             raise tool_error(f"'{directory}' is no {restd.RESTD_NAME} deployment.")
 

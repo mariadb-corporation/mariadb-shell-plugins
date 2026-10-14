@@ -792,3 +792,26 @@ def test_a_sandbox_really_gets_a_rest_daemon():
             assert not os.path.exists(daemon["directory"])
 
     asyncio.run(run())
+
+
+def test_a_listed_deployment_needs_no_allowed_path(fake_restd, home, monkeypatch):
+    """What configure_restd made is not a path for the agent to have trusted."""
+    executable, _ = fake_restd
+    listed = restd.connection_deployment_dir("db1", 3306)
+    elsewhere = str(home / "elsewhere")
+    _set_up(executable, listed)
+    _set_up(executable, elsewhere)
+    monkeypatch.setattr(general, "is_gui_mode", lambda: False)
+    asked = []
+
+    async def require(ctx, path):
+        asked.append(path)
+        raise Exception("not allowed")
+
+    monkeypatch.setattr(rest_functions.general, "require_allowed_path", require)
+    tools = _tools()
+
+    assert asyncio.run(tools["rest.stop_restd"](None, listed))["status"] == "stopped"
+    with pytest.raises(Exception, match="not allowed"):
+        asyncio.run(tools["rest.stop_restd"](None, elsewhere))
+    assert asked == [elsewhere]

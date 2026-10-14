@@ -44,6 +44,14 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   the folder only. A failed row delete (FKs from `rest_daemon_status`) is
   reported, not fatal.
 
+- **Paths.** start/stop/delete take a deployment `directory`. One the
+  server lists (`restd.deployment_dirs`: the default sandbox path's and
+  the deployments root's) needs no allowed path - configure_restd made it
+  without asking, so an agent would otherwise be asked to trust a folder
+  the user never chose. Any other folder goes through
+  `require_allowed_path` (found by the mariadb-shell docs-ref review,
+  2026-10-14).
+
 ## How mariadb-restd is driven (verified against the source and a real 26.10.0)
 
 - **`--setup` has no password option**: the admin password goes to its stdin.
