@@ -121,8 +121,9 @@ agent's `sandbox.deploy`) shows up at the next Refresh.
 
 ## Connections view
 
-Contributed into its own activity bar container, whose icon is the MariaDB
-seal (`images/mariadb-seal.svg`, kept as a vector).
+Contributed into its own activity bar container, and into a panel container,
+both with the extension's icon (`images/mariadb-code-ext.svg`, kept as a
+vector).
 
 **First-start layout** (2026-10-11): `initialSize` weights in package.json,
 Connections 100, Sandboxes 16, Tasks 16 with `visibility: "collapsed"`.

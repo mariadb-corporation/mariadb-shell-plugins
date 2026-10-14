@@ -64,14 +64,14 @@
         {
           "id": "mariadb-view",
           "title": "MariaDB",
-          "icon": "images/mariadb-seal.svg"
+          "icon": "images/mariadb-code-ext.svg"
         }
       ],
       "panel": [
         {
           "id": "mariadb-panel",
           "title": "MariaDB",
-          "icon": "images/mariadb-seal.svg"
+          "icon": "images/mariadb-code-ext.svg"
         }
       ]
     },
