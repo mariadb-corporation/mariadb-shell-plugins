@@ -629,7 +629,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /* Only there while the tabs do not all fit. */
-.tabPager {
+.tabPager,
+.clearShownActions {
     flex: 0 0 auto;
     border: none;
     /* Its hover surface would hide the line along the top. */
@@ -644,7 +645,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
     opacity: 0.4;
 }
 
-.tabPager:hover:not(:disabled) {
+.tabPager:hover:not(:disabled),
+.clearShownActions:hover {
     background: var(--vscode-toolbar-hoverBackground);
 }
 
@@ -1102,6 +1104,16 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .sessionPicker {
     min-width: 4em;
     max-width: 10em;
+}
+
+/* Beside the pickers it clears for, not with the view's own Clear. */
+.clearShownActions {
+    margin-left: 2px;
+}
+
+.clearShownActions:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
 }
 
 .connectionPicker:focus-visible,

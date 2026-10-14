@@ -214,6 +214,17 @@ picked by the user (`selectConnection`) stays. Two helpers own the rule:
 `#claimIfUnset(connection)` for the takeover `startRun` and `appendEvent`
 both apply - it used to be spelled out at seven sites.
 
+**General Actions rows are shown on every connection too** (2026-10-14,
+the user's call): a sandbox deploy, a REST Daemon's steps and the logged
+connection-list calls are no one connection's and mean as much whichever
+is on show. `#shownActions` merges them into the connection's own rows
+by `IActionRow.seq`, a running number `#add` gives every row (a replaced
+row keeps its own), and labels them `General` in the Conn column, which
+`showsConnectionColumn` then shows. No session filter hides them. This
+replaced `holdGeneralActions()`, which kept the panel on General Actions
+while a deploy's steps ran so a connection reporting meanwhile could not
+take it over.
+
 The second picker offers **All Sessions** first, which is what the view
 opens on and the only case in which the actions name a connection per
 row. It lists the connections open on the URI and any that only the
@@ -225,11 +236,22 @@ URI goes back to all of them, since one URI's connections are not
 another's.
 
 A view title can hold buttons, so **Clear Actions** does live there
-(`mariadb.clearResultView`, `$(clear-all)`). It empties what is on show:
-with All picked, the connection's whole log *and* every one of its
-result set tabs, along with the apply contexts those were written back
-through; with one connection picked, only its rows and its tabs. Other
-URIs are untouched.
+(`mariadb.clearResultView`, `$(clear-all)`). It empties everything: every
+URI's actions, General Actions' included, *and* every result set tab,
+along with the apply contexts those were written back through. The
+`$(clear-all)` button right of the pickers (`clearActions` message,
+`clearShownActions()`) drops only the actions they pick: the URI's own,
+or one session's, or General Actions'; the General Actions rows shown
+among a URI's stay, and so do the tabs.
+
+**The actions outlive the window**: kept in `workspaceState`
+(`mariadb.resultView.actions`), saved a second after they last changed
+(`ACTIONS_SAVE_DELAY_MS`) and on dispose, and put back by the
+constructor with the URI that has the newest row on show. A kept row's
+ids become `saved-<seq>` (children `-<index>`), since this session's ids
+start over and a new `event1` would replace the old one; its result set
+link goes (the tabs are not kept), and a row still pending when VS Code
+closed is an error saying it never finished.
 
 The connection on show is also named beside the view's title through
 `WebviewView.description`, as the Output panel names its channel.

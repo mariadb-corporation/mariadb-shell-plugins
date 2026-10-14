@@ -38,7 +38,7 @@ import type {
     IViewState,
 } from "../../src/webview/protocol.js";
 import { createQueryBuilder } from "../../src/sql/resultSetQueryBuilder.js";
-import { ActionsGrid } from "./ActionsGrid.js";
+import { ActionsGrid, showsConnectionColumn } from "./ActionsGrid.js";
 import { cellActionsOf, pageKeyOf, ResultGrid } from "./ResultGrid.js";
 import {
     ResultStatusBar,
@@ -1070,8 +1070,7 @@ export const App = (): JSX.Element => {
                         <ActionsGrid
                             rows={state.actions}
                             connection={state.connection}
-                            showConnection={state.session === undefined
-                                && state.sessions.length > 0}
+                            showConnection={showsConnectionColumn(state)}
                             availableResultIds={availableResultIds}
                             onJumpToResult={jumpToResult}
                             onGoToStatement={goToStatement}
@@ -1282,6 +1281,18 @@ export const App = (): JSX.Element => {
                         })}
                     </select>
                 )}
+
+                <button
+                    type="button"
+                    class="clearShownActions codicon codicon-clear-all"
+                    title={state.session === undefined
+                        ? `Clear the actions of ${state.connection}`
+                        : `Clear the actions of session ${state.session}`}
+                    aria-label="Clear these actions"
+                    onClick={() => {
+                        post({ type: "clearActions" });
+                    }}
+                />
             </footer>}
         </div>
     );

@@ -215,6 +215,11 @@ export interface IActionRow {
      * action failed and its log says why: a task's, a REST Daemon's.
      */
     logPath?: string;
+    /**
+     * The order it was put up in, across every connection: what places a
+     * General Actions row among a connection's own.
+     */
+    seq?: number;
 }
 
 /**
@@ -388,6 +393,11 @@ export type WebviewMessage =
     | { type: "revealStatement"; source: IStatementSource }
     /** Open the log an action row names, in an editor. */
     | { type: "openLog"; path: string }
+    /**
+     * Drop the actions of what the pickers show: the connection's own,
+     * or its session's, or General Actions'.
+     */
+    | { type: "clearActions" }
     /** Show another connection's actions and results. */
     | { type: "selectConnection"; connection: string }
     /**

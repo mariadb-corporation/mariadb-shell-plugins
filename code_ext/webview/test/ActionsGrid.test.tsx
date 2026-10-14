@@ -22,6 +22,7 @@ import "./setup.js";
 import {
     actionClick,
     buildActionColumns,
+    showsConnectionColumn,
     cellCopyText,
     clickedOn,
     formatElapsed,
@@ -619,4 +620,29 @@ describe("buildActionColumns", () => {
             .toBeUndefined();
     });
 
+});
+
+describe("showsConnectionColumn", () => {
+    const row = (connection: string): IActionRow => {
+        return {
+            id: connection, time: "12:00:00.000", connection,
+            statement: "", message: "", kind: "info", role: "event",
+        };
+    };
+
+    it("shows the column where all sessions are", () => {
+        expect(showsConnectionColumn({ connection: "a", sessions: [
+            { label: "1", open: true }], actions: [] })).toBe(true);
+        expect(showsConnectionColumn({ connection: "a", session: "1",
+            sessions: [{ label: "1", open: true }], actions: [] }))
+            .toBe(false);
+    });
+
+    it("shows the column for General Actions among a connection's own", () => {
+        expect(showsConnectionColumn({ connection: "a", session: "1",
+            sessions: [{ label: "1", open: true }],
+            actions: [row("a"), row("General Actions")] })).toBe(true);
+        expect(showsConnectionColumn({ connection: "General Actions",
+            sessions: [], actions: [row("General Actions")] })).toBe(false);
+    });
 });

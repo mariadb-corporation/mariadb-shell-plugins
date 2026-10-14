@@ -29,7 +29,7 @@ import {
     type RowComponent,
 } from "tabulator-tables";
 
-import type { IActionRow } from "../../src/webview/protocol.js";
+import type { IActionRow, IViewState } from "../../src/webview/protocol.js";
 import {
     attachOverflowPopup,
     closeOverflowPopup,
@@ -466,10 +466,29 @@ export const buildActionColumns = (
                 headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
-                    "Which connection open on this URI the row is from",
+                    "Which connection open on this URI the row is from, "
+                    + "or General for a General Action",
             } satisfies ColumnDefinition]
             : []),
     ];
+};
+
+/**
+ * Whether the actions need the Conn column: where they come from several
+ * connections open on the URI, all of them shown, or where General
+ * Actions are shown among a connection's own, which it names.
+ *
+ * @param state What the view shows.
+ *
+ * @returns Whether to show the column.
+ */
+export const showsConnectionColumn = (
+    state: Pick<IViewState, "connection" | "session" | "sessions" | "actions">,
+): boolean => {
+    return (state.session === undefined && state.sessions.length > 0)
+        || state.actions.some((row) => {
+            return row.connection !== state.connection;
+        });
 };
 
 /**

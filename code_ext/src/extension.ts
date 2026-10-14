@@ -253,7 +253,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
         return startServer(session, log, onPhase);
     }, log);
     showStartupInView(starter);
-    const resultView = new ResultViewProvider(context.extensionUri, log);
+    // The actions are the workspace's, kept for its next session.
+    const resultView = new ResultViewProvider(context.extensionUri, log,
+        context.workspaceState);
     const settings = createWorkspaceSettings();
     const connections = new ConnectionManager(
         async () => {
@@ -404,8 +406,6 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const followHost = {
         put: putAction,
         deployments: () => { return restdTree.deployments(); },
-        // As a deploy's steps do: the panel stays where they show.
-        hold: () => { return resultView.holdGeneralActions(); },
     };
     // A sandbox's change, its daemon following; the REST Daemons view
     // lists again however it went.
@@ -1019,19 +1019,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         .trusted;
                 },
                 deployWithRest: async (options, rest) => {
-                    // The steps go on after the dialog closes; the panel
-                    // stays where they can be watched until the last one.
-                    const release = resultView.holdGeneralActions();
-                    let deployed;
-                    try {
-                        deployed = await deploySandboxWithRest(
-                            sandboxRestHost, options, rest);
-                    } catch (error) {
-                        release();
-                        throw error;
-                    }
+                    // The steps go on after the dialog closes. They are
+                    // General Actions, shown whichever connection is.
+                    const deployed = await deploySandboxWithRest(
+                        sandboxRestHost, options, rest);
                     void deployed.rest.then((succeeded) => {
-                        release();
                         restdTree.refresh();
                         if (!succeeded) {
                             // The sandbox is there; what failed after it

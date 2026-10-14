@@ -96,13 +96,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `restd` entry (with its log where it failed). Whether to put the action's
   group up front is told by the REST Daemons view's cached list; a daemon
   it does not know of yet gets its rows once the call says so.
-- **The panel stays on General Actions while a sandbox's steps run**
-  (2026-10-14, the user's call): the REST steps open a connection to the
-  new sandbox, and the first connection to report anything takes over a
-  panel that is on General Actions by default. `ResultViewProvider.
-  holdGeneralActions()` blocks that until the last step ends; the deploy
-  with the REST Service and `followSandbox` hold it. A connection the user
-  picked is never touched.
+- **A sandbox's steps can be watched on any connection**: they are General
+  Actions, which every connection's Actions tab shows among its own (see
+  result-view.md); there is no hold on the panel any more.
 - **A grouped deploy calls the plain sandbox API** (`plainSandboxApi` in
   `extension.ts`), not the logging one, which would put up a row of its
   own; `SandboxStore.settle(port)` then updates the Sandboxes view.

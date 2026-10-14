@@ -253,11 +253,6 @@ export interface IRestdFollowHost {
     put: ActionPutter;
     /** The REST Daemons as last listed: no call to the server. */
     deployments(): Promise<IRestdDeployment[]>;
-    /**
-     * Keeps the Actions tab on General Actions while the steps run, where
-     * the panel is there by default; returns what lets go of it.
-     */
-    hold?(): () => void;
 }
 
 /** What a change is called while it runs and once done. */
@@ -301,7 +296,6 @@ export const followSandbox = async (
     const sandbox = `Sandbox on port ${String(port)}`;
     const sandboxWords = { doing: `${doing} ${sandbox}`, done: `${done} ${sandbox}` };
     const call = `sandbox.${change}(port=${String(port)})`;
-    const release = known ? host.hold?.() : undefined;
     let group = known
         ? new ActionGroup(host.put, GENERAL_ACTIONS, sandboxWords)
         : undefined;
@@ -341,6 +335,5 @@ export const followSandbox = async (
         }
     } finally {
         group?.finish();
-        release?.();
     }
 };
