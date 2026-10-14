@@ -113,3 +113,15 @@ input.invalid ~ .field-hint,
     grid-column: 1 / -1;
     margin-top: -0.25rem;
 }
+
+/* The REST Service's checkbox and what it says, across both columns,
+   above the four fields it shows. */
+.rest-choice {
+    grid-column: 1 / -1;
+    margin-top: 0.5rem;
+}
+
+.rest-note {
+    grid-column: 1 / -1;
+    margin-top: -0.25rem;
+}

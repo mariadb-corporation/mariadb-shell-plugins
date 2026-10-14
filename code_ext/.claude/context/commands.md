@@ -28,6 +28,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.startSandbox` | Start Sandbox | Inline on, and context menu of, a STOPPED sandbox |
 | `mariadb.stopSandbox` | Stop Sandbox | Inline on, and context menu of, a RUNNING sandbox |
 | `mariadb.deleteSandbox` | Delete Sandbox | Inline on, and context menu of, every sandbox not busy. Asks first; stops a running one before deleting |
+| `mariadb.restd.setUp` | Set Up MariaDB REST Daemon… | Context menu of a CONNECTED connection (`7_mrs`). Opens the `restd` MRS dialog (see [rest.md](rest.md)) |
+| `mariadb.restd.refresh` | Refresh REST Daemons | REST Daemons view title; Retry in its failed welcome content |
+| `mariadb.restd.start` | Start REST Daemon | Inline on, and context menu of, a STOPPED daemon |
+| `mariadb.restd.stop` | Stop REST Daemon | Inline on, and context menu of, a RUNNING daemon |
+| `mariadb.restd.openInBrowser` | Open in Browser | Context menu of a RUNNING daemon: its `https://localhost:<port>` |
+| `mariadb.restd.openLog` | Open REST Daemon Log | Context menu of every daemon: its `log/mariadb-restd.log` |
+| `mariadb.restd.delete` | Delete REST Daemon | Inline on, and context menu of, every daemon not busy. Asks first; drops the account the setup made through the deployment's connection, or offers to delete the folder only where its server cannot be reached |
 | `mariadb.selectRows` | Select Rows | Inline on (`toolbar-execute.svg`), and context menu of, a table or view in the Connections view. Runs `SELECT * FROM \`schema\`.\`name\`` and opens the result maximized, in an editor tab titled `schema.name`. Hidden from the palette |
 | `mariadb.dumpInstance` / `loadDump` / `copyInstance` | Dump Instance to Disk... / Load Dump from Disk... / Copy Instance to Another Server... | Dump and Load submenu of a connection. Open the util dialog; see dump-and-load.md. Hidden from the palette |
 | `mariadb.dumpSchemas` / `copySchemas` | Dump Schema to Disk... / Copy Schema to Another Server... | Dump and Load submenu of a schema; every selected schema of the connection. Hidden from the palette |

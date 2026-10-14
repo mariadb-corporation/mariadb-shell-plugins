@@ -211,9 +211,13 @@ path to `/openApiUi`.
 
 ## Decisions
 
+- **The REST Daemon is in now** (2026-10-14, `wip/restd_support`): the
+  earlier "list and delete only" decision is replaced. Setting up,
+  starting, stopping and deleting mariadb-restd deployments is the MCP
+  `rest` group and the REST Daemons view; see [rest.md](rest.md).
+
 - Old features left out: MySQL Router bootstrap/start/stop/kill and service
-  debug (the REST Daemon is not in these repos; user decision: list and
-  delete only), JSON dump/load of schemas/objects (plugin functions
+  debug, JSON dump/load of schemas/objects (plugin functions
   removed), "Include All Objects" SHOW CREATE variants (no such REST SQL),
   load project from URL, the major-upgrade drop-and-recreate prompt (5.0.0 is
   the first release).

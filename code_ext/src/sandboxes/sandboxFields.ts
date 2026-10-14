@@ -21,6 +21,7 @@ import {
     usesSshTunnel,
 } from "../connections/connectionUri.js";
 import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
+import { passwordProblems, servicePathProblem } from "../mrs/mrsDialogs.js";
 
 /**
  * The New Sandbox dialog's fields and what they turn into. Pure, so the
@@ -58,6 +59,19 @@ export interface ISandboxFields {
     timeout: string;
     /** Whether any MCP client may open the connection a deploy registers. */
     mcpAccess: boolean;
+    /**
+     * Whether the sandbox is configured for the MariaDB REST Service and
+     * gets a REST Daemon serving it. The REST fields are only shown,
+     * checked and used while it is on.
+     */
+    configureRest: boolean;
+    /** The REST Daemon's port; empty for the sandbox's port times ten. */
+    restdPort: string;
+    /** The REST service the deploy creates, `/myService/v1`. */
+    restServicePath: string;
+    /** The REST user who can sign in to it. */
+    restUserName: string;
+    restUserPassword: string;
 }
 
 /** The fields a problem can be about, so the dialog can mark the one. */
@@ -116,8 +130,70 @@ export const emptySandboxFields = (
         // As an agent's own deploy does: a local test server is what an AI
         // assistant is most likely to be asked to work on.
         mcpAccess: true,
+        configureRest: false,
+        restdPort: "",
+        // As a new service in the REST Service tree starts.
+        restServicePath: "/myService/v1",
+        restUserName: "dba",
+        restUserPassword: "",
     };
 };
+
+/** How many times the sandbox's port its REST Daemon listens on. */
+export const RESTD_PORT_FACTOR = 10;
+
+/** The highest port there is. */
+export const MAX_PORT = 65535;
+
+/**
+ * The port a sandbox's REST Daemon gets when none is typed: ten times
+ * the sandbox's, so the two are easy to relate - 33110 for 3311.
+ *
+ * @param port The sandbox's port, as typed.
+ *
+ * @returns The port, or undefined where the sandbox's is no port yet, or
+ *          ten times it is none; the server picks a free one from 8443 up
+ *          then.
+ */
+export const defaultRestdPort = (port: string): number | undefined => {
+    const sandboxPort = wholeNumber(port);
+    if (sandboxPort === undefined) {
+        return undefined;
+    }
+
+    const restdPort = sandboxPort * RESTD_PORT_FACTOR;
+    return restdPort <= MAX_PORT ? restdPort : undefined;
+};
+
+/**
+ * The port the server tries first for a daemon whose sandbox's port times
+ * ten is none, taking the next free one where it is in use.
+ */
+export const FALLBACK_RESTD_PORT = 8443;
+
+/**
+ * Where the REST service will answer, as the dialog tells it under the
+ * service's name.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns `https://localhost:<port><service path>`.
+ */
+export const restServiceUrl = (fields: ISandboxFields): string => {
+    const port = fields.restdPort.trim()
+        || String(defaultRestdPort(fields.port) ?? FALLBACK_RESTD_PORT);
+
+    return `https://localhost:${port}${fields.restServicePath.trim()}`;
+};
+
+/** What the REST part of the dialog asks the deploy to set up. */
+export interface ISandboxRestOptions {
+    /** The REST Daemon's port; the server picks one when left out. */
+    restdPort?: number;
+    servicePath: string;
+    userName: string;
+    password: string;
+}
 
 /**
  * The ports of this machine that configured connections point at.
@@ -350,7 +426,83 @@ export const sandboxFieldProblem = (
         }
     }
 
+    return fields.configureRest ? restFieldProblem(fields, port) : undefined;
+};
+
+/**
+ * Checks the REST fields.
+ *
+ * @param fields The fields as typed.
+ * @param sandboxPort The sandbox's port, checked already.
+ *
+ * @returns The first problem, or undefined.
+ */
+const restFieldProblem = (
+    fields: ISandboxFields,
+    sandboxPort: number,
+): ISandboxFieldProblem | undefined => {
+    if (fields.restdPort.trim() !== "") {
+        const restdPort = wholeNumber(fields.restdPort);
+        if (restdPort === undefined || restdPort === 0
+            || restdPort > MAX_PORT) {
+            return {
+                field: "restdPort",
+                message: `The port must be between 1 and ${MAX_PORT}.`,
+            };
+        }
+        if (restdPort === sandboxPort) {
+            return {
+                field: "restdPort",
+                message: "The REST Daemon needs a port of its own.",
+            };
+        }
+    }
+
+    const pathProblem = servicePathProblem(fields.restServicePath);
+    if (pathProblem !== undefined) {
+        return { field: "restServicePath", message: pathProblem };
+    }
+
+    if (fields.restUserName.trim() === "") {
+        return {
+            field: "restUserName",
+            message: "Enter the name of the REST user.",
+        };
+    }
+
+    const [passwordProblem] = passwordProblems(fields.restUserPassword,
+        "restUserPassword");
+    if (passwordProblem !== undefined) {
+        return { field: "restUserPassword", message: passwordProblem.message };
+    }
+
     return undefined;
+};
+
+/**
+ * What the REST part of the dialog asks for, once the fields are sound.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns The options, or undefined where the REST Service is not
+ *          wanted.
+ */
+export const sandboxRestOptions = (
+    fields: ISandboxFields,
+): ISandboxRestOptions | undefined => {
+    if (!fields.configureRest) {
+        return undefined;
+    }
+
+    const restdPort = fields.restdPort.trim();
+    return {
+        // Left to the server when not typed: it takes ten times the
+        // sandbox's port when that is free, and finds another when not.
+        ...(restdPort === "" ? {} : { restdPort: Number(restdPort) }),
+        servicePath: fields.restServicePath.trim(),
+        userName: fields.restUserName.trim(),
+        password: fields.restUserPassword,
+    };
 };
 
 /**

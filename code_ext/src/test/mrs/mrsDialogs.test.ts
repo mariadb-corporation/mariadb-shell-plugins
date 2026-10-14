@@ -82,6 +82,9 @@ import {
     uniqueRequestPath,
     type IDbObject,
     openApiUiDefaults,
+    restdDefaults,
+    servicePathProblem,
+    defaultAuthAppStatements,
 } from "../../mrs/mrsDialogs.js";
 import {
     ENABLED_STATE,
@@ -1677,5 +1680,49 @@ describe("the OpenAPI UI", () => {
             `SWAGGER_UI_VERSION = "${OPEN_API_UI_VERSION}"`);
         expect(plugin).toContain(
             `DEFAULT_REQUEST_PATH = "${OPEN_API_UI_PATH}"`);
+    });
+});
+
+describe("the Set Up MariaDB REST Daemon dialog", () => {
+    const context = (schemas: string[]) => {
+        return { server: "db1:3306", user: "admin", metadataSchemas: schemas };
+    };
+
+    it("serves the one metadata schema there is", () => {
+        expect(restdDefaults(context(["mariadb_rest_service"])))
+            .toEqual({ port: "", password: "",
+                metadataSchema: "mariadb_rest_service" });
+        expect(restdDefaults(context([])).metadataSchema).toBe("");
+    });
+
+    it("asks which schema where there are several, and for a port that is one",
+        () => {
+            const two = context(["mariadb_rest_service",
+                "acme_mariadb_rest_service"]);
+            expect(validateDialog("restd", restdDefaults(two), two)
+                .map((problem) => { return problem.field; }))
+                .toEqual(["metadataSchema"]);
+            expect(validateDialog("restd", { port: "0", password: "",
+                metadataSchema: "" }, context([]))
+                .map((problem) => { return problem.field; }))
+                .toEqual(["port"]);
+            expect(validateDialog("restd", { port: "8443", password: "",
+                metadataSchema: "" }, context([]))).toEqual([]);
+        });
+});
+
+describe("what the sandbox dialog shares with the MRS dialogs", () => {
+    it("checks a service path as the service dialog does", () => {
+        expect(servicePathProblem("/myService/v1")).toBeUndefined();
+        expect(servicePathProblem("")).toMatch("must not be empty");
+        expect(servicePathProblem("myService")).toMatch("must start with /");
+        expect(servicePathProblem("/MRS")).toMatch("reserved");
+    });
+
+    it("creates the MRS auth app and a user as Configure does", () => {
+        const [app, user] = defaultAuthAppStatements("dba", "Secret1!");
+        expect(app).toMatch(/^CREATE REST AUTH APP IF NOT EXISTS 'MRS'/u);
+        expect(user).toMatch(/^CREATE REST USER/u);
+        expect(user).toContain("Secret1!");
     });
 });

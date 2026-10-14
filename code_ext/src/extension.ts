@@ -92,6 +92,10 @@ import {
     SANDBOXES_VIEW_ID,
     type ISandboxNode,
 } from "./tree/sandboxesTreeProvider.js";
+import type { IRestApi } from "./mcp/restApi.js";
+import { RestdCommands, writeRestdLog } from "./rest/restdCommands.js";
+import { deploySandboxWithRest, followSandbox } from "./rest/sandboxRest.js";
+import { RESTD_VIEW_ID, RestdTreeProvider } from "./tree/restdTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import { SqlModes } from "./connections/sqlModes.js";
 import { ConnectionColorDecorations } from "./tree/connectionColors.js";
@@ -352,6 +356,31 @@ export const activate = (context: vscode.ExtensionContext): void => {
     };
     const sandboxStore = new SandboxStore(sandboxApi);
     const sandboxes = new SandboxesTreeProvider(sandboxStore, log, starter);
+    // The REST Daemons: a sandbox's, set up with it, and any connection's.
+    const restApi = async (): Promise<IRestApi> => {
+        if (session.restApi === undefined) {
+            await starter.start();
+        }
+        const api = session.restApi;
+        if (api === undefined) {
+            throw new Error("The MCP server is not running.");
+        }
+
+        return api;
+    };
+    const restdTree = new RestdTreeProvider(async () => {
+        return (await restApi()).getStatus();
+    }, log, starter);
+    // A failed setup's full text, for its row to open; kept beside the
+    // task logs.
+    const restdLogFolder = path.join(
+        (context.storageUri ?? context.globalStorageUri).fsPath, "restd-logs");
+    const putAction = (connection: string, row: IActionRow): void => {
+        void resultView.putAction(connection, row);
+    };
+    // The daemon of a sandbox follows it, each step a row of the
+    // sandbox's action.
+    const followHost = { put: putAction, restApi };
     // A deploy registers a connection to the new sandbox and a delete
     // removes it, both server-side, so the Connections view reads its list
     // again.
@@ -427,6 +456,29 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const sandboxesView = vscode.window.createTreeView(SANDBOXES_VIEW_ID, {
         treeDataProvider: sandboxes,
     });
+    const restdView = vscode.window.createTreeView(RESTD_VIEW_ID, {
+        treeDataProvider: restdTree,
+    });
+    const restdCommands = new RestdCommands({
+        extensionUri: context.extensionUri,
+        connect: (uri) => {
+            return connections.connect(uri, UI_BACKEND_SESSION);
+        },
+        metadataSchemas: async (connectionId) => {
+            return (await mrsApi.metadataSchemas(connectionId))
+                .map((schema) => { return schema.schema_name; });
+        },
+        restApi,
+        tree: restdTree,
+        put: putAction,
+        showActions: (connection) => {
+            void resultView.showActions(connection);
+        },
+        logFolder: restdLogFolder,
+        log,
+    });
+    context.subscriptions.push(restdTree, restdView,
+        ...restdCommands.register());
 
     context.subscriptions.push(...mrsCommands.register());
     // Dumps, loads, copies, exports and imports run as tasks in the server;
@@ -458,15 +510,18 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // Each task is a row of its connection's Actions in the panel, with
     // what it reported under it, and has a log file of its own that
     // outlives the window and goes when its row leaves the Tasks view.
-    const taskActions = new TaskActionLog((connection, row) => {
-        void resultView.putAction(connection, row);
-    }, UI_BACKEND_SESSION);
+    //
     // The logs are kept with the task list, which is the workspace's: in
     // its own storage, which no other window uses. A window without a
     // workspace has none, and shares the global storage with every other
     // such window, so it deletes only the logs of its own tasks.
     const taskLogs = new TaskLogs(path.join(
         (context.storageUri ?? context.globalStorageUri).fsPath, "task-logs"), log);
+    const taskActions = new TaskActionLog((connection, row) => {
+        void resultView.putAction(connection, row);
+    }, UI_BACKEND_SESSION, undefined, (taskId) => {
+        return taskLogs.pathOf(taskId);
+    });
     taskMonitor.onDidReport((report) => {
         taskActions.report(report);
         void taskLogs.report(report);
@@ -901,6 +956,33 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         work,
                     ));
                 },
+                deployWithRest: async (options, rest) => {
+                    const deployed = await deploySandboxWithRest({
+                        put: putAction,
+                        deploy: (deploy) => {
+                            return sandboxStore.deploy(deploy, true);
+                        },
+                        connect: (uri) => {
+                            return connections.connect(uri,
+                                UI_BACKEND_SESSION);
+                        },
+                        api: () => { return connections.api(); },
+                        restApi,
+                        writeLog: (name, text) => {
+                            return writeRestdLog(restdLogFolder, name, text);
+                        },
+                    }, options, rest);
+                    void deployed.rest.then((succeeded) => {
+                        restdTree.refresh();
+                        if (!succeeded) {
+                            // The sandbox is there; what failed after it
+                            // is in its row, with a log to open.
+                            void resultView.showActions(GENERAL_ACTIONS);
+                        }
+                    });
+
+                    return deployed.message;
+                },
                 onCreated: () => {
                     // The store has dropped its list, so this reads it.
                     // What was done is the deploy's row in the Actions tab.
@@ -922,7 +1004,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 }
 
                 await guard(log, async () => {
-                    await sandboxes.start(node);
+                    try {
+                        await followSandbox(followHost, node.port, "start",
+                            async () => { await sandboxes.start(node); });
+                    } finally {
+                        restdTree.refresh();
+                    }
                 });
             },
         ),
@@ -936,7 +1023,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
 
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
-                    await sandboxes.stop(node);
+                    try {
+                        await followSandbox(followHost, node.port, "stop",
+                            async () => { await sandboxes.stop(node); });
+                    } finally {
+                        restdTree.refresh();
+                    }
                 });
             },
         ),
@@ -970,11 +1062,13 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
                     try {
-                        await sandboxes.delete(node);
+                        await followSandbox(followHost, node.port, "delete",
+                            async () => { await sandboxes.delete(node); });
                     } finally {
                         // Even a failed delete may have got as far as
                         // removing the connection.
                         connectionsChanged();
+                        restdTree.refresh();
                     }
                 });
             },

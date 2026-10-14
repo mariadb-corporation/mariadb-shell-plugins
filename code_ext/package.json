@@ -89,6 +89,11 @@
           "initialSize": 16
         },
         {
+          "id": "mariadb.restDaemons",
+          "name": "REST Daemons",
+          "initialSize": 16
+        },
+        {
           "id": "mariadb.tasks",
           "name": "Tasks",
           "visibility": "collapsed",
@@ -144,6 +149,26 @@
         "view": "mariadb.sandboxes",
         "contents": "A sandbox is a MariaDB server of its own, on this machine, for trying things out. None has been deployed yet.\n[New Sandbox…](command:mariadb.addSandbox)",
         "when": "mariadb.sandboxesView == listed"
+      },
+      {
+        "view": "mariadb.restDaemons",
+        "contents": "Looking for MariaDB REST Daemons...",
+        "when": "mariadb.restDaemonsView != installing && mariadb.restDaemonsView != failed && mariadb.restDaemonsView != listed"
+      },
+      {
+        "view": "mariadb.restDaemons",
+        "contents": "Installing MariaDB Shell...",
+        "when": "mariadb.restDaemonsView == installing"
+      },
+      {
+        "view": "mariadb.restDaemons",
+        "contents": "The REST Daemons could not be listed. The log says why.\n[Show Log](command:mariadb.showMcpServerLog)\n[Retry](command:mariadb.restd.refresh)",
+        "when": "mariadb.restDaemonsView == failed"
+      },
+      {
+        "view": "mariadb.restDaemons",
+        "contents": "A MariaDB REST Daemon serves the REST services of a server. None has been set up yet: tick Configure MariaDB REST Service in the New Sandbox dialog, or choose Set Up MariaDB REST Daemon... from a connection's menu.",
+        "when": "mariadb.restDaemonsView == listed"
       }
     ],
     "configuration": {
@@ -402,6 +427,47 @@
         "title": "Delete Sandbox",
         "category": "MariaDB",
         "icon": "$(trash)"
+      },
+      {
+        "command": "mariadb.restd.refresh",
+        "title": "Refresh REST Daemons",
+        "category": "MariaDB",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mariadb.restd.setUp",
+        "title": "Set Up MariaDB REST Daemon…",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.restd.start",
+        "title": "Start REST Daemon",
+        "category": "MariaDB",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "mariadb.restd.stop",
+        "title": "Stop REST Daemon",
+        "category": "MariaDB",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "mariadb.restd.delete",
+        "title": "Delete REST Daemon",
+        "category": "MariaDB",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mariadb.restd.openLog",
+        "title": "Open REST Daemon Log",
+        "category": "MariaDB",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mariadb.restd.openInBrowser",
+        "title": "Open in Browser",
+        "category": "MariaDB",
+        "icon": "$(globe)"
       },
       {
         "command": "mariadb.clearResultView",
@@ -846,6 +912,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "mariadb.restd.refresh",
+          "when": "view == mariadb.restDaemons",
+          "group": "navigation@1"
+        },
+        {
           "command": "mariadb.clearResultView",
           "when": "view == mariadb.results",
           "group": "navigation@1"
@@ -998,9 +1069,54 @@
           "group": "2_manage@1"
         },
         {
+          "command": "mariadb.restd.start",
+          "when": "view == mariadb.restDaemons && viewItem == mariadbRestd.stopped",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.restd.stop",
+          "when": "view == mariadb.restDaemons && viewItem == mariadbRestd.running",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.restd.delete",
+          "when": "view == mariadb.restDaemons && viewItem =~ /^mariadbRestd\\.(running|stopped)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mariadb.restd.start",
+          "when": "view == mariadb.restDaemons && viewItem == mariadbRestd.stopped",
+          "group": "1_restd@1"
+        },
+        {
+          "command": "mariadb.restd.stop",
+          "when": "view == mariadb.restDaemons && viewItem == mariadbRestd.running",
+          "group": "1_restd@1"
+        },
+        {
+          "command": "mariadb.restd.openInBrowser",
+          "when": "view == mariadb.restDaemons && viewItem == mariadbRestd.running",
+          "group": "2_open@1"
+        },
+        {
+          "command": "mariadb.restd.openLog",
+          "when": "view == mariadb.restDaemons && viewItem =~ /^mariadbRestd\\./",
+          "group": "2_open@2"
+        },
+        {
+          "command": "mariadb.restd.delete",
+          "when": "view == mariadb.restDaemons && viewItem =~ /^mariadbRestd\\.(running|stopped)$/",
+          "group": "3_manage@1"
+        },
+        {
           "command": "mariadb.mrs.configure",
           "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
           "group": "7_mrs@1"
+        },
+        {
+          "command": "mariadb.restd.setUp",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
+          "group": "7_mrs@3"
         },
         {
           "command": "mariadb.mrs.docs",
@@ -1600,6 +1716,34 @@
         {
           "command": "mariadb.mrs.deployOpenApiUi",
           "when": "false"
+        },
+        {
+          "command": "mariadb.restd.setUp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.start",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.stop",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.delete",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.openLog",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.openInBrowser",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.restd.refresh",
+          "when": "false"
         }
       ],
       "mariadb.mrs.copyToClipboard": [
@@ -1932,7 +2076,8 @@
     "ui-test": "npm run ui-test:build && node out/ui-test/run.js",
     "ui-test:core": "npm run ui-test -- core",
     "ui-test:mrs": "npm run ui-test -- mrs",
-    "ui-test:dump-load": "npm run ui-test -- dump-load"
+    "ui-test:dump-load": "npm run ui-test -- dump-load",
+    "ui-test:restd": "npm run ui-test -- restd"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",

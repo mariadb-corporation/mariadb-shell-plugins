@@ -282,6 +282,44 @@ describe("SandboxEditorPanel", () => {
         expect(posted()).toContainEqual({ type: "busy", busy: true });
     });
 
+    it("deploys with the REST Service where it is ticked", async () => {
+        const state = createHost();
+        const withRest: unknown[] = [];
+        state.host.deployWithRest = (options, rest) => {
+            withRest.push([options.port, rest]);
+
+            return Promise.resolve("Deployed with REST.");
+        };
+        SandboxEditorPanel.show(extensionUri as never, state.host);
+
+        await receive({
+            type: "create",
+            fields: fields({ configureRest: true,
+                restUserPassword: "Secret1!" }),
+        });
+
+        expect(withRest).toEqual([[3310, {
+            servicePath: "/myService/v1", userName: "dba",
+            password: "Secret1!",
+        }]]);
+        // Not deployed a second time, without it.
+        expect(state.deployed).toEqual([]);
+        expect(state.created).toEqual(["Deployed with REST."]);
+        expect(currentPanel().disposed).toBe(true);
+    });
+
+    it("deploys as before where the REST Service is not ticked", async () => {
+        const state = createHost();
+        state.host.deployWithRest = () => {
+            throw new Error("not wanted");
+        };
+        SandboxEditorPanel.show(extensionUri as never, state.host);
+
+        await receive({ type: "create", fields: fields() });
+
+        expect(state.deployed).toHaveLength(1);
+    });
+
     it("refuses passwords that do not match before deploying", async () => {
         const state = createHost();
         SandboxEditorPanel.show(extensionUri as never, state.host);

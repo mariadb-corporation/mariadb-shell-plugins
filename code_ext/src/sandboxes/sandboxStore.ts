@@ -33,7 +33,7 @@ export interface ISandboxStore {
     refreshInstance(port: number): Promise<ISandboxInstance | undefined>;
     /** The ports of the sandboxes last listed; empty before the first. */
     readonly ports: number[];
-    deploy(options: ISandboxDeployOptions): Promise<string>;
+    deploy(options: ISandboxDeployOptions, quiet?: boolean): Promise<string>;
     start(port: number): Promise<string>;
     stop(port: number): Promise<string>;
     delete(port: number): Promise<string>;
@@ -173,12 +173,16 @@ export class SandboxStore implements ISandboxStore {
      * Deploys a sandbox, and asks the server about it afterwards.
      *
      * @param options What to deploy.
+     * @param quiet Whether its caller reports it, as one step of more.
      *
      * @returns The server's confirmation.
      */
-    public async deploy(options: ISandboxDeployOptions): Promise<string> {
+    public async deploy(
+        options: ISandboxDeployOptions,
+        quiet = false,
+    ): Promise<string> {
         try {
-            return await (await this.api()).deploy(options);
+            return await (await this.api()).deploy(options, quiet);
         } finally {
             // Success or failure: only the server knows which version the
             // new sandbox runs, and a deploy that failed late may have left

@@ -74,7 +74,12 @@ export const LIFECYCLE_TIMEOUT_MS = 3 * 60 * 1000;
 export interface ISandboxApi {
     listInstances(port?: number): Promise<ISandboxInstance[]>;
     listAvailableVersions(series?: string): Promise<string[]>;
-    deploy(options: ISandboxDeployOptions): Promise<string>;
+    /**
+     * @param quiet Whether the deploy is reported by its caller instead,
+     *              as one step of more: a wrapper that reports calls
+     *              leaves it alone then.
+     */
+    deploy(options: ISandboxDeployOptions, quiet?: boolean): Promise<string>;
     start(port: number): Promise<string>;
     stop(port: number): Promise<string>;
     delete(port: number): Promise<string>;

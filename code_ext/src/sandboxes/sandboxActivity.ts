@@ -95,7 +95,7 @@ export const sandboxDeployRow = (state: ISandboxDeployState): IActionRow => {
  *
  * @returns The call as the row shows it, the password masked.
  */
-const deployCall = (options: ISandboxDeployOptions): string => {
+export const deployCall = (options: ISandboxDeployOptions): string => {
     return `sandbox.deploy(${callArguments({
         port: options.port,
         // Whether one was given, never what it is - and the shell refuses a
@@ -162,7 +162,10 @@ export const createLoggingSandboxApi = (
         },
         // Always a row of its own, whatever the setting: it can take
         // minutes, and goes on when its dialog is closed.
-        deploy: async (options) => {
+        deploy: async (options, quiet) => {
+            if (quiet === true) {
+                return api.deploy(options);
+            }
             deploys += 1;
             const state = {
                 id: `sandbox-deploy-${String(deploys)}`, port: options.port,

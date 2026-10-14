@@ -76,7 +76,8 @@ export type MrsDialogKind =
     | "contentSet"
     | "authApp"
     | "user"
-    | "sdkExport";
+    | "sdkExport"
+    | "restd";
 
 /** What is wrong with a field. */
 export interface IDialogProblem {
@@ -476,6 +477,38 @@ export const configureOptions = (values: IConfigureValues): JsonObject => {
 export const DEFAULT_AUTH_APP = "MRS";
 
 /**
+ * The MRS auth app and a user who can sign in with it: what a newly
+ * configured instance gets, so its services can be tried at once.
+ *
+ * @param user The REST user's name.
+ * @param password Their password.
+ *
+ * @returns The statements that create them.
+ */
+export const defaultAuthAppStatements = (
+    user: string,
+    password: string,
+): string[] => {
+    return [
+        `CREATE REST AUTH APP IF NOT EXISTS '${DEFAULT_AUTH_APP}' `
+        + "VENDOR MRS COMMENT 'MRS Auth App' "
+        + "DO NOT ALLOW NEW USERS TO REGISTER "
+        + "DEFAULT ROLE 'Full Access';",
+        createUserSql({
+            name: user,
+            authApp: DEFAULT_AUTH_APP,
+            password,
+            email: "",
+            vendorUserId: "",
+            mappedUserId: "",
+            loginPermitted: true,
+            options: null,
+            appOptions: null,
+        }),
+    ];
+};
+
+/**
  * @param values The configuration dialog's fields.
  * @param context What it was opened on.
  *
@@ -493,23 +526,8 @@ export const configureStatements = (
                     ? {} : { metadataSchema: values.metadataSchema }),
             }),
             ...(values.createAuthApp && values.authAppUser !== ""
-                ? [
-                    `CREATE REST AUTH APP IF NOT EXISTS '${DEFAULT_AUTH_APP}' `
-                    + "VENDOR MRS COMMENT 'MRS Auth App' "
-                    + "DO NOT ALLOW NEW USERS TO REGISTER "
-                    + "DEFAULT ROLE 'Full Access';",
-                    createUserSql({
-                        name: values.authAppUser,
-                        authApp: DEFAULT_AUTH_APP,
-                        password: values.authAppPassword,
-                        email: "",
-                        vendorUserId: "",
-                        mappedUserId: "",
-                        loginPermitted: true,
-                        options: null,
-                        appOptions: null,
-                    }),
-                ]
+                ? defaultAuthAppStatements(values.authAppUser,
+                    values.authAppPassword)
                 : []),
         ];
     }
@@ -630,25 +648,33 @@ export const serviceDefaults = (
     };
 };
 
+/**
+ * @param servicePath A service's `[devs@]/path`.
+ *
+ * @returns What is wrong with it, or undefined.
+ */
+export const servicePathProblem = (servicePath: string): string | undefined => {
+    const path = servicePath.slice(servicePath.lastIndexOf("@") + 1);
+    if (servicePath.trim() === "") {
+        return "The service path must not be empty.";
+    }
+    if (!path.startsWith("/")) {
+        return "The request path must start with /.";
+    }
+    if (path.toLowerCase() === "/mrs") {
+        return `The request path \`${path}\` is reserved and cannot be used.`;
+    }
+
+    return undefined;
+};
+
 export const validateService = (
     values: IServiceDialogValues,
 ): IDialogProblem[] => {
     const problems: IDialogProblem[] = [];
-    const path = values.path.slice(values.path.lastIndexOf("@") + 1);
-    if (values.path.trim() === "") {
-        problems.push({
-            field: "path", message: "The service path must not be empty.",
-        });
-    } else if (!path.startsWith("/")) {
-        problems.push({
-            field: "path", message: "The request path must start with /.",
-        });
-    } else if (path.toLowerCase() === "/mrs") {
-        problems.push({
-            field: "path",
-            message: `The request path \`${path}\` is reserved and cannot `
-                + "be used.",
-        });
+    const pathProblem = servicePathProblem(values.path);
+    if (pathProblem !== undefined) {
+        problems.push({ field: "path", message: pathProblem });
     }
     problems.push(...jsonProblems({
         options: values.options, metadata: values.metadata,
@@ -1603,6 +1629,76 @@ export const validateSdkExport = (
     ];
 };
 
+// --- REST Daemon ------------------------------------------------------
+
+/** The Set Up MariaDB REST Daemon dialog's fields. */
+export interface IRestdDialogValues {
+    /** The daemon's port; empty for the first free one from 8443. */
+    port: string;
+    /**
+     * The connection's account's password, which the setup is run with;
+     * empty for the one stored with the connection.
+     */
+    password: string;
+    /** Chosen only where the server has several. */
+    metadataSchema: string;
+}
+
+/** What the dialog is opened on. */
+export interface IRestdContext {
+    /** The server, `host:port`. */
+    server: string;
+    /** The connection's account. */
+    user: string;
+    /**
+     * The server's REST metadata schemas. Where there is none, the setup
+     * creates `mariadb_rest_service`.
+     */
+    metadataSchemas: string[];
+}
+
+/**
+ * @param context What the dialog is opened on.
+ *
+ * @returns Its fields.
+ */
+export const restdDefaults = (context: IRestdContext): IRestdDialogValues => {
+    return {
+        port: "",
+        password: "",
+        metadataSchema: context.metadataSchemas.length === 1
+            ? context.metadataSchemas[0]! : "",
+    };
+};
+
+/**
+ * @param values The fields.
+ * @param context What the dialog is opened on.
+ *
+ * @returns What is wrong with them.
+ */
+export const validateRestd = (
+    values: IRestdDialogValues,
+    context: IRestdContext,
+): IDialogProblem[] => {
+    const problems: IDialogProblem[] = [];
+    const port = values.port.trim();
+    if (port !== "" && (!/^\d+$/.test(port) || Number(port) === 0
+        || Number(port) > 65535)) {
+        problems.push({
+            field: "port", message: "The port must be between 1 and 65535.",
+        });
+    }
+    if (context.metadataSchemas.length > 1 && values.metadataSchema === "") {
+        problems.push({
+            field: "metadataSchema",
+            message: "Choose the metadata schema the REST Daemon serves.",
+        });
+    }
+
+    return problems;
+};
+
 /** A dialog's validation, by kind; the object dialog's needs no context. */
 export const validateDialog = (
     kind: MrsDialogKind,
@@ -1640,6 +1736,11 @@ export const validateDialog = (
         case "user": {
             return validateUser(values as IUserDialogValues,
                 context as IUserContext);
+        }
+
+        case "restd": {
+            return validateRestd(values as IRestdDialogValues,
+                context as IRestdContext);
         }
 
         default: {

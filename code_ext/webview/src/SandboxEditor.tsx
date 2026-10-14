@@ -15,11 +15,15 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { useEffect, useState } from "preact/hooks";
+import type { Ref } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import {
+    defaultRestdPort,
     emptySandboxFields,
+    FALLBACK_RESTD_PORT,
     isServerOnPath,
+    restServiceUrl,
     sandboxConnectionUri,
     sandboxFieldProblem,
     serverVersionChoices,
@@ -61,6 +65,11 @@ const FIELD_TABS: Record<SandboxField, Tab> = {
     mariadbdOptions: "Advanced",
     timeout: "Advanced",
     mcpAccess: "Basic",
+    configureRest: "Basic",
+    restdPort: "Basic",
+    restServicePath: "Basic",
+    restUserName: "Basic",
+    restUserPassword: "Basic",
 };
 
 export const SandboxEditor = (): preact.JSX.Element => {
@@ -75,6 +84,17 @@ export const SandboxEditor = (): preact.JSX.Element => {
     // A problem is only shown once Create was pressed, or for a field that
     // has been typed into: a new dialog is not a list of complaints.
     const [touched, setTouched] = useState<Set<SandboxField>>(new Set());
+    // Ticking Configure MariaDB REST Service with no REST password yet
+    // takes the cursor to it: the one field it cannot do without.
+    const restPassword = useRef<HTMLInputElement>(null);
+    const [focusRestPassword, setFocusRestPassword] = useState(false);
+
+    useEffect(() => {
+        if (focusRestPassword) {
+            restPassword.current?.focus();
+            setFocusRestPassword(false);
+        }
+    }, [focusRestPassword]);
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<SandboxHostMessage>): void => {
@@ -143,11 +163,18 @@ export const SandboxEditor = (): preact.JSX.Element => {
     };
 
     const text = (
-        key: Exclude<SandboxField, "ssl" | "mcpAccess" | "generatePassword">,
-        options: { placeholder?: string; type?: string } = {},
+        key: Exclude<SandboxField,
+            "ssl" | "mcpAccess" | "generatePassword" | "configureRest">,
+        options: {
+            placeholder?: string;
+            type?: string;
+            ref?: Ref<HTMLInputElement>;
+        } = {},
     ): preact.JSX.Element => {
         return (
             <input
+                ref={options.ref}
+                name={key}
                 type={options.type ?? "text"}
                 class={shownProblem?.field === key ? "invalid" : undefined}
                 aria-invalid={shownProblem?.field === key}
@@ -303,6 +330,72 @@ export const SandboxEditor = (): preact.JSX.Element => {
                                 : "Stored with the connection, so it is not "
                                 + "asked for again."}
                         </p>
+
+                        <label class="checkbox rest-choice">
+                            <input
+                                type="checkbox"
+                                name="configureRest"
+                                checked={fields.configureRest}
+                                disabled={busy}
+                                onChange={(event) => {
+                                    const checked = (event.target as
+                                        HTMLInputElement).checked;
+                                    update("configureRest", checked);
+                                    if (checked
+                                        && fields.restUserPassword === "") {
+                                        setFocusRestPassword(true);
+                                    }
+                                }}
+                            />
+                            <span>Configure MariaDB REST Service</span>
+                        </label>
+                        <p class="note rest-note">
+                            Setting up the MariaDB REST Service on the
+                            Sandbox and start a MariaDB REST Daemon to serve
+                            the REST endpoints.
+                        </p>
+                        {fields.configureRest ? (
+                            <>
+                                <Field
+                                    caption="REST Daemon Port"
+                                    hint={hintOf("restdPort",
+                                        "TCP/IP Port the REST Daemon is "
+                                        + "serving the endpoints.")}
+                                >
+                                    {text("restdPort", {
+                                        placeholder: String(
+                                            defaultRestdPort(fields.port)
+                                            ?? FALLBACK_RESTD_PORT),
+                                    })}
+                                </Field>
+                                <Field
+                                    caption="REST Service Name"
+                                    hint={hintOf("restServicePath",
+                                        "Name of the REST Service to be "
+                                        + "accessible on "
+                                        + `${restServiceUrl(fields)}`)}
+                                >
+                                    {text("restServicePath",
+                                        { placeholder: "/myService/v1" })}
+                                </Field>
+                                <Field
+                                    caption="REST User Name"
+                                    hint={hintOf("restUserName")}
+                                >
+                                    {text("restUserName",
+                                        { placeholder: "dba" })}
+                                </Field>
+                                <Field
+                                    caption="REST User Password"
+                                    hint={hintOf("restUserPassword")}
+                                >
+                                    {text("restUserPassword", {
+                                        type: "password",
+                                        ref: restPassword,
+                                    })}
+                                </Field>
+                            </>
+                        ) : null}
                     </section>
                 ) : null}
 

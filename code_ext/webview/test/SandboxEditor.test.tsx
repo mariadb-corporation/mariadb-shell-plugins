@@ -580,3 +580,111 @@ describe("SandboxEditor", () => {
         expect(posted.at(-1)).toEqual({ type: "cancel" });
     });
 });
+
+describe("SandboxEditor's REST Service", () => {
+    const restBox = (): HTMLInputElement => {
+        return host.querySelector<HTMLInputElement>(
+            "input[name=configureRest]")!;
+    };
+
+    const setRest = async (on: boolean): Promise<void> => {
+        await act(async () => {
+            const box = restBox();
+            box.checked = on;
+            box.dispatchEvent(new Event("change", { bubbles: true }));
+            await Promise.resolve();
+        });
+    };
+
+    const captions = (): string[] => {
+        return [...host.querySelectorAll(".field-caption")].map((node) => {
+            return node.textContent ?? "";
+        });
+    };
+
+    it("is offered below the password choice, off, with what it does",
+        async () => {
+            await mount();
+            await load();
+
+            expect(restBox().checked).toBe(false);
+            expect(restBox().closest("label")?.textContent).toBe(
+                "Configure MariaDB REST Service");
+            expect(host.querySelector(".rest-note")?.textContent).toContain(
+                "start a MariaDB REST Daemon to serve the REST endpoints");
+            expect(captions()).not.toContain("REST Daemon Port");
+        });
+
+    it("shows its fields once ticked, with their defaults", async () => {
+        await mount();
+        await load();
+
+        await setRest(true);
+
+        expect(captions()).toEqual(expect.arrayContaining([
+            "REST Daemon Port", "REST Service Name", "REST User Name",
+            "REST User Password",
+        ]));
+        // Ten times the sandbox's port, as the server will pick it.
+        expect(fieldOf("REST Daemon Port").querySelector("input")!
+            .placeholder).toBe("33100");
+        expect(fieldOf("REST Service Name").querySelector("input")!.value)
+            .toBe("/myService/v1");
+        expect(fieldOf("REST User Name").querySelector("input")!.value)
+            .toBe("dba");
+    });
+
+    it("takes the cursor to the REST password while it is empty",
+        async () => {
+            await mount();
+            await load();
+
+            await setRest(true);
+            await act(async () => { await Promise.resolve(); });
+
+            expect(document.activeElement).toBe(
+                fieldOf("REST User Password").querySelector("input"));
+        });
+
+    it("says where the service will answer, with what is typed", async () => {
+        await mount();
+        await load();
+        await setRest(true);
+
+        await type("REST Daemon Port", "9443");
+        await type("REST Service Name", "/shop/v2");
+
+        expect(fieldOf("REST Service Name").textContent).toContain(
+            "https://localhost:9443/shop/v2");
+    });
+
+    it("refuses a REST password MRS would not take", async () => {
+        await mount();
+        await load();
+        await setRest(true);
+        await type("REST User Password", "short");
+
+        await click("Create");
+
+        expect(created()).toBeUndefined();
+        expect(fieldOf("REST User Password").textContent).toContain(
+            "minimum authentication string length");
+    });
+
+    it("posts its fields on Create", async () => {
+        await mount();
+        await load();
+        await setRest(true);
+        await type("REST User Password", "Secret1!");
+
+        await click("Create");
+
+        expect(created()?.fields).toMatchObject({
+            configureRest: true,
+            restdPort: "",
+            restServicePath: "/myService/v1",
+            restUserName: "dba",
+            restUserPassword: "Secret1!",
+        });
+    });
+});

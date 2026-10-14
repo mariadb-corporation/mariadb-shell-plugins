@@ -25,9 +25,12 @@ import {
     localConnectionPorts,
     newestFirst,
     sandboxDeployOptions,
+    sandboxRestOptions,
     suggestSandboxPort,
     type ISandboxFields,
+    type ISandboxRestOptions,
 } from "./sandboxFields.js";
+import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
 import type {
     SandboxHostMessage,
     SandboxWebviewMessage,
@@ -63,6 +66,16 @@ export interface ISandboxEditorHost {
      * extension shows for it. Left out, it just runs.
      */
     withProgress?<T>(work: () => Promise<T>): Promise<T>;
+    /**
+     * Deploys a sandbox with the MariaDB REST Service, where the dialog
+     * asks for it: resolves once the sandbox is there, the REST steps
+     * going on after the dialog is closed. Left out, the REST part of
+     * the dialog is ignored.
+     */
+    deployWithRest?(
+        options: ISandboxDeployOptions,
+        rest: ISandboxRestOptions,
+    ): Promise<string>;
     /** Called after a sandbox was deployed, with the server's message. */
     onCreated(message: string): void;
     /**
@@ -285,10 +298,13 @@ export class SandboxEditorPanel {
             return;
         }
 
+        const rest = sandboxRestOptions(fields);
         this.#post({ type: "busy", busy: true });
         try {
             const deploy = async (): Promise<string> => {
-                return await this.host.store.deploy(built.options);
+                return rest === undefined || this.host.deployWithRest === undefined
+                    ? await this.host.store.deploy(built.options)
+                    : await this.host.deployWithRest(built.options, rest);
             };
             const message = this.host.withProgress === undefined
                 ? await deploy()

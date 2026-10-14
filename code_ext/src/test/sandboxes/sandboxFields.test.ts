@@ -32,6 +32,9 @@ import {
     sandboxConnectionUri,
     sandboxDeployOptions,
     sandboxFieldProblem,
+    sandboxRestOptions,
+    defaultRestdPort,
+    restServiceUrl,
     suggestSandboxPort,
     type ISandboxFields,
 } from "../../sandboxes/sandboxFields.js";
@@ -370,4 +373,70 @@ describe("generateSandboxPassword", () => {
     it("differs from one call to the next", () => {
         expect(generateSandboxPassword()).not.toBe(generateSandboxPassword());
     });
+});
+
+describe("the REST Service fields", () => {
+    const rest = (overrides: Partial<ISandboxFields> = {}): ISandboxFields => {
+        return fields({ configureRest: true, restUserPassword: "Secret1!",
+            ...overrides });
+    };
+
+    it("are off, with the REST Service tree's defaults", () => {
+        expect(emptySandboxFields()).toMatchObject({
+            configureRest: false, restdPort: "",
+            restServicePath: "/myService/v1", restUserName: "dba",
+            restUserPassword: "",
+        });
+    });
+
+    it("put the daemon on ten times the sandbox's port, where that is one",
+        () => {
+            expect(defaultRestdPort("3311")).toBe(33110);
+            expect(defaultRestdPort("6553")).toBe(65530);
+            expect(defaultRestdPort("7000")).toBeUndefined();
+            expect(defaultRestdPort("")).toBeUndefined();
+        });
+
+    it("say where the service will answer", () => {
+        expect(restServiceUrl(rest({ port: "3311" })))
+            .toBe("https://localhost:33110/myService/v1");
+        // Where ten times the sandbox's port is none: the server's first.
+        expect(restServiceUrl(rest({ port: "7000" })))
+            .toBe("https://localhost:8443/myService/v1");
+        expect(restServiceUrl(rest({ restdPort: "9443",
+            restServicePath: "/shop/v2" })))
+            .toBe("https://localhost:9443/shop/v2");
+    });
+
+    it("are not checked while the REST Service is not wanted", () => {
+        expect(sandboxFieldProblem(fields({ restUserPassword: "" })))
+            .toBeUndefined();
+        expect(sandboxRestOptions(fields())).toBeUndefined();
+    });
+
+    it("refuse what the REST Service would not take", () => {
+        const problem = (overrides: Partial<ISandboxFields>): string | undefined => {
+            return sandboxFieldProblem(rest(overrides))?.field;
+        };
+
+        expect(problem({})).toBeUndefined();
+        expect(problem({ restdPort: "70000" })).toBe("restdPort");
+        expect(problem({ restdPort: "3310" })).toBe("restdPort");
+        expect(problem({ restServicePath: "shop" })).toBe("restServicePath");
+        expect(problem({ restServicePath: "/mrs" })).toBe("restServicePath");
+        expect(problem({ restUserName: " " })).toBe("restUserName");
+        expect(problem({ restUserPassword: "" })).toBe("restUserPassword");
+        expect(problem({ restUserPassword: "alllowercase1!" }))
+            .toBe("restUserPassword");
+    });
+
+    it("become the REST options, the port left to the server unless typed",
+        () => {
+            expect(sandboxRestOptions(rest())).toEqual({
+                servicePath: "/myService/v1", userName: "dba",
+                password: "Secret1!",
+            });
+            expect(sandboxRestOptions(rest({ restdPort: " 9443 " })))
+                .toMatchObject({ restdPort: 9443 });
+        });
 });

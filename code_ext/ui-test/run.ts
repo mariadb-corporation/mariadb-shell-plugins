@@ -96,6 +96,7 @@ const SUITES: Record<string, string[]> = {
         "05-lifecycle", CLEANUP],
     mrs: [SETUP, "02-mrs", CLEANUP],
     "dump-load": [SETUP, "06-dump-load", CLEANUP],
+    restd: [SETUP, "07-restd", CLEANUP],
 };
 
 /** The signals that end the run, with the exit code each ends it with. */
