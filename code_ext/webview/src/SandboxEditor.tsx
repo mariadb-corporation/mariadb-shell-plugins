@@ -22,7 +22,7 @@ import {
     DEFAULT_RESTD_PORT,
     emptySandboxFields,
     isServerOnPath,
-    restServiceUrl,
+    restServiceLocation,
     sandboxConnectionUri,
     sandboxFieldProblem,
     serverVersionChoices,
@@ -364,7 +364,9 @@ export const SandboxEditor = (): preact.JSX.Element => {
                                     caption="REST Daemon Port"
                                     hint={hintOf("restdPort",
                                         "TCP/IP Port the REST Daemon is "
-                                        + "serving the endpoints.")}
+                                        + "serving the endpoints. Empty for "
+                                        + `${String(DEFAULT_RESTD_PORT)}, `
+                                        + "or the next free port after it.")}
                                 >
                                     {text("restdPort", {
                                         placeholder: String(
@@ -376,7 +378,7 @@ export const SandboxEditor = (): preact.JSX.Element => {
                                     hint={hintOf("restServicePath",
                                         "Name of the REST Service to be "
                                         + "accessible on "
-                                        + `${restServiceUrl(fields)}`)}
+                                        + `${restServiceLocation(fields)}`)}
                                 >
                                     {text("restServicePath",
                                         { placeholder: "/myService/v1" })}

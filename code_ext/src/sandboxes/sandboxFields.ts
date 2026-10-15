@@ -169,6 +169,22 @@ export const restServiceUrl = (fields: ISandboxFields): string => {
     return `https://localhost:${port}${fields.restServicePath.trim()}`;
 };
 
+/**
+ * Where the dialog says the REST service will be: at the port typed, or -
+ * where none is - at 8443 only if it is free, since the server gives the
+ * daemon the first free port from 8443 up.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns The URL, and what may change it.
+ */
+export const restServiceLocation = (fields: ISandboxFields): string => {
+    return fields.restdPort.trim() === ""
+        ? `${restServiceUrl(fields)}, or the next free port after `
+            + `${String(DEFAULT_RESTD_PORT)} where it is taken`
+        : restServiceUrl(fields);
+};
+
 /** What the REST part of the dialog asks the deploy to set up. */
 export interface ISandboxRestOptions {
     /** The REST Daemon's port; the server picks one when left out. */

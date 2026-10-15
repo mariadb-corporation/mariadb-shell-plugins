@@ -33,6 +33,7 @@ import {
     sandboxDeployOptions,
     sandboxFieldProblem,
     sandboxRestOptions,
+    restServiceLocation,
     restServiceUrl,
     suggestSandboxPort,
     type ISandboxFields,
@@ -395,6 +396,14 @@ describe("the REST Service fields", () => {
         expect(restServiceUrl(rest({ restdPort: "9443",
             restServicePath: "/shop/v2" })))
             .toBe("https://localhost:9443/shop/v2");
+    });
+
+    it("promise 8443 only where it is free, unless a port is typed", () => {
+        expect(restServiceLocation(rest({ port: "3311" }))).toBe(
+            "https://localhost:8443/myService/v1, or the next free port "
+            + "after 8443 where it is taken");
+        expect(restServiceLocation(rest({ restdPort: "9443" })))
+            .toBe("https://localhost:9443/myService/v1");
     });
 
     it("are not checked while the REST Service is not wanted", () => {
