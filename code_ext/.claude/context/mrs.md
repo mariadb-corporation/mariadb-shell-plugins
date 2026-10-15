@@ -99,6 +99,79 @@ differ from a plain form, so keep them when changing it:
   both got `new-2`, one edit rendered two inputs, and the blur of one dropped
   the edit.
 
+## Create REST Schema from Database Schema (2026-10-14)
+
+The new-schema dialog (the user's request; its old title was "Enter
+Configuration Values for the New REST Schema"):
+
+- **A REST Objects tab before Settings**, on a new schema only. It is a
+  Tabulator table (`webview/src/mrs/DbObjectsTable.tsx`) of the database
+  schema's tables, views, procedures and functions. Its columns:
+  - Database Object: a checkbox, the Connections tree's icon drawn as a
+    mask, and the name;
+  - Type;
+  - Details: a table's engine, columns and approximate rows; a view's
+    columns and whether it is updatable; a routine's parameters and return
+    type; then the comment.
+- **The toolbar:** Select All and Select None act on the rows on show. The
+  type Filter is a select. The name search works as `LIKE '<typed>%'`,
+  case-insensitive (`nameSearch`), with `\` as the escape. A `\` typed
+  last is left out, as an escape not finished yet. That is the one case
+  where it differs from the server's LIKE, which was checked on 3311.
+- **The table's look:** no grid lines (the user's call). Only the modules
+  it needs are registered (`FormatModule`, `InteractionModule`), which
+  keeps `mrs.js` at about 260 kB instead of 560 kB with `TabulatorFull`.
+- **Keyboard and busy:** each checkbox is a tab stop. Space clicks it, and
+  the click reaches the row's `rowClick` as the pointer's does. While the
+  dialog is busy a row's click does nothing, and a keyboard click on a box
+  is undone with `preventDefault`.
+- **The list** comes from `MrsApi.dbObjects`, one plain query
+  (`dbObjectsSql`) that answers with one cell of JSON, so no paging cuts
+  it. It is not reported as an action.
+  - `JSON_ARRAYAGG` stops at `group_concat_max_len` and cuts the JSON short
+    with only a warning. So the query starts with `SET STATEMENT
+    group_concat_max_len = 1073741824 FOR`, which leaves the session's
+    limit alone.
+  - Where the list cannot be read, the dialog still opens, without the
+    tab, and a warning says why.
+- **Saving:**
+  - While objects are ticked, Database Schema Name is disabled. The save
+    also refuses a changed name, since the objects listed are the first
+    schema's.
+  - The ticked objects' columns are read first, all in one script
+    (`MrsApi.columnsOfEach`), so an unreadable one stops the save before
+    anything is created. `columnsSql` maps an object's type to what
+    `SHOW REST COLUMNS` takes, for this dialog and the REST object dialog
+    alike.
+  - Then everything runs as one script: the schema's statement, then one
+    `CREATE REST VIEW / PROCEDURE / FUNCTION` per object, built exactly as
+    the New REST Object dialog builds one (`schemaObjectStatements`:
+    `objectDefaults` + `buildDocument` with every column).
+  - Two objects can suggest one path (`film_list` and `film-list` both
+    give `/filmList`; a table and a function can share a name). The server
+    refuses a taken path whatever its case, so `uniqueRequestPath` numbers
+    them: `/filmList2`. The object name must be unique on the REST schema
+    too (`MyServiceV1ZzReviewFilmList`), so it is made from the numbered
+    path, not from the database object's name.
+  - Every path suggested from a name - a REST schema's, a REST object's,
+    a content set's - is ASCII (`requestPathFor`): `camelCase` folds
+    accents (`größe` is `/grosse`, `ß`/`æ`/`ł`... spelled out), and a name
+    with nothing left, as in another script, gets its type instead:
+    `/table`, `/table2`, `/schema`, `/content`. A field made from such a
+    column or parameter is `field`, `field2`. Unicode would pass the REST
+    SQL grammar, but the URL would need encoding and the SDK class names
+    made from the path would not be names in every language (2026-10-15).
+  - That makes one Actions row, "Created REST Schema '/x'", with each
+    statement as a child row.
+- **Gotcha:** the table must not be rebuilt on every render. A row rebuilt
+  under the pointer loses its click, and a redrawn cell loses the focus.
+  So `replaceData` runs only when other rows are on show, and a tick
+  updates its one row's data and sets its checkbox in place. `selected` is
+  no column's field, so the update alone does not redraw the checkbox.
+- **Testing in jsdom:** Tabulator draws only the rows that fit, and jsdom
+  lays nothing out. The "drawn" tests in `MrsDialog.test.tsx` give every
+  element a size so that rows exist to click.
+
 ## Decisions
 
 - Old features left out: MySQL Router bootstrap/start/stop/kill and service

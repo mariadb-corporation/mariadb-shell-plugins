@@ -56,6 +56,7 @@ import type {
     IMrsStatus,
     IMrsUser,
 } from "./mrsTypes.js";
+import type { IDbObject } from "./mrsDialogs.js";
 import {
     qualifiedName,
     quoteIdentifier,
@@ -65,6 +66,90 @@ import {
     serviceSchemaSelector,
     userRef,
 } from "./restSql.js";
+
+/**
+ * A database schema's tables, views, procedures and functions, with what
+ * the REST Objects tab of a new REST schema says about each, as one cell
+ * of JSON: one row, so no paging can cut the list short.
+ *
+ * `JSON_ARRAYAGG` and `GROUP_CONCAT` stop at `group_concat_max_len`, and
+ * cut the JSON short with only a warning; the limit is raised to its most
+ * for this one statement, leaving the session's as it was.
+ *
+ * @param schema The database schema.
+ *
+ * @returns The query.
+ */
+export const dbObjectsSql = (schema: string): string => {
+    const name = quoteText(schema);
+
+    return `SET STATEMENT group_concat_max_len = 1073741824 FOR
+SELECT JSON_ARRAYAGG(JSON_OBJECT('name', o.name, 'type', o.type,
+    'details', o.details) ORDER BY o.position, o.name)
+FROM (
+    SELECT t.TABLE_NAME AS name,
+        IF(t.TABLE_TYPE = 'VIEW', 'VIEW', 'TABLE') AS type,
+        IF(t.TABLE_TYPE = 'VIEW', 2, 1) AS position,
+        CONCAT_WS(', ',
+            IF(t.TABLE_TYPE = 'VIEW',
+                IF(v.IS_UPDATABLE = 'YES', 'updatable', 'read only'),
+                t.ENGINE),
+            (SELECT CONCAT(COUNT(*), IF(COUNT(*) = 1, ' column', ' columns'))
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA
+                    AND c.TABLE_NAME = t.TABLE_NAME),
+            IF(t.TABLE_TYPE = 'VIEW', NULL,
+                CONCAT('~', t.TABLE_ROWS,
+                    IF(t.TABLE_ROWS = 1, ' row', ' rows'))),
+            NULLIF(t.TABLE_COMMENT, '')) AS details
+    FROM INFORMATION_SCHEMA.TABLES t
+    LEFT JOIN INFORMATION_SCHEMA.VIEWS v
+        ON v.TABLE_SCHEMA = t.TABLE_SCHEMA AND v.TABLE_NAME = t.TABLE_NAME
+    WHERE t.TABLE_SCHEMA = ${name}
+        AND t.TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED', 'VIEW')
+    UNION ALL
+    SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE,
+        IF(r.ROUTINE_TYPE = 'PROCEDURE', 3, 4),
+        CONCAT('(',
+            COALESCE((SELECT GROUP_CONCAT(
+                    CONCAT_WS(' ', p.PARAMETER_MODE, p.PARAMETER_NAME,
+                        p.DTD_IDENTIFIER)
+                    ORDER BY p.ORDINAL_POSITION SEPARATOR ', ')
+                FROM INFORMATION_SCHEMA.PARAMETERS p
+                WHERE p.SPECIFIC_SCHEMA = r.ROUTINE_SCHEMA
+                    AND p.SPECIFIC_NAME = r.ROUTINE_NAME
+                    AND p.ROUTINE_TYPE = r.ROUTINE_TYPE
+                    AND p.ORDINAL_POSITION > 0), ''),
+            ')',
+            IF(r.ROUTINE_TYPE = 'FUNCTION',
+                CONCAT(' RETURNS ', r.DTD_IDENTIFIER), ''),
+            IF(r.ROUTINE_COMMENT = '', '', CONCAT(', ', r.ROUTINE_COMMENT)))
+    FROM INFORMATION_SCHEMA.ROUTINES r
+    WHERE r.ROUTINE_SCHEMA = ${name}
+        AND r.ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
+) o`;
+};
+
+/**
+ * @param objectType The database object's type: VIEW, PROCEDURE or
+ *        FUNCTION, and anything else is read as a TABLE.
+ * @param schema The database schema.
+ * @param name The database object.
+ *
+ * @returns The statement reading its columns and references, or its
+ *          parameters.
+ */
+export const columnsSql = (
+    objectType: string,
+    schema: string,
+    name: string,
+): string => {
+    const kind = ["VIEW", "PROCEDURE", "FUNCTION"].includes(objectType)
+        ? objectType : "TABLE";
+
+    return `SHOW REST COLUMNS FROM ${kind} ${qualifiedName(schema, name)} `
+        + "FORMAT=JSON";
+};
 
 /**
  * The MariaDB REST Service as the extension reaches it.
@@ -334,6 +419,29 @@ export class MrsApi {
     }
 
     /**
+     * @param scope Where to read them.
+     * @param schema A database schema.
+     *
+     * @returns Its tables, views, procedures and functions, in that order
+     *          and by name, for a new REST schema's REST Objects tab. A
+     *          plain query, made without an action: a dialog filling in
+     *          its choices is not something the user did.
+     */
+    public async dbObjects(
+        scope: IMrsScope,
+        schema: string,
+    ): Promise<IDbObject[]> {
+        const api = await this.api();
+        const result = await api.executeSql(scope.connectionId,
+            dbObjectsSql(schema));
+        if (result.error !== undefined) {
+            throw new MrsError(result.error);
+        }
+
+        return parseCell<IDbObject[]>(firstCell(result)) ?? [];
+    }
+
+    /**
      * Runs one statement that answers with one cell of text, such as
      * `SHOW CREATE REST SERVICE`.
      *
@@ -437,7 +545,8 @@ export class MrsApi {
 
     /**
      * @param scope Where to look.
-     * @param kind TABLE, VIEW, PROCEDURE or FUNCTION.
+     * @param objectType The database object's type, as {@link columnsSql}
+     *        takes it.
      * @param schema The database schema.
      * @param name The database object.
      *
@@ -445,13 +554,41 @@ export class MrsApi {
      */
     public async columns(
         scope: IMrsScope,
-        kind: string,
+        objectType: string,
         schema: string,
         name: string,
     ): Promise<IMrsColumns> {
         return await this.json<IMrsColumns>(scope,
-            `SHOW REST COLUMNS FROM ${kind} ${qualifiedName(schema, name)} `
-            + "FORMAT=JSON");
+            columnsSql(objectType, schema, name));
+    }
+
+    /**
+     * @param scope Where to look.
+     * @param objects Database objects: each one's type, as
+     *        {@link columnsSql} takes it, schema and name.
+     *
+     * @returns Each one's columns and references, or its parameters, in
+     *          their order: read as one script, one round trip for any
+     *          number of them. One that cannot be read fails them all.
+     */
+    public async columnsOfEach(
+        scope: IMrsScope,
+        objects: ReadonlyArray<{
+            objectType: string;
+            schema: string;
+            name: string;
+        }>,
+    ): Promise<IMrsColumns[]> {
+        if (objects.length === 0) {
+            return [];
+        }
+        const results = await this.run(scope, objects.map((object) => {
+            return columnsSql(object.objectType, object.schema, object.name);
+        }));
+
+        return results.map((result) => {
+            return parseCell<IMrsColumns>(firstCell(result));
+        });
     }
 
     public async contentSets(

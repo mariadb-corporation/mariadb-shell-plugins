@@ -35,6 +35,7 @@ import {
     configureStatements,
     contentSetDefaults,
     contentSetPathFor,
+    requestPathFor,
     contentSetStatements,
     objectDefaults,
     objectStatements,
@@ -70,6 +71,12 @@ import {
     type IServiceDialogValues,
     type IUserContext,
     type IUserDialogValues,
+    dbObjectKey,
+    filterDbObjects,
+    nameSearch,
+    schemaObjectStatements,
+    uniqueRequestPath,
+    type IDbObject,
 } from "../../mrs/mrsDialogs.js";
 import {
     ENABLED_STATE,
@@ -764,6 +771,7 @@ describe("the schema dialog", () => {
             comments: "",
             options: "",
             metadata: "",
+            restObjects: [],
         });
         expect(schemaDefaults([services[0]], undefined, "").servicePath)
             .toBe("/first");
@@ -797,6 +805,7 @@ describe("the schema dialog", () => {
             comments: "c",
             options: prettyJson({ o: 1 }),
             metadata: prettyJson({ m: 1 }),
+            restObjects: [],
         });
         expect(schemaDefaults(services, { ...schema, items_per_page: null },
             "").itemsPerPage).toBe("");
@@ -1002,6 +1011,8 @@ describe("the content set dialog", () => {
         expect(contentSetPathFor("/web/static")).toBe("/staticContent");
         expect(contentSetPathFor("")).toBe("/content");
         expect(contentSetPathFor("/")).toBe("/content");
+        expect(contentSetPathFor("/home/me/größe")).toBe("/grosseContent");
+        expect(contentSetPathFor("/home/me/日本")).toBe("/content");
     });
 
     it("starts a new content set", () => {
@@ -1463,5 +1474,156 @@ describe("validateDialog", () => {
             directory: "", serviceUrl: "u", sdkLanguage: "TypeScript",
             addAppBaseClass: "", header: "",
         }, undefined))).toEqual(["directory"]);
+    });
+});
+
+describe("a new REST schema's REST Objects", () => {
+    const objects: IDbObject[] = [
+        { name: "actor", type: "TABLE", details: "InnoDB, 4 columns" },
+        { name: "actor_info", type: "VIEW", details: "read only" },
+        { name: "Film", type: "TABLE", details: "" },
+        { name: "film_in_stock", type: "PROCEDURE", details: "(IN p INT)" },
+        { name: "actor", type: "FUNCTION", details: "() RETURNS INT" },
+    ];
+    const names = (found: IDbObject[]): string[] => {
+        return found.map((object) => { return `${object.type}:${object.name}`; });
+    };
+
+    it("are told apart by type and name: a routine can share a table's",
+        () => {
+            expect(dbObjectKey(objects[0]!)).not.toBe(dbObjectKey(objects[4]!));
+        });
+
+    it("search names as LIKE '<typed>%' does, ignoring case", () => {
+        expect(nameSearch("act")("actor_info")).toBe(true);
+        expect(nameSearch("ACT")("actor")).toBe(true);
+        expect(nameSearch("ctor")("actor")).toBe(false);
+        // The wildcards keep their meaning; other characters are literal.
+        expect(nameSearch("%info")("actor_info")).toBe(true);
+        expect(nameSearch("a_tor")("actor")).toBe(true);
+        expect(nameSearch("act.r")("actor")).toBe(false);
+        expect(nameSearch("")("anything")).toBe(true);
+        // A backslash makes the next character a plain one, as in LIKE;
+        // checked against the server's LIKE on 3311.
+        expect(nameSearch("film\\_")("film_list")).toBe(true);
+        expect(nameSearch("film\\_")("filmXlist")).toBe(false);
+        expect(nameSearch("film\\%")("film%x")).toBe(true);
+        expect(nameSearch("film\\%")("film_list")).toBe(false);
+        expect(nameSearch("a\\\\b")("a\\b")).toBe(true);
+        expect(nameSearch("\\a")("actor")).toBe(true);
+        // One typed last is an escape still being typed.
+        expect(nameSearch("film\\")("film_list")).toBe(true);
+    });
+
+    it("filter by type and name together", () => {
+        expect(names(filterDbObjects(objects, "", ""))).toHaveLength(5);
+        expect(names(filterDbObjects(objects, "TABLE", "")))
+            .toEqual(["TABLE:actor", "TABLE:Film"]);
+        expect(names(filterDbObjects(objects, "", "fi")))
+            .toEqual(["TABLE:Film", "PROCEDURE:film_in_stock"]);
+        expect(names(filterDbObjects(objects, "VIEW", "fi"))).toEqual([]);
+    });
+
+    it("are created as the New REST Object dialog creates one", () => {
+        const values = {
+            ...schemaDefaults([], undefined, "sakila", "/myService"),
+            requestPath: " /sakila ",
+        };
+
+        const [statement] = schemaObjectStatements(values, [{
+            object: objects[0]!,
+            columns: {
+                schema: "sakila", name: "actor", type: "TABLE",
+                columns: [{
+                    position: 1, name: "actor_id",
+                    db_column: { name: "actor_id", datatype: "int",
+                        is_primary: true },
+                    reference_mapping: null,
+                }],
+            },
+        }]);
+
+        expect(statement).toMatch(/^CREATE REST VIEW \/actor\s+ON SERVICE \/myService SCHEMA \/sakila\s+AS `sakila`.`actor`/u);
+        expect(statement).toContain("`actorId`: `actor_id` @SORTABLE @KEY");
+        expect(schemaObjectStatements(values, [])).toEqual([]);
+    });
+
+    it("give each object a path of its own, whatever its case", () => {
+        const values = schemaDefaults([], undefined, "sakila", "/myService");
+        const ticked = [
+            { name: "film_list", type: "TABLE" },
+            { name: "film-list", type: "TABLE" },
+            { name: "FilmList", type: "VIEW" },
+            { name: "actor", type: "TABLE" },
+            { name: "actor", type: "FUNCTION" },
+        ] as const;
+
+        const statements = schemaObjectStatements(values,
+            ticked.map((object) => {
+                return {
+                    object: { ...object, details: "" },
+                    columns: { schema: "sakila", name: object.name,
+                        type: object.type, columns: [], parameters: [] },
+                };
+            }));
+        const paths = statements.map((statement) => {
+            return /^CREATE REST \w+ (\S+)/u.exec(statement)?.[1];
+        });
+        const names = statements.map((statement) => {
+            return /\b(MyServiceSakila\w+)/u.exec(statement)?.[1];
+        });
+
+        // The server takes `/ab` for `/aB`, so the case does not count;
+        // it takes an object name once too, so the name follows the path.
+        expect(paths).toEqual(["/filmList", "/filmList2", "/filmList3",
+            "/actor", "/actor2"]);
+        expect(names).toEqual(["MyServiceSakilaFilmList",
+            "MyServiceSakilaFilmList2", "MyServiceSakilaFilmList3",
+            // A function's first name is its parameters', made from its.
+            "MyServiceSakilaActor", "MyServiceSakilaActor2Params"]);
+    });
+
+    it("give an object whose name has no ASCII left a path of its type", () => {
+        const values = schemaDefaults([], undefined, "sakila", "/myService");
+        const ticked = [
+            { name: "größe", type: "TABLE" },
+            { name: "日本", type: "TABLE" },
+            { name: "東京", type: "TABLE" },
+            { name: "一覧", type: "VIEW" },
+        ] as const;
+
+        const statements = schemaObjectStatements(values,
+            ticked.map((object) => {
+                return {
+                    object: { ...object, details: "" },
+                    columns: { schema: "sakila", name: object.name,
+                        type: object.type, columns: [], parameters: [] },
+                };
+            }));
+
+        expect(statements.map((statement) => {
+            return /^CREATE REST \w+ (\S+)/u.exec(statement)?.[1];
+        })).toEqual(["/grosse", "/table", "/table2", "/view"]);
+        expect(statements.map((statement) => {
+            return /\b(MyServiceSakila\w+)/u.exec(statement)?.[1];
+        })).toEqual(["MyServiceSakilaGrosse", "MyServiceSakilaTable",
+            "MyServiceSakilaTable2", "MyServiceSakilaView"]);
+    });
+
+    it("suggest an ASCII path for a schema or object", () => {
+        expect(requestPathFor("größe", "TABLE")).toBe("/grosse");
+        expect(requestPathFor("日本", "TABLE")).toBe("/table");
+        expect(requestPathFor("日本", "schema")).toBe("/schema");
+        expect(schemaDefaults([], undefined, "日本").requestPath)
+            .toBe("/schema");
+        expect(schemaDefaults([], undefined, "café").requestPath)
+            .toBe("/cafe");
+    });
+
+    it("number a taken path until it is free", () => {
+        const taken = new Set(["/a", "/a2"]);
+        expect(uniqueRequestPath("/A", taken)).toBe("/A3");
+        expect(uniqueRequestPath("/b", taken)).toBe("/b");
+        expect([...taken]).toEqual(["/a", "/a2", "/a3", "/b"]);
     });
 });

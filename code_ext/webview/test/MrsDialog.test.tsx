@@ -1404,3 +1404,197 @@ describe("mrs entry point", () => {
         root.remove();
     });
 });
+
+describe("a new REST schema's REST Objects tab", () => {
+    const context: ISchemaContext = {
+        services: ["/myService"],
+        dbObjects: [
+            { name: "actor", type: "TABLE", details: "InnoDB, 4 columns" },
+            { name: "actor_info", type: "VIEW", details: "read only" },
+            { name: "film", type: "TABLE", details: "InnoDB, 13 columns" },
+            { name: "rewards_report", type: "PROCEDURE", details: "(IN n INT)" },
+        ],
+    };
+
+    const loadNew = async (): Promise<void> => {
+        await load("schema", schemaDefaults([], undefined, "sakila",
+            "/myService"), context, "Create REST Schema from Database Schema");
+    };
+
+    const count = (): string => {
+        return host.querySelector(".dbObjectsCount")?.textContent ?? "";
+    };
+
+    const setFilter = async (value: string): Promise<void> => {
+        const select = host.querySelector<HTMLSelectElement>(
+            "select[name=dbObjectType]")!;
+        await act(async () => {
+            select.value = value;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            await tick();
+        });
+    };
+
+    const search = async (text: string): Promise<void> => {
+        const box = host.querySelector<HTMLInputElement>(
+            "input[name=dbObjectName]")!;
+        await act(async () => {
+            box.value = text;
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+            await tick();
+        });
+    };
+
+    it("comes first, before Settings, on a new schema only", async () => {
+        await loadNew();
+
+        expect(title()).toBe("Create REST Schema from Database Schema");
+        expect(tabs()).toEqual(["REST Objects", "Settings", "Options",
+            "Metadata"]);
+        expect(currentTab()).toBe("REST Objects");
+        expect(count()).toBe("0 of 4 selected");
+
+        await load("schema", schemaDefaults([], undefined, "sakila",
+            "/myService"), { services: ["/myService"], existingPath: "/s" });
+        expect(tabs()).toEqual(["Settings", "Options", "Metadata"]);
+    });
+
+    it("selects all and none of what is on show", async () => {
+        await loadNew();
+
+        await click("Select All");
+        expect(count()).toBe("4 of 4 selected");
+
+        await setFilter("TABLE");
+        await click("Select None");
+        // The tables only: the view and the procedure stay ticked.
+        expect(count()).toBe("2 of 4 selected");
+
+        await setFilter("");
+        await search("act");
+        await click("Select None");
+        expect(count()).toBe("1 of 4 selected");
+    });
+
+    it("saves the objects ticked with the schema", async () => {
+        await loadNew();
+        await search("ac");
+        await click("Select All");
+
+        await click("OK");
+
+        expect(saved().restObjects).toEqual(["TABLE:actor", "VIEW:actor_info"]);
+    });
+
+    it("keeps the database schema while REST objects are ticked",
+        async () => {
+            await loadNew();
+            const dbSchema = async (): Promise<HTMLInputElement> => {
+                await selectTab("Settings");
+
+                return host.querySelector<HTMLInputElement>(
+                    "input[name=dbSchema]")!;
+            };
+
+            expect((await dbSchema()).disabled).toBe(false);
+            await selectTab("REST Objects");
+            await click("Select All");
+            expect((await dbSchema()).disabled).toBe(true);
+            expect(host.textContent).toContain(
+                "Untick the REST objects to change it.");
+        });
+
+    describe("drawn", () => {
+        // jsdom lays nothing out, and Tabulator draws only the rows that
+        // fit: every element is given room for them.
+        const sizes = ["offsetHeight", "clientHeight", "offsetWidth",
+            "clientWidth", "scrollHeight"];
+        const saved: Array<[string, PropertyDescriptor | undefined]> = [];
+        beforeEach(() => {
+            for (const size of sizes) {
+                saved.push([size, Object.getOwnPropertyDescriptor(
+                    HTMLElement.prototype, size)]);
+                Object.defineProperty(HTMLElement.prototype, size, {
+                    configurable: true, get: () => { return 400; },
+                });
+            }
+        });
+        afterEach(() => {
+            for (const [size, descriptor] of saved.splice(0)) {
+                if (descriptor) {
+                    Object.defineProperty(HTMLElement.prototype, size,
+                        descriptor);
+                }
+            }
+        });
+
+        const loadDrawn = async (): Promise<HTMLInputElement[]> => {
+            await loadNew();
+            for (let i = 0; i < 20
+                && !host.querySelector(".tabulator-row"); i += 1) {
+                await act(async () => {
+                    await new Promise((resolve) => { setTimeout(resolve, 10); });
+                });
+            }
+
+            return [...host.querySelectorAll<HTMLInputElement>(
+                ".tabulator-row input[type=checkbox]")];
+        };
+
+        it("ticks a row from the keyboard, keeping its focus", async () => {
+            const [box] = await loadDrawn();
+            expect(box!.tabIndex).toBe(0);
+
+            // Space on a focused checkbox clicks it.
+            box!.focus();
+            await act(async () => { box!.click(); await tick(); });
+
+            expect(count()).toBe("1 of 4 selected");
+            expect(box!.checked).toBe(true);
+            expect(box!.isConnected).toBe(true);
+            expect(document.activeElement).toBe(box);
+
+            await act(async () => { box!.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+            expect(box!.checked).toBe(false);
+        });
+
+        it("ticks nothing while busy", async () => {
+            const [box] = await loadDrawn();
+            await send({ type: "busy", busy: true });
+
+            const row = host.querySelector<HTMLElement>(".tabulator-row")!;
+            await act(async () => { row.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+
+            box!.focus();
+            await act(async () => { box!.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+            // The click the keyboard gave it is undone.
+            expect(box!.checked).toBe(false);
+        });
+
+        it("ticks a row clicked anywhere", async () => {
+            await loadDrawn();
+            const row = host.querySelectorAll<HTMLElement>(".tabulator-row")[1]!;
+            await act(async () => { row.click(); await tick(); });
+
+            expect(count()).toBe("1 of 4 selected");
+            expect(row.querySelector<HTMLInputElement>("input")!.checked)
+                .toBe(true);
+        });
+    });
+
+    it("has a Filter by type and a name search in its toolbar", async () => {
+        await loadNew();
+
+        const options = [...host.querySelectorAll(
+            "select[name=dbObjectType] option")].map((option) => {
+            return option.textContent;
+        });
+        expect(options).toEqual(["All Types", "Tables", "Views", "Procedures",
+            "Functions"]);
+        expect(host.querySelector<HTMLInputElement>(
+            "input[name=dbObjectName]")?.placeholder).toBe("Name starts with…");
+    });
+});

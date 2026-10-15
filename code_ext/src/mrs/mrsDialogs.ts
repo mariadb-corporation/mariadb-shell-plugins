@@ -16,7 +16,9 @@
  */
 
 import {
+    buildDocument,
     camelCase,
+    defaultClassName,
     isRoutine,
     objectSql,
     type IMappingDocument,
@@ -26,6 +28,7 @@ import {
     isOAuthVendor,
     type EnabledState,
     type IMrsAuthApp,
+    type IMrsColumns,
     type IMrsContentSet,
     type IMrsObject,
     type IMrsSchema,
@@ -704,6 +707,11 @@ export interface ISchemaDialogValues {
     comments: string;
     options: string;
     metadata: string;
+    /**
+     * The database objects a new REST schema gets REST objects for, by
+     * {@link dbObjectKey}, ticked on its REST Objects tab.
+     */
+    restObjects: string[];
 }
 
 /** What the schema dialog offers besides its fields. */
@@ -712,7 +720,173 @@ export interface ISchemaContext {
     services: string[];
     /** The REST schema's path, when it is edited. */
     existingPath?: string;
+    /**
+     * The database schema's tables, views, procedures and functions, for
+     * a new REST schema's REST Objects tab; absent when one is edited.
+     */
+    dbObjects?: IDbObject[];
 }
+
+/** The kinds of database object a REST object can be made of. */
+export type DbObjectType = "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION";
+
+/** In the order the REST Objects tab offers them in its filter. */
+export const DB_OBJECT_TYPES: readonly DbObjectType[] = [
+    "TABLE", "VIEW", "PROCEDURE", "FUNCTION",
+];
+
+/** One database object a REST object can be made of. */
+export interface IDbObject {
+    name: string;
+    type: DbObjectType;
+    /**
+     * What else there is to know about it: a table's engine, columns and
+     * rows; a view's columns and whether it is updatable; a routine's
+     * parameters and what a function returns. Its comment last.
+     */
+    details: string;
+}
+
+/**
+ * @param object A database object.
+ *
+ * @returns What identifies it among a schema's objects: a procedure can
+ *          share its name with a table.
+ */
+export const dbObjectKey = (object: { name: string; type: string }): string => {
+    return `${object.type}:${object.name}`;
+};
+
+/**
+ * What the REST Objects tab's name search matches: names starting with
+ * what was typed, as `LIKE '<typed>%'` does - `%` and `_` keep their
+ * meaning, `\` makes the character after it a plain one, and case is
+ * ignored, as the server's default collations do. A `\` typed last is
+ * an escape not finished yet, and is left out.
+ *
+ * @param typed What was typed.
+ *
+ * @returns Whether a name matches.
+ */
+export const nameSearch = (typed: string): (name: string) => boolean => {
+    const literal = (char: string): string => {
+        return char.replace(/[.*+?^${}()|[\]\\]/u, "\\$&");
+    };
+    const chars = [...typed];
+    let pattern = "";
+    for (let i = 0; i < chars.length; i += 1) {
+        const char = chars[i]!;
+        if (char === "\\") {
+            i += 1;
+            pattern += i < chars.length ? literal(chars[i]!) : "";
+        } else {
+            pattern += char === "%" ? ".*" : char === "_" ? "." : literal(char);
+        }
+    }
+    const expression = new RegExp(`^${pattern}.*$`, "isu");
+
+    return (name) => { return expression.test(name); };
+};
+
+/**
+ * @param objects A schema's objects.
+ * @param type The one type to show, or empty for all.
+ * @param typed The name search.
+ *
+ * @returns The objects the REST Objects tab shows.
+ */
+export const filterDbObjects = (
+    objects: readonly IDbObject[],
+    type: DbObjectType | "",
+    typed: string,
+): IDbObject[] => {
+    const matches = nameSearch(typed);
+
+    return objects.filter((object) => {
+        return (type === "" || object.type === type) && matches(object.name);
+    });
+};
+
+/**
+ * The REST objects a new REST schema is created with: one for each
+ * database object ticked, made as the New REST Object dialog makes one -
+ * its defaults, and every column.
+ *
+ * @param values The schema dialog's fields.
+ * @param objects The ticked objects, with their columns.
+ *
+ * @returns One statement per object, to run after the schema's own.
+ */
+export const schemaObjectStatements = (
+    values: ISchemaDialogValues,
+    objects: ReadonlyArray<{ object: IDbObject; columns: IMrsColumns }>,
+): string[] => {
+    const servicePath = values.servicePath;
+    const schemaPath = values.requestPath.trim();
+    const dbSchema = values.dbSchema.trim();
+    const context: IObjectContext = {
+        services: [servicePath],
+        schemas: { [servicePath]: [schemaPath] },
+    };
+    // The paths in use, in lower case: the server compares them so.
+    const taken = new Set<string>();
+
+    return objects.flatMap(({ object, columns }) => {
+        const requestPath = uniqueRequestPath(
+            requestPathFor(object.name, object.type), taken);
+        // The object's name is taken once on a REST schema too, so it
+        // follows the path: `/filmList2` is `...FilmList2`.
+        const document = buildDocument(object.type, dbSchema, object.name,
+            columns, [], defaultClassName(servicePath, schemaPath,
+                requestPath.slice(1)));
+        const values = objectDefaults({
+            name: object.name, object_type: object.type,
+        }, document, servicePath, schemaPath);
+        values.requestPath = requestPath;
+
+        return objectStatements(values, context);
+    });
+};
+
+/**
+ * The request path suggested for a database schema or object: its name
+ * in camelCase, its accents folded (`größe` is `/grosse`). Where nothing
+ * of it is left in ASCII, as for a name in another script, what it is
+ * stands in: `/table`, `/schema`. A path stays ASCII, so a URL needs no
+ * encoding and an SDK's class names made from it are names in every
+ * language.
+ *
+ * @param name The database name.
+ * @param fallback What it is - `schema`, or an object's type, such as
+ *        `TABLE` - for a name with nothing left.
+ *
+ * @returns The path.
+ */
+export const requestPathFor = (name: string, fallback: string): string => {
+    return `/${camelCase(name) || camelCase(fallback.toLowerCase())}`;
+};
+
+/**
+ * Two objects can suggest one path: `film_list` and `film-list` both
+ * become `/filmList`, and a table and a function can share a name. The
+ * server takes a path once, whatever its case, and the object name made
+ * from it once too.
+ *
+ * @param path The path suggested.
+ * @param taken The paths given out already, in lower case; this one is
+ *        added.
+ *
+ * @returns The path, with a number after it where it is taken.
+ */
+export const uniqueRequestPath = (path: string, taken: Set<string>): string => {
+    let unique = path;
+    for (let i = 2; taken.has(unique.toLowerCase()); i += 1) {
+        unique = `${path}${String(i)}`;
+    }
+    taken.add(unique.toLowerCase());
+
+    return unique;
+};
 
 /**
  * @param services Every service.
@@ -734,7 +908,7 @@ export const schemaDefaults = (
 
     return {
         servicePath: service,
-        requestPath: schema?.request_path ?? `/${camelCase(dbSchema || "schema")}`,
+        requestPath: schema?.request_path ?? requestPathFor(dbSchema, "schema"),
         dbSchema: schema?.name ?? dbSchema,
         enabled: schema?.enabled ?? ENABLED_STATE.enabled,
         requiresAuth: schema?.requires_auth ?? false,
@@ -744,6 +918,7 @@ export const schemaDefaults = (
         comments: schema?.comments ?? "",
         options: prettyJson(schema?.options),
         metadata: prettyJson(schema?.metadata),
+        restObjects: [],
     };
 };
 
@@ -834,7 +1009,8 @@ export const objectDefaults = (
     return {
         servicePath,
         schemaPath,
-        requestPath: object.request_path ?? `/${camelCase(object.name)}`,
+        requestPath: object.request_path
+            ?? requestPathFor(object.name, object.object_type),
         enabled: object.enabled ?? ENABLED_STATE.enabled,
         requiresAuth: object.requires_auth ?? true,
         itemsPerPage: object.items_per_page === null
@@ -956,7 +1132,9 @@ export const contentSetPathFor = (directory: string): string => {
         name = names.at(-2);
     }
 
-    return name === undefined ? "/content" : `/${camelCase(name)}Content`;
+    const base = name === undefined ? "" : camelCase(name);
+
+    return base === "" ? "/content" : `/${base}Content`;
 };
 
 /** The option keys the shell writes for MRS scripts; never edited. */

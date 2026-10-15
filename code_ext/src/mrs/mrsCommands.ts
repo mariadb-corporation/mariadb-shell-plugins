@@ -22,7 +22,7 @@ import {
     type ConnectionManager,
 } from "../connections/connectionManager.js";
 import { reportError } from "../errorMessages.js";
-import { counted } from "../text.js";
+import { counted, errorText } from "../text.js";
 import type { IConnectionNode, IObjectNode, ISchemaNode } from "../tree/connectionsModel.js";
 import type {
     IMrsAuthAppGroupNode,
@@ -66,7 +66,10 @@ import {
     DEFAULT_METADATA_SCHEMA,
     objectDefaults,
     objectStatements,
+    requestPathFor,
+    dbObjectKey,
     schemaDefaults,
+    schemaObjectStatements,
     schemaStatements,
     SDK_LANGUAGES,
     serviceDefaults,
@@ -79,6 +82,7 @@ import {
     type IConfigureValues,
     type IContentSetContext,
     type IContentSetDialogValues,
+    type IDbObject,
     type IObjectContext,
     type IObjectDialogValues,
     type ISchemaContext,
@@ -816,24 +820,72 @@ export class MrsCommands {
 
             return;
         }
+        // A new one can be created with REST objects for any of the
+        // database schema's objects at once. Where they cannot be listed,
+        // it can still be created on its own, without that tab.
+        let dbObjects: IDbObject[] | undefined;
+        if (schema === undefined) {
+            try {
+                dbObjects = await this.host.api.dbObjects(scope, dbSchema);
+            } catch (error) {
+                const message = errorText(error);
+                this.host.log("Failed to list the objects of "
+                    + `\`${dbSchema}\`: ${message}`);
+                void vscode.window.showWarningMessage("MariaDB: The objects "
+                    + `of \`${dbSchema}\` could not be listed, so the REST `
+                    + `schema is created without REST objects: ${message}`);
+            }
+        }
         const context: ISchemaContext = {
             services: services.map((candidate) => {
                 return candidate.full_service_path;
             }),
-            ...(schema === undefined ? {} : { existingPath: schema.request_path }),
+            ...(schema === undefined
+                ? (dbObjects === undefined ? {} : { dbObjects })
+                : { existingPath: schema.request_path }),
         };
 
         this.#show({
             dialog: "schema",
             title: schema === undefined
-                ? "Enter Configuration Values for the New REST Schema"
+                ? "Create REST Schema from Database Schema"
                 : "Adjust the REST Schema Configuration",
             values: schemaDefaults(services, schema, dbSchema,
                 service?.full_service_path),
             context,
             save: async (values) => {
-                await this.host.api.run(scope, schemaStatements(
-                    values as ISchemaDialogValues, context));
+                const fields = values as ISchemaDialogValues;
+                const ticked = (context.dbObjects ?? []).filter((object) => {
+                    return fields.restObjects.includes(dbObjectKey(object));
+                });
+                // The objects listed are the database schema's the dialog
+                // opened on; under another one they could be missing, or
+                // be other objects of the same name.
+                if (ticked.length > 0 && fields.dbSchema.trim() !== dbSchema) {
+                    throw new Error("The REST objects ticked are those of "
+                        + `\`${dbSchema}\`. Untick them to use another `
+                        + "database schema.");
+                }
+                // Read before anything is created, so a database object
+                // that cannot be read stops the save with nothing done;
+                // all of them in one round trip.
+                const columns = await this.host.api.columnsOfEach(scope,
+                    ticked.map((object) => {
+                        return {
+                            objectType: object.type, schema: dbSchema,
+                            name: object.name,
+                        };
+                    }));
+                const objects = ticked.map((object, index) => {
+                    return { object, columns: columns[index]! };
+                });
+                // One run, so one action: the schema's row, with each
+                // statement - the schema's, then each object's - a row
+                // under it.
+                await this.host.api.run(scope, [
+                    ...schemaStatements(fields, context),
+                    ...schemaObjectStatements(fields, objects),
+                ]);
             },
         }, scope.connectionId);
     }
@@ -935,10 +987,8 @@ export class MrsCommands {
             : await this.host.api.object(scope, object.object_type,
                 service.full_service_path, schema.request_path,
                 object.request_path);
-        const columnsKind = objectType === "PROCEDURE" || objectType === "FUNCTION"
-            ? objectType : "TABLE";
-        const columns = await this.host.api.columns(scope,
-            objectType === "VIEW" ? "VIEW" : columnsKind, dbSchema, dbObject);
+        const columns = await this.host.api.columns(scope, objectType,
+            dbSchema, dbObject);
         const mappings = stored?.data_mappings ?? [];
         let document = buildDocument(objectType, dbSchema, dbObject, columns,
             mappings, defaultClassName(service.full_service_path,
@@ -1038,7 +1088,7 @@ export class MrsCommands {
                 return;
             }
             await this.host.api.run(scope, [`CREATE REST SCHEMA `
-                + `${quoteRequestPath(`/${camelCase(node.schema)}`)} ON SERVICE `
+                + `${quoteRequestPath(requestPathFor(node.schema, "schema"))} ON SERVICE `
                 + `${quoteServicePath(service.full_service_path)} FROM `
                 + `\`${node.schema.replaceAll("`", "``")}\`;`]);
             this.host.refresh();
