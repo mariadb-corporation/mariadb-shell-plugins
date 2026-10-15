@@ -392,6 +392,29 @@ def test_an_account_granted_exactly_what_the_setup_needs_passes():
     assert rest_functions._missing_privileges(grants, "mariadb_rest_service") == []
 
 
+def test_a_schema_grant_is_read_as_the_server_reads_its_pattern():
+    r"""`mariadb\_rest\_service`.* is the usual way to grant on the schema
+    alone; `_` and `%` unescaped are wildcards."""
+    needed = [
+        "GRANT CREATE USER ON *.* TO `admin`@`%` WITH GRANT OPTION",
+        "GRANT `mariadb_rest_service_meta_provider` TO `admin`@`%` WITH ADMIN OPTION",
+        "GRANT `mariadb_rest_service_data_provider` TO `admin`@`%` WITH ADMIN OPTION",
+    ]
+    for target in (
+        r"`mariadb\_rest\_service`.*",
+        "`mariadb%`.*",
+        "`MARIADB_REST_SERVICE`.*",
+    ):
+        grants = needed + [f"GRANT SELECT, INSERT, UPDATE ON {target} TO `admin`@`%`"]
+        assert rest_functions._missing_privileges(grants, "mariadb_rest_service") == [], target
+
+    # Escaped, the characters are themselves: no wildcard for another name.
+    grants = needed + [r"GRANT SELECT, INSERT, UPDATE ON `mariadbXrest\_service`.* TO `admin`@`%`"]
+    assert "SELECT on mariadb_rest_service.*" in rest_functions._missing_privileges(
+        grants, "mariadb_rest_service"
+    )
+
+
 def test_what_an_account_lacks_is_named():
     grants = [
         "GRANT USAGE ON *.* TO `dev`@`%`",

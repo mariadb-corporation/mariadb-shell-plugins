@@ -104,6 +104,30 @@ _GRANT_ON = re.compile(r"^GRANT (?P<privileges>.+?) ON (?P<object>\S+) TO ")
 _GRANT_ROLE = re.compile(r"^GRANT (?P<role>\S+) TO ")
 
 
+def _schema_pattern_matches(pattern: str, schema: str) -> bool:
+    """Whether a schema-level grant's database covers a schema.
+
+    The server reads it as a LIKE pattern: `_` and `%` are wildcards, and
+    `\\_`, `\\%` - how a grant on a name with underscores is usually
+    written, so that they are not - are the characters themselves.
+    """
+    expression = ""
+    escaped = False
+    for char in pattern:
+        if escaped:
+            expression += re.escape(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "%":
+            expression += ".*"
+        elif char == "_":
+            expression += "."
+        else:
+            expression += re.escape(char)
+    return re.fullmatch(expression, schema, re.IGNORECASE | re.DOTALL) is not None
+
+
 def _missing_privileges(grants: list, metadata_schema: str) -> list:
     """What the account lacks of what ``mariadb-restd --setup`` needs.
 
@@ -137,7 +161,9 @@ def _missing_privileges(grants: list, metadata_schema: str) -> list:
             if target == "*.*":
                 on_global |= privileges
                 global_grant_option |= text.upper().endswith("WITH GRANT OPTION")
-            elif target == f"{metadata_schema.lower()}.*":
+            elif target.endswith(".*") and _schema_pattern_matches(
+                target[:-2], metadata_schema
+            ):
                 on_schema |= privileges
             continue
         role_grant = _GRANT_ROLE.match(text)
