@@ -66,6 +66,7 @@ import {
     DEFAULT_METADATA_SCHEMA,
     objectDefaults,
     objectStatements,
+    requestPathFor,
     dbObjectKey,
     schemaDefaults,
     schemaObjectStatements,
@@ -1087,7 +1088,7 @@ export class MrsCommands {
                 return;
             }
             await this.host.api.run(scope, [`CREATE REST SCHEMA `
-                + `${quoteRequestPath(`/${camelCase(node.schema)}`)} ON SERVICE `
+                + `${quoteRequestPath(requestPathFor(node.schema, "schema"))} ON SERVICE `
                 + `${quoteServicePath(service.full_service_path)} FROM `
                 + `\`${node.schema.replaceAll("`", "``")}\`;`]);
             this.host.refresh();

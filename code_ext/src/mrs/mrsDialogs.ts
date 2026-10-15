@@ -832,8 +832,8 @@ export const schemaObjectStatements = (
     const taken = new Set<string>();
 
     return objects.flatMap(({ object, columns }) => {
-        const requestPath = uniqueRequestPath(`/${camelCase(object.name)}`,
-            taken);
+        const requestPath = uniqueRequestPath(
+            requestPathFor(object.name, object.type), taken);
         // The object's name is taken once on a REST schema too, so it
         // follows the path: `/filmList2` is `...FilmList2`.
         const document = buildDocument(object.type, dbSchema, object.name,
@@ -846,6 +846,24 @@ export const schemaObjectStatements = (
 
         return objectStatements(values, context);
     });
+};
+
+/**
+ * The request path suggested for a database schema or object: its name
+ * in camelCase, its accents folded (`größe` is `/grosse`). Where nothing
+ * of it is left in ASCII, as for a name in another script, what it is
+ * stands in: `/table`, `/schema`. A path stays ASCII, so a URL needs no
+ * encoding and an SDK's class names made from it are names in every
+ * language.
+ *
+ * @param name The database name.
+ * @param fallback What it is - `schema`, or an object's type, such as
+ *        `TABLE` - for a name with nothing left.
+ *
+ * @returns The path.
+ */
+export const requestPathFor = (name: string, fallback: string): string => {
+    return `/${camelCase(name) || camelCase(fallback.toLowerCase())}`;
 };
 
 /**
@@ -890,7 +908,7 @@ export const schemaDefaults = (
 
     return {
         servicePath: service,
-        requestPath: schema?.request_path ?? `/${camelCase(dbSchema || "schema")}`,
+        requestPath: schema?.request_path ?? requestPathFor(dbSchema, "schema"),
         dbSchema: schema?.name ?? dbSchema,
         enabled: schema?.enabled ?? ENABLED_STATE.enabled,
         requiresAuth: schema?.requires_auth ?? false,
@@ -991,7 +1009,8 @@ export const objectDefaults = (
     return {
         servicePath,
         schemaPath,
-        requestPath: object.request_path ?? `/${camelCase(object.name)}`,
+        requestPath: object.request_path
+            ?? requestPathFor(object.name, object.object_type),
         enabled: object.enabled ?? ENABLED_STATE.enabled,
         requiresAuth: object.requires_auth ?? true,
         itemsPerPage: object.items_per_page === null
@@ -1113,7 +1132,9 @@ export const contentSetPathFor = (directory: string): string => {
         name = names.at(-2);
     }
 
-    return name === undefined ? "/content" : `/${camelCase(name)}Content`;
+    const base = name === undefined ? "" : camelCase(name);
+
+    return base === "" ? "/content" : `/${base}Content`;
 };
 
 /** The option keys the shell writes for MRS scripts; never edited. */

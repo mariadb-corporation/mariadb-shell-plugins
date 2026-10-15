@@ -153,6 +153,14 @@ Configuration Values for the New REST Schema"):
     them: `/filmList2`. The object name must be unique on the REST schema
     too (`MyServiceV1ZzReviewFilmList`), so it is made from the numbered
     path, not from the database object's name.
+  - Every path suggested from a name - a REST schema's, a REST object's,
+    a content set's - is ASCII (`requestPathFor`): `camelCase` folds
+    accents (`größe` is `/grosse`, `ß`/`æ`/`ł`... spelled out), and a name
+    with nothing left, as in another script, gets its type instead:
+    `/table`, `/table2`, `/schema`, `/content`. A field made from such a
+    column or parameter is `field`, `field2`. Unicode would pass the REST
+    SQL grammar, but the URL would need encoding and the SDK class names
+    made from the path would not be names in every language (2026-10-15).
   - That makes one Actions row, "Created REST Schema '/x'", with each
     statement as a child row.
 - **Gotcha:** the table must not be rebuilt on every render. A row rebuilt

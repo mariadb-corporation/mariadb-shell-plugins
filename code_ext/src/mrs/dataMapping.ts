@@ -135,13 +135,37 @@ export const newKey = (): string => {
     return `new-${keyPrefix}-${nextKey}`;
 };
 
+/** Letters that NFKD leaves as they are, spelled in ASCII. */
+const ASCII_SPELLINGS: Record<string, string> = {
+    ß: "ss", ẞ: "SS", æ: "ae", Æ: "Ae", œ: "oe", Œ: "Oe", ø: "o", Ø: "O",
+    đ: "d", Đ: "D", ð: "d", Ð: "D", ł: "l", Ł: "L", þ: "th", Þ: "Th", ı: "i",
+};
+
+/**
+ * @param text Any name.
+ *
+ * @returns It with its accents dropped and the letters that have no
+ *          decomposition spelled in ASCII: `größe` is `grosse`. What is
+ *          not a Latin letter stays as it is.
+ */
+export const asciiFolded = (text: string): string => {
+    return text
+        .replace(/[ßẞæÆœŒøØđĐðÐłŁþÞı]/gu, (letter) => {
+            return ASCII_SPELLINGS[letter]!;
+        })
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "");
+};
+
 /**
  * @param text `snake_case`, `kebab-case` or `space separated`.
  *
- * @returns It in camelCase.
+ * @returns It in camelCase, in ASCII letters and digits: accents are
+ *          folded, and what has no ASCII spelling is left out, so a name
+ *          in another script can come back empty.
  */
 export const camelCase = (text: string): string => {
-    const words = text.split(/[^A-Za-z0-9]+/).filter((word) => {
+    const words = asciiFolded(text).split(/[^A-Za-z0-9]+/).filter((word) => {
         return word !== "";
     });
 
@@ -200,6 +224,16 @@ const sameMapping = (
 };
 
 /** Gives every name a suffix where it is taken already. */
+/**
+ * @param column A column's or a parameter's name.
+ *
+ * @returns Its field's name: camelCase, or `field` where nothing of it
+ *          is left in ASCII, as for a name in another script.
+ */
+const fieldName = (column: string): string => {
+    return camelCase(column) || "field";
+};
+
 const uniqueName = (name: string, taken: Set<string>): string => {
     let unique = name;
     for (let i = 2; taken.has(unique); i += 1) {
@@ -272,7 +306,7 @@ export const fieldsFromColumns = (
             const reference = match?.data_mapping_reference ?? undefined;
             fields.push({
                 key: match?.id ?? newKey(),
-                name: uniqueName(match?.name ?? camelCase(column.name), taken),
+                name: uniqueName(match?.name ?? fieldName(column.name), taken),
                 reference: {
                     mapping,
                     crud: crudOf(reference?.options),
@@ -302,7 +336,7 @@ export const fieldsFromColumns = (
         });
         fields.push({
             key: match?.id ?? newKey(),
-            name: uniqueName(match?.name ?? camelCase(column.name), taken),
+            name: uniqueName(match?.name ?? fieldName(column.name), taken),
             column: db,
             enabled: match?.enabled ?? true,
             allowFiltering: match?.allow_filtering ?? true,
@@ -428,12 +462,15 @@ export const parametersFrom = (
     columns: IMrsColumns,
     stored: IMrsDataMapping | undefined,
 ): IMappingField[] => {
+    const taken = new Set<string>();
+
     return (columns.parameters ?? []).map((parameter) => {
         const match = stored?.fields.find((field) => {
             return field.db_column?.name === parameter.name;
         });
 
-        return plainField(camelCase(parameter.name), {
+        return plainField(uniqueName(match?.name ?? fieldName(parameter.name),
+            taken), {
             name: parameter.name,
             datatype: parameter.datatype,
             in: parameter.mode.includes("IN"),

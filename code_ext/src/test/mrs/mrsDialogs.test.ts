@@ -35,6 +35,7 @@ import {
     configureStatements,
     contentSetDefaults,
     contentSetPathFor,
+    requestPathFor,
     contentSetStatements,
     objectDefaults,
     objectStatements,
@@ -1010,6 +1011,8 @@ describe("the content set dialog", () => {
         expect(contentSetPathFor("/web/static")).toBe("/staticContent");
         expect(contentSetPathFor("")).toBe("/content");
         expect(contentSetPathFor("/")).toBe("/content");
+        expect(contentSetPathFor("/home/me/größe")).toBe("/grosseContent");
+        expect(contentSetPathFor("/home/me/日本")).toBe("/content");
     });
 
     it("starts a new content set", () => {
@@ -1578,6 +1581,43 @@ describe("a new REST schema's REST Objects", () => {
             "MyServiceSakilaFilmList2", "MyServiceSakilaFilmList3",
             // A function's first name is its parameters', made from its.
             "MyServiceSakilaActor", "MyServiceSakilaActor2Params"]);
+    });
+
+    it("give an object whose name has no ASCII left a path of its type", () => {
+        const values = schemaDefaults([], undefined, "sakila", "/myService");
+        const ticked = [
+            { name: "größe", type: "TABLE" },
+            { name: "日本", type: "TABLE" },
+            { name: "東京", type: "TABLE" },
+            { name: "一覧", type: "VIEW" },
+        ] as const;
+
+        const statements = schemaObjectStatements(values,
+            ticked.map((object) => {
+                return {
+                    object: { ...object, details: "" },
+                    columns: { schema: "sakila", name: object.name,
+                        type: object.type, columns: [], parameters: [] },
+                };
+            }));
+
+        expect(statements.map((statement) => {
+            return /^CREATE REST \w+ (\S+)/u.exec(statement)?.[1];
+        })).toEqual(["/grosse", "/table", "/table2", "/view"]);
+        expect(statements.map((statement) => {
+            return /\b(MyServiceSakila\w+)/u.exec(statement)?.[1];
+        })).toEqual(["MyServiceSakilaGrosse", "MyServiceSakilaTable",
+            "MyServiceSakilaTable2", "MyServiceSakilaView"]);
+    });
+
+    it("suggest an ASCII path for a schema or object", () => {
+        expect(requestPathFor("größe", "TABLE")).toBe("/grosse");
+        expect(requestPathFor("日本", "TABLE")).toBe("/table");
+        expect(requestPathFor("日本", "schema")).toBe("/schema");
+        expect(schemaDefaults([], undefined, "日本").requestPath)
+            .toBe("/schema");
+        expect(schemaDefaults([], undefined, "café").requestPath)
+            .toBe("/cafe");
     });
 
     it("number a taken path until it is free", () => {

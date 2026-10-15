@@ -228,6 +228,16 @@ describe("names", () => {
         expect(camelCase("")).toBe("");
     });
 
+    it("makes camelCase of accented names in ASCII", () => {
+        expect(camelCase("größe")).toBe("grosse");
+        expect(camelCase("café_menü")).toBe("cafeMenu");
+        expect(camelCase("Ångström")).toBe("angstrom");
+        expect(camelCase("Łódź_Æble")).toBe("lodzAeble");
+        // What has no ASCII spelling is left out.
+        expect(camelCase("日本")).toBe("");
+        expect(camelCase("город_2")).toBe("2");
+    });
+
     it("makes PascalCase", () => {
         expect(pascalCase("first_name")).toBe("FirstName");
         expect(pascalCase("/sakila")).toBe("Sakila");
@@ -829,6 +839,22 @@ describe("buildDocument", () => {
             }], "Fn");
         expect(document.results).toHaveLength(1);
         expect(document.results![0].name).toBe("Stored");
+    });
+
+    it("names a column or parameter in another script a field", () => {
+        const document = buildDocument("TABLE", "s", "t", {
+            schema: "s", name: "t", type: "TABLE",
+            columns: [column("名前"), column("住所"), column("größe")],
+        }, [], "SvcST");
+        expect(document.fields.map((f) => { return f.name; }))
+            .toEqual(["field", "field2", "grosse"]);
+
+        expect(parametersFrom({ schema: "s", name: "p", type: "PROCEDURE",
+            parameters: [
+                { name: "名前", datatype: "int", mode: "IN" },
+                { name: "住所", datatype: "int", mode: "IN" },
+            ] } as IMrsColumns, undefined).map((f) => { return f.name; }))
+            .toEqual(["field", "field2"]);
     });
 
     it("merges parameters without stored ones", () => {
