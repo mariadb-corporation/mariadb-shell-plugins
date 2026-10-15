@@ -227,8 +227,14 @@ export class RestdCommands {
                 },
             });
             if (values.trustCertificate && !context.certificateTrusted) {
+                // Last, and not the dialog's failure: the daemon is set up
+                // and running whether or not the system dialog was
+                // confirmed, and setting it up again would be refused. The
+                // step's row says why, and the panel shows it.
                 await trustCertificateStep(group, () => {
                     return this.host.restApi();
+                }).catch(() => {
+                    this.host.showActions(uri);
                 });
             }
             group.finish(setup.url);
