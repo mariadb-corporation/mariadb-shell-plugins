@@ -32,11 +32,13 @@ Deployments live in two places:
 Three things about mariadb-restd decide how it is driven here:
 
 * ``--setup`` has no option for a password. It asks for what the URI does not
-  carry on stdout and reads the answer from stdin, so the admin password is
-  written to the setup's own stdin - never onto its command line, where any
-  user of the machine could read it. Without ``--jwt-secret`` it would also
-  ask for a JWT secret, and keep asking until it reads a non-empty one, so one
-  is always generated and passed.
+  carry on stdout and reads the answer from stdin, a line each, so the admin
+  password is written to the setup's own stdin - never onto its command line,
+  where any user of the machine could read it. Without ``--jwt-secret`` it
+  then asks for the secret that signs the daemon's JSON Web Tokens, which is
+  as much a secret, so one is generated and written to stdin after the
+  password rather than passed as that option. For a new deployment whose
+  accounts the setup generates, these two are all it asks.
 * The daemon does not detach. The ``start.sh`` the setup writes runs it with a
   plain ``&``, which leaves it the caller's terminal and output, and always
   exits 0 whether the daemon came up or not. It is started here as the
@@ -829,7 +831,7 @@ def setup(
             ``shell.parse_uri`` gives it: ``user``, ``host``, ``port`` and
             perhaps ``socket``.
         password (str): The admin account's password, written to the
-            setup's stdin.
+            setup's stdin, as is a JWT secret generated for the daemon.
         port (int): The port the daemon will listen on.
         metadata_schema (str): The REST metadata schema it will serve.
         record (dict): What to keep in the deployment's deployment.json.
@@ -851,10 +853,6 @@ def setup(
         _setup_uri(connection.get("user") or "root", host, connection.get("port") or 3306),
         "--directory",
         directory,
-        # Without it the setup asks for one, and keeps asking. Hex, and
-        # attached with "=": a value that starts with "-" is taken for the
-        # next option.
-        f"--jwt-secret={secrets.token_hex(32)}",
         f"--conf-set-option=http_server.port={port}",
     ]
     if connection.get("socket"):
@@ -874,7 +872,9 @@ def setup(
     try:
         completed = subprocess.run(
             command,
-            input=f"{password}\n",
+            # The password, then the JWT secret the setup asks for after it:
+            # neither goes on the command line, which every user can read.
+            input=f"{password}\n{secrets.token_hex(32)}\n",
             capture_output=True,
             text=True,
             timeout=timeout,

@@ -27,6 +27,7 @@ connection and its sessions.
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from types import SimpleNamespace
@@ -55,7 +56,10 @@ if argv and argv[0] == "--setup":
     if not os.path.isdir(os.path.dirname(argv[argv.index("--directory") + 1])):
         print("Error: Could not create directory", file=sys.stderr)
         sys.exit(1)
-    record({"argv": argv, "stdin": sys.stdin.readline()})
+    password = sys.stdin.readline()
+    # As the real one: the JWT secret is asked for unless it is an option.
+    jwt = "" if any(a.startswith("--jwt-secret") for a in argv) else sys.stdin.readline()
+    record({"argv": argv, "stdin": password, "jwt": jwt})
     if mode == "setup-fails":
         print("Error: Access denied for user 'root'", file=sys.stderr)
         sys.exit(1)
@@ -214,7 +218,7 @@ def test_a_daemon_listens_on_the_first_free_port_from_8443(monkeypatch):
 
 
 def test_the_setup_gets_the_password_on_stdin(fake_restd, tmp_path):
-    """Never on its command line, and always a JWT secret, so it asks nothing else."""
+    """Never on its command line, and the JWT secret neither."""
     executable, runs = fake_restd
     directory = str(tmp_path / "deployment")
     port = _set_up(executable, directory, password="s3cret!")
@@ -223,7 +227,8 @@ def test_the_setup_gets_the_password_on_stdin(fake_restd, tmp_path):
     assert run["stdin"] == "s3cret!\n"
     assert not any("s3cret!" in argument for argument in run["argv"])
     assert run["argv"][:2] == ["--setup", "root@127.0.0.1:3311"]
-    assert any(argument.startswith("--jwt-secret=") for argument in run["argv"])
+    assert not any(argument.startswith("--jwt-secret") for argument in run["argv"])
+    assert re.fullmatch(r"[0-9a-f]{64}\n", run["jwt"])
     assert f"--conf-set-option=http_server.port={port}" in run["argv"]
     # The default metadata schema is not named.
     assert "--metadata-schema" not in run["argv"]
