@@ -119,51 +119,26 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12):
+Checked at this checkpoint (2026-10-15):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/vscode_syntax_highlighter
+wip/canvas
 
-$ git -C code_ext status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mrs_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+$ git -C code_ext status --short
+(clean before this checkpoint's own edits)
 ```
 
-The `/code-review` fixes (UI runner signals and time limit, one source
-each for the Actions tab's top alignment and tree indent) are #44's:
-`b9642b1c` on `wip/mrs_code_ext`, merged forward as `22406105`.
-
-- **PR #45** `wip/vscode_syntax_highlighter` -> `wip/mrs_code_ext`: the
-  MariaDB SQL language, grammar, ANSI_QUOTES semantic tokens, splitter
-  fixes, the `sql_mode` round trip (`13b7e192`, `a7da1b99`, `75602592`),
-  the `/simplify` pass `4743e259`, and the merges of #44 (`3f0b66eb`,
-  `cef8b880`, `22406105`). See [`context/sql-grammar.md`](context/sql-grammar.md)
-  and [`context/running-sql.md`](context/running-sql.md).
-- **PR #44** `wip/mrs_code_ext` got the footer tab styling (`92c5b4d1`),
-  the UI tests in suites (`168972cc`), and the Actions tab's top
-  alignment and indent guides plus the process-group stop (`a9d1a668`),
-  the `/code-review` fixes (`b9642b1c`).
-- **#43 (Dump and Load) and #41 (the mrs_plugin / msm side) are merged**
-  (2026-10-13, squash-merged after review fixes), and so is
-  mariadb-shell #71. `main` is merged into #44, and from there into #45
-  and #48. Fixes go #44 -> #45 -> #48, always that direction.
-- **Session 2026-10-12:** footer tabs, the grammar (TextMate, generated,
-  not an LSP), semantic tokens for ANSI_QUOTES, the Actions tab's top
-  alignment and straight indent guides instead of Tabulator's L branch,
-  UI tests split into `core` / `mrs` / `dump-load` suites, `/simplify`,
-  then `/code-review` (9 findings, all fixed).
-- Suite: **1994 unit tests pass**, 8 skipped; UI suites core 24, mrs 29,
-  dump-load 15 pass (before the review fixes; after them a live run was
-  interrupted twice with Ctrl-C to check the runner: exit 130, nothing
-  left running); mcp_plugin's script/paging/session/sql tests 133 passed.
-- Not looked at in a running VS Code outside the UI tests: the
-  ANSI_QUOTES colouring, the indent guides after the move to
-  `--actionsTreeIndent`, and still the PR #34 / #38 items listed in
-  earlier checkpoints.
+- **`wip/canvas`** (from `main` at `411b22be`, pushed, **no PR yet**):
+  `39c889e1` "code_ext: schema diagram viewer on a three.js canvas" -
+  the generic canvas (`webview/src/canvas/`), the EER figure set
+  (`webview/src/modeler/`), the Diagrams folder in the Connections view
+  and the "Diagram" session. See [`context/modeler.md`](context/modeler.md).
+  This checkpoint's context edits are not committed.
+- `main` has #44, #45, #50, #51 and #52 merged since the last checkpoint;
+  the only other open PR is **#48** (`wip/vscode-copilot`).
+- Suite: **2186 unit tests pass**, 8 skipped; type check, lint and build
+  clean (2026-10-15). The UI tests were not run this session.
 
 ## Conventions
 

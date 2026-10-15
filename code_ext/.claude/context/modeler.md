@@ -254,10 +254,16 @@ are dropped when Cmd goes up, on blur and when hidden.
 
 ## Known gaps / next steps
 
-- Built and unit tested only; NOT looked at in a running VS Code since
-  the split (2026-10-15): check moves of layers with their tables,
-  Option + drag, orbiting and the Custom entry, the Navigator's overview
-  and drag, the menu buttons on hover.
+- Committed and pushed as `39c889e1` on `wip/canvas` (2026-10-15); no PR
+  yet. The user looked at the rendering in a running VS Code throughout
+  (cards, menu buttons, grid, paper, Navigator, 3D view), with the MRS
+  model from the old file preview. NOT yet tried by the user: the
+  Connections view's Diagrams folder against a live schema with the view,
+  the double-click, the pre-selected diagram, the Actions rows on the
+  "Diagram" session, the Navigator's zoom list, layer moves with their
+  tables and Option + drag.
+- A diagram row has the Diagrams folder's icon (`type-hierarchy-sub`)
+  until the user designs one of its own.
 - Nothing writes the model back; the history is not shown anywhere yet.
 - No rubber-band selection, no connection captions, no mark on a card
   that cuts content off.
