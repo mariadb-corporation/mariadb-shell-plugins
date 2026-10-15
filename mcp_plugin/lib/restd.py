@@ -492,9 +492,15 @@ def read_deployment(directory: str) -> dict:
         "no",
         "off",
     )
-    service = "mysql_rest_service"
+    # The daemon's section and account options; a deployment written before
+    # restd 26.10.0 has the old names ([mysql_rest_service], mysql_user, ...).
+    service = (
+        "mariadb_rest_service"
+        if config.has_section("mariadb_rest_service")
+        else "mysql_rest_service"
+    )
     accounts = []
-    for option in ("mysql_user", "mysql_user_data_access"):
+    for option in ("metadata_user", "data_user", "mysql_user", "mysql_user_data_access"):
         account = config.get(service, option, fallback="")
         if account and account not in accounts:
             accounts.append(account)
@@ -817,8 +823,10 @@ def start(restd: Optional[str], directory: str, timeout: float = START_TIMEOUT) 
 
     os.makedirs(os.path.join(directory, "run"), exist_ok=True)
     env = dict(os.environ)
-    # How the start script the setup writes says where the pid file goes.
-    env["ROUTER_PID"] = os.path.join(directory, PID_FILE)
+    # How the start script the setup writes says where the pid file goes;
+    # ROUTER_PID is the name a daemon older than 26.10.0 reads.
+    env["MARIADB_RESTD_PID"] = os.path.join(directory, PID_FILE)
+    env["ROUTER_PID"] = env["MARIADB_RESTD_PID"]
 
     console_path = os.path.join(directory, CONSOLE_LOG_FILE)
     process = _spawn_detached(

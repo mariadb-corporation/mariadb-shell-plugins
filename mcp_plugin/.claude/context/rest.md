@@ -76,7 +76,8 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   until it reads a non-empty line - forever at EOF.
 - **`start.sh` is not used.** It runs the daemon with a bare `&` (no detach,
   inherits stdout, exit code always 0). `restd.start` spawns
-  `mariadb-restd -c <conf>` itself, `ROUTER_PID=<dir>/run/mariadb-restd.pid`,
+  `mariadb-restd -c <conf>` itself, `MARIADB_RESTD_PID=<dir>/run/mariadb-restd.pid`
+  (and `ROUTER_PID`, the name a daemon older than 26.10.0 reads),
   `start_new_session` (POSIX) / `CREATE_NO_WINDOW` (Windows) like the shell's
   sandbox, console output to `log/console.log`, then waits until the port
   accepts connections or the process exits.

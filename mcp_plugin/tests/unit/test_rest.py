@@ -71,8 +71,8 @@ if argv and argv[0] == "--setup":
         file.write(
             f"[DEFAULT]\nlogging_folder={directory}/log\n"
             f"[http_server]\nport={port}\nssl=1\n"
-            "[mysql_rest_service]\nmysql_user=mariadb_restd_abc123\n"
-            "mysql_read_write_destinations=127.0.0.1:3311\n"
+            "[mariadb_rest_service]\nmetadata_user=mariadb_restd_abc123\n"
+            "read_write_destinations=127.0.0.1:3311\n"
             "rest_daemon_id=0199a1b2-6c3e-7d41-9a0f-2b8c4d5e6f70\n"
         )
     print("# Setting up a REST Daemon")
@@ -83,7 +83,7 @@ if mode == "start-fails":
     sys.exit(1)
 conf = argv[argv.index("-c") + 1]
 port = int([line.split("=")[1] for line in open(conf) if line.startswith("port=")][0])
-pid_file = os.environ["ROUTER_PID"]
+pid_file = os.environ["MARIADB_RESTD_PID"]
 if os.path.exists(pid_file):
     print(f"PID file {pid_file} found. Already running?", file=sys.stderr, flush=True)
     sys.exit(1)
