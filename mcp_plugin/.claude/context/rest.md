@@ -18,6 +18,12 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   `<host>_<port>_<schema>`): a daemon serves a server's metadata schema,
   whatever account a connection uses, so the folder is not per connection
   (connections have no stable ID either; the user agreed, 2026-10-14).
+  A server reached through a socket is named by itself, not by the socket
+  (`restd.server_deployment`, 2026-10-15): `localhost_<@@port>`, so a TCP
+  connection to it finds the same deployment; only a server listening on
+  no port gets `socket_<file name>_<8 hex of sha256(path)>`. `deployment.json`
+  records the socket either way, which the extension matches a socket
+  connection on.
   The extension finds a connection's daemon by `deployment.json`'s host,
   server port and metadata schema, not by the folder name. `deployment.json` beside
   `mariadb-restd.conf` records the connection URI, host, server port and

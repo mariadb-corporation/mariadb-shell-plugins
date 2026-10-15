@@ -104,6 +104,13 @@ _GRANT_ON = re.compile(r"^GRANT (?P<privileges>.+?) ON (?P<object>\S+) TO ")
 _GRANT_ROLE = re.compile(r"^GRANT (?P<role>\S+) TO ")
 
 
+def _server_of(deployment: dict) -> str:
+    """The server a deployment serves, as a message names it."""
+    if deployment.get("server_port") is None and deployment.get("socket"):
+        return deployment["socket"]
+    return f"{deployment.get('host')}:{deployment.get('server_port')}"
+
+
 def _schema_pattern_matches(pattern: str, schema: str) -> bool:
     """Whether a schema-level grant's database covers a schema.
 
@@ -393,7 +400,7 @@ def register_rest_tools(server, function_groups=()) -> None:
                 if connection_id is None:
                     raise tool_error(
                         "Pass the connection_id of a connection to "
-                        f"{deployment['host']}:{deployment['server_port']} to "
+                        f"{_server_of(deployment)} to "
                         "drop the REST Daemon's account with, or "
                         "drop_accounts=False to delete the folder only."
                     )
@@ -535,14 +542,21 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                 ) from error
             try:
                 schema, exists = _choose_metadata_schema(session, metadata_schema)
+                # Through a socket, the server says which port it is, so a
+                # daemon is the server's however it is reached.
+                reported_port = None
+                if connection.get("socket"):
+                    reported_port = int(
+                        session.run_sql("SELECT @@port").fetch_one()[0] or 0
+                    )
             finally:
                 session.close()
 
-            return uri, connection, secret, schema, exists
+            return uri, connection, secret, schema, exists, reported_port
 
-        uri, connection, secret, schema, exists = await anyio.to_thread.run_sync(
-            prepare
-        )
+        (
+            uri, connection, secret, schema, exists, reported_port
+        ) = await anyio.to_thread.run_sync(prepare)
 
         executable = await anyio.to_thread.run_sync(restd.find_restd, restd_path)
         installed = False
@@ -564,16 +578,13 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
 
         def work():
             # One daemon per server and metadata schema, whatever account
-            # the connection uses.
-            host = connection.get("host") or "localhost"
-            server_port = connection.get("port") or 3306
+            # the connection uses, and however it reaches the server.
+            directory, host, server_port, socket_path = restd.server_deployment(
+                connection, reported_port, schema
+            )
             if sandbox_port is not None:
                 directory = restd.sandbox_deployment_dir(
                     base_dir, sandbox_port, schema
-                )
-            else:
-                directory = restd.connection_deployment_dir(
-                    host, server_port, schema
                 )
             if restd.is_deployment(directory):
                 raise tool_error(
@@ -619,7 +630,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                     "host": host,
                     "server_port": server_port,
                     # A server reached through a socket is matched on it.
-                    "socket": connection.get("socket") or None,
+                    "socket": socket_path,
                     "sandbox_port": sandbox_port,
                     "created": general.utc_timestamp(),
                 },

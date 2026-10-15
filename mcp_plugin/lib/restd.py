@@ -54,6 +54,7 @@ Three things about mariadb-restd decide how it is driven here:
 
 import collections
 import configparser
+import hashlib
 import json
 import os
 import re
@@ -163,6 +164,64 @@ def connection_deployment_dir(
         deployments_root(),
         f"{safe_host}_{port}{_schema_suffix(metadata_schema)}",
     )
+
+
+def socket_deployment_dir(
+    socket_path: str, metadata_schema: str = DEFAULT_METADATA_SCHEMA
+) -> str:
+    """Returns the deployment folder for a server reached through a socket only.
+
+    Args:
+        socket_path (str): The server's socket or named pipe.
+        metadata_schema (str): The REST metadata schema the daemon serves.
+
+    Returns:
+        ``<deployments root>/socket_<file name>_<hash>``: the file name to
+        read, a hash of the whole path to tell `/tmp/mysql.sock` from
+        `/var/run/mysqld/mysql.sock`, and ``_<schema>`` as for any server.
+    """
+    name = re.sub(r"[^A-Za-z0-9._-]", "-", os.path.basename(socket_path)) or "socket"
+    digest = hashlib.sha256(socket_path.encode("utf-8")).hexdigest()[:8]
+    return os.path.join(
+        deployments_root(),
+        f"socket_{name}_{digest}{_schema_suffix(metadata_schema)}",
+    )
+
+
+def server_deployment(
+    connection: dict, reported_port: Optional[int], metadata_schema: str
+) -> tuple:
+    """Where the daemon of a connection's server goes, and what it records.
+
+    A server is named by itself, not by how it is reached: through a
+    socket, it is `localhost` and the port it says it listens on, so a TCP
+    connection to it finds the same deployment - one daemon per server.
+    Only a server that listens on no port (skip-networking) is named by
+    its socket.
+
+    Args:
+        connection (dict): The connection, as ``shell.parse_uri`` gives it.
+        reported_port (int): The server's ``@@port``, read through a socket
+            connection; 0 or None where it listens on none.
+        metadata_schema (str): The REST metadata schema the daemon serves.
+
+    Returns:
+        tuple: The folder, and the ``host``, ``server_port`` and ``socket``
+        its deployment.json records.
+    """
+    socket_path = connection.get("socket") or None
+    if socket_path is None:
+        host = connection.get("host") or "localhost"
+        port = connection.get("port") or 3306
+        return connection_deployment_dir(host, port, metadata_schema), host, port, None
+    if reported_port:
+        return (
+            connection_deployment_dir("localhost", reported_port, metadata_schema),
+            "localhost",
+            reported_port,
+            socket_path,
+        )
+    return socket_deployment_dir(socket_path, metadata_schema), "localhost", None, socket_path
 
 
 def sandbox_deployment_dir(

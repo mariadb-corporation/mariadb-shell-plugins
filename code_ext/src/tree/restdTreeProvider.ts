@@ -53,6 +53,11 @@ export const restdServerLabel = (node: IRestdDeployment): string => {
         return `Sandbox localhost:${String(node.sandbox_port)}`;
     }
 
+    // A server that listens on no port is its socket.
+    if (node.server_port === null && node.socket) {
+        return node.socket;
+    }
+
     return `${node.host ?? "unknown host"}:${String(node.server_port ?? "")}`;
 };
 

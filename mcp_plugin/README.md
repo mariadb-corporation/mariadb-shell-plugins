@@ -530,6 +530,9 @@ agent is asked first, through MCP elicitation.
 
 A sandbox's deployment is in `<sandbox>/mariadb-restd`. Any other server's deployment
 is in `~/.mariadb-restd/<host>_<port>` (`%APPDATA%\MariaDB\mariadb-restd` on Windows).
+A server reached through a socket gets the folder of `localhost` and the port it listens
+on, the one a TCP connection to it gets too; a server that listens on no port gets
+`socket_<file name>_<hash of its path>`.
 A daemon serves one metadata schema: for any other than `mariadb_rest_service`, the
 folder name ends in `_<schema>`, so each of a server's metadata schemas can have a
 daemon of its own.

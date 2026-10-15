@@ -942,6 +942,35 @@ def test_a_deployment_reports_the_socket_it_was_set_up_through(fake_restd, tmp_p
     assert restd.status(by_port)["socket"] is None
 
 
+def test_a_server_has_one_deployment_however_it_is_reached(home):
+    """Through a socket, a server is localhost and the port it reports, as
+    for a TCP connection; one listening on no port is its socket."""
+    tcp = restd.server_deployment(
+        {"host": "127.0.0.1", "port": 3306}, None, restd.DEFAULT_METADATA_SCHEMA
+    )
+    through_socket = restd.server_deployment(
+        {"socket": "/tmp/mysql.sock"}, 3306, restd.DEFAULT_METADATA_SCHEMA
+    )
+    assert through_socket == (
+        restd.connection_deployment_dir("localhost", 3306),
+        "localhost",
+        3306,
+        "/tmp/mysql.sock",
+    )
+    assert tcp[1:] == ("127.0.0.1", 3306, None)
+
+    only_socket = restd.server_deployment(
+        {"socket": "/tmp/mysql.sock"}, 0, "acme_rest"
+    )
+    other = restd.server_deployment(
+        {"socket": "/var/run/mysqld/mysql.sock"}, 0, "acme_rest"
+    )
+    assert os.path.basename(only_socket[0]).startswith("socket_mysql.sock_")
+    assert only_socket[0].endswith("_acme_rest")
+    assert only_socket[0] != other[0]
+    assert only_socket[1:] == ("localhost", None, "/tmp/mysql.sock")
+
+
 def test_a_deployment_can_be_named_from_the_home_folder(fake_restd, home, monkeypatch):
     """~ is expanded for the check, and so for what the tool does too."""
     executable, _ = fake_restd
