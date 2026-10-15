@@ -412,6 +412,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "mariadb.openSchemaDiagram",
+        "title": "Open Diagram",
+        "category": "MariaDB",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "mariadb.startSandbox",
         "title": "Start Sandbox",
         "category": "MariaDB",
@@ -897,6 +903,7 @@
           "when": "view == mariadb.connections",
           "group": "navigation@1"
         },
+
         {
           "command": "mariadb.refreshConnections",
           "when": "view == mariadb.connections",
@@ -1028,6 +1035,16 @@
           "command": "mariadb.retryConnection",
           "when": "view == mariadb.connections && viewItem == mariadbConnectionStatus.failed",
           "group": "1_connection@1"
+        },
+        {
+          "command": "mariadb.openSchemaDiagram",
+          "when": "view == mariadb.connections && viewItem == mariadbDiagram",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.openSchemaDiagram",
+          "when": "view == mariadb.connections && viewItem == mariadbDiagram",
+          "group": "1_data@1"
         },
         {
           "command": "mariadb.selectRows",
@@ -1412,6 +1429,10 @@
       "commandPalette": [
         {
           "command": "mariadb.selectRows",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.openSchemaDiagram",
           "when": "false"
         },
         {
@@ -2067,7 +2088,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:extension": "vite build",
-    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts && vite build --config vite.mrs.config.ts && vite build --config vite.util.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts && vite build --config vite.mrs.config.ts && vite build --config vite.util.config.ts && vite build --config vite.modeler.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "grammar:sync": "node tools/grammar.mts sync",
@@ -2086,6 +2107,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
     "@types/tabulator-tables": "^6.2.6",
+    "@types/three": "^0.186.0",
     "@types/vscode": "^1.138.0",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.5.0",
@@ -2110,6 +2132,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vscode/codicons": "^0.0.46-24",
     "preact": "^10.29.8",
-    "tabulator-tables": "^6.3.1"
+    "tabulator-tables": "^6.3.1",
+    "three": "^0.186.1"
   }
 }

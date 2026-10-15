@@ -18,6 +18,8 @@
 import type { EditorWebviewMessage }
     from "../../src/connections/editorProtocol.js";
 import type { MrsWebviewMessage } from "../../src/mrs/mrsDialogProtocol.js";
+import type { ModelerWebviewMessage }
+    from "../../src/modeler/modelerProtocol.js";
 import type { SandboxWebviewMessage }
     from "../../src/sandboxes/sandboxProtocol.js";
 import type { UtilWebviewMessage }
@@ -52,9 +54,30 @@ const api = acquireVsCodeApi();
  */
 export const post = <
     T extends WebviewMessage | EditorWebviewMessage | SandboxWebviewMessage
-    | MrsWebviewMessage | UtilWebviewMessage,
+    | MrsWebviewMessage | UtilWebviewMessage | ModelerWebviewMessage,
 >(
     message: T,
 ): void => {
     api.postMessage(message);
+};
+
+/**
+ * What the webview kept with `saveState`: VS Code holds it across a reload
+ * of the webview and a restart.
+ *
+ * @returns The state, or nothing where none was kept.
+ */
+export const loadState = (): unknown => {
+    return api.getState();
+};
+
+/**
+ * Keeps a state for the webview, replacing what was kept.
+ *
+ * @param state The state; plain JSON.
+ *
+ * @returns Nothing.
+ */
+export const saveState = (state: unknown): void => {
+    api.setState(state);
 };

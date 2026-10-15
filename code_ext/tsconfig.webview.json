@@ -32,6 +32,9 @@
         "src/mrs/dataMapping.ts",
         "src/mrs/mrsDialogs.ts",
         "src/mrs/mrsDialogProtocol.ts",
-        "src/webview/dialogProtocol.ts"
+        "src/webview/dialogProtocol.ts",
+        "src/modeler/modelFormat.ts",
+        "src/modeler/modelerProtocol.ts",
+        "src/modeler/pageSettings.ts"
     ]
 }

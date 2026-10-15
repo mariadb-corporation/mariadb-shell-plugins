@@ -24,13 +24,16 @@ extension grows.
 | `src/util/` | Dump and Load: the operations' fields, the dialog, the commands, the task monitor, the Tasks view, a task's Actions row (`taskActions.ts`) and its log file (`taskLogs.ts`) (see [`context/dump-and-load.md`](context/dump-and-load.md)). |
 | `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/rest/` | The MariaDB REST Daemon: a sandbox deployed with the REST Service, its daemon following it, the REST Daemons view's commands, and `ActionGroup`, one Actions row with a row per step (see [`context/rest.md`](context/rest.md)). |
+| `src/modeler/` | The schema diagram viewer's extension side: the `msm_schema_diagrams` rows (`mwb-schema/1`, `mwb-diagram/1`) and their queries, the Diagram session's service, the page model (A4 sheets the diagram is printed on), and the panel (see [`context/modeler.md`](context/modeler.md)). |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command; `sqlLanguage.ts`, which documents are SQL; `ansiQuotes.ts`, the semantic tokens that mark `"..."` as an identifier where the connection has ANSI_QUOTES. |
 | `syntaxes/` | The MariaDB SQL TextMate grammar: the hand-written template, the generated `words.json`, and the built grammar (see [`context/sql-grammar.md`](context/sql-grammar.md)). |
 | `tools/grammar.mts` | `grammar:sync` reads the word lists out of the mariadb-server and mariadb-shell checkouts; `grammar:build` makes the grammar from the template. |
 | `language-configuration.json` | Comments, brackets and auto-closing pairs of the MariaDB SQL language. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`); what every webview shares - the HTML, CSP and options (`html.ts`), the hold-until-`ready` queue (`readyQueue.ts`), the dialogs' common messages (`dialogProtocol.ts`). |
-| `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog and the MRS dialogs. |
+| `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog, the MRS dialogs and the schema model viewer. |
+| `webview/src/canvas/` | The three.js canvas: 2D / 3D views, paper and grid, selection, moves, undo, the Navigator - generic, showing a figure set (see [`context/modeler.md`](context/modeler.md)). |
+| `webview/src/modeler/` | The EER diagram as a figure set of the canvas (tables, layers, connections), and the model viewer. |
 | `src/test/` | The extension-side test suite, mirroring the source layout; `grammar/` tokenizes with VS Code's own TextMate engine (word coverage, token classes, corpus snapshots). |
 | `webview/test/` | The frontend test suite, run under jsdom. |
 | `ui-test/` | The ExTester UI tests: the runner and its suites (`core`, `mrs`, `dump-load`, each with a sandbox of its own), the helpers, the test files (see [`context/testing-and-debugging.md`](context/testing-and-debugging.md)). |
@@ -60,6 +63,7 @@ change belongs to up to date, and this table with it.
 | [`context/actions-grid.md`](context/actions-grid.md) | The actions grid: run rows and their statements, errors and popups, scrolling, the jump arrows, and what the server had to report for it. |
 | [`context/commands.md`](context/commands.md) | Every contributed command and where it appears. |
 | [`context/mrs.md`](context/mrs.md) | The MariaDB REST Service tree and dialogs: REST SQL FORMAT=JSON reads, the `mrs.*` tools, several metadata schemas, the files, what was left out of the MySQL Shell's support, the opt-in end-to-end test, and every MRS action in the Actions tab. |
+| [`context/modeler.md`](context/modeler.md) | The schema model viewer (preview, `wip/canvas`): the split between the generic canvas and figure sets, the 2D / 3D views and orbiting, tables and layers (moves, elevation), the Navigator, the Workbench figure design and toolbar, in-place editing of names, the A4 page model, life-size 100%, the table catalog interface, why cards are canvas textures, the shortcuts and what is still missing. |
 | [`context/testing-and-debugging.md`](context/testing-and-debugging.md) | The interfaces everything external sits behind, the UI tests (ExTester) and their traps, and the F5 launch and watch task. |
 
 ## Known gaps

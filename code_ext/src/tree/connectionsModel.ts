@@ -25,6 +25,13 @@ import {
     folderNames,
 } from "../connections/connectionFolders.js";
 import type { IStoredConnection } from "../connections/connectionStore.js";
+import {
+    diagramNames,
+    hasDiagrams,
+    hasDiagramsSql,
+    listDiagramsSql,
+} from "../modeler/diagramQueries.js";
+import type { DiagramService } from "../modeler/diagramService.js";
 import { withDefaultScheme } from "../connections/connectionUri.js";
 import {
     OBJECT_TYPES,
@@ -137,11 +144,31 @@ export interface IObjectNode {
     comment?: string;
 }
 
+/**
+ * The folder of a schema's diagrams: there where the schema has an
+ * `msm_schema_diagrams` view.
+ */
+export interface IDiagramsNode {
+    kind: "diagrams";
+    uri: string;
+    schema: string;
+}
+
+/** One diagram of a schema, as its `msm_schema_diagrams` view names it. */
+export interface IDiagramNode {
+    kind: "diagram";
+    uri: string;
+    schema: string;
+    name: string;
+}
+
 export type ConnectionsNode =
     | IFolderNode
     | IConnectionNode
     | IConnectionStatusNode
     | ISchemaNode
+    | IDiagramsNode
+    | IDiagramNode
     | IObjectGroupNode
     | IObjectNode
     | MrsNode;
@@ -216,6 +243,7 @@ export class ConnectionsModel {
             },
         private readonly customFolders: () => string[] = () => { return []; },
         private readonly mrs?: MrsModel,
+        private readonly diagrams?: DiagramService,
     ) { }
 
     /**
@@ -351,7 +379,12 @@ export class ConnectionsModel {
             }
 
             case "schema": {
-                return this.#groupsOf(node);
+                return [...await this.#diagramsFolderOf(node),
+                    ...this.#groupsOf(node)];
+            }
+
+            case "diagrams": {
+                return await this.#diagramsOf(node);
             }
 
             case "objectGroup": {
@@ -417,7 +450,7 @@ export class ConnectionsModel {
     /**
      * The object type folders of a schema. They are listed unconditionally,
      * rather than only where the schema holds objects of that type, so that
-     * expanding a schema costs no queries at all.
+     * they cost expanding a schema no queries.
      *
      * @param node The schema node.
      *
@@ -431,6 +464,64 @@ export class ConnectionsModel {
                 schema: node.schema,
                 objectType,
             };
+        });
+    }
+
+    /**
+     * The Diagrams folder of a schema, first among its children, where the
+     * schema has an `msm_schema_diagrams` view: the one query expanding a
+     * schema costs. A schema it cannot be told of (no privileges to look,
+     * say) just has no folder.
+     *
+     * @param node The schema node.
+     *
+     * @returns The folder, or nothing.
+     */
+    async #diagramsFolderOf(node: ISchemaNode): Promise<IDiagramsNode[]> {
+        const connectionId = this.connections.connectionIdFor(
+            node.uri, UI_BACKEND_SESSION);
+        if (connectionId === undefined) {
+            return [];
+        }
+        try {
+            const api = await this.connections.api();
+            if (!hasDiagrams(await api.executeSql(connectionId,
+                hasDiagramsSql(node.schema)))) {
+                return [];
+            }
+        } catch {
+            return [];
+        }
+
+        return [{ kind: "diagrams", uri: node.uri, schema: node.schema }];
+    }
+
+    /**
+     * Lists the diagrams of a schema, as its `msm_schema_diagrams` view has
+     * them.
+     *
+     * @param node The Diagrams folder.
+     *
+     * @returns Its diagram nodes.
+     */
+    async #diagramsOf(node: IDiagramsNode): Promise<IDiagramNode[]> {
+        let names: string[];
+        if (this.diagrams !== undefined) {
+            // On the Diagram session, put in the Actions as it runs.
+            names = await this.diagrams.listDiagrams(node.uri, node.schema);
+        } else {
+            const connectionId = this.connections.connectionIdFor(
+                node.uri, UI_BACKEND_SESSION);
+            if (connectionId === undefined) {
+                return [];
+            }
+            const api = await this.connections.api();
+            names = diagramNames(await api.executeSql(connectionId,
+                listDiagramsSql(node.schema)));
+        }
+
+        return names.map((name) => {
+            return { kind: "diagram", uri: node.uri, schema: node.schema, name };
         });
     }
 
