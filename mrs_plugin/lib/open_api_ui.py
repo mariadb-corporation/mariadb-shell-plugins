@@ -29,7 +29,8 @@ The MySQL Shell for VS Code did the same for a content set whose folder was
 the placeholder `${openApiUi}`; here it is an option of its own
 (`load_content_set(..., open_api_ui=True)`).
 
-Both downloads are pinned and checked against their SHA-256, and each patch
+Both downloads are pinned and checked against their SHA-256, and kept by
+it in the plugin's data folder, so they are downloaded once. Each patch
 must apply: it is written against the minified files of that one release,
 and a page that silently stayed Swagger's own petstore demo would be worse
 than an error.
@@ -109,8 +110,45 @@ padding: 0;
 """
 
 
+def cache_dir():
+    """Where the downloads are kept, by their SHA-256."""
+    import mysqlsh
+
+    return os.path.abspath(
+        mysqlsh.plugin_manager.general.get_shell_user_dir(
+            "plugin_data", "mrs_plugin", "downloads"
+        )
+    )
+
+
+def _cached(sha256):
+    """The download kept with this SHA-256, or None where it is not, or is
+    not that file any more."""
+    try:
+        with open(os.path.join(cache_dir(), sha256), "rb") as file:
+            data = file.read()
+    except OSError:
+        return None
+    return data if hashlib.sha256(data).hexdigest() == sha256 else None
+
+
+def _keep(sha256, data):
+    """Keeps a download for the next time; a folder that cannot be written
+    only means it is downloaded again."""
+    directory = cache_dir()
+    temporary = os.path.join(directory, f"{sha256}.tmp")
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(temporary, "wb") as file:
+            file.write(data)
+        os.replace(temporary, os.path.join(directory, sha256))
+    except OSError:
+        pass
+
+
 def download(url, sha256):
-    """Downloads a file and checks it against its SHA-256.
+    """Downloads a file and checks it against its SHA-256, unless it was
+    downloaded before.
 
     Args:
         url (str): The file.
@@ -122,6 +160,15 @@ def download(url, sha256):
     Raises:
         ValueError: If it cannot be downloaded, or is not the file expected.
     """
+    data = _cached(sha256)
+    if data is None:
+        data = _fetch(url, sha256)
+        _keep(sha256, data)
+    return data
+
+
+def _fetch(url, sha256):
+    """Downloads a file and checks it against its SHA-256."""
     try:
         with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:
             data = response.read()
@@ -175,13 +222,42 @@ def _patch(path, pattern, replacement, flags=0):
         file.write(patched)
 
 
+def download_assets(send_gui_message=None, fetch=None):
+    """Swagger UI and the dark theme, downloaded unless they were before.
+
+    What needs no database: a caller holding a transaction, or a
+    connection's lock, calls it first, so that prepare() only reads what
+    is kept.
+
+    Args:
+        send_gui_message (callable): Where to report a download.
+        fetch (callable): Downloads a URL checked against a SHA-256; a test
+            can hand in its own.
+
+    Returns:
+        tuple: The Swagger UI archive and the dark theme's CSS.
+    """
+    assets = []
+    for url, sha256, what in (
+        (SWAGGER_UI_URL, SWAGGER_UI_SHA256, f"Swagger UI {SWAGGER_UI_VERSION}"),
+        (DARK_CSS_URL, DARK_CSS_SHA256, "the dark theme"),
+    ):
+        data = _cached(sha256) if fetch is None else None
+        if data is None:
+            if send_gui_message is not None:
+                send_gui_message("info", f"Downloading {what} ...")
+            data = (fetch or download)(url, sha256)
+        assets.append(data)
+    return tuple(assets)
+
+
 def prepare(
     target_dir,
     service_name,
     service_path,
     request_path=DEFAULT_REQUEST_PATH,
     send_gui_message=None,
-    fetch=download,
+    fetch=None,
 ):
     """Writes a REST service's OpenAPI UI into a folder.
 
@@ -203,10 +279,7 @@ def prepare(
         if send_gui_message is not None:
             send_gui_message("info", message)
 
-    report(f"Downloading Swagger UI {SWAGGER_UI_VERSION} ...")
-    archive = fetch(SWAGGER_UI_URL, SWAGGER_UI_SHA256)
-    report("Downloading the dark theme ...")
-    dark_css = fetch(DARK_CSS_URL, DARK_CSS_SHA256)
+    archive, dark_css = download_assets(send_gui_message, fetch)
 
     report("Customizing the OpenAPI UI ...")
     names = []

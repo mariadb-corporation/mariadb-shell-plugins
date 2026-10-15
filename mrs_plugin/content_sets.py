@@ -173,6 +173,11 @@ def load_content_set(directory=None, content_set_path=None, **kwargs):
             raise ValueError("Pass the request path of the content set.")
         content_set_path = lib.open_api_ui.DEFAULT_REQUEST_PATH
 
+    if kwargs.get("open_api_ui", False):
+        # Before the transaction, which a slow github.com would otherwise
+        # keep open: inside it, the files are read from where they are kept.
+        lib.open_api_ui.download_assets(kwargs.get("send_gui_message"))
+
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:

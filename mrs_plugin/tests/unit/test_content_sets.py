@@ -198,11 +198,8 @@ def offline_swagger(monkeypatch):
         return b".dark { color: #eee; }\n"
 
     monkeypatch.setattr(lib.open_api_ui, "download", fetch)
-    # prepare() took the default when it was defined.
-    monkeypatch.setattr(
-        lib.open_api_ui.prepare, "__defaults__",
-        lib.open_api_ui.prepare.__defaults__[:-1] + (fetch,),
-    )
+    # Nothing kept from an earlier download, so every call fetches.
+    monkeypatch.setattr(lib.open_api_ui, "_cached", lambda sha256: None)
     return fetched
 
 
@@ -262,6 +259,53 @@ def test_an_open_api_ui_that_cannot_be_patched_is_refused(tmp_path, monkeypatch)
         lib.open_api_ui.prepare(str(tmp_path), "Shop", "/shop", fetch=fetch)
 
 
+def test_a_download_is_kept_by_its_sha256(tmp_path, monkeypatch):
+    """Downloaded once; a kept copy that is not the file any more again."""
+    import hashlib
+
+    data = b"swagger"
+    sha256 = hashlib.sha256(data).hexdigest()
+    fetched = []
+    monkeypatch.setattr(lib.open_api_ui, "cache_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        lib.open_api_ui, "_fetch", lambda url, sha: fetched.append(url) or data
+    )
+
+    assert lib.open_api_ui.download("https://example.com/a.zip", sha256) == data
+    assert lib.open_api_ui.download("https://example.com/a.zip", sha256) == data
+    assert fetched == ["https://example.com/a.zip"]
+
+    (tmp_path / sha256).write_bytes(b"tampered")
+    assert lib.open_api_ui.download("https://example.com/a.zip", sha256) == data
+    assert len(fetched) == 2
+
+
+def test_the_open_api_ui_is_downloaded_before_the_transaction(
+    phone_book, offline_swagger, monkeypatch
+):
+    """A slow github.com keeps no transaction open."""
+    session = phone_book["session"]
+    order = []
+    transaction = lib.core.MrsDbTransaction
+
+    class Recorded(transaction):
+        def __enter__(self):
+            order.append("transaction")
+            return super().__enter__()
+
+    monkeypatch.setattr(lib.core, "MrsDbTransaction", Recorded)
+    download = lib.open_api_ui.download
+    monkeypatch.setattr(
+        lib.open_api_ui, "download",
+        lambda url, sha256: order.append("download") or download(url, sha256),
+    )
+
+    load_content_set(service_path="/test", open_api_ui=True, session=session)
+    session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")
+
+    assert order[:3] == ["download", "download", "transaction"]
+
+
 def test_a_download_that_is_not_the_file_expected_is_refused(monkeypatch):
     import io
 
@@ -277,7 +321,7 @@ def test_a_download_that_is_not_the_file_expected_is_refused(monkeypatch):
         lambda url, timeout=None: Response(b"something else"),
     )
     with pytest.raises(ValueError, match="not the file expected"):
-        lib.open_api_ui.download("https://example.com/x.zip", "0" * 64)
+        lib.open_api_ui._fetch("https://example.com/x.zip", "0" * 64)
 
 
 def test_load_content_set_uploads_the_open_api_ui(phone_book, offline_swagger):

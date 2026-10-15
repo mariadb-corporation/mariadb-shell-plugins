@@ -310,6 +310,7 @@ def content_set_tool(monkeypatch):
     import contextlib
 
     import mrs_plugin.content_sets
+    import mrs_plugin.lib.open_api_ui
     from mcp_plugin.lib import db_functions, general, mrs_functions
 
     calls, checked = [], []
@@ -324,9 +325,14 @@ def content_set_tool(monkeypatch):
 
     @contextlib.contextmanager
     def use_session(connection_id, client):
+        calls.append("session")
         yield object()
 
     monkeypatch.setattr(mrs_plugin.content_sets, "load_content_set", load)
+    monkeypatch.setattr(
+        mrs_plugin.lib.open_api_ui, "download_assets",
+        lambda: calls.append("download"),
+    )
     monkeypatch.setattr(general, "require_allowed_path", require)
     monkeypatch.setattr(general, "get_client_identity", lambda ctx: None)
     monkeypatch.setattr(db_functions, "use_session", use_session)
@@ -342,7 +348,9 @@ def test_the_open_api_ui_is_an_option_of_the_content_set_tool(content_set_tool):
 
     asyncio.run(load(None, "c1", service_path="/shop", open_api_ui=True))
 
-    assert calls == [{"directory": None, "content_set_path": None,
+    # Downloaded before the connection's lock is taken.
+    assert calls == ["download", "session",
+                     {"directory": None, "content_set_path": None,
                       "replace": False, "open_api_ui": True,
                       "service_path": "/shop"}]
     assert checked == []
@@ -360,6 +368,7 @@ def test_the_content_set_tool_wants_a_directory_or_the_open_api_ui(content_set_t
     # A directory is still checked against the allowed paths.
     asyncio.run(load(None, "c1", directory="/web", content_set_path="/app"))
     assert checked == ["/web"]
+    assert "download" not in calls
 
 
 @pytest.mark.e2e

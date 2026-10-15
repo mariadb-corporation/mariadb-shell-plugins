@@ -57,6 +57,7 @@ def register_mrs_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from mrs_plugin import content_sets, dump, general as mrs_general
     from mrs_plugin import services as mrs_services
+    from mrs_plugin.lib import open_api_ui as open_api_ui_files
 
     tool = tool_registrar(server)
 
@@ -466,6 +467,12 @@ def register_mrs_tools(server, function_groups=()) -> None:
                     "open_api_ui to upload the REST service's OpenAPI UI."
                 )
             await general.require_allowed_path(ctx, directory)
+
+        if open_api_ui:
+            # Downloaded before the connection's lock is taken, so a slow
+            # github.com holds up no other call on it; the plugin then reads
+            # the files from where they are kept.
+            await anyio.to_thread.run_sync(open_api_ui_files.download_assets)
 
         return await _on_session(
             ctx,
