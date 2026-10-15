@@ -132,6 +132,7 @@ describe("deploySandboxWithRest", () => {
             expect(last().children?.map((row) => { return row.message; }))
                 .toEqual([
                     "Created Sandbox on port 3311",
+                    "Connected to Sandbox on port 3311",
                     "Set up REST Daemon",
                     "Created REST Auth App 'MRS'",
                     "Created REST User 'dba'",
@@ -139,6 +140,25 @@ describe("deploySandboxWithRest", () => {
                 ]);
             // The password is never shown.
             expect(JSON.stringify(last())).not.toContain("Secret1!");
+        });
+
+    it("says in a row of its own that the sandbox could not be connected to",
+        async () => {
+            const { host, last } = createHost();
+            host.connect = () => {
+                return Promise.reject(new Error("Access denied"));
+            };
+
+            const deployed = await deploySandboxWithRest(host,
+                { port: 3311, password: "Root1!" }, REST);
+
+            expect(await deployed.rest).toBe(false);
+            expect(last()).toMatchObject({ kind: "error" });
+            expect(last().children?.at(-1)).toMatchObject({
+                kind: "error",
+                message: "Connecting to Sandbox on port 3311 failed: "
+                    + "Access denied",
+            });
         });
 
     it("passes the port typed", async () => {

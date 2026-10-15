@@ -165,8 +165,13 @@ export const deploySandboxWithRest = async (
     }
 
     const steps = async (): Promise<boolean> => {
+        // Every call is a step, so whatever fails has its row.
         try {
-            const connectionId = await host.connect(sandboxConnectionUri(port));
+            const uri = sandboxConnectionUri(port);
+            const connectionId = await group.step({
+                doing: `Connecting to Sandbox on port ${port}`,
+                done: `Connected to Sandbox on port ${port}`,
+            }, `db.connect('${uri}')`, () => { return host.connect(uri); });
             const setup = await group.step({
                 doing: rest.restdPort === undefined
                     ? "Setting up REST Daemon"
@@ -191,13 +196,17 @@ export const deploySandboxWithRest = async (
                 },
             });
 
-            const api = await host.api();
             const [authApp, user] = defaultAuthAppStatements(rest.userName,
                 rest.password);
-            await group.step({
+            const api = await group.step({
                 doing: `Creating REST Auth App '${DEFAULT_AUTH_APP}'`,
                 done: `Created REST Auth App '${DEFAULT_AUTH_APP}'`,
-            }, authApp!, () => { return runSql(api, connectionId, authApp!); });
+            }, authApp!, async () => {
+                const sql = await host.api();
+                await runSql(sql, connectionId, authApp!);
+
+                return sql;
+            });
             await group.step({
                 doing: `Creating REST User '${rest.userName}'`,
                 done: `Created REST User '${rest.userName}'`,
