@@ -19,6 +19,7 @@ import type { McpServerCommand } from "../shell/mcpServer.js";
 import { MariaDbApi, type IToolCaller } from "./mariaDbApi.js";
 import type { IMrsAction } from "../mrs/mrsActions.js";
 import { MrsToolsApi } from "../mrs/mrsApi.js";
+import { RestApi, type IRestApi } from "./restApi.js";
 import { SandboxApi, type ISandboxApi } from "./sandboxApi.js";
 import { UtilApi, type IUtilApi } from "./utilApi.js";
 import type { IMariaDbApi } from "./types.js";
@@ -62,6 +63,7 @@ export class McpSession {
     #starting?: Promise<IMariaDbApi>;
     #api?: IMariaDbApi;
     #sandboxApi?: ISandboxApi;
+    #restApi?: IRestApi;
     #mrsTools?: MrsToolsApi;
 
     /** Where what each `mrs.*` tool call did is reported. */
@@ -94,6 +96,14 @@ export class McpSession {
      */
     public get sandboxApi(): ISandboxApi | undefined {
         return this.#sandboxApi;
+    }
+
+    /**
+     * @returns The `rest.*` API on the same server, if one is already
+     *          running, else undefined.
+     */
+    public get restApi(): IRestApi | undefined {
+        return this.#restApi;
     }
 
     /**
@@ -143,6 +153,7 @@ export class McpSession {
         this.#connection = undefined;
         this.#api = undefined;
         this.#sandboxApi = undefined;
+        this.#restApi = undefined;
         this.#mrsTools = undefined;
         this.#utilApi = undefined;
         if (!connection) {
@@ -175,6 +186,7 @@ export class McpSession {
         this.#connection = connection;
         this.#api = new MariaDbApi(connection);
         this.#sandboxApi = new SandboxApi(connection);
+        this.#restApi = new RestApi(connection);
         this.#mrsTools = new MrsToolsApi(connection, (action) => {
             this.onMrsAction?.(action);
         });

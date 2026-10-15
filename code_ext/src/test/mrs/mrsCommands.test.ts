@@ -150,6 +150,9 @@ const setup = async (
         open?: boolean;
         toolAnswers?: Record<string, IToolResult>;
         uris?: string[];
+        /** The REST Daemons view's lookup of a connection's daemon. */
+        restdUrl?: (uri: string, metadataSchema?: string)
+            => Promise<string | undefined>;
     } = {},
 ) => {
     const uris = options.uris ?? [URI];
@@ -205,6 +208,8 @@ const setup = async (
         refresh: () => { state.refreshed += 1; },
         showActions: (uri) => { state.shownActions.push(uri); },
         log,
+        ...(options.restdUrl === undefined
+            ? {} : { restdUrl: options.restdUrl }),
     });
     const disposables = mrsCommands.register();
     if (options.open !== false) {
@@ -917,6 +922,51 @@ describe("request paths", () => {
 
             expect(openedExternally.map(String)).toEqual([
                 "http://rest.example.com:8080/myService/sakila/actor"]);
+        });
+
+    it("goes to the REST Daemon of the row's server and metadata schema",
+        async () => {
+            const asked: Array<[string, string | undefined]> = [];
+            await setup({}, {
+                restdUrl: (uri, metadataSchema) => {
+                    asked.push([uri, metadataSchema]);
+
+                    return Promise.resolve("https://localhost:8444/");
+                },
+            });
+
+            await run("mariadb.mrs.openDbObjectRequestPath", objectNode);
+            await run("mariadb.mrs.openContentSetRequestPath", {
+                ...contentSetNode, metadataSchema: DEV,
+            });
+
+            expect(asked).toEqual([[URI, undefined], [URI, DEV]]);
+            expect(openedExternally.map(String)).toEqual([
+                "https://localhost:8444/myService/sakila/actor",
+                "https://localhost:8444/myService/app/",
+            ]);
+        });
+
+    it("goes by the setting where no local daemon serves the server",
+        async () => {
+            const { log } = await setup({}, {
+                restdUrl: (uri) => {
+                    return uri === URI
+                        ? Promise.reject(new Error("MCP is down"))
+                        : Promise.resolve(undefined);
+                },
+            });
+
+            await run("mariadb.mrs.openDbObjectRequestPath", objectNode);
+            await run("mariadb.mrs.openDbObjectRequestPath",
+                { ...objectNode, uri: "dba@db1:3306" });
+
+            expect(openedExternally.map(String)).toEqual([
+                "https://localhost:8443/myService/sakila/actor",
+                "https://localhost:8443/myService/sakila/actor",
+            ]);
+            expect(log.lines.join("\n")).toContain(
+                `Could not look up the REST Daemon of ${URI}: MCP is down`);
         });
 
     it("opens the documentation", async () => {

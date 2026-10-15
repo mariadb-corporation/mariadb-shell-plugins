@@ -21,6 +21,11 @@ import {
     usesSshTunnel,
 } from "../connections/connectionUri.js";
 import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
+import {
+    passwordProblems,
+    portProblem,
+    servicePathProblem,
+} from "../mrs/mrsDialogs.js";
 
 /**
  * The New Sandbox dialog's fields and what they turn into. Pure, so the
@@ -58,6 +63,24 @@ export interface ISandboxFields {
     timeout: string;
     /** Whether any MCP client may open the connection a deploy registers. */
     mcpAccess: boolean;
+    /**
+     * Whether the sandbox is configured for the MariaDB REST Service and
+     * gets a REST Daemon serving it. The REST fields are only shown,
+     * checked and used while it is on.
+     */
+    configureRest: boolean;
+    /** The REST Daemon's port; empty for 8443, or the next free one. */
+    restdPort: string;
+    /** The REST service the deploy creates, `/myService/v1`. */
+    restServicePath: string;
+    /** The REST user who can sign in to it. */
+    restUserName: string;
+    restUserPassword: string;
+    /**
+     * Whether the system is to trust the REST Daemons' HTTPS certificate,
+     * so browsers accept https://localhost; offered only while it does not.
+     */
+    trustRestCertificate: boolean;
 }
 
 /** The fields a problem can be about, so the dialog can mark the one. */
@@ -116,8 +139,62 @@ export const emptySandboxFields = (
         // As an agent's own deploy does: a local test server is what an AI
         // assistant is most likely to be asked to work on.
         mcpAccess: true,
+        configureRest: false,
+        restdPort: "",
+        // As a new service in the REST Service tree starts.
+        restServicePath: "/myService/v1",
+        restUserName: "dba",
+        restUserPassword: "",
+        trustRestCertificate: true,
     };
 };
+
+/**
+ * The port a REST Daemon gets when none is typed, a sandbox's as any
+ * other's; the server takes the next free one where it is in use.
+ */
+export const DEFAULT_RESTD_PORT = 8443;
+
+/**
+ * Where the REST service will answer, as the dialog tells it under the
+ * service's name.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns `https://localhost:<port><service path>`.
+ */
+export const restServiceUrl = (fields: ISandboxFields): string => {
+    const port = fields.restdPort.trim() || String(DEFAULT_RESTD_PORT);
+
+    return `https://localhost:${port}${fields.restServicePath.trim()}`;
+};
+
+/**
+ * Where the dialog says the REST service will be: at the port typed, or -
+ * where none is - at 8443 only if it is free, since the server gives the
+ * daemon the first free port from 8443 up.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns The URL, and what may change it.
+ */
+export const restServiceLocation = (fields: ISandboxFields): string => {
+    return fields.restdPort.trim() === ""
+        ? `${restServiceUrl(fields)}, or the next free port after `
+            + `${String(DEFAULT_RESTD_PORT)} where it is taken`
+        : restServiceUrl(fields);
+};
+
+/** What the REST part of the dialog asks the deploy to set up. */
+export interface ISandboxRestOptions {
+    /** The REST Daemon's port; the server picks one when left out. */
+    restdPort?: number;
+    servicePath: string;
+    userName: string;
+    password: string;
+    /** Whether to have the system trust the HTTPS certificate. */
+    trustCertificate: boolean;
+}
 
 /**
  * The ports of this machine that configured connections point at.
@@ -350,7 +427,82 @@ export const sandboxFieldProblem = (
         }
     }
 
+    return fields.configureRest ? restFieldProblem(fields, port) : undefined;
+};
+
+/**
+ * Checks the REST fields.
+ *
+ * @param fields The fields as typed.
+ * @param sandboxPort The sandbox's port, checked already.
+ *
+ * @returns The first problem, or undefined.
+ */
+const restFieldProblem = (
+    fields: ISandboxFields,
+    sandboxPort: number,
+): ISandboxFieldProblem | undefined => {
+    if (fields.restdPort.trim() !== "") {
+        const badPort = portProblem(fields.restdPort);
+        if (badPort !== undefined) {
+            return { field: "restdPort", message: badPort };
+        }
+        if (Number(fields.restdPort.trim()) === sandboxPort) {
+            return {
+                field: "restdPort",
+                message: "The REST Daemon needs a port of its own.",
+            };
+        }
+    }
+
+    const pathProblem = servicePathProblem(fields.restServicePath);
+    if (pathProblem !== undefined) {
+        return { field: "restServicePath", message: pathProblem };
+    }
+
+    if (fields.restUserName.trim() === "") {
+        return {
+            field: "restUserName",
+            message: "Enter the name of the REST user.",
+        };
+    }
+
+    const [passwordProblem] = passwordProblems(fields.restUserPassword,
+        "restUserPassword");
+    if (passwordProblem !== undefined) {
+        return { field: "restUserPassword", message: passwordProblem.message };
+    }
+
     return undefined;
+};
+
+/**
+ * What the REST part of the dialog asks for, once the fields are sound.
+ *
+ * @param fields The fields as typed.
+ *
+ * @returns The options, or undefined where the REST Service is not
+ *          wanted.
+ */
+export const sandboxRestOptions = (
+    fields: ISandboxFields,
+    certificateTrusted = false,
+): ISandboxRestOptions | undefined => {
+    if (!fields.configureRest) {
+        return undefined;
+    }
+
+    const restdPort = fields.restdPort.trim();
+    return {
+        // Left to the server when not typed: it takes 8443 when that is
+        // free, and the next free one when not.
+        ...(restdPort === "" ? {} : { restdPort: Number(restdPort) }),
+        servicePath: fields.restServicePath.trim(),
+        userName: fields.restUserName.trim(),
+        password: fields.restUserPassword,
+        // Not where it is trusted already: the box was not even shown.
+        trustCertificate: fields.trustRestCertificate && !certificateTrusted,
+    };
 };
 
 /**

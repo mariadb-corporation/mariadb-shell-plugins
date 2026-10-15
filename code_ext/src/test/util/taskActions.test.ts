@@ -67,6 +67,27 @@ const recordingLog = (): { log: TaskActionLog; put: IActionRow[] } => {
 };
 
 describe("tasks in the Actions tab", () => {
+    it("offers a failed task's log on its row, and only a failed one's",
+        () => {
+            const put: IActionRow[] = [];
+            const log = new TaskActionLog((_connection, row) => {
+                put.push(row);
+            }, "UI Backend", undefined, (taskId) => {
+                return `/logs/${taskId}.log`;
+            });
+
+            log.report({ tracked: tracked({ task_id: "ok", status: "completed",
+                finished_at: "2026-10-10T10:00:02Z" }), messages: [],
+                first: true });
+            log.report({ tracked: tracked({ task_id: "bad", status: "failed",
+                error: "Access denied", finished_at: "2026-10-10T10:00:02Z" }),
+                messages: [], first: true });
+
+            expect(put[0]).not.toHaveProperty("logPath");
+            expect(put[1]).toMatchObject({ kind: "error",
+                logPath: "/logs/bad.log" });
+        });
+
     it("puts up a task that did not start, its error under it", () => {
         const { log, put } = recordingLog();
 

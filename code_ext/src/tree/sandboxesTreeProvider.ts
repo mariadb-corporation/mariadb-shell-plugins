@@ -17,7 +17,7 @@
 
 import * as vscode from "vscode";
 
-import type { ISandboxInstance } from "../mcp/sandboxApi.js";
+import type { ISandboxChange, ISandboxInstance } from "../mcp/sandboxApi.js";
 import type { IServerStatus } from "../mcp/serverStarter.js";
 import type { ISandboxStore } from "../sandboxes/sandboxStore.js";
 import { errorText } from "../text.js";
@@ -206,7 +206,7 @@ export class SandboxesTreeProvider
      *
      * @returns The server's confirmation. Rejects with the shell's reason.
      */
-    public async start(node: ISandboxNode): Promise<string> {
+    public async start(node: ISandboxNode): Promise<ISandboxChange> {
         return await this.#run(node.port, "starting", async () => {
             return await this.store.start(node.port);
         });
@@ -219,7 +219,7 @@ export class SandboxesTreeProvider
      *
      * @returns The server's confirmation. Rejects with the shell's reason.
      */
-    public async stop(node: ISandboxNode): Promise<string> {
+    public async stop(node: ISandboxNode): Promise<ISandboxChange> {
         return await this.#run(node.port, "stopping", async () => {
             return await this.store.stop(node.port);
         });
@@ -234,7 +234,7 @@ export class SandboxesTreeProvider
      *
      * @returns The server's confirmation. Rejects with the shell's reason.
      */
-    public async delete(node: ISandboxNode): Promise<string> {
+    public async delete(node: ISandboxNode): Promise<ISandboxChange> {
         return await this.#run(node.port, "deleting", async () => {
             if (node.status === "running") {
                 await this.store.stop(node.port);
@@ -259,8 +259,8 @@ export class SandboxesTreeProvider
     async #run(
         port: number,
         action: SandboxAction,
-        work: () => Promise<string>,
-    ): Promise<string> {
+        work: () => Promise<ISandboxChange>,
+    ): Promise<ISandboxChange> {
         if (this.#actions.has(port)) {
             throw new Error(`The sandbox on port ${port} is already `
                 + `${ACTION_CAPTIONS[this.#actions.get(port)!]}`);
@@ -269,10 +269,10 @@ export class SandboxesTreeProvider
         this.#actions.set(port, action);
         this.refresh();
         try {
-            const message = await work();
-            this.log(message);
+            const changed = await work();
+            this.log(changed.message);
 
-            return message;
+            return changed;
         } finally {
             this.#actions.delete(port);
             this.refresh();

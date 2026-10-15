@@ -622,8 +622,11 @@ export const submitDialog = async (
         // Work that is done quickly can close the dialog before the bar is
         // seen; a dialog still open has to show it.
         const bar = await waitFor(async () => {
+            // The dialog's own bar: VS Code's workbench has one too, which
+            // a view loading meanwhile shows, should the search run outside
+            // the dialog's frame.
             const bars = await view.findWebElements(
-                By.css("[role='progressbar']"));
+                By.css(".dialog-busy [role='progressbar']"));
             if (bars.length > 0) {
                 return bars[0];
             }

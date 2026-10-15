@@ -250,7 +250,7 @@ def list_tool_names(function_groups, timeout=None, gui=False):
 
 
 @asynccontextmanager
-async def mcp_session(function_groups, timeout=None):
+async def mcp_session(function_groups, timeout=None, gui=False):
     """Opens a persistent stdio MCP session against a single server subprocess.
 
     Multiple tool calls made through the yielded ``call`` coroutine share the
@@ -261,6 +261,8 @@ async def mcp_session(function_groups, timeout=None):
     Args:
         function_groups (list): The function groups the server should expose.
         timeout (float): Per-call timeout in seconds.
+        gui (bool): Serve as the VS Code extension's server (--gui), which
+            adds db.add_connection and db.delete_connection.
 
     Yields:
         An async ``call(tool_name, arguments=None)`` coroutine returning the
@@ -270,7 +272,7 @@ async def mcp_session(function_groups, timeout=None):
     from mcp.client.stdio import stdio_client
 
     call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
-    params = _stdio_server_params(function_groups)
+    params = _stdio_server_params(function_groups, gui=gui)
 
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

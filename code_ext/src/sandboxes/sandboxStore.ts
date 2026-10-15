@@ -17,6 +17,7 @@
 
 import type {
     ISandboxApi,
+    ISandboxChange,
     ISandboxDeployOptions,
     ISandboxInstance,
     SandboxStatus,
@@ -34,9 +35,14 @@ export interface ISandboxStore {
     /** The ports of the sandboxes last listed; empty before the first. */
     readonly ports: number[];
     deploy(options: ISandboxDeployOptions): Promise<string>;
-    start(port: number): Promise<string>;
-    stop(port: number): Promise<string>;
-    delete(port: number): Promise<string>;
+    /**
+     * Asks about one sandbox after a call on it made elsewhere, dropping
+     * the whole list where that cannot be answered. Never rejects.
+     */
+    settle(port: number): Promise<void>;
+    start(port: number): Promise<ISandboxChange>;
+    stop(port: number): Promise<ISandboxChange>;
+    delete(port: number): Promise<ISandboxChange>;
 }
 
 /**
@@ -183,16 +189,16 @@ export class SandboxStore implements ISandboxStore {
             // Success or failure: only the server knows which version the
             // new sandbox runs, and a deploy that failed late may have left
             // one behind.
-            await this.#settle(options.port);
+            await this.settle(options.port);
         }
     }
 
     /**
      * @param port The sandbox to start.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async start(port: number): Promise<string> {
+    public async start(port: number): Promise<ISandboxChange> {
         return await this.#change(port, async (api) => {
             return await api.start(port);
         }, "running");
@@ -201,9 +207,9 @@ export class SandboxStore implements ISandboxStore {
     /**
      * @param port The sandbox to stop.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async stop(port: number): Promise<string> {
+    public async stop(port: number): Promise<ISandboxChange> {
         return await this.#change(port, async (api) => {
             return await api.stop(port);
         }, "stopped");
@@ -212,9 +218,9 @@ export class SandboxStore implements ISandboxStore {
     /**
      * @param port The sandbox to delete.
      *
-     * @returns The server's confirmation.
+     * @returns The server's confirmation, and its REST Daemons'.
      */
-    public async delete(port: number): Promise<string> {
+    public async delete(port: number): Promise<ISandboxChange> {
         return await this.#change(port, async (api) => {
             return await api.delete(port);
         }, undefined);
@@ -231,15 +237,15 @@ export class SandboxStore implements ISandboxStore {
      */
     async #change(
         port: number,
-        work: (api: ISandboxApi) => Promise<string>,
+        work: (api: ISandboxApi) => Promise<ISandboxChange>,
         status: SandboxStatus | undefined,
-    ): Promise<string> {
-        let message: string;
+    ): Promise<ISandboxChange> {
+        let changed: ISandboxChange;
         try {
-            message = await work(await this.api());
+            changed = await work(await this.api());
         } catch (error) {
             // Where it was left is the server's to say.
-            await this.#settle(port);
+            await this.settle(port);
 
             throw error;
         }
@@ -253,7 +259,7 @@ export class SandboxStore implements ISandboxStore {
             });
         this.#keep();
 
-        return message;
+        return changed;
     }
 
     /**
@@ -278,7 +284,7 @@ export class SandboxStore implements ISandboxStore {
      * @returns Nothing. It never rejects: it runs where another failure is
      *          already on its way out, and that is the one to report.
      */
-    async #settle(port: number): Promise<void> {
+    public async settle(port: number): Promise<void> {
         try {
             await this.refreshInstance(port);
         } catch {

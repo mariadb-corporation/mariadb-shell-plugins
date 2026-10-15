@@ -95,7 +95,7 @@ export const sandboxDeployRow = (state: ISandboxDeployState): IActionRow => {
  *
  * @returns The call as the row shows it, the password masked.
  */
-const deployCall = (options: ISandboxDeployOptions): string => {
+export const deployCall = (options: ISandboxDeployOptions): string => {
     return `sandbox.deploy(${callArguments({
         port: options.port,
         // Whether one was given, never what it is - and the shell refuses a
@@ -186,17 +186,17 @@ export const createLoggingSandboxApi = (
         },
         start: (port) => {
             return watch(`sandbox.start(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.start(port); });
         },
         stop: (port) => {
             return watch(`sandbox.stop(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.stop(port); });
         },
         delete: (port) => {
             return watch(`sandbox.delete(port=${port})`,
-                (message) => { return message; },
+                (changed) => { return changed.message; },
                 () => { return api.delete(port); });
         },
     };

@@ -629,7 +629,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /* Only there while the tabs do not all fit. */
-.tabPager {
+.tabPager,
+.clearShownActions {
     flex: 0 0 auto;
     border: none;
     /* Its hover surface would hide the line along the top. */
@@ -644,7 +645,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
     opacity: 0.4;
 }
 
-.tabPager:hover:not(:disabled) {
+.tabPager:hover:not(:disabled),
+.clearShownActions:hover {
     background: var(--vscode-toolbar-hoverBackground);
 }
 
@@ -866,7 +868,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
  * column can put to better use, and the panel area is short of it.
  */
 .jumpToResult,
-.goToStatement {
+.goToStatement,
+.openLog {
     border: none;
     border-radius: 2px;
     width: 16px;
@@ -878,7 +881,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 .jumpToResult:hover,
-.goToStatement:hover {
+.goToStatement:hover,
+.openLog:hover {
     background: var(--vscode-toolbar-hoverBackground);
     color: var(--vscode-textLink-activeForeground);
 }
@@ -1100,6 +1104,16 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .sessionPicker {
     min-width: 4em;
     max-width: 10em;
+}
+
+/* Beside the pickers it clears for, not with the view's own Clear. */
+.clearShownActions {
+    margin-left: 2px;
+}
+
+.clearShownActions:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
 }
 
 .connectionPicker:focus-visible,

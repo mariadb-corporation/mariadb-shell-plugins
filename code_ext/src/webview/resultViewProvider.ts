@@ -88,6 +88,64 @@ export type RunInto = string | { title: string };
  */
 export const MAX_ACTION_ROWS = 2000;
 
+/** Where the actions are kept between sessions, in the workspace state. */
+export const ACTIONS_STATE_KEY = "mariadb.resultView.actions";
+
+/** How long a change of the actions waits before they are saved. */
+export const ACTIONS_SAVE_DELAY_MS = 1000;
+
+/** What the Conn column says of a General Actions row on a connection. */
+export const GENERAL_LABEL = "General";
+
+/** The actions as they are kept between sessions. */
+interface ISavedActions {
+    /** Connection URI -> its actions, newest first. */
+    connections: Record<string, IActionRow[]>;
+}
+
+/**
+ * Makes a row kept from an earlier session fit this one: its ids, and
+ * those of the rows under it, are made from its sequence number - this
+ * session's ids start from the beginning again, and a new row with an
+ * old one's id would replace it - and a row that was still under way
+ * when VS Code closed says that it never ended.
+ *
+ * @param row The row as it was saved.
+ * @param id Its new id.
+ *
+ * @returns The row.
+ */
+const restoredRow = (row: IActionRow, id: string): IActionRow => {
+    const ids = new Map<string, string>();
+    const renamed = (kept: IActionRow, newId: string): IActionRow => {
+        ids.set(kept.id, newId);
+        const unfinished = kept.kind === "pending";
+
+        return {
+            ...kept,
+            id: newId,
+            ...(unfinished ? {
+                kind: "error",
+                message: `${kept.message.replace(/…$/u, "")}: not finished, `
+                    + "VS Code was closed",
+            } : {}),
+            // The result sets were not kept, so there is none to jump to.
+            resultId: undefined,
+            ...(kept.children === undefined ? {} : {
+                children: kept.children.map((child, index) => {
+                    return renamed(child, `${newId}-${String(index)}`);
+                }),
+            }),
+        };
+    };
+    const restored = renamed(row, id);
+
+    return restored.jumpToRowId === undefined ? restored : {
+        ...restored,
+        jumpToRowId: ids.get(restored.jumpToRowId),
+    };
+};
+
 /**
  * How long the configured connection list is reused before the server is
  * asked for it again.
@@ -154,6 +212,13 @@ export class ResultViewProvider
      */
     #generalByDefault = false;
     /**
+     * The last sequence number a row got: rows of General Actions and of
+     * a connection are shown together in the order they were put up.
+     */
+    #sequence = 0;
+    /** The save waiting for the actions to settle. */
+    #saveTimer?: ReturnType<typeof setTimeout>;
+    /**
      * Which connection open on it is on show, or undefined for all of
      * them together - which is what the view opens on.
      */
@@ -206,14 +271,22 @@ export class ResultViewProvider
     #editCount = 0;
     readonly #onClose: vscode.Disposable;
 
+    /**
+     * @param extensionUri Where the webview's files are.
+     * @param log Where a failure is written.
+     * @param storage Where the actions are kept between sessions; left
+     *                out, they are not.
+     */
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly log: (message: string) => void,
+        private readonly storage?: vscode.Memento,
     ) {
         // A closed value editor's value is not needed any more.
         this.#onClose = vscode.workspace.onDidCloseTextDocument((document) => {
             this.valueDocuments.forget(document.uri);
         });
+        this.#restore();
     }
 
     /**
@@ -359,8 +432,7 @@ export class ResultViewProvider
         if (maximized || typeof into === "object") {
             this.#runInto.set(run.id, maximized?.key ?? into!);
             const results = this.#resultsFor(connection);
-            results.actions.unshift(run);
-            this.#trim(results);
+            this.#add(results, run);
             if (maximized) {
                 maximized.run = run;
                 this.#sendMaximized(maximized);
@@ -380,8 +452,7 @@ export class ResultViewProvider
 
         const results = this.#resultsFor(connection);
         const session = this.#sessionFor(results, sessionOf(run));
-        results.actions.unshift(run);
-        this.#trim(results);
+        this.#add(results, run);
         session.resultSets = [];
         session.applyContext = undefined;
         results.lastRun = sessionOf(run);
@@ -463,9 +534,7 @@ export class ResultViewProvider
     public async appendEvent(event: IActivityEvent): Promise<void> {
         const results = this.#resultsFor(event.connection);
         this.#eventCount += 1;
-        results.actions.unshift(
-            activityRow(event, `event${this.#eventCount}`));
-        this.#trim(results);
+        this.#add(results, activityRow(event, `event${this.#eventCount}`));
 
         // The first thing to happen at all is what the view comes up on,
         // so a tree that was browsed before anything was run is not
@@ -476,7 +545,7 @@ export class ResultViewProvider
         // to stand in front of the connection being worked on.
         this.#claimIfUnset(event.connection);
 
-        if (event.connection === this.#active) {
+        if (this.#isShown(event.connection)) {
             await this.#sendState();
         }
     }
@@ -499,9 +568,22 @@ export class ResultViewProvider
         this.#mergeActions(results, [row]);
         this.#claimIfUnset(connection);
 
-        if (connection === this.#active) {
+        if (this.#isShown(connection)) {
             await this.#sendState();
         }
+    }
+
+    /**
+     * Whether a connection's actions are on show: the active one's, and
+     * General Actions', which are shown among every connection's.
+     *
+     * @param connection The connection.
+     *
+     * @returns Whether a change of its actions needs the view sent again.
+     */
+    #isShown(connection: string): boolean {
+        return this.#active !== undefined && (connection === this.#active
+            || connection === GENERAL_ACTIONS);
     }
 
     /**
@@ -524,7 +606,7 @@ export class ResultViewProvider
         await this.#sendState();
 
         const failed = this.#active === undefined ? undefined
-            : this.#resultsFor(this.#active).actions.find((row) => {
+            : this.#shownActions(this.#active).find((row) => {
                 return row.kind === "error";
             });
         this.#send({
@@ -563,31 +645,38 @@ export class ResultViewProvider
     }
 
     /**
-     * Empties the view for the connection on show: its gathered actions
-     * and its result set tabs both go.
+     * Empties the view: every connection's actions, General Actions' too,
+     * and every result set tab, along with the apply contexts those were
+     * written back through.
      *
      * @returns Nothing.
      */
     public async clear(): Promise<void> {
+        for (const results of this.#byConnection.values()) {
+            results.actions = [];
+            results.sessions.clear();
+            results.lastRun = undefined;
+        }
+        this.#changed();
+
+        await this.#sendState();
+    }
+
+    /**
+     * Drops the actions of what the pickers show: the connection's own -
+     * only those of the session picked, where one is - or General
+     * Actions'. The rows of General Actions shown among a connection's
+     * stay, as do the result set tabs.
+     *
+     * @returns Nothing.
+     */
+    public async clearShownActions(): Promise<void> {
         if (this.#active !== undefined) {
             const results = this.#resultsFor(this.#active);
             const session = this.#activeSession;
-
-            if (session === undefined) {
-                results.actions = [];
-                results.sessions.clear();
-                results.lastRun = undefined;
-            } else {
-                // Only what is on show goes: the rows of the other
-                // connections are not what was being read.
-                results.actions = results.actions.filter((row) => {
-                    return sessionOf(row) !== session;
-                });
-                results.sessions.delete(session);
-                if (results.lastRun === session) {
-                    results.lastRun = undefined;
-                }
-            }
+            results.actions = session === undefined ? [] : results.actions
+                .filter((row) => { return sessionOf(row) !== session; });
+            this.#changed();
         }
 
         await this.#sendState();
@@ -640,6 +729,11 @@ export class ResultViewProvider
      */
     public dispose(): void {
         this.#onClose.dispose();
+        if (this.#saveTimer !== undefined) {
+            clearTimeout(this.#saveTimer);
+            this.#saveTimer = undefined;
+            void this.#save();
+        }
         for (const pending of this.#pendingEdits.values()) {
             pending.reject(new Error("The result view was closed."));
         }
@@ -741,6 +835,16 @@ export class ResultViewProvider
                 break;
             }
 
+            case "openLog": {
+                await this.#openLog(message.path);
+                break;
+            }
+
+            case "clearActions": {
+                await this.clearShownActions();
+                break;
+            }
+
             case "revealStatement":
             case "copyToClipboard":
             case "saveValue":
@@ -752,6 +856,39 @@ export class ResultViewProvider
                 }, false);
                 break;
             }
+        }
+    }
+
+    /**
+     * Opens the log an action row names, in an editor.
+     *
+     * Only a log one of the rows names: the page asks for a path, and a
+     * path it made up is not one to open.
+     *
+     * @param file The log.
+     *
+     * @returns Once it is open, or the user was told why not.
+     */
+    async #openLog(file: string): Promise<void> {
+        const named = (rows: IActionRow[] | undefined): boolean => {
+            return (rows ?? []).some((row) => {
+                return row.logPath === file || named(row.children);
+            });
+        };
+        if (![...this.#byConnection.values()].some((results) => {
+            return named(results.actions);
+        })) {
+            return;
+        }
+
+        try {
+            const document = await vscode.workspace.openTextDocument(
+                vscode.Uri.file(file));
+            await vscode.window.showTextDocument(document, { preview: true });
+        } catch (error) {
+            this.log(`Could not open the log ${file}: ${errorText(error)}`);
+            void vscode.window.showInformationMessage(
+                `The log ${file} could not be opened.`);
         }
     }
 
@@ -1100,12 +1237,31 @@ export class ResultViewProvider
                 return existing.id === row.id;
             });
             if (at === -1) {
-                results.actions.unshift(row);
+                this.#add(results, row);
             } else {
+                // In its place, which is where it was put up.
+                row.seq = results.actions[at]!.seq;
                 results.actions[at] = row;
+                this.#changed();
             }
         }
+    }
+
+    /**
+     * Puts a row up at the top of a connection's actions, numbered so it
+     * can be shown among General Actions' in the order they happened.
+     *
+     * @param results The connection's state.
+     * @param row The row.
+     *
+     * @returns Nothing.
+     */
+    #add(results: IConnectionResults, row: IActionRow): void {
+        this.#sequence += 1;
+        row.seq = this.#sequence;
+        results.actions.unshift(row);
         this.#trim(results);
+        this.#changed();
     }
 
     /**
@@ -1373,6 +1529,122 @@ export class ResultViewProvider
     }
 
     /**
+     * What the view shows for a connection: its own actions - those of
+     * the session picked, where one is - and General Actions' among
+     * them, in the order they were put up. A General Actions row is no
+     * one connection's and means as much whichever is on show, so no
+     * session filter hides it.
+     *
+     * Filtered here rather than in the page: what the page shows is what
+     * it is given, so a row cannot be counted in one place and hidden in
+     * another.
+     *
+     * @param connection The connection on show.
+     *
+     * @returns The rows, newest first.
+     */
+    #shownActions(connection: string): IActionRow[] {
+        const session = this.#activeSession;
+        const own = this.#resultsFor(connection).actions.filter((row) => {
+            return session === undefined || sessionOf(row) === session;
+        });
+        const general = connection === GENERAL_ACTIONS ? []
+            : this.#byConnection.get(GENERAL_ACTIONS)?.actions ?? [];
+        if (general.length === 0) {
+            return own;
+        }
+
+        return [
+            ...own,
+            ...general.map((row) => {
+                return { ...row, connectionLabel: GENERAL_LABEL };
+            }),
+        ].sort((first, second) => {
+            return (second.seq ?? 0) - (first.seq ?? 0);
+        });
+    }
+
+    /**
+     * Has the actions saved once they have settled: rows are replaced
+     * many times while what they stand for runs.
+     *
+     * @returns Nothing.
+     */
+    #changed(): void {
+        if (this.storage === undefined || this.#saveTimer !== undefined) {
+            return;
+        }
+        this.#saveTimer = setTimeout(() => {
+            this.#saveTimer = undefined;
+            void this.#save();
+        }, ACTIONS_SAVE_DELAY_MS);
+    }
+
+    /**
+     * Keeps every connection's actions for the next session.
+     *
+     * @returns Nothing. A failure is logged: the view goes on without it.
+     */
+    async #save(): Promise<void> {
+        const connections: Record<string, IActionRow[]> = {};
+        for (const [connection, results] of this.#byConnection) {
+            if (results.actions.length > 0) {
+                connections[connection] = results.actions;
+            }
+        }
+        try {
+            await this.storage?.update(ACTIONS_STATE_KEY,
+                { connections } satisfies ISavedActions);
+        } catch (error) {
+            this.log(`Could not keep the actions: ${errorText(error)}`);
+        }
+    }
+
+    /**
+     * Puts back the actions kept by an earlier session, the connection
+     * with the newest of them on show.
+     *
+     * @returns Nothing. What cannot be read is logged and left out: it
+     *          runs as the extension activates, which it must not stop.
+     */
+    #restore(): void {
+        let newest: { connection: string; seq: number } | undefined;
+        try {
+            const saved = this.storage?.get<ISavedActions>(ACTIONS_STATE_KEY);
+            if (typeof saved?.connections !== "object"
+                || saved.connections === null) {
+                return;
+            }
+
+            for (const [connection, rows] of Object.entries(
+                saved.connections)) {
+                if (!Array.isArray(rows)) {
+                    continue;
+                }
+                const restored = rows.filter((row) => {
+                    return typeof row === "object" && row !== null
+                        && typeof row.seq === "number"
+                        && typeof row.message === "string";
+                }).map((row) => {
+                    const seq = row.seq!;
+                    this.#sequence = Math.max(this.#sequence, seq);
+                    if (newest === undefined || seq > newest.seq) {
+                        newest = { connection, seq };
+                    }
+
+                    return restoredRow(row, `saved-${String(seq)}`);
+                });
+                this.#resultsFor(connection).actions = restored;
+            }
+        } catch (error) {
+            this.log(`Could not restore the actions: ${errorText(error)}`);
+        }
+        if (newest !== undefined) {
+            this.#claimIfUnset(newest.connection);
+        }
+    }
+
+    /**
      * Sends the frontend everything it shows for the active connection.
      *
      * @returns Nothing.
@@ -1383,7 +1655,6 @@ export class ResultViewProvider
         }
 
         const connection = this.#active;
-        const results = this.#resultsFor(connection);
         const sessions = this.#sessionsOf(connection);
 
         // A connection that has been picked and has since gone - closed,
@@ -1410,11 +1681,7 @@ export class ResultViewProvider
             // Filtered here rather than in the page: what the page shows
             // is what it is given, so a row cannot be counted in one
             // place and hidden in another.
-            actions: session === undefined
-                ? results.actions
-                : results.actions.filter((row) => {
-                    return sessionOf(row) === session;
-                }),
+            actions: this.#shownActions(connection),
             resultSets: this.#sessionResults(connection)?.resultSets ?? [],
             freezeKeyColumns: freezePrimaryKeyColumns(),
             showColumnTypes: showColumnDataTypes(),

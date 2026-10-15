@@ -28,11 +28,13 @@ import {
     type IContentSetContext,
     type IObjectContext,
     type IObjectDialogValues,
+    type IRestdContext,
     type ISchemaContext,
     type IServiceContext,
     type IUserContext,
     type MrsDialogKind,
 } from "../../../src/mrs/mrsDialogs.js";
+import { DEFAULT_RESTD_PORT } from "../../../src/sandboxes/sandboxFields.js";
 import { DataMappingEditor } from "./DataMappingEditor.js";
 import { DbObjectsTable } from "./DbObjectsTable.js";
 import {
@@ -945,6 +947,76 @@ const sdkExport: IDialogDefinition = {
     },
 };
 
+const restd: IDialogDefinition = {
+    okLabel: "Set Up",
+    busyLabel: "Setting up the REST Daemon. Where mariadb-restd is not "
+        + "installed, it is downloaded first, which can take a few minutes.",
+    main: (ctx, extras) => {
+        const context = extras.context as IRestdContext;
+        const port = String(extras.values.port ?? "").trim() || String(DEFAULT_RESTD_PORT);
+
+        return (
+            <section class="grid">
+                <TextField
+                    ctx={ctx}
+                    field="port"
+                    caption="REST Daemon Port"
+                    placeholder={String(DEFAULT_RESTD_PORT)}
+                    hint={"TCP/IP Port the REST Daemon is serving the "
+                        + `endpoints. Empty for ${String(DEFAULT_RESTD_PORT)}, or the next free `
+                        + `port after it: https://localhost:${port}`}
+                />
+                <TextField
+                    ctx={ctx}
+                    field="password"
+                    type="password"
+                    caption={`Password of ${context.user}`}
+                    hint={"The setup creates an account of its own for the "
+                        + "REST Daemon, so this one needs CREATE USER WITH "
+                        + "GRANT OPTION. Empty for the password stored with "
+                        + "the connection."}
+                />
+                {context.certificateTrusted ? null : (
+                    <div class="group">
+                        <CheckBox
+                            ctx={ctx}
+                            field="trustCertificate"
+                            label={"Register the REST Daemon's HTTPS "
+                                + "certificate with the system"}
+                            hint={"So that browsers trust https://localhost. "
+                                + "macOS and Windows ask you to confirm it in "
+                                + "a system dialog; it is needed only once, "
+                                + "for every REST Daemon on this machine."}
+                        />
+                    </div>
+                )}
+                {context.metadataSchemas.length > 1 ? (
+                    <StringSelect
+                        ctx={ctx}
+                        field="metadataSchema"
+                        caption="Metadata Schema"
+                        hint={"The server has several; the REST Daemon "
+                            + "serves one."}
+                        choices={context.metadataSchemas}
+                        optional
+                    />
+                ) : null}
+                <p class="note">
+                    {context.metadataSchemas.length === 0
+                        ? `${context.server} has no REST metadata yet; it `
+                        + "is configured first. "
+                        : ""}
+                    The deployment is kept in ~/.mariadb-restd, and the
+                    REST Daemon keeps running when VS Code is closed.
+                </p>
+            </section>
+        );
+    },
+    tabs: () => { return []; },
+    fieldTabs: {},
+    render: () => { return null; },
+};
+
 /** Every dialog, by kind. */
 export const DIALOGS: Record<MrsDialogKind, IDialogDefinition> = {
     configure,
@@ -955,4 +1027,5 @@ export const DIALOGS: Record<MrsDialogKind, IDialogDefinition> = {
     authApp,
     user,
     sdkExport,
+    restd,
 };

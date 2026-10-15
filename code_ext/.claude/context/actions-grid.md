@@ -265,6 +265,14 @@ put to better use, and the panel area is short of it.
   failed run's row it also opens that run and scrolls to its first
   error, so one control answers "what went wrong, and where".
 
+- `$(go-to-file)` (the Tasks view's Show Log icon) opens the log a row
+  names in `logPath`: a failed dump & load task's log, a failed REST
+  Daemon setup's output, a daemon's own log (2026-10-14, the user's
+  request). The host opens only a path one of its rows names
+  (`ResultViewProvider.#openLog`); the page sends a path, and one it
+  made up is not opened. A click on the button is `actionClick` "log",
+  not the row's own target.
+
 They are laid out **beside** the message rather than over it - the cell
 is a flex row of the message and an `.actionArrows` span - so the text
 truncates before them, a row can show both, and neither can cover the

@@ -220,7 +220,7 @@ primitives in `lib/setup_prompts.py`).
 
 The tools are grouped into function groups that can be loaded independently via the
 `function_groups` option of `mcp.start_server` (`db`, `msm`, `mrs`, `sandbox`, `migrator`,
-`util`; defaults to all):
+`util`, `rest`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -350,6 +350,13 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
 
+A sandbox can have a MariaDB REST Daemon (see [REST Daemon tools](#rest-daemon-tools-rest)).
+It follows the sandbox: `sandbox.start` starts it after the server, `sandbox.stop` and
+`sandbox.kill` stop it first, and `sandbox.delete` stops it before the sandbox's folder,
+which holds it, is deleted. These four tools answer with a `message` and a `restd` list,
+one entry per daemon with its `directory`, `port`, `url`, `log_path` and an `error` where
+it failed; a daemon that fails does not fail the sandbox's call.
+
 #### Deploying a specific server version
 
 `sandbox.deploy` normally runs whatever `mariadbd` is on the PATH, which is one version
@@ -477,6 +484,63 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   name), is left to the utility.
 - The tools are registered only when the `db` group is served as well, and never in
   multi-tenant mode.
+
+### REST Daemon tools (`rest`)
+
+Tools for the MariaDB REST Daemon, `mariadb-restd`, which serves the REST services
+defined in a server's REST metadata. `rest.configure_restd` sets one up for a server and
+starts it; it keeps running when the MCP server ends.
+
+| MCP tool | Does |
+| --- | --- |
+| `rest.configure_restd` | Sets up and starts a daemon for a connection opened with `db.connect` |
+| `rest.start_restd` | Starts a deployment's daemon |
+| `rest.stop_restd` | Stops a deployment's daemon |
+| `rest.delete_restd_config` | Stops a daemon, drops the server account it was given and deletes its deployment |
+| `rest.get_restd_status` | Lists the deployments, running and stopped |
+| `rest.get_certificate_status` | Says whether the system trusts the daemons' HTTPS certificate |
+| `rest.trust_certificate` | Has the system trust that certificate, once for every daemon |
+
+Every REST Daemon on the machine serves one HTTPS certificate for `localhost`
+(`127.0.0.1` and `::1` too), signed by a local certificate authority. The first
+`rest.configure_restd` makes both, in `~/.mariadb-restd/web-certs`
+(`%APPDATA%\MariaDB\mariadb-restd\web-certs` on Windows), and every setup after it
+uses them. `rest.trust_certificate` adds the authority to the user's own store: the
+login keychain on macOS and the user's Root store on Windows, where the system asks
+the user to confirm, and the NSS database Chromium-based browsers read on Linux. An
+agent is asked first, through MCP elicitation.
+
+`rest.configure_restd`, in this order:
+
+1. Connects with the password given, or the connection's stored one.
+2. Picks the REST metadata schema: the one named, else the one the server has. A server
+   with several needs one named; a server with none gets `mariadb_rest_service`, created
+   with `CONFIGURE REST METADATA`.
+3. Finds `mariadb-restd` on the PATH, in `~/.local/bin`, or among the releases its install
+   script unpacked into `~/.local/share/mariadb-restd/<version>`
+   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows). When there is none,
+   it runs the install script from the rest-daemon repository - without asking in GUI
+   mode, after asking through MCP elicitation otherwise.
+4. Checks that the account can do the setup: `CREATE USER` with the `GRANT OPTION`,
+   `SELECT`, `INSERT` and `UPDATE` on the metadata schema, and its roles
+   `WITH ADMIN OPTION`.
+5. Runs `mariadb-restd --setup`, which registers the daemon, creates a server account of
+   its own and writes the deployment. The admin password goes to the setup's stdin.
+6. Starts the daemon and waits for it to listen.
+
+A sandbox's deployment is in `<sandbox>/mariadb-restd`. Any other server's deployment
+is in `~/.mariadb-restd/<host>_<port>` (`%APPDATA%\MariaDB\mariadb-restd` on Windows).
+A server reached through a socket gets the folder of `localhost` and the port it listens
+on, the one a TCP connection to it gets too; a server that listens on no port gets
+`socket_<file name>_<hash of its path>`.
+A daemon serves one metadata schema: for any other than `mariadb_rest_service`, the
+folder name ends in `_<schema>`, so each of a server's metadata schemas can have a
+daemon of its own.
+Either daemon listens on the first free port from 8443 up, a stopped deployment's port
+counting as taken. The daemon logs to `log/mariadb-restd.log` in its deployment.
+
+`rest.configure_restd` is registered only when the `db` group is served as well. The
+group is never served in multi-tenant mode.
 
 ### Migrator tools (`migrator`)
 
@@ -1050,7 +1114,7 @@ test run should do. Add `--e2e` to run them as well:
 mariadb-shell --py -f run_tests.py --e2e
 ```
 
-There are two at present.
+There are three at present.
 
 `test_a_sandbox_really_runs_a_downloaded_server` in
 `tests/unit/test_sandbox_servers.py` downloads a published server package for real,
@@ -1068,6 +1132,11 @@ installs the migration tooling with `mcp setup --installMigrator`, migrates with
 row on the target. It skips itself when the machine cannot run a migration - no
 MySQL server to deploy the source from being the usual reason; see the module
 docstring for the rest.
+
+`test_a_sandbox_really_gets_a_rest_daemon` in `tests/unit/test_rest.py` deploys a sandbox,
+sets a REST Daemon up for it with the real `mariadb-restd`, checks that it serves HTTPS,
+and that it stops, starts and goes with the sandbox. It skips itself when there is no
+`mariadb-restd` where `rest.configure_restd` looks for one.
 
 ## License
 

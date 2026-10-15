@@ -32,6 +32,9 @@ import {
     sandboxConnectionUri,
     sandboxDeployOptions,
     sandboxFieldProblem,
+    sandboxRestOptions,
+    restServiceLocation,
+    restServiceUrl,
     suggestSandboxPort,
     type ISandboxFields,
 } from "../../sandboxes/sandboxFields.js";
@@ -370,4 +373,71 @@ describe("generateSandboxPassword", () => {
     it("differs from one call to the next", () => {
         expect(generateSandboxPassword()).not.toBe(generateSandboxPassword());
     });
+});
+
+describe("the REST Service fields", () => {
+    const rest = (overrides: Partial<ISandboxFields> = {}): ISandboxFields => {
+        return fields({ configureRest: true, restUserPassword: "Secret1!",
+            ...overrides });
+    };
+
+    it("are off, with the REST Service tree's defaults", () => {
+        expect(emptySandboxFields()).toMatchObject({
+            configureRest: false, restdPort: "",
+            restServicePath: "/myService/v1", restUserName: "dba",
+            restUserPassword: "", trustRestCertificate: true,
+        });
+    });
+
+    it("say where the service will answer", () => {
+        // 8443 for a sandbox's daemon too, unless another port is typed.
+        expect(restServiceUrl(rest({ port: "3311" })))
+            .toBe("https://localhost:8443/myService/v1");
+        expect(restServiceUrl(rest({ restdPort: "9443",
+            restServicePath: "/shop/v2" })))
+            .toBe("https://localhost:9443/shop/v2");
+    });
+
+    it("promise 8443 only where it is free, unless a port is typed", () => {
+        expect(restServiceLocation(rest({ port: "3311" }))).toBe(
+            "https://localhost:8443/myService/v1, or the next free port "
+            + "after 8443 where it is taken");
+        expect(restServiceLocation(rest({ restdPort: "9443" })))
+            .toBe("https://localhost:9443/myService/v1");
+    });
+
+    it("are not checked while the REST Service is not wanted", () => {
+        expect(sandboxFieldProblem(fields({ restUserPassword: "" })))
+            .toBeUndefined();
+        expect(sandboxRestOptions(fields())).toBeUndefined();
+    });
+
+    it("refuse what the REST Service would not take", () => {
+        const problem = (overrides: Partial<ISandboxFields>): string | undefined => {
+            return sandboxFieldProblem(rest(overrides))?.field;
+        };
+
+        expect(problem({})).toBeUndefined();
+        expect(problem({ restdPort: "70000" })).toBe("restdPort");
+        expect(problem({ restdPort: "3310" })).toBe("restdPort");
+        expect(problem({ restServicePath: "shop" })).toBe("restServicePath");
+        expect(problem({ restServicePath: "/mrs" })).toBe("restServicePath");
+        expect(problem({ restUserName: " " })).toBe("restUserName");
+        expect(problem({ restUserPassword: "" })).toBe("restUserPassword");
+        expect(problem({ restUserPassword: "alllowercase1!" }))
+            .toBe("restUserPassword");
+    });
+
+    it("become the REST options, the port left to the server unless typed",
+        () => {
+            expect(sandboxRestOptions(rest())).toEqual({
+                servicePath: "/myService/v1", userName: "dba",
+                password: "Secret1!", trustCertificate: true,
+            });
+            // Trusted already, it is not registered again.
+            expect(sandboxRestOptions(rest(), true)?.trustCertificate)
+                .toBe(false);
+            expect(sandboxRestOptions(rest({ restdPort: " 9443 " })))
+                .toMatchObject({ restdPort: 9443 });
+        });
 });

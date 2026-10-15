@@ -26,7 +26,10 @@ import type {
     IActionRow,
     IViewState,
 } from "../../webview/protocol.js";
+import type { Memento } from "vscode";
+
 import {
+    ACTIONS_SAVE_DELAY_MS,
     MAX_ACTION_ROWS,
     ResultViewProvider,
     RESULT_VIEW_ID,
@@ -39,6 +42,7 @@ import {
     fileDialogs,
     files,
     MockWebviewView,
+    openedDocuments,
     openedWith,
     ViewColumn,
     resetVscodeMock,
@@ -1037,7 +1041,7 @@ describe("ResultViewProvider", () => {
 
             await provider.startRun("dba@localhost:3310", pendingRun());
 
-            expect(lastState(view)?.actions).toEqual([pendingRun()]);
+            expect(lastState(view)?.actions).toEqual([{ ...pendingRun(), seq: 1 }]);
         });
 
         it("replaces it with what the run produced", async () => {
@@ -1435,7 +1439,8 @@ describe("ResultViewProvider", () => {
             expect(api.scripts).toEqual([]);
         });
 
-        it("only clears the connection on show", async () => {
+        it("clears every connection, its own Clear clearing the one on show",
+            async () => {
             const { api, provider, view } = createResolvedView();
             view.webview.receive({ type: "ready" });
             const service = new ExecutionService(api);
@@ -1453,11 +1458,47 @@ describe("ResultViewProvider", () => {
                 service,
             });
 
+            view.webview.receive({ type: "clearActions" });
+            await vi.waitFor(() => {
+                expect(provider.actionsFor("app@localhost:3311")).toEqual([]);
+            });
+            expect(provider.actionsFor("dba@localhost:3310")).toHaveLength(1);
+            expect(provider.resultSetsFor("dba@localhost:3310"))
+                .toHaveLength(1);
+
             await provider.clear();
+
+            expect(provider.actionsFor("dba@localhost:3310")).toEqual([]);
+            expect(provider.resultSetsFor("dba@localhost:3310")).toEqual([]);
+        });
+
+        it("only clears the connection on show from beside the pickers",
+            async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            const service = new ExecutionService(api);
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid-dba",
+                service,
+            });
+            await provider.showResults(editableReport({
+                connection: "app@localhost:3311",
+                resultSets: [],
+            }), {
+                connectionUri: "app@localhost:3311",
+                connectionId: "uuid-app",
+                service,
+            });
+
+            await provider.clearShownActions();
 
             expect(provider.actionsFor("app@localhost:3311")).toEqual([]);
             expect(provider.actionsFor("dba@localhost:3310"))
                 .toHaveLength(1);
+            // The tabs stay: only the actions go.
+            expect(provider.resultSetsFor("app@localhost:3311"))
+                .toHaveLength(0);
             expect(provider.resultSetsFor("dba@localhost:3310"))
                 .toHaveLength(1);
         });
@@ -1573,6 +1614,108 @@ describe("ResultViewProvider", () => {
                 // Nothing threw the panel open for it.
                 expect(view.shown).toBeFalsy();
             });
+
+        it("shows General Actions among a connection's own, in order",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.appendEvent(anEvent());
+                await provider.putAction("General Actions", {
+                    id: "group-1", time: "12:00:00.000",
+                    connection: "General Actions", role: "run",
+                    statement: "", message: "Creating Sandbox\u2026",
+                    kind: "pending", children: [],
+                });
+                // Put up while another connection is on show, it is sent.
+                expect(lastState(view)?.connection).toBe("dba@localhost:3310");
+                expect(lastState(view)?.actions.map((row) => {
+                    return row.id;
+                })).toContain("group-1");
+                await provider.appendEvent(anEvent({ label: "1" }));
+                await provider.selectSession("UI Backend");
+
+                // The session filter leaves the General Action alone, and
+                // the Conn column says where it is from.
+                expect(lastState(view)?.connection).toBe("dba@localhost:3310");
+                expect(lastState(view)?.actions.map((row) => {
+                    return [row.id, row.connectionLabel];
+                })).toEqual([["group-1", "General"], ["event1", "UI Backend"]]);
+
+                // The connection's own Clear leaves it too.
+                await provider.clearShownActions();
+                expect(lastState(view)?.actions.map((row) => {
+                    return row.id;
+                })).toEqual(["group-1"]);
+            });
+
+        it("keeps the actions for the next session", async () => {
+            vi.useFakeTimers();
+            try {
+                const stored = new Map<string, unknown>();
+                const memento = {
+                    get: (key: string) => { return stored.get(key); },
+                    update: (key: string, value: unknown) => {
+                        stored.set(key, value);
+
+                        return Promise.resolve();
+                    },
+                    keys: () => { return [...stored.keys()]; },
+                } as unknown as Memento;
+                const first = new ResultViewProvider(
+                    extensionUri, () => { /* not logged */ }, memento);
+                await first.appendEvent(anEvent());
+                await first.putAction("General Actions", {
+                    id: "group-1", time: "12:00:00.000",
+                    connection: "General Actions", role: "run",
+                    statement: "", message: "Creating Sandbox\u2026",
+                    kind: "pending", children: [], jumpToRowId: "group-1-1",
+                });
+                await vi.advanceTimersByTimeAsync(ACTIONS_SAVE_DELAY_MS);
+
+                const second = new ResultViewProvider(
+                    extensionUri, () => { /* not logged */ }, memento);
+                await second.appendEvent(anEvent());
+
+                const general = second.actionsFor("General Actions");
+                expect(general).toMatchObject([{
+                    id: "saved-2", kind: "error",
+                    message: "Creating Sandbox: not finished, VS Code was "
+                        + "closed",
+                }]);
+                // The new event's id is this session's, the kept one's not.
+                expect(second.actionsFor("dba@localhost:3310").map((row) => {
+                    return [row.id, row.seq];
+                })).toEqual([["event1", 3], ["saved-1", 1]]);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it("opens the log a row names, and no other file", async () => {
+            const { provider, view } = createWithSessions();
+            view.webview.receive({ type: "ready" });
+            await provider.putAction("General Actions", {
+                id: "group-1", time: "12:00:00.000",
+                connection: "General Actions", role: "run", statement: "",
+                message: "Creating Sandbox on port 3311 failed",
+                kind: "error",
+                children: [{
+                    id: "group-1-2", time: "12:00:00.000",
+                    connection: "General Actions", role: "statement",
+                    statement: "", message: "Setting up failed",
+                    kind: "error", logPath: "/logs/setup.log",
+                }],
+            });
+            const opened = openedDocuments.length;
+
+            view.webview.receive({ type: "openLog", path: "/etc/passwd" });
+            view.webview.receive({ type: "openLog", path: "/logs/setup.log" });
+
+            await vi.waitFor(() => {
+                expect(openedDocuments.slice(opened).map((document) => {
+                    return document.uri.fsPath;
+                })).toEqual(["/logs/setup.log"]);
+            });
+        });
 
         it("brings up a connection's actions at its newest failure",
             async () => {
@@ -1858,7 +2001,7 @@ describe("ResultViewProvider", () => {
             expect(lastState(view)?.resultSets).toHaveLength(1);
         });
 
-        it("clears only the connection on show", async () => {
+        it("clears only the session on show", async () => {
             const { provider, view } = createWithSessions();
             await provider.appendEvent(anEvent());
             await provider.startRun("dba@localhost:3310", pendingRun({
@@ -1866,7 +2009,7 @@ describe("ResultViewProvider", () => {
             }));
             await provider.selectSession("1");
 
-            await provider.clear();
+            await provider.clearShownActions();
 
             expect(lastState(view)?.actions).toEqual([]);
             expect(provider.actionsFor("dba@localhost:3310").map((row) => {

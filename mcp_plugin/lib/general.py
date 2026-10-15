@@ -116,6 +116,9 @@ FUNCTION_GROUP_MIGRATOR = "migrator"
 # The dump, load, copy, export and import utilities, run as background tasks;
 # its tools need connections, so they register only alongside the db group.
 FUNCTION_GROUP_UTIL = "util"
+# The MariaDB REST Daemon: setting one up for a server, and starting, stopping
+# and deleting it. Setting up needs a connection, the rest does not.
+FUNCTION_GROUP_REST = "rest"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
@@ -123,12 +126,13 @@ SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_SANDBOX,
     FUNCTION_GROUP_MIGRATOR,
     FUNCTION_GROUP_UTIL,
+    FUNCTION_GROUP_REST,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
 # The groups a multi-tenant server serves, and the only ones it may. The
-# sandbox and migrator groups run local server processes and long jobs that
-# write to the server's disk - resources one user would take from all the
+# sandbox, migrator and rest groups run local server processes and long jobs
+# that write to the server's disk - resources one user would take from all the
 # others - the util group's dumps and loads are such jobs too, and the msm
 # group works on schema project folders, which live on the developer's own
 # machine, not on a remote server. None of them are offered to tenants.
@@ -990,37 +994,41 @@ async def require_allowed_path(ctx, path) -> None:
 
 
 async def _confirm_trust_path(ctx, path) -> bool:
-    """Asks the user, via MCP elicitation, whether to trust the given path.
+    """Asks the user, via MCP elicitation, whether to trust the given path."""
+    return await confirm(
+        ctx,
+        f"The path '{path}' is not in the MCP server's list of allowed "
+        "paths. Trust it as an allowed path?",
+        "trust",
+        f"Add '{path}' to the allowed paths and continue?",
+    )
+
+
+async def confirm(ctx, message: str, field: str, description: str) -> bool:
+    """Asks the user a yes/no question via MCP elicitation.
 
     Args:
         ctx: The MCP request context, or ``None``.
-        path: The filesystem path to ask about.
+        message (str): The question.
+        field (str): The name of the one boolean field the client shows.
+        description (str): That field's description.
 
     Returns:
-        True if the user confirmed the path should be trusted; False if the
-        user declined or cancelled, or if the client does not support
-        elicitation.
+        True if the user accepted and ticked the field; False if the user
+        declined or cancelled, or if the client does not support elicitation.
     """
     if ctx is None:
         return False
 
-    from pydantic import BaseModel, Field
+    from pydantic import Field, create_model
 
-    class ConfirmTrustPath(BaseModel):
-        trust: bool = Field(
-            default=False,
-            description=f"Add '{path}' to the allowed paths and continue?",
-        )
+    schema = create_model(
+        "Confirm", **{field: (bool, Field(default=False, description=description))}
+    )
 
     try:
-        result = await ctx.elicit(
-            message=(
-                f"The path '{path}' is not in the MCP server's list of allowed "
-                "paths. Trust it as an allowed path?"
-            ),
-            schema=ConfirmTrustPath,
-        )
+        result = await ctx.elicit(message=message, schema=schema)
     except Exception:  # noqa: BLE001 - client may not support elicitation
         return False
 
-    return result.action == "accept" and getattr(result.data, "trust", False)
+    return result.action == "accept" and getattr(result.data, field, False)

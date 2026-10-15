@@ -566,6 +566,18 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
         );
     }
 
+    // The shell's own spelling of a socket, `user@(/tmp/mysql.sock)`,
+    // perhaps with a schema after it.
+    const close = rest.startsWith("(") ? rest.indexOf(")") : -1;
+    if (close > 0) {
+        fields.socket = decodeURIComponent(rest.slice(1, close));
+        const after = rest.slice(close + 1);
+        if (after.startsWith("/") && after.length > 1) {
+            fields.schema = decodeURIComponent(after.slice(1));
+        }
+        rest = "";
+    }
+
     const slash = rest.indexOf("/");
     if (slash === 0) {
         // Everything after the `@` is a path: a socket, spelled unencoded.

@@ -109,9 +109,9 @@ session machinery the db tools sit on is in
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
   `mcp_server._lowlevel_server.run(...)`.
 
-- **Function groups** (`function_groups`): `db`, `msm`, `mrs`, `sandbox`, `migrator`; `_FUNCTION_GROUP_REGISTRARS`. `mrs` (`lib/mrs_functions.py`, 2026-10-09) wraps the 15 file-based mrs_plugin functions (SDK, service and project dump/load, content set upload, MRS script analysis, audit log); REST SQL itself goes through `db.execute_sql`. Its session tools need the `db` group, like `msm.deploy_schema`.
+- **Function groups** (`function_groups`): `db`, `msm`, `mrs`, `sandbox`, `migrator`, `util`, `rest` (the REST Daemon, see [rest.md](rest.md)); `_FUNCTION_GROUP_REGISTRARS`. `mrs` (`lib/mrs_functions.py`, 2026-10-09) wraps the 15 file-based mrs_plugin functions (SDK, service and project dump/load, content set upload, MRS script analysis, audit log); REST SQL itself goes through `db.execute_sql`. Its session tools need the `db` group, like `msm.deploy_schema`.
   Accepted as a LIST or as a comma-separated STRING (split+stripped in `server.py`);
-  omitting it loads ALL THREE (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
+  omitting it loads them all (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
 
 - **Cross-group dependency mechanism**: `build_mcp_server` passes the full enabled-group
   list to EVERY registrar, so `register_db_tools`/`register_msm_tools`/

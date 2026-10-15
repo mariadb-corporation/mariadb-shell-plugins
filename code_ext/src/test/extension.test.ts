@@ -285,7 +285,7 @@ describe("activate", () => {
         expect(fileSystemProviders.has("mariadb-value")).toBe(true);
     });
 
-    it("registers the Connections, Sandboxes and Tasks views and every command", () => {
+    it("registers the Connections, Sandboxes, REST Daemons and Tasks views and every command", () => {
         const context = createContext();
 
         activate(context as never);
@@ -293,7 +293,7 @@ describe("activate", () => {
         expect(treeViews.map((view) => {
             return view.id;
         })).toEqual(["mariadb.connections", "mariadb.sandboxes",
-            "mariadb.tasks"]);
+            "mariadb.restDaemons", "mariadb.tasks"]);
         // What draws a connection's color on its row.
         expect(fileDecorationProviders).toHaveLength(1);
         const registered = [...registeredCommands.keys()].sort();
@@ -341,6 +341,13 @@ describe("activate", () => {
             "mariadb.removeTask",
             "mariadb.renameFolder",
             "mariadb.restartMcpServer",
+            "mariadb.restd.delete",
+            "mariadb.restd.openInBrowser",
+            "mariadb.restd.openLog",
+            "mariadb.restd.refresh",
+            "mariadb.restd.setUp",
+            "mariadb.restd.start",
+            "mariadb.restd.stop",
             "mariadb.resumeTask",
             "mariadb.retryConnection",
             "mariadb.runSqlFile",

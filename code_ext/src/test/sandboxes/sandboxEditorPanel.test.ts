@@ -92,9 +92,9 @@ const createHost = (options: {
             return options.deploy?.(deploy)
                 ?? Promise.resolve(`Deployed on port ${deploy.port}.`);
         },
-        start: () => { return Promise.resolve(""); },
-        stop: () => { return Promise.resolve(""); },
-        delete: () => { return Promise.resolve(""); },
+        start: () => { return Promise.resolve({ message: "", restd: [] }); },
+        stop: () => { return Promise.resolve({ message: "", restd: [] }); },
+        delete: () => { return Promise.resolve({ message: "", restd: [] }); },
     };
 
     const store = new SandboxStore(() => { return Promise.resolve(api); });
@@ -176,6 +176,8 @@ describe("SandboxEditorPanel", () => {
                 fields: emptySandboxFields("3311", "12.3.2"),
                 takenPorts: [3310],
                 versions: ["12.3.2", "11.8.9"],
+                // A host that cannot tell offers the box.
+                restCertificateTrusted: false,
             }]);
         });
 
@@ -280,6 +282,65 @@ describe("SandboxEditorPanel", () => {
         expect(state.created).toEqual(["Deployed on port 3310."]);
         expect(currentPanel().disposed).toBe(true);
         expect(posted()).toContainEqual({ type: "busy", busy: true });
+    });
+
+    it("deploys with the REST Service where it is ticked", async () => {
+        const state = createHost();
+        const withRest: unknown[] = [];
+        state.host.deployWithRest = (options, rest) => {
+            withRest.push([options.port, rest]);
+
+            return Promise.resolve("Deployed with REST.");
+        };
+        SandboxEditorPanel.show(extensionUri as never, state.host);
+
+        await receive({
+            type: "create",
+            fields: fields({ configureRest: true,
+                restUserPassword: "Secret1!" }),
+        });
+
+        expect(withRest).toEqual([[3310, {
+            servicePath: "/myService/v1", userName: "dba",
+            password: "Secret1!", trustCertificate: true,
+        }]]);
+        // Not deployed a second time, without it.
+        expect(state.deployed).toEqual([]);
+        expect(state.created).toEqual(["Deployed with REST."]);
+        expect(currentPanel().disposed).toBe(true);
+    });
+
+    it("does not register a certificate the system trusts already",
+        async () => {
+            const state = createHost();
+            const withRest: unknown[] = [];
+            state.host.certificateTrusted = () => { return Promise.resolve(true); };
+            state.host.deployWithRest = (_options, rest) => {
+                withRest.push(rest);
+                return Promise.resolve("Deployed.");
+            };
+            SandboxEditorPanel.show(extensionUri as never, state.host);
+            await receive({ type: "ready" });
+            expect(posted()).toContainEqual(expect.objectContaining({
+                type: "load", restCertificateTrusted: true }));
+
+            await receive({ type: "create", fields: fields({
+                configureRest: true, restUserPassword: "Secret1!" }) });
+
+            expect(withRest).toEqual([expect.objectContaining({
+                trustCertificate: false })]);
+        });
+
+    it("deploys as before where the REST Service is not ticked", async () => {
+        const state = createHost();
+        state.host.deployWithRest = () => {
+            throw new Error("not wanted");
+        };
+        SandboxEditorPanel.show(extensionUri as never, state.host);
+
+        await receive({ type: "create", fields: fields() });
+
+        expect(state.deployed).toHaveLength(1);
     });
 
     it("refuses passwords that do not match before deploying", async () => {

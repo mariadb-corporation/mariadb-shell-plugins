@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
     ISandboxApi,
+    ISandboxChange,
     ISandboxInstance,
 } from "../../mcp/sandboxApi.js";
 import { SandboxStore } from "../../sandboxes/sandboxStore.js";
@@ -41,6 +42,12 @@ const createApi = (instances: ISandboxInstance[] = []): IFakeApi => {
         return api.failing.has(name)
             ? Promise.reject(new Error(`${name} failed`))
             : Promise.resolve(answer);
+    };
+    const changed = async (
+        name: string,
+        message: string,
+    ): Promise<ISandboxChange> => {
+        return { message: await call(name, message), restd: [] };
     };
     const api: IFakeApi = {
         calls: [],
@@ -70,9 +77,9 @@ const createApi = (instances: ISandboxInstance[] = []): IFakeApi => {
             return ["11.8.9", "12.3.2"];
         },
         deploy: (options) => { return call("deploy", `deployed ${options.port}`); },
-        start: (port) => { return call("start", `started ${port}`); },
-        stop: (port) => { return call("stop", `stopped ${port}`); },
-        delete: (port) => { return call("delete", `deleted ${port}`); },
+        start: (port) => { return changed("start", `started ${port}`); },
+        stop: (port) => { return changed("stop", `stopped ${port}`); },
+        delete: (port) => { return changed("delete", `deleted ${port}`); },
     };
 
     return api;
@@ -152,7 +159,7 @@ describe("SandboxStore", () => {
         const store = storeOver(api);
         await store.listInstances();
 
-        expect(await store.stop(3310)).toBe("stopped 3310");
+        expect((await store.stop(3310)).message).toBe("stopped 3310");
         await store.start(3320);
         expect(await store.listInstances()).toEqual([
             { ...running, status: "stopped" },

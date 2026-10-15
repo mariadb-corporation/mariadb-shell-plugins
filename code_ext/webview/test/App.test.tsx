@@ -686,15 +686,30 @@ describe("App", () => {
 
             const footer = host.querySelector(".contentSelectionBar");
             // The bar picks what is on show and holds nothing else:
-            // the tabs, then the two pickers at the far right.
+            // the tabs, then the two pickers at the far right, and what
+            // clears the actions they pick.
             expect([...(footer?.children ?? [])].map((node) => {
                 return node.className;
-            })).toEqual(["tabs", "connectionPicker", "sessionPicker"]);
+            })).toEqual(["tabs", "connectionPicker", "sessionPicker",
+                "clearShownActions codicon codicon-clear-all"]);
             expect([...host.querySelectorAll<HTMLOptionElement>(
                 ".connectionPicker option")].map((option) => {
                 return option.value;
             })).toEqual(["dba@localhost:3310", "app@localhost:3311"]);
         });
+
+    it("asks the host to clear the actions the pickers show", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        await act(async () => {
+            host.querySelector<HTMLButtonElement>(".clearShownActions")!
+                .click();
+            await Promise.resolve();
+        });
+
+        expect(posted.at(-1)).toEqual({ type: "clearActions" });
+    });
 
     it("asks the host to switch connections when one is picked",
         async () => {
@@ -734,9 +749,10 @@ describe("App", () => {
             ".contentSelectionBar > select")];
         expect(pickers.map((node) => { return node.className; }))
             .toEqual(["connectionPicker", "sessionPicker"]);
-        // The very last things in the bar.
+        // The last things in the bar, but for what clears them.
         expect(host.querySelector(".contentSelectionBar")
-            ?.lastElementChild?.className).toBe("sessionPicker");
+            ?.lastElementChild?.previousElementSibling?.className)
+            .toBe("sessionPicker");
         // All of them together first, which is what the view opens on,
         // and a connection that has been closed says so.
         expect([...host.querySelectorAll<HTMLOptionElement>(

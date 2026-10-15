@@ -90,7 +90,7 @@ locked tree and never writes the lockfile back.
 - **`icon` may not be an SVG.** vsce rejects it outright, and that is the only
   icon rule vsce enforces - it checks no dimensions at all, so an undersized
   PNG packages happily and is only rejected at the Marketplace end. The SVG ban
-  applies to this field alone; the `contributes` icons (`mariadb-seal.svg`, the
+  applies to this field alone; the `contributes` icons (`mariadb-code-ext.svg`, the
   `light/` and `dark/` trees) stay vectors.
 - **There is no light/dark variant.** The one image sits on both Marketplace
   card backgrounds, so the artwork is a tile with an opaque body and alpha only

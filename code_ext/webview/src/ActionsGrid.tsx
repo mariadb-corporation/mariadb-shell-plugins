@@ -29,7 +29,7 @@ import {
     type RowComponent,
 } from "tabulator-tables";
 
-import type { IActionRow } from "../../src/webview/protocol.js";
+import type { IActionRow, IViewState } from "../../src/webview/protocol.js";
 import {
     attachOverflowPopup,
     closeOverflowPopup,
@@ -57,6 +57,8 @@ interface IActionsGridProperties {
     onJumpToResult(resultId: string): void;
     /** Puts the cursor on the statement a row came from. */
     onGoToStatement(row: IActionRow): void;
+    /** Opens the log a row names. */
+    onOpenLog(row: IActionRow): void;
     /** Puts a cut-off cell's full text on the clipboard. */
     onCopyText(text: string): void;
     /** A row to scroll into view, e.g. a run's first error. */
@@ -184,6 +186,30 @@ export const createGoToButton = (
 };
 
 /**
+ * Builds the button that opens the log a row names: where a failed
+ * action wrote more about why than the row has room for.
+ *
+ * @param row The row the cell belongs to.
+ *
+ * @returns The button, or undefined where the row names no log.
+ */
+export const createLogButton = (
+    row: IActionRow,
+): HTMLButtonElement | undefined => {
+    if (row.logPath === undefined) {
+        return undefined;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    // The icon the Tasks view's Show Log has.
+    button.className = "openLog codicon codicon-go-to-file";
+    button.title = "Open the log";
+
+    return button;
+};
+
+/**
  * Renders the message cell: what happened, with both arrows at the end
  * of it.
  *
@@ -237,6 +263,10 @@ export const formatMessageCell = (
     const goTo = createGoToButton(row);
     if (goTo) {
         actions.appendChild(goTo);
+    }
+    const openLog = createLogButton(row);
+    if (openLog) {
+        actions.appendChild(openLog);
     }
     if (actions.childElementCount > 0) {
         host.appendChild(actions);
@@ -297,7 +327,7 @@ export const clickedOn = (event: unknown, selector: string): boolean => {
 };
 
 /** What a click on a row of the actions asks for. */
-export type ActionClick = "jump" | "goTo" | undefined;
+export type ActionClick = "jump" | "goTo" | "log" | undefined;
 
 /**
  * What clicking a row means.
@@ -322,6 +352,10 @@ export const actionClick = (
     row: IActionRow,
     available: ReadonlySet<string>,
 ): ActionClick => {
+    if (row.logPath !== undefined && clickedOn(event, ".openLog")) {
+        return "log";
+    }
+
     if (row.resultId !== undefined
         && available.has(row.resultId)
         && clickedOn(event, ".jumpToResult")) {
@@ -432,10 +466,29 @@ export const buildActionColumns = (
                 headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
-                    "Which connection open on this URI the row is from",
+                    "Which connection open on this URI the row is from, "
+                    + "or General for a General Action",
             } satisfies ColumnDefinition]
             : []),
     ];
+};
+
+/**
+ * Whether the actions need the Conn column: where they come from several
+ * connections open on the URI, all of them shown, or where General
+ * Actions are shown among a connection's own, which it names.
+ *
+ * @param state What the view shows.
+ *
+ * @returns Whether to show the column.
+ */
+export const showsConnectionColumn = (
+    state: Pick<IViewState, "connection" | "session" | "sessions" | "actions">,
+): boolean => {
+    return (state.session === undefined && state.sessions.length > 0)
+        || state.actions.some((row) => {
+            return row.connection !== state.connection;
+        });
 };
 
 /**
@@ -702,6 +755,11 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
 
                 case "goTo": {
                     callbacks.current.onGoToStatement(data);
+                    break;
+                }
+
+                case "log": {
+                    callbacks.current.onOpenLog(data);
                     break;
                 }
             }

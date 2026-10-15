@@ -75,7 +75,11 @@ import {
 } from "./connections/connectionFolders.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { withDefaultScheme } from "./connections/connectionUri.js";
-import type { ISandboxApi } from "./mcp/sandboxApi.js";
+import type {
+    ISandboxApi,
+    ISandboxChange,
+    ISandboxDeployOptions,
+} from "./mcp/sandboxApi.js";
 import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
@@ -92,6 +96,15 @@ import {
     SANDBOXES_VIEW_ID,
     type ISandboxNode,
 } from "./tree/sandboxesTreeProvider.js";
+import type { IRestApi } from "./mcp/restApi.js";
+import { RestdCommands, writeRestdLog } from "./rest/restdCommands.js";
+import {
+    deploySandboxWithRest,
+    followSandbox,
+    type SandboxChange,
+} from "./rest/sandboxRest.js";
+import { restdFor } from "./rest/restdUrl.js";
+import { RESTD_VIEW_ID, RestdTreeProvider } from "./tree/restdTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import { SqlModes } from "./connections/sqlModes.js";
 import { ConnectionColorDecorations } from "./tree/connectionColors.js";
@@ -240,7 +253,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
         return startServer(session, log, onPhase);
     }, log);
     showStartupInView(starter);
-    const resultView = new ResultViewProvider(context.extensionUri, log);
+    // The actions are the workspace's, kept for its next session.
+    const resultView = new ResultViewProvider(context.extensionUri, log,
+        context.workspaceState);
     const settings = createWorkspaceSettings();
     const connections = new ConnectionManager(
         async () => {
@@ -296,7 +311,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
         collapsedFolders,
         mrsModel,
     );
+    // The REST Daemon a tree row's URL goes to; the REST Daemons view
+    // keeps the list, and is defined further down.
+    let restdUrl: (uri: string, schema?: string) => Promise<string | undefined>
+        = () => { return Promise.resolve(undefined); };
     const mrsCommands = new MrsCommands({
+        restdUrl: (uri, schema) => { return restdUrl(uri, schema); },
         extensionUri: context.extensionUri,
         api: mrsApi,
         tools: async () => {
@@ -325,14 +345,18 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // kept with the API it was built over, as `ConnectionManager.api` does.
     let loggedSandboxApi: { plain: ISandboxApi; logging: ISandboxApi } |
         undefined;
-    const sandboxApi = async (): Promise<ISandboxApi> => {
+    const plainSandboxApi = async (): Promise<ISandboxApi> => {
         if (session.sandboxApi === undefined) {
             await starter.start();
         }
-        const plain = session.sandboxApi;
-        if (plain === undefined) {
+        if (session.sandboxApi === undefined) {
             throw new Error("The MCP server is not running.");
         }
+
+        return session.sandboxApi;
+    };
+    const sandboxApi = async (): Promise<ISandboxApi> => {
+        const plain = await plainSandboxApi();
 
         if (loggedSandboxApi?.plain !== plain) {
             loggedSandboxApi = {
@@ -352,6 +376,71 @@ export const activate = (context: vscode.ExtensionContext): void => {
     };
     const sandboxStore = new SandboxStore(sandboxApi);
     const sandboxes = new SandboxesTreeProvider(sandboxStore, log, starter);
+    // The REST Daemons: a sandbox's, set up with it, and any connection's.
+    const restApi = async (): Promise<IRestApi> => {
+        if (session.restApi === undefined) {
+            await starter.start();
+        }
+        const api = session.restApi;
+        if (api === undefined) {
+            throw new Error("The MCP server is not running.");
+        }
+
+        return api;
+    };
+    const restdTree = new RestdTreeProvider(async () => {
+        return (await restApi()).getStatus();
+    }, log, starter);
+    // A failed setup's full text, for its row to open; kept beside the
+    // task logs.
+    restdUrl = async (uri, schema) => {
+        return restdFor(await restdTree.deployments(), uri, schema)?.url;
+    };
+    const restdLogFolder = path.join(
+        (context.storageUri ?? context.globalStorageUri).fsPath, "restd-logs");
+    const putAction = (connection: string, row: IActionRow): void => {
+        void resultView.putAction(connection, row);
+    };
+    // The daemon of a sandbox follows it, each step a row of the
+    // sandbox's action.
+    const followHost = {
+        put: putAction,
+        deployments: () => { return restdTree.deployments(); },
+    };
+    // A sandbox's change, its daemon following; the REST Daemons view
+    // lists again however it went.
+    const follow = async (
+        node: ISandboxNode,
+        change: SandboxChange,
+        work: () => Promise<ISandboxChange>,
+    ): Promise<void> => {
+        try {
+            await followSandbox(followHost, node.port, change, work);
+        } finally {
+            restdTree.refresh();
+        }
+    };
+    // What a sandbox deployed with the REST Service is set up through.
+    const sandboxRestHost = {
+        put: putAction,
+        // Not through the store's API, which puts up a row of its own:
+        // the deploy is one step of the REST action.
+        deploy: async (options: ISandboxDeployOptions) => {
+            try {
+                return await (await plainSandboxApi()).deploy(options);
+            } finally {
+                await sandboxStore.settle(options.port);
+            }
+        },
+        connect: (uri: string) => {
+            return connections.connect(uri, UI_BACKEND_SESSION);
+        },
+        api: () => { return connections.api(); },
+        restApi,
+        writeLog: (name: string, text: string) => {
+            return writeRestdLog(restdLogFolder, name, text);
+        },
+    };
     // A deploy registers a connection to the new sandbox and a delete
     // removes it, both server-side, so the Connections view reads its list
     // again.
@@ -427,6 +516,29 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const sandboxesView = vscode.window.createTreeView(SANDBOXES_VIEW_ID, {
         treeDataProvider: sandboxes,
     });
+    const restdView = vscode.window.createTreeView(RESTD_VIEW_ID, {
+        treeDataProvider: restdTree,
+    });
+    const restdCommands = new RestdCommands({
+        extensionUri: context.extensionUri,
+        connect: (uri) => {
+            return connections.connect(uri, UI_BACKEND_SESSION);
+        },
+        metadataSchemas: async (connectionId) => {
+            return (await mrsApi.metadataSchemas(connectionId))
+                .map((schema) => { return schema.schema_name; });
+        },
+        restApi,
+        tree: restdTree,
+        put: putAction,
+        showActions: (connection) => {
+            void resultView.showActions(connection);
+        },
+        logFolder: restdLogFolder,
+        log,
+    });
+    context.subscriptions.push(restdTree, restdView,
+        ...restdCommands.register());
 
     context.subscriptions.push(...mrsCommands.register());
     // Dumps, loads, copies, exports and imports run as tasks in the server;
@@ -458,15 +570,16 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // Each task is a row of its connection's Actions in the panel, with
     // what it reported under it, and has a log file of its own that
     // outlives the window and goes when its row leaves the Tasks view.
-    const taskActions = new TaskActionLog((connection, row) => {
-        void resultView.putAction(connection, row);
-    }, UI_BACKEND_SESSION);
+    //
     // The logs are kept with the task list, which is the workspace's: in
     // its own storage, which no other window uses. A window without a
     // workspace has none, and shares the global storage with every other
     // such window, so it deletes only the logs of its own tasks.
     const taskLogs = new TaskLogs(path.join(
         (context.storageUri ?? context.globalStorageUri).fsPath, "task-logs"), log);
+    const taskActions = new TaskActionLog(putAction, UI_BACKEND_SESSION, undefined, (taskId) => {
+        return taskLogs.pathOf(taskId);
+    });
     taskMonitor.onDidReport((report) => {
         taskActions.report(report);
         void taskLogs.report(report);
@@ -901,6 +1014,26 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         work,
                     ));
                 },
+                certificateTrusted: async () => {
+                    return (await (await restApi()).certificateStatus())
+                        .trusted;
+                },
+                deployWithRest: async (options, rest) => {
+                    // The steps go on after the dialog closes. They are
+                    // General Actions, shown whichever connection is.
+                    const deployed = await deploySandboxWithRest(
+                        sandboxRestHost, options, rest);
+                    void deployed.rest.then((succeeded) => {
+                        restdTree.refresh();
+                        if (!succeeded) {
+                            // The sandbox is there; what failed after it
+                            // is in its row, with a log to open.
+                            void resultView.showActions(GENERAL_ACTIONS);
+                        }
+                    });
+
+                    return deployed.message;
+                },
                 onCreated: () => {
                     // The store has dropped its list, so this reads it.
                     // What was done is the deploy's row in the Actions tab.
@@ -922,7 +1055,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 }
 
                 await guard(log, async () => {
-                    await sandboxes.start(node);
+                    await follow(node, "start", () => {
+                        return sandboxes.start(node);
+                    });
                 });
             },
         ),
@@ -936,7 +1071,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
 
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
-                    await sandboxes.stop(node);
+                    await follow(node, "stop", () => {
+                        return sandboxes.stop(node);
+                    });
                 });
             },
         ),
@@ -970,7 +1107,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 await guard(log, async () => {
                     await disconnectSandbox(node.port);
                     try {
-                        await sandboxes.delete(node);
+                        await follow(node, "delete", () => {
+                            return sandboxes.delete(node);
+                        });
                     } finally {
                         // Even a failed delete may have got as far as
                         // removing the connection.

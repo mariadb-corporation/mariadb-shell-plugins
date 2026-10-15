@@ -22,6 +22,7 @@ import "./setup.js";
 import {
     actionClick,
     buildActionColumns,
+    showsConnectionColumn,
     cellCopyText,
     clickedOn,
     formatElapsed,
@@ -179,6 +180,20 @@ const onCopy = (text: string): void => {
 };
 
 describe("formatMessageCell", () => {
+    it("offers the log of a row that names one, with the Tasks view's icon",
+        () => {
+            const rendered = formatMessageCell(cell(row({
+                kind: "error", logPath: "/logs/t1.log",
+            })), new Set(), onCopy);
+            const button = rendered.querySelector<HTMLButtonElement>(".openLog");
+
+            expect(button?.className)
+                .toBe("openLog codicon codicon-go-to-file");
+            expect(button?.title).toBe("Open the log");
+            expect(formatMessageCell(cell(row()), new Set(), onCopy)
+                .querySelector(".openLog")).toBeNull();
+        });
+
     it("offers a go-to arrow for a row that knows where its statement is",
         () => {
             const rendered = formatMessageCell(cell(row({
@@ -587,6 +602,17 @@ describe("buildActionColumns", () => {
         }), new Set())).toBe("goTo");
     });
 
+    it("takes the log button as opening the log", () => {
+        // Not the row's statement: the button is what was clicked.
+        expect(actionClick(clickOn("openLog"), row({
+            logPath: "/logs/t1.log",
+            source: { uri: "file:///q.sql", line: 3, character: 0 },
+        }), new Set())).toBe("log");
+        expect(actionClick(clickOn("actionMessageContent"),
+            row({ role: "event", logPath: "/logs/t1.log" }), new Set()))
+            .toBeUndefined();
+    });
+
     it("does nothing on a row that knows nowhere to go", () => {
         // An event has no statement behind it.
         expect(actionClick(clickOn("actionMessageContent"),
@@ -594,4 +620,29 @@ describe("buildActionColumns", () => {
             .toBeUndefined();
     });
 
+});
+
+describe("showsConnectionColumn", () => {
+    const row = (connection: string): IActionRow => {
+        return {
+            id: connection, time: "12:00:00.000", connection,
+            statement: "", message: "", kind: "info", role: "event",
+        };
+    };
+
+    it("shows the column where all sessions are", () => {
+        expect(showsConnectionColumn({ connection: "a", sessions: [
+            { label: "1", open: true }], actions: [] })).toBe(true);
+        expect(showsConnectionColumn({ connection: "a", session: "1",
+            sessions: [{ label: "1", open: true }], actions: [] }))
+            .toBe(false);
+    });
+
+    it("shows the column for General Actions among a connection's own", () => {
+        expect(showsConnectionColumn({ connection: "a", session: "1",
+            sessions: [{ label: "1", open: true }],
+            actions: [row("a"), row("General Actions")] })).toBe(true);
+        expect(showsConnectionColumn({ connection: "General Actions",
+            sessions: [], actions: [row("General Actions")] })).toBe(false);
+    });
 });

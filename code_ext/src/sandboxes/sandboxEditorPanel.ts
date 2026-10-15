@@ -25,9 +25,12 @@ import {
     localConnectionPorts,
     newestFirst,
     sandboxDeployOptions,
+    sandboxRestOptions,
     suggestSandboxPort,
     type ISandboxFields,
+    type ISandboxRestOptions,
 } from "./sandboxFields.js";
+import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
 import type {
     SandboxHostMessage,
     SandboxWebviewMessage,
@@ -63,6 +66,18 @@ export interface ISandboxEditorHost {
      * extension shows for it. Left out, it just runs.
      */
     withProgress?<T>(work: () => Promise<T>): Promise<T>;
+    /**
+     * Deploys a sandbox with the MariaDB REST Service, where the dialog
+     * asks for it: resolves once the sandbox is there, the REST steps
+     * going on after the dialog is closed. Left out, the REST part of
+     * the dialog is ignored.
+     */
+    deployWithRest?(
+        options: ISandboxDeployOptions,
+        rest: ISandboxRestOptions,
+    ): Promise<string>;
+    /** Whether the system trusts the REST Daemons' HTTPS certificate. */
+    certificateTrusted?(): Promise<boolean>;
     /** Called after a sandbox was deployed, with the server's message. */
     onCreated(message: string): void;
     /**
@@ -197,9 +212,12 @@ export class SandboxEditorPanel {
                 // connection names is merely not suggested - that server may
                 // be long gone, and the shell says so if it is not.
                 const takenPorts = this.host.store.ports;
-                const [versions, connectionPorts] = await Promise.all([
-                    this.#versions(), this.#connectionPorts(),
-                ]);
+                const [versions, connectionPorts, certificateTrusted] =
+                    await Promise.all([
+                        this.#versions(), this.#connectionPorts(),
+                        this.#certificateTrusted(),
+                    ]);
+                this.#restCertificateTrusted = certificateTrusted;
                 // A new sandbox starts on the newest major version - the
                 // server on the PATH is whatever happens to be installed,
                 // and is a choice rather than the default.
@@ -213,6 +231,7 @@ export class SandboxEditorPanel {
                     ),
                     takenPorts,
                     versions: offered,
+                    restCertificateTrusted: certificateTrusted,
                 });
                 break;
             }
@@ -225,6 +244,25 @@ export class SandboxEditorPanel {
             default: {
                 this.#panel.dispose();
             }
+        }
+    }
+
+    /** Whether the REST Daemons' certificate was trusted when it loaded. */
+    #restCertificateTrusted = false;
+
+    /**
+     * @returns Whether the system trusts the REST Daemons' HTTPS
+     *          certificate already; false where that cannot be told, which
+     *          only offers the box that is not needed.
+     */
+    async #certificateTrusted(): Promise<boolean> {
+        try {
+            return await this.host.certificateTrusted?.() ?? false;
+        } catch (error) {
+            this.host.log("Could not tell whether the REST Daemon certificate "
+                + `is trusted: ${errorText(error)}`);
+
+            return false;
         }
     }
 
@@ -285,10 +323,13 @@ export class SandboxEditorPanel {
             return;
         }
 
+        const rest = sandboxRestOptions(fields, this.#restCertificateTrusted);
         this.#post({ type: "busy", busy: true });
         try {
             const deploy = async (): Promise<string> => {
-                return await this.host.store.deploy(built.options);
+                return rest === undefined || this.host.deployWithRest === undefined
+                    ? await this.host.store.deploy(built.options)
+                    : await this.host.deployWithRest(built.options, rest);
             };
             const message = this.host.withProgress === undefined
                 ? await deploy()

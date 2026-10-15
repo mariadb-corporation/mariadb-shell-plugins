@@ -105,11 +105,20 @@ input.invalid ~ .field-hint,
 
 /* Under both password boxes, across the two columns. */
 /* Across both columns, above the two password fields it hides. */
-.password-choice {
+.password-choice,
+.rest-certificate {
     grid-column: 1 / -1;
 }
 
-.password-note {
+.password-note,
+.rest-note {
     grid-column: 1 / -1;
     margin-top: -0.25rem;
+}
+
+/* The REST Service's checkbox and what it says, across both columns,
+   above the four fields it shows. */
+.rest-choice {
+    grid-column: 1 / -1;
+    margin-top: 0.5rem;
 }
