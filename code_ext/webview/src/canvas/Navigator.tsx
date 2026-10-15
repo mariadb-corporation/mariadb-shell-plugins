@@ -162,6 +162,12 @@ export const Navigator = (props: INavigatorProps): JSX.Element => {
         return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
+    /** Ends a drag in the overview: released, or taken by the system. */
+    const endDrag = (event: PointerEvent): void => {
+        drag.current = undefined;
+        (event.currentTarget as Element).releasePointerCapture(event.pointerId);
+    };
+
     const view = props.state?.view;
 
     return <div ref={root} className="navigator" role="region"
@@ -237,11 +243,8 @@ export const Navigator = (props: INavigatorProps): JSX.Element => {
                     props.onPan(at.x - drag.current.x, at.y - drag.current.y);
                     drag.current = at;
                 }}
-                onPointerUp={(event) => {
-                    drag.current = undefined;
-                    (event.currentTarget as Element)
-                        .releasePointerCapture(event.pointerId);
-                }}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
             >
                 {view !== undefined && <polygon
                     points={view.map((corner) => {

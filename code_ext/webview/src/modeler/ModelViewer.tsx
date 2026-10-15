@@ -260,6 +260,7 @@ export const ModelViewer = (): JSX.Element => {
                         : { ...current, placement };
                 });
             },
+            onEditEnd: () => { setEdit(undefined); },
             onOverlays: setOverlays,
             onContextMenu: (id, x, y) => { openItemMenu(id, x, y); },
             onViewMode: setView,
@@ -377,10 +378,8 @@ export const ModelViewer = (): JSX.Element => {
 
     const showNavigator = (visible: boolean): void => {
         setNavigatorVisible(visible);
+        // The Navigator tells the canvas its area is gone as it unmounts.
         keepState({ navigator: visible });
-        if (!visible) {
-            canvasRef.current?.setNavigatorArea(undefined);
-        }
     };
 
     const diagrams = loaded?.model.diagrams.map((diagram) => {

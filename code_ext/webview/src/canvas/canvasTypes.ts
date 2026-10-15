@@ -365,6 +365,8 @@ export interface ICanvasEvents {
     onEditRequest(request: IEditRequest): void;
     /** The text being edited moved on the screen. */
     onEditPlacement(placement: IEditPlacement): void;
+    /** The canvas dropped the edit itself: the input is to close. */
+    onEditEnd?(): void;
     /** The view changed without the toolbar: an orbit left the 2D view. */
     onViewMode?(mode: ViewMode): void;
     /**

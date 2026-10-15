@@ -112,7 +112,6 @@ export class DiagramService {
         running: string,
         done: (result: IStatementResult) => string,
     ): Promise<IStatementResult> {
-        const connectionId = await this.host.connect(uri, DIAGRAM_SESSION);
         this.#next += 1;
         const id = `diagram-${String(this.#next)}-${String(Date.now())}`;
         const when = new Date();
@@ -138,6 +137,10 @@ export class DiagramService {
         };
         let result: IStatementResult;
         try {
+            // Opening the session is part of the run: where it fails, the
+            // row says so too.
+            const connectionId = await this.host.connect(uri,
+                DIAGRAM_SESSION);
             result = await (await this.host.api()).executeSql(connectionId,
                 sql);
         } catch (error) {
@@ -148,9 +151,10 @@ export class DiagramService {
             throw failed(result.error);
         }
         const elapsedMs = performance.now() - started;
+        const message = done(result);
         put({
-            message: done(result),
-            statements: [{ sql, message: done(result), elapsedMs }],
+            message,
+            statements: [{ sql, message, elapsedMs }],
             elapsedMs,
         });
 

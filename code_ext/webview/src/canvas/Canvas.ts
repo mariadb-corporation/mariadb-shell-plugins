@@ -565,7 +565,8 @@ export class Canvas {
      * @returns Whether there was one.
      */
     public undo(): boolean {
-        return this.#pointer === undefined
+        // Locked, the diagram does not change: undoing is changing it too.
+        return this.#pointer === undefined && !this.#locked
             && this.#history.undo() !== undefined;
     }
 
@@ -575,7 +576,7 @@ export class Canvas {
      * @returns Whether there was one.
      */
     public redo(): boolean {
-        return this.#pointer === undefined
+        return this.#pointer === undefined && !this.#locked
             && this.#history.redo() !== undefined;
     }
 
@@ -846,10 +847,17 @@ export class Canvas {
     }
 
     #unmount(): void {
+        // A drag under way works on what is unmounted: dropped with it.
+        this.#pointer = undefined;
         this.#lastView = undefined;
         this.#set?.unmount();
         this.#set = undefined;
-        this.#edit = undefined;
+        if (this.#edit !== undefined) {
+            // What it edits is gone (a theme change draws it all again):
+            // the input over it goes too.
+            this.#edit = undefined;
+            this.#events.onEditEnd?.();
+        }
         this.#hover = undefined;
         this.#selected.clear();
         for (const decoration of this.#decorations.values()) {

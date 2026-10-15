@@ -347,6 +347,8 @@ export class EerFigureSet implements IFigureSet {
      * switch) loads again only what a new theme's colours need.
      */
     #iconCache = new Map<string, Promise<CardIcons>>();
+    /** Counts mounts and unmounts, so a mount overtaken while it waits stops. */
+    #mounts = 0;
     /** The layers' stacking, by id: see `#restack`. */
     #stackRanks = new Map<string, number>();
     /** The tables whose cards are to be drawn again, on the next frame. */
@@ -383,9 +385,16 @@ export class EerFigureSet implements IFigureSet {
     // --- IFigureSet: building -----------------------------------------------
 
     public async mount(host: ICanvasHost): Promise<void> {
+        const mounting = ++this.#mounts;
         this.#host = host;
         // In the theme's colour, which may have changed since the last mount.
-        this.#icons = await this.#iconsIn(host.theme.foreground);
+        const icons = await this.#iconsIn(host.theme.foreground);
+        // Unmounted, or mounted again, while the icons loaded: that mount
+        // builds the scene, not this one.
+        if (mounting !== this.#mounts) {
+            return;
+        }
+        this.#icons = icons;
         host.base.add(this.#base);
         host.lifted.add(this.#lifted);
         for (const layer of this.#diagram.layers) {
@@ -403,6 +412,7 @@ export class EerFigureSet implements IFigureSet {
     }
 
     public unmount(): void {
+        this.#mounts += 1;
         if (this.#rasterFrame !== undefined) {
             cancelAnimationFrame(this.#rasterFrame);
             this.#rasterFrame = undefined;
@@ -780,6 +790,8 @@ export class EerFigureSet implements IFigureSet {
         if (icons === undefined) {
             icons = this.#options.loadIcons(color);
             this.#iconCache.set(color, icons);
+            // A load that failed is tried again next time, not kept.
+            icons.catch(() => { this.#iconCache.delete(color); });
         }
 
         return icons;
