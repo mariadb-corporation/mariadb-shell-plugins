@@ -36,11 +36,14 @@ than an error.
 """
 
 import hashlib
+import html
 import io
+import json
 import os
 import re
 import shutil
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -215,20 +218,32 @@ def prepare(
     def path_of(name):
         return os.path.join(target_dir, name)
 
+    # Whatever the service's name and paths hold, they stay what they are:
+    # URL parts are percent-encoded, JavaScript strings written by
+    # json.dumps, and the title HTML-escaped. The page is served to
+    # everyone by default, so a name must not be able to add a script.
+    def url_path(path):
+        return urllib.parse.quote(path, safe="/")
+
     # The service's own catalog instead of the petstore demo.
     _patch(
         path_of("swagger-initializer.js"),
         r'url: ".*?"',
-        f'url: "{service_path}/open-api-catalog/"',
+        "url: " + json.dumps(url_path(f"{service_path}/open-api-catalog/")),
     )
 
     # Signing in is the REST Daemon's: its sign-in page, which returns to
     # the UI afterwards, rather than Swagger's own dialog.
-    redirect = f"/?service={service_path}&redirectUrl={service_path}{request_path}/index.html"
+    redirect = (
+        f"/?service={url_path(service_path)}"
+        f"&redirectUrl={url_path(f'{service_path}{request_path}/index.html')}"
+    )
     _patch(
         path_of("swagger-ui-bundle.js"),
         r'"btn authorize unlocked",onClick:i}',
-        f'"btn authorize unlocked",onClick:()=>{{window.location.href="{redirect}";}}}}',
+        '"btn authorize unlocked",onClick:()=>{window.location.href='
+        + json.dumps(redirect)
+        + ";}}",
     )
 
     # No link to swagger.io in the top bar.
@@ -238,7 +253,11 @@ def prepare(
         ".swagger-ui .topbar a{align-items:center;color:#fff;display:none;",
     )
 
-    _patch(path_of("index.html"), r"Swagger UI", f"{service_name} - OpenAPI UI")
+    _patch(
+        path_of("index.html"),
+        r"Swagger UI",
+        f"{html.escape(service_name)} - OpenAPI UI",
+    )
     # The MariaDB favicons instead of Swagger's.
     _patch(
         path_of("index.html"),

@@ -231,6 +231,26 @@ def test_the_open_api_ui_is_swagger_ui_patched_for_the_service(tmp_path, offline
     assert messages[0].startswith("Downloading Swagger UI")
 
 
+def test_the_open_api_ui_keeps_a_hostile_name_and_path_as_they_are(
+    tmp_path, offline_swagger
+):
+    """Neither can add a script to the page, which everyone is served."""
+    lib.open_api_ui.prepare(
+        str(tmp_path),
+        "x</title><script>alert(1)</script>",
+        '/a"b&c#d',
+        "/ui",
+    )
+
+    read = lambda name: (tmp_path / name).read_text()
+    index = read("index.html")
+    assert "<script>" not in index
+    assert "<title>x&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt; - OpenAPI UI</title>" in index
+    assert 'url: "/a%22b%26c%23d/open-api-catalog/"' in read("swagger-initializer.js")
+    assert ('window.location.href="/?service=/a%22b%26c%23d&redirectUrl='
+            '/a%22b%26c%23d/ui/index.html";') in read("swagger-ui-bundle.js")
+
+
 def test_an_open_api_ui_that_cannot_be_patched_is_refused(tmp_path, monkeypatch):
     files = dict(_SWAGGER_FILES)
     files["dist/swagger-ui-bundle.js"] = "a newer bundle"
