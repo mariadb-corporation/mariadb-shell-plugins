@@ -923,6 +923,22 @@ def test_a_listed_deployment_needs_no_allowed_path(fake_restd, home, monkeypatch
     assert asked == [elsewhere]
 
 
+def test_a_deployment_can_be_named_from_the_home_folder(fake_restd, home, monkeypatch):
+    """~ is expanded for the check, and so for what the tool does too."""
+    executable, _ = fake_restd
+    listed = restd.connection_deployment_dir("db1", 3306)
+    _set_up(executable, listed)
+    monkeypatch.setenv("PATH", f"{os.path.dirname(executable)}:/usr/bin:/bin")
+    tilde = os.path.join("~", os.path.relpath(listed, str(home)))
+    tools = _tools()
+
+    try:
+        assert asyncio.run(tools["rest.start_restd"](None, tilde))["status"] == "running"
+        assert asyncio.run(tools["rest.stop_restd"](None, tilde))["status"] == "stopped"
+    finally:
+        restd.stop(listed)
+
+
 # --- the HTTPS certificate -----------------------------------------------------
 
 from mcp_plugin.lib import restd_certs

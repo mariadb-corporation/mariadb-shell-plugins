@@ -217,7 +217,7 @@ def register_rest_tools(server, function_groups=()) -> None:
             os.path.expanduser(sandbox_dir or shell.options["sandboxDir"])
         )
 
-    async def _require_deployment_access(ctx, directory: str) -> None:
+    async def _require_deployment_access(ctx, directory: str) -> str:
         """Authorizes a deployment folder a tool is to work on.
 
         One the server lists - a sandbox's in the default sandbox path, or
@@ -226,11 +226,16 @@ def register_rest_tools(server, function_groups=()) -> None:
         made itself would only have the agent ask the user to trust a
         folder they never chose. Any other folder is checked as every
         path argument is.
+
+        Returns:
+            The folder as it was authorized - `~` expanded, made absolute -
+            which is what the tool then works on.
         """
         resolved = os.path.abspath(os.path.expanduser(directory))
         if resolved in restd.deployment_dirs(_sandbox_base_dir()):
-            return
+            return resolved
         await general.require_allowed_path(ctx, directory)
+        return resolved
 
     @tool(name="rest.get_restd_status")
     def get_restd_status() -> list:
@@ -273,7 +278,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The deployment's status, as rest.get_restd_status reports it.
         """
-        await _require_deployment_access(ctx, directory)
+        directory = await _require_deployment_access(ctx, directory)
         await general.require_allowed_path(ctx, restd_path)
 
         def work():
@@ -296,7 +301,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The deployment's status, as rest.get_restd_status reports it.
         """
-        await _require_deployment_access(ctx, directory)
+        directory = await _require_deployment_access(ctx, directory)
         return await anyio.to_thread.run_sync(lambda: restd.stop(directory))
 
     @tool(name="rest.get_certificate_status")
@@ -374,7 +379,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             A message saying what was deleted.
         """
-        await _require_deployment_access(ctx, directory)
+        directory = await _require_deployment_access(ctx, directory)
         if not restd.is_deployment(directory):
             raise tool_error(f"'{directory}' is no {restd.RESTD_NAME} deployment.")
 
