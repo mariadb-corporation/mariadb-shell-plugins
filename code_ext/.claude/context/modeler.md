@@ -35,7 +35,8 @@ view, showing a live schema's diagrams. Started on `wip/canvas`
   user's wish: "log the queries in the Action tab, as Diagram").
 - **The viewer** is one panel per schema of a connection
   (`ModelerPanel.show(extensionUri, {connection, schema, diagram}, host)`),
-  titled "diagram (schema)". It reads every row of the view when its page
+  titled "diagram (schema)" (escaped in the page's `<title>` by
+  `buildWebviewHtml`: a diagram's name is the database's). It reads every row of the view when its page
   is ready and opens on the diagram asked for (`load.diagram`); opening
   another diagram of that schema reuses it (`showDiagram`), and the
   viewer's own Diagram list retitles it (`diagramShown`). A spinner shows

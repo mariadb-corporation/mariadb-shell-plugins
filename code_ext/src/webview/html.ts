@@ -35,6 +35,20 @@ export const webviewOptions = (
 };
 
 /**
+ * Escapes text for an HTML document: a title can carry what a database
+ * holds, such as a diagram's name.
+ *
+ * @param text The text.
+ *
+ * @returns It, safe between tags or in a quoted attribute.
+ */
+export const escapeHtml = (text: string): string => {
+    return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;").replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+};
+
+/**
  * Builds a nonce for one load of a webview.
  *
  * @returns 32 random alphanumeric characters.
@@ -95,7 +109,7 @@ export const buildWebviewHtml = (
         }font-src ${webview.cspSource}; ${""
         }script-src 'nonce-${nonce}';" />
     <link rel="stylesheet" href="${style}" />
-    <title>${title}</title>
+    <title>${escapeHtml(title)}</title>
 </head>
 
 <body>

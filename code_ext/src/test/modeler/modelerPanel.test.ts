@@ -148,6 +148,20 @@ describe("ModelerPanel", () => {
             lastPanel().dispose();
         });
 
+    it("escapes a diagram's name in the page, where the database put markup",
+        () => {
+            ModelerPanel.show(extensionUri as never,
+                target("x</title><meta http-equiv=\"refresh\">"), host());
+            const panel = lastPanel();
+
+            expect(panel.webview.html).not.toContain(
+                "<meta http-equiv=\"refresh\"");
+            expect(panel.webview.html).toContain(
+                "<title>x&lt;/title&gt;&lt;meta http-equiv=&quot;refresh"
+                + "&quot;&gt; (world)</title>");
+            panel.dispose();
+        });
+
     it("titles itself by the diagram the page shows", () => {
         ModelerPanel.show(extensionUri as never, target("MRS"), host());
         const panel = lastPanel();
