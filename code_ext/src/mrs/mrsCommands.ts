@@ -63,6 +63,7 @@ import {
     configureStatements,
     contentSetDefaults,
     openApiUiDefaults,
+    changesContentSetAuth,
     contentSetStatements,
     DEFAULT_METADATA_SCHEMA,
     objectDefaults,
@@ -1210,8 +1211,15 @@ export class MrsCommands {
             save: async (saved) => {
                 const values = saved as IContentSetDialogValues;
                 if (contentSet !== undefined) {
+                    // Its files' authentication follows the set's, which
+                    // takes the metadata schema's name.
+                    const metadataSchema = changesContentSetAuth(values,
+                        contentSet)
+                        ? scope.metadataSchema
+                            ?? (await this.host.api.status(scope)).metadata_schema
+                        : undefined;
                     await this.host.api.run(scope, contentSetStatements(
-                        values, context, contentSet));
+                        values, context, contentSet, metadataSchema));
 
                     return;
                 }

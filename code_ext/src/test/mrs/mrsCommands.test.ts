@@ -1766,6 +1766,26 @@ describe("content sets", () => {
         expect(toolCalls).toEqual([]);
     });
 
+    it("has a content set's files follow a change of its authentication",
+        async () => {
+            const { api } = await setup({
+                [SERVICES]: [service],
+                [STATUS]: mrsStatus({ metadata_schema: "acme_rest" }),
+            });
+
+            await run("mariadb.mrs.editContentSet", contentSetNode);
+
+            const spec = dialog();
+            await spec.save({
+                ...spec.values as IContentSetDialogValues,
+                requiresAuth: true,
+            });
+            expect(api.sent.at(-1)).toContain(
+                "UPDATE `acme_rest`.`content_file` SET requires_auth = 1"
+                + " WHERE content_set_id = "
+                + "'44444444-0000-0000-0000-000000000001'");
+        });
+
     it("uploads an Explorer folder to the one open connection", async () => {
         await setup({ ...CONFIGURED, [SERVICES]: [service] });
 

@@ -1089,6 +1089,22 @@ describe("the content set dialog", () => {
             { ...context, existingPath: "/web" })).toEqual([]);
     });
 
+    it("has the files follow a change of the set's authentication", () => {
+        const existing = mrsContentSet({ requires_auth: true });
+        const context = { services: [], existingPath: "/web" };
+        const off = contentSetValues({ requiresAuth: false });
+
+        expect(contentSetStatements(off, context, existing, "my`rest"))
+            .toHaveLength(2);
+        expect(contentSetStatements(off, context, existing, "my`rest")[1])
+            .toBe("UPDATE `my``rest`.`content_file` SET requires_auth = 0"
+                + ` WHERE content_set_id = '${existing.id}'`);
+        // Unchanged, or no schema to name: the set's statement alone.
+        expect(contentSetStatements(contentSetValues({ requiresAuth: true }),
+            context, existing, "rest")).toHaveLength(1);
+        expect(contentSetStatements(off, context, existing)).toHaveLength(1);
+    });
+
     it("applies the settings, keeping the generated options", () => {
         const existing = mrsContentSet({
             options: {
