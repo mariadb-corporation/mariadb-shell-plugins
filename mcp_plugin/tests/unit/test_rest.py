@@ -900,6 +900,77 @@ def test_a_sandbox_really_gets_a_rest_daemon():
     asyncio.run(run())
 
 
+@pytest.mark.e2e
+def test_a_server_reached_through_its_socket_gets_the_daemon_of_its_port():
+    """With the real mariadb-restd: set up through the sandbox's socket, the
+    daemon is that of localhost and the port the server listens on, as for
+    a TCP connection, and it is served.
+
+    Needs what test_a_sandbox_really_gets_a_rest_daemon needs; it writes to
+    the real ~/.mariadb-restd, and deletes what it wrote.
+    """
+    if os.name == "nt":
+        pytest.skip("a socket is POSIX")
+    if restd.find_restd() is None:
+        pytest.skip(f"no mariadb-restd in {restd.searched_places()}")
+    if not helpers.server_binary_available():
+        pytest.skip("no MariaDB server on the PATH")
+
+    port = _sandbox_port()
+    directory = restd.connection_deployment_dir("localhost", port)
+    assert not os.path.exists(directory)
+
+    async def run():
+        # --gui, as the extension serves it: the socket connection is added
+        # with its password.
+        async with helpers.mcp_session(
+            ["db", "sandbox", "rest"], timeout=300, gui=True
+        ) as call:
+            deployed = await call("sandbox.deploy", {"port": port, "password": "Sandbox1!"})
+            assert not deployed.is_error, helpers.tool_payload(deployed)
+            socket_uri = None
+            try:
+                over_tcp = helpers.tool_payload(await call(
+                    "db.connect", {"uri": f"mariadb://root@127.0.0.1:{port}"}
+                ))
+                row = helpers.tool_rows(await call("db.execute_sql", {
+                    "connection_id": over_tcp, "sql": "SELECT @@socket"}))[0]
+                socket_path = row["@@socket"] if isinstance(row, dict) else row[0]
+                await call("db.close", {"connection_id": over_tcp})
+
+                socket_uri = f"mariadb://root@({socket_path})"
+                added = await call("db.add_connection",
+                                   {"uri": socket_uri, "password": "Sandbox1!"})
+                assert not added.is_error, helpers.tool_payload(added)
+                connection_id = helpers.tool_payload(
+                    await call("db.connect", {"uri": socket_uri}))
+
+                configured = await call(
+                    "rest.configure_restd", {"connection_id": connection_id}
+                )
+                assert not configured.is_error, helpers.tool_payload(configured)
+                daemon = helpers.tool_payload(configured)
+                assert daemon["directory"] == directory
+                assert (daemon["host"], daemon["server_port"], daemon["socket"]) == (
+                    "localhost", port, socket_path
+                )
+                assert daemon["status"] == "running"
+
+                deleted = await call("rest.delete_restd_config", {
+                    "directory": directory, "connection_id": connection_id})
+                assert not deleted.is_error, helpers.tool_payload(deleted)
+                await call("db.close", {"connection_id": connection_id})
+            finally:
+                if os.path.exists(directory):
+                    restd.delete_directory(directory)
+                if socket_uri is not None:
+                    await call("db.delete_connection", {"uri": socket_uri})
+                await call("sandbox.stop", {"port": port, "password": "Sandbox1!"})
+                await call("sandbox.delete", {"port": port})
+
+    asyncio.run(run())
+
+
 def test_a_listed_deployment_needs_no_allowed_path(fake_restd, home, monkeypatch):
     """What configure_restd made is not a path for the agent to have trusted."""
     executable, _ = fake_restd
