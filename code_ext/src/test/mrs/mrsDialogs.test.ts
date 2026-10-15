@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import type { IMappingDocument } from "../../mrs/dataMapping.js";
@@ -37,6 +39,8 @@ import {
     contentSetPathFor,
     requestPathFor,
     contentSetStatements,
+    OPEN_API_UI_PATH,
+    OPEN_API_UI_VERSION,
     objectDefaults,
     objectStatements,
     parseItemsPerPage,
@@ -1659,5 +1663,19 @@ describe("the OpenAPI UI's content set", () => {
             openApiUi: true })).toEqual([]);
         expect(validateContentSet(values, { services: ["/shop"] })
             .map((problem) => { return problem.field; })).toEqual(["directory"]);
+    });
+});
+
+describe("the OpenAPI UI", () => {
+    it("says what the mrs plugin downloads and where it serves it", () => {
+        // Copies, kept by hand: the plugin pins the Swagger UI release.
+        const plugin = readFileSync(new URL(
+            "../../../../mrs_plugin/lib/open_api_ui.py", import.meta.url),
+        "utf8");
+
+        expect(plugin).toContain(
+            `SWAGGER_UI_VERSION = "${OPEN_API_UI_VERSION}"`);
+        expect(plugin).toContain(
+            `DEFAULT_REQUEST_PATH = "${OPEN_API_UI_PATH}"`);
     });
 });
