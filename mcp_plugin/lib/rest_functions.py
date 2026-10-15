@@ -249,7 +249,8 @@ def register_rest_tools(server, function_groups=()) -> None:
             'server_port' of the server it serves, its own 'port' and 'url',
             'status' ('running' or 'stopped'), 'pid' (None when stopped),
             'log_path', 'metadata_schema', 'connection_uri' (the connection
-            it was set up with) and 'sandbox_port' (None when it is not a
+            it was set up with), 'socket' (the server's, where it was set up
+            through one, else None) and 'sandbox_port' (None when it is not a
             sandbox's).
         """
         return [
@@ -617,6 +618,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                     "connection_uri": uri,
                     "host": host,
                     "server_port": server_port,
+                    # A server reached through a socket is matched on it.
+                    "socket": connection.get("socket") or None,
                     "sandbox_port": sandbox_port,
                     "created": general.utc_timestamp(),
                 },

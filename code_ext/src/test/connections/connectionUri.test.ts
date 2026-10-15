@@ -238,6 +238,13 @@ describe("parseConnectionUri", () => {
             .toMatchObject({ socket: "/tmp/mysql.sock", host: "" });
     });
 
+    it("reads the shell's parenthesized socket", () => {
+        expect(parseConnectionUri("mariadb://dba@(/tmp/mysql.sock)"))
+            .toMatchObject({ socket: "/tmp/mysql.sock", host: "", port: "" });
+        expect(parseConnectionUri("dba@(/tmp/mysql.sock)/sakila"))
+            .toMatchObject({ socket: "/tmp/mysql.sock", schema: "sakila" });
+    });
+
     it("splits the options into their own fields", () => {
         const parsed = parseConnectionUri(
             "dba@localhost:3306?compression=REQUIRED&compression-algorithms="

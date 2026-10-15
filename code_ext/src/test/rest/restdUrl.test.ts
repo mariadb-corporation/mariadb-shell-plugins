@@ -81,4 +81,28 @@ describe("restdFor", () => {
         expect(restdFor([deployment(null, 3306, 8443)], "root@localhost"))
             .toBeUndefined();
     });
+
+    it("matches a socket connection on its socket", () => {
+        const daemons = [
+            deployment("localhost", 3306, 8443),
+            deployment("localhost", 3306, 8444,
+                { socket: "/tmp/mysql.sock" }),
+        ];
+
+        expect(restdFor(daemons, "root@(/tmp/mysql.sock)")?.port).toBe(8444);
+        expect(restdFor(daemons, "root@%2Ftmp%2Fmysql.sock")?.port)
+            .toBe(8444);
+        expect(restdFor(daemons, "root@(/tmp/other.sock)")).toBeUndefined();
+        expect(restdFor(daemons, "root@localhost")?.port).toBe(8443);
+    });
+
+    it("takes the one metadata schema a server has, whatever its name",
+        () => {
+            const daemons = [deployment("localhost", 3306, 8443,
+                { metadata_schema: "acme_rest" })];
+
+            expect(restdFor(daemons, "root@localhost")?.port).toBe(8443);
+            expect(restdFor(daemons, "root@localhost",
+                "mariadb_rest_service")).toBeUndefined();
+        });
 });

@@ -923,6 +923,25 @@ def test_a_listed_deployment_needs_no_allowed_path(fake_restd, home, monkeypatch
     assert asked == [elsewhere]
 
 
+def test_a_deployment_reports_the_socket_it_was_set_up_through(fake_restd, tmp_path):
+    """What the extension matches a socket connection on."""
+    executable, _ = fake_restd
+    through_socket = str(tmp_path / "socket")
+    restd.setup(
+        executable,
+        through_socket,
+        {"user": "root", "socket": "/tmp/mysql.sock"},
+        "pw",
+        helpers.find_free_port(),
+        record={"host": "localhost", "server_port": 3306, "socket": "/tmp/mysql.sock"},
+    )
+    by_port = str(tmp_path / "port")
+    _set_up(executable, by_port)
+
+    assert restd.status(through_socket)["socket"] == "/tmp/mysql.sock"
+    assert restd.status(by_port)["socket"] is None
+
+
 def test_a_deployment_can_be_named_from_the_home_folder(fake_restd, home, monkeypatch):
     """~ is expanded for the check, and so for what the tool does too."""
     executable, _ = fake_restd

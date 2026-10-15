@@ -39,6 +39,11 @@ export interface IRestdDeployment {
     metadata_schema: string;
     /** The connection it was set up with. */
     connection_uri: string | null;
+    /**
+     * The socket of the server it serves, where it was set up through one;
+     * null, or missing from an older server's answer, otherwise.
+     */
+    socket?: string | null;
     /** The sandbox it belongs to, or null. */
     sandbox_port: number | null;
 }

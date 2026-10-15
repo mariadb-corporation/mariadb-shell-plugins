@@ -476,6 +476,7 @@ def read_deployment(directory: str) -> dict:
         "host": host,
         "server_port": server_port,
         "connection_uri": recorded.get("connection_uri"),
+        "socket": recorded.get("socket"),
         "sandbox_port": recorded.get("sandbox_port"),
     }
 

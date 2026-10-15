@@ -49,8 +49,11 @@ const sameHost = (host: string): string => {
  * @param deployments The local REST Daemons, as `rest.get_restd_status`
  *                    lists them.
  * @param uri A connection.
- * @param metadataSchema The metadata schema the tree row is on; the
- *                       default where the server has one.
+ * @param metadataSchema The metadata schema the tree row is on. Undefined
+ *                       where the server has one only, whatever its name -
+ *                       which is when a tree row names none - so any daemon
+ *                       of the server serves it, one of the default
+ *                       schema's first.
  *
  * @returns The daemon serving that server's metadata schema - a running one
  *          before a stopped one - or undefined where none here does.
@@ -58,15 +61,25 @@ const sameHost = (host: string): string => {
 export const restdFor = (
     deployments: readonly IRestdDeployment[],
     uri: string,
-    metadataSchema: string = DEFAULT_METADATA_SCHEMA,
+    metadataSchema?: string,
 ): IRestdDeployment | undefined => {
     const server = parseConnectionUri(uri);
     const port = Number(server.port || DEFAULT_PORT);
+    const socket = server.socket.trim();
     const matching = deployments.filter((deployment) => {
-        return deployment.host !== null
-            && sameHost(deployment.host) === sameHost(server.host)
-            && deployment.server_port === port
-            && deployment.metadata_schema === metadataSchema;
+        // A server reached through a socket is that socket's, whatever
+        // host and port its deployment was given.
+        const sameServer = socket !== ""
+            ? deployment.socket === socket
+            : deployment.host !== null
+                && sameHost(deployment.host) === sameHost(server.host)
+                && deployment.server_port === port;
+
+        return sameServer && (metadataSchema === undefined
+            || deployment.metadata_schema === metadataSchema);
+    }).sort((first, second) => {
+        return Number(second.metadata_schema === DEFAULT_METADATA_SCHEMA)
+            - Number(first.metadata_schema === DEFAULT_METADATA_SCHEMA);
     });
 
     return matching.find((deployment) => {
