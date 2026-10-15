@@ -104,7 +104,18 @@ describe("DiagramService", () => {
             .toThrow("no such view");
         expect(rows.map((row) => { return row.kind; }))
             .toEqual(["pending", "error"]);
-        expect(rows[1].message).toBe("no such view");
+        // As every failed action shows: what was being done, the failed
+        // statement under it with the server's error.
+        expect(rows[1]).toMatchObject({
+            role: "run",
+            message: "Listing the diagrams of world",
+            connectionLabel: DIAGRAM_SESSION,
+        });
+        expect(rows[1].children?.[0]).toMatchObject({
+            kind: "error",
+            statement: listDiagramsSql("world"),
+            message: "no such view",
+        });
     });
 
     it("reports a call that broke off, too", async () => {
@@ -112,6 +123,7 @@ describe("DiagramService", () => {
 
         await expect(diagrams.listDiagrams("u", "world")).rejects
             .toThrow("gone");
-        expect(rows[1]).toMatchObject({ kind: "error", message: "gone" });
+        expect(rows[1].kind).toBe("error");
+        expect(rows[1].children?.[0]?.message).toBe("gone");
     });
 });

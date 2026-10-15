@@ -18,7 +18,7 @@
 import type { ComponentChildren, JSX } from "preact";
 
 import type { Tool, ViewMode } from "./canvasTypes.js";
-import { MENU_BUTTON_SIZE, menuBarStyle } from "./CanvasMenu.js";
+import { HamburgerButton, MENU_BUTTON_SIZE } from "./CanvasMenu.js";
 import type { IIsoAngles } from "./geometry.js";
 import { SplitButton } from "./SplitButton.js";
 
@@ -54,9 +54,9 @@ export interface ICanvasToolbarProps {
     /**
      * Opens the toolbar's menu under its button.
      *
-     * @param button Where the button is, in the window.
+     * @param button The button, to place the menu under.
      */
-    onMenu: (button: DOMRect) => void;
+    onMenu: (button: HTMLElement) => void;
     menuOpen: boolean;
     /** The figure set's own sections. */
     children?: ComponentChildren;
@@ -99,7 +99,7 @@ export const ToolbarSection = (props: {
 };
 
 export const CanvasToolbar = (props: ICanvasToolbarProps): JSX.Element => {
-    return <div className="toolbar canvasToolbar" role="toolbar">
+    return <div className="toolbar" role="toolbar">
         <ToolbarSection label="Tools:">
             <IconButton icon="toolPointer" title="Select Objects"
                 toggled={props.tool === "pointer"}
@@ -163,18 +163,12 @@ export const CanvasToolbar = (props: ICanvasToolbarProps): JSX.Element => {
             />
         </ToolbarSection>
         {props.children}
-        <button
-            type="button"
-            className={"navigatorMenuButton toolbarMenuButton"
-                + (props.menuOpen ? " open" : "")}
-            title="More Options"
-            aria-label="More Options"
-            style={menuBarStyle(MENU_BUTTON_SIZE)}
-            aria-haspopup="menu"
-            aria-expanded={props.menuOpen}
-            onClick={(event) => {
-                props.onMenu(event.currentTarget.getBoundingClientRect());
-            }}
+        <HamburgerButton
+            size={MENU_BUTTON_SIZE}
+            label="More Options"
+            open={props.menuOpen}
+            className="toolbarMenuButton"
+            onOpen={props.onMenu}
         />
     </div>;
 };

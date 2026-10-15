@@ -302,6 +302,32 @@ export const gridSpacing = (
 };
 
 /**
+ * @param points Some points.
+ *
+ * @returns The smallest rectangle holding them all.
+ */
+export const boundsOf = (points: readonly IPoint[]): IRect => {
+    const xs = points.map((point) => { return point.x; });
+    const ys = points.map((point) => { return point.y; });
+    const left = Math.min(...xs);
+    const top = Math.min(...ys);
+
+    return { left, top, width: Math.max(...xs) - left,
+        height: Math.max(...ys) - top };
+};
+
+/**
+ * @param a A rectangle.
+ * @param b Another.
+ *
+ * @returns Whether they share any area.
+ */
+export const overlapsRect = (a: IRect, b: IRect): boolean => {
+    return a.left < b.left + b.width && a.left + a.width > b.left
+        && a.top < b.top + b.height && a.top + a.height > b.top;
+};
+
+/**
  * The zoom at which a rectangle fills a viewport, with a border around it.
  *
  * @param viewport The viewport's size in CSS pixels.

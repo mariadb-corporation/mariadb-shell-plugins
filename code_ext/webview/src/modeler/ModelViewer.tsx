@@ -28,13 +28,13 @@ import indexIcon from "../assets/modeler/schemaTableIndex.svg?raw";
 import type { ISchemaModel } from "../../../src/modeler/modelFormat.js";
 import type { ModelerHostMessage }
     from "../../../src/modeler/modelerProtocol.js";
-import {
-    DEFAULT_PAGE_SETTINGS,
-    type IPageSettings,
-    type IRect,
-} from "../../../src/modeler/pageSettings.js";
+import type { IPageSettings } from "../../../src/modeler/pageSettings.js";
 import { Canvas, ZOOM_RANGE } from "../canvas/Canvas.js";
-import { CanvasMenu, MenuButton } from "../canvas/CanvasMenu.js";
+import {
+    CanvasMenu,
+    MenuButton,
+    pointUnder,
+} from "../canvas/CanvasMenu.js";
 import { CanvasToolbar, ToolbarSection } from "../canvas/CanvasToolbar.js";
 import type {
     ICanvasOverlay,
@@ -124,10 +124,24 @@ interface ILoaded {
     pageSettings: IPageSettings;
 }
 
+/** Whose a menu is: an item's, the Navigator's or the toolbar's. */
+type MenuOwner = { kind: "item"; id: string } | { kind: "navigator" }
+    | { kind: "toolbar" };
+
+/**
+ * @param a A menu's owner.
+ * @param b Another.
+ *
+ * @returns Whether they are the same.
+ */
+const sameOwner = (a: MenuOwner | undefined, b: MenuOwner): boolean => {
+    return a !== undefined && a.kind === b.kind
+        && (a.kind !== "item" || a.id === (b as { id: string }).id);
+};
+
 /** A menu open over the canvas host. */
 interface IOpenMenu {
-    /** Whose it is: an item's id, or the Navigator. */
-    owner: string;
+    owner: MenuOwner;
     items: IMenuEntry[];
     x: number;
     y: number;
@@ -136,12 +150,6 @@ interface IOpenMenu {
 
 /** How long loading may take before a spinner shows. */
 const SPINNER_DELAY_MS = 300;
-
-/** The Navigator menu's owner, apart from the items' ids. */
-const NAVIGATOR_MENU = "\u0000navigator";
-
-/** The toolbar menu's owner. */
-const TOOLBAR_MENU = "\u0000toolbar";
 
 export const ModelViewer = (): JSX.Element => {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -152,18 +160,17 @@ export const ModelViewer = (): JSX.Element => {
     const [error, setError] = useState<string>();
     // A spinner, only where loading takes a moment.
     const [slow, setSlow] = useState(false);
-    const [diagramIndex, setDiagramIndex] = useState(0);
+    /** The diagram shown, by name: the tree opens one by its name. */
+    const [diagramName, setDiagramName] = useState<string>();
     const [tool, setTool] = useState<Tool>("pointer");
     const [view, setView] = useState<ViewMode>("2d");
+    // What the viewer kept, read once.
+    const [kept] = useState(viewerState);
     const [custom, setCustom] = useState<IIsoAngles | undefined>(() => {
-        const kept = viewerState().custom;
-
-        return kept === undefined ? undefined
-            : customPreset(kept.tilt, kept.turn);
+        return kept.custom === undefined ? undefined
+            : customPreset(kept.custom.tilt, kept.custom.turn);
     });
     const [isoPresetId, setIsoPresetId] = useState(() => {
-        const kept = viewerState();
-
         return kept.isoPreset === CUSTOM_ISO_PRESET && kept.custom !== undefined
             ? CUSTOM_ISO_PRESET
             : isoPreset(kept.isoPreset).id;
@@ -172,16 +179,36 @@ export const ModelViewer = (): JSX.Element => {
     const [pagesVisible, setPagesVisible] = useState(true);
     const [locked, setLocked] = useState(false);
     const [navigatorVisible, setNavigatorVisible] = useState(
-        () => { return viewerState().navigator !== false; });
+        kept.navigator !== false);
     const [navigator, setNavigator] = useState<INavigatorState>();
-    const [marginsVisible, setMarginsVisible] = useState(
-        () => { return viewerState().margins === true; });
+    const [marginsVisible, setMarginsVisible] = useState(kept.margins === true);
     const [zoom, setZoom] = useState(1);
     const [edit, setEdit] = useState<IEditRequest>();
     const [editText, setEditText] = useState("");
     const [overlays, setOverlays] = useState<ICanvasOverlay[]>([]);
     const [menu, setMenu] = useState<IOpenMenu>();
     const closeMenu = useCallback(() => { setMenu(undefined); }, []);
+    const diagramIndex = Math.max(0, loaded?.model.diagrams.findIndex(
+        (diagram) => { return diagram.name === diagramName; }) ?? 0);
+
+    /**
+     * A setting of the canvas the toolbar switches: kept as the toolbar's
+     * state, and set on the canvas.
+     *
+     * @param key The canvas's property.
+     * @param set Sets the state.
+     *
+     * @returns What the toolbar calls.
+     */
+    const mirror = <K extends "tool" | "gridVisible" | "pagesVisible"
+        | "locked" | "marginsVisible">(key: K, set: (value: Canvas[K]) => void) => {
+        return (value: Canvas[K]): void => {
+            set(value);
+            if (canvasRef.current) {
+                canvasRef.current[key] = value;
+            }
+        };
+    };
 
     /** The 3D views to choose from: the presets, and the user's own. */
     const presets = custom === undefined ? ISO_PRESETS : [...ISO_PRESETS, custom];
@@ -203,7 +230,7 @@ export const ModelViewer = (): JSX.Element => {
         const items = canvas?.menu(id) ?? [];
         if (canvas !== undefined && items.length > 0) {
             setMenu({
-                owner: id,
+                owner: { kind: "item", id },
                 items,
                 x,
                 y,
@@ -236,14 +263,17 @@ export const ModelViewer = (): JSX.Element => {
             onOverlays: setOverlays,
             onContextMenu: (id, x, y) => { openItemMenu(id, x, y); },
             onViewMode: setView,
-            onIsoAngles: (angles) => {
-                // Orbiting makes the user's own 3D view, kept as such.
+            onIsoAngles: (angles, final) => {
+                // Orbiting makes the user's own 3D view, kept as such once
+                // the orbit ends.
                 setCustom(angles);
                 setIsoPresetId(CUSTOM_ISO_PRESET);
-                keepState({
-                    isoPreset: CUSTOM_ISO_PRESET,
-                    custom: { tilt: angles.tilt, turn: angles.turn },
-                });
+                if (final) {
+                    keepState({
+                        isoPreset: CUSTOM_ISO_PRESET,
+                        custom: { tilt: angles.tilt, turn: angles.turn },
+                    });
+                }
             },
             onNavigator: setNavigator,
         });
@@ -264,10 +294,7 @@ export const ModelViewer = (): JSX.Element => {
                 case "load": {
                     setError(undefined);
                     // The diagram opened in the tree, else the first.
-                    setDiagramIndex(Math.max(0, message.model.diagrams
-                        .findIndex((diagram) => {
-                            return diagram.name === message.diagram;
-                        })));
+                    setDiagramName(message.diagram);
                     setLoaded({
                         model: message.model,
                         set: new EerFigureSet({
@@ -276,14 +303,13 @@ export const ModelViewer = (): JSX.Element => {
                             loadIcons,
                         }),
                         source: message.source,
-                        pageSettings: message.pageSettings
-                            ?? DEFAULT_PAGE_SETTINGS,
+                        pageSettings: message.pageSettings,
                     });
                     break;
                 }
 
                 case "showDiagram": {
-                    setLoadedDiagram(message.name);
+                    setDiagramName(message.name);
                     break;
                 }
 
@@ -308,21 +334,6 @@ export const ModelViewer = (): JSX.Element => {
         };
     }, []);
 
-    /** The name of a diagram to show, asked for by the tree. */
-    const [wanted, setLoadedDiagram] = useState<string>();
-    useEffect(() => {
-        if (wanted === undefined || loaded === undefined) {
-            return;
-        }
-        const index = loaded.model.diagrams.findIndex((diagram) => {
-            return diagram.name === wanted;
-        });
-        if (index >= 0) {
-            setDiagramIndex(index);
-        }
-        setLoadedDiagram(undefined);
-    }, [wanted, loaded]);
-
     // A diagram is shown whenever the model or the choice changes. The set
     // is the model's, so its history spans its diagrams.
     useEffect(() => {
@@ -330,10 +341,13 @@ export const ModelViewer = (): JSX.Element => {
         if (canvas === undefined || loaded === undefined) {
             return;
         }
+        // The one asked for by name, else the first.
         const diagram = loaded.model.diagrams[diagramIndex];
         if (diagram === undefined) {
             return;
         }
+        // For the tab's title, however it was picked.
+        post({ type: "diagramShown", name: diagram.name });
         canvas.cancelEdit();
         setEdit(undefined);
         setMenu(undefined);
@@ -361,29 +375,6 @@ export const ModelViewer = (): JSX.Element => {
         setEdit(undefined);
     };
 
-    /**
-     * @param bounds A box on the canvas.
-     *
-     * @returns Whether it touches the Navigator panel.
-     */
-    const overlapsNavigator = (bounds: IRect): boolean => {
-        const host = hostRef.current;
-        const panel = host?.querySelector(".navigator");
-        if (host === null || host === undefined || panel === null
-            || panel === undefined) {
-            return false;
-        }
-        const hostRect = host.getBoundingClientRect();
-        const rect = panel.getBoundingClientRect();
-        const left = rect.left - hostRect.left;
-        const top = rect.top - hostRect.top;
-
-        return bounds.left < left + rect.width
-            && bounds.left + bounds.width > left
-            && bounds.top < top + rect.height
-            && bounds.top + bounds.height > top;
-    };
-
     const showNavigator = (visible: boolean): void => {
         setNavigatorVisible(visible);
         keepState({ navigator: visible });
@@ -399,61 +390,38 @@ export const ModelViewer = (): JSX.Element => {
     return <div className="modelViewer">
         <CanvasToolbar
             tool={tool}
-            onTool={(next) => {
-                setTool(next);
-                if (canvasRef.current) {
-                    canvasRef.current.tool = next;
-                }
-            }}
+            onTool={mirror("tool", setTool)}
             view={view}
             onView={(next) => {
                 setView(next);
                 canvasRef.current?.setView(next);
             }}
             gridVisible={gridVisible}
-            onGridVisible={(visible) => {
-                setGridVisible(visible);
-                if (canvasRef.current) {
-                    canvasRef.current.gridVisible = visible;
-                }
-            }}
+            onGridVisible={mirror("gridVisible", setGridVisible)}
             pagesVisible={pagesVisible}
-            onPagesVisible={(visible) => {
-                setPagesVisible(visible);
-                if (canvasRef.current) {
-                    canvasRef.current.pagesVisible = visible;
-                }
-            }}
+            onPagesVisible={mirror("pagesVisible", setPagesVisible)}
             locked={locked}
-            onLocked={(next) => {
-                setLocked(next);
-                if (canvasRef.current) {
-                    canvasRef.current.locked = next;
-                }
-            }}
+            onLocked={mirror("locked", setLocked)}
             navigatorVisible={navigatorVisible}
             onNavigatorVisible={showNavigator}
-            menuOpen={menu?.owner === TOOLBAR_MENU}
+            menuOpen={sameOwner(menu?.owner, { kind: "toolbar" })}
             onMenu={(button) => {
                 // The menu lives over the canvas host, under the toolbar.
-                const host = hostRef.current?.getBoundingClientRect();
+                const at = pointUnder(button, hostRef.current);
                 setMenu({
-                    owner: TOOLBAR_MENU,
+                    owner: { kind: "toolbar" },
                     items: [{
                         id: "margins",
                         caption: "Show Printable Area",
                         checked: marginsVisible,
                     }],
-                    x: button.left - (host?.left ?? 0),
-                    y: Math.max(0, button.bottom - (host?.top ?? 0) + 2),
+                    x: at.x,
+                    y: Math.max(0, at.y),
                     onCommand: (command) => {
                         if (command === "margins") {
-                            const visible = !marginsVisible;
-                            setMarginsVisible(visible);
-                            keepState({ margins: visible });
-                            if (canvasRef.current) {
-                                canvasRef.current.marginsVisible = visible;
-                            }
+                            keepState({ margins: !marginsVisible });
+                            mirror("marginsVisible", setMarginsVisible)(
+                                !marginsVisible);
                         }
                     },
                 });
@@ -479,14 +447,8 @@ export const ModelViewer = (): JSX.Element => {
                     aria-label="Diagram"
                     value={diagramIndex}
                     onChange={(event) => {
-                        const index = Number(
-                            (event.target as HTMLSelectElement).value);
-                        setDiagramIndex(index);
-                        const name = loaded?.model.diagrams[index]?.name;
-                        if (name !== undefined) {
-                            // For the tab's title.
-                            post({ type: "diagramShown", name });
-                        }
+                        setDiagramName(loaded?.model.diagrams[Number(
+                            (event.target as HTMLSelectElement).value)]?.name);
                     }}
                 >
                     {diagrams.map((name, index) => {
@@ -496,14 +458,11 @@ export const ModelViewer = (): JSX.Element => {
             </ToolbarSection>
         </CanvasToolbar>
         <div className="modelCanvasHost" ref={hostRef}>
-            {overlays.filter((overlay) => {
-                // Never over the Navigator, whose overview area is clear.
-                return !overlapsNavigator(overlay.bounds);
-            }).map((overlay) => {
+            {overlays.map((overlay) => {
                 return <MenuButton
                     key={overlay.id}
                     overlay={overlay}
-                    open={menu?.owner === overlay.id}
+                    open={sameOwner(menu?.owner, { kind: "item", id: overlay.id })}
                     onOpen={(x, y) => { openItemMenu(overlay.id, x, y); }}
                 />;
             })}
@@ -512,17 +471,17 @@ export const ModelViewer = (): JSX.Element => {
                 zoom={zoom}
                 zoomRange={ZOOM_RANGE}
                 onZoom={(next) => { canvasRef.current?.zoomTo(next); }}
-                onArea={(area) => {
-                    canvasRef.current?.setNavigatorArea(area);
+                onArea={(area, panel) => {
+                    canvasRef.current?.setNavigatorArea(area, panel);
                 }}
                 onPan={(dx, dy) => { canvasRef.current?.navigatorPan(dx, dy); }}
                 onCenter={(x, y) => {
                     canvasRef.current?.navigatorCenter(x, y);
                 }}
-                menuOpen={menu?.owner === NAVIGATOR_MENU}
+                menuOpen={sameOwner(menu?.owner, { kind: "navigator" })}
                 onMenu={(x, y) => {
                     setMenu({
-                        owner: NAVIGATOR_MENU,
+                        owner: { kind: "navigator" },
                         items: [
                             { id: "fit", caption: "Fit Diagram" },
                             { id: "actual", caption: "Actual Size" },

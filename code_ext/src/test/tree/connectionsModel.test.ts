@@ -66,6 +66,23 @@ const connectionRoots = async (
 };
 
 /**
+ * A diagram service over a manager, its Actions rows kept.
+ *
+ * @param rows Where the rows go.
+ *
+ * @returns The factory `createModel` takes.
+ */
+const diagramService = (rows: IActionRow[] = []) => {
+    return (connections: ConnectionManager): DiagramService => {
+        return new DiagramService({
+            connect: (target, name) => { return connections.connect(target, name); },
+            api: () => { return connections.api(); },
+            put: (_connection, row) => { rows.push(row); },
+        });
+    };
+};
+
+/**
  * @param defaultConnection The default connection, if any.
  * @param connectOnOpen Whether expanding a closed connection opens it.
  * @param sqlResults What chosen statements answer.
@@ -480,7 +497,8 @@ describe("ConnectionsModel.getChildren", () => {
     it("gives a schema one folder per object type, and no Diagrams folder "
         + "where it has no msm_schema_diagrams view",
         async () => {
-            const { api, manager, model } = createModel();
+            const { api, manager, model } = createModel(undefined, false,
+                undefined, diagramService());
             await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
             const schema: ISchemaNode = {
                 kind: "schema",
@@ -738,7 +756,8 @@ describe("ConnectionsModel: a schema's diagrams", () => {
 
     it("puts a Diagrams folder first where the schema has the view",
         async () => {
-            const { manager, model } = createModel(undefined, false, withView);
+            const { manager, model } = createModel(undefined, false, withView,
+                diagramService());
             await manager.connect(uri, UI_BACKEND_SESSION);
 
             const children = await model.getChildren(schema);
@@ -751,7 +770,7 @@ describe("ConnectionsModel: a schema's diagrams", () => {
         async () => {
             const { manager, model } = createModel(undefined, false, {
                 [hasDiagramsSql("world")]: new Error("access denied"),
-            });
+            }, diagramService());
             await manager.connect(uri, UI_BACKEND_SESSION);
 
             const children = await model.getChildren(schema);
@@ -759,8 +778,19 @@ describe("ConnectionsModel: a schema's diagrams", () => {
             expect(children[0].kind).toBe("objectGroup");
         });
 
+    it("shows no Diagrams folder without a service to list them", async () => {
+        const { api, manager, model } = createModel(undefined, false, withView);
+        await manager.connect(uri, UI_BACKEND_SESSION);
+
+        const children = await model.getChildren(schema);
+
+        expect(children[0].kind).toBe("objectGroup");
+        expect(api.statements).toEqual([]);
+    });
+
     it("lists the diagrams the view names", async () => {
-        const { manager, model } = createModel(undefined, false, withView);
+        const { manager, model } = createModel(undefined, false, withView,
+            diagramService());
         await manager.connect(uri, UI_BACKEND_SESSION);
 
         await expect(model.getChildren(folder)).resolves.toEqual([
@@ -772,15 +802,7 @@ describe("ConnectionsModel: a schema's diagrams", () => {
     it("lists them on the Diagram session, put in the Actions", async () => {
         const rows: IActionRow[] = [];
         const { api, manager, model } = createModel(undefined, false,
-            withView, (connections) => {
-                return new DiagramService({
-                    connect: (target, name) => {
-                        return connections.connect(target, name);
-                    },
-                    api: () => { return connections.api(); },
-                    put: (_connection, row) => { rows.push(row); },
-                });
-            });
+            withView, diagramService(rows));
         await manager.connect(uri, UI_BACKEND_SESSION);
 
         const diagrams = await model.getChildren(folder);

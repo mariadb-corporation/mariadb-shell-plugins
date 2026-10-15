@@ -137,8 +137,8 @@ export class ConnectionsTreeProvider
      * @param mrs The REST Service rows under each connection; left out,
      *        none are shown.
      * @param diagrams Lists a schema's diagrams on their own session,
-     *        putting the query in the Actions; left out, the tree's own
-     *        session lists them.
+     *        putting the query in the Actions; left out, no schema shows a
+     *        Diagrams folder.
      */
     public constructor(
         private readonly connections: ConnectionManager,

@@ -27,10 +27,8 @@ import type { IPageSettings } from "./pageSettings.js";
 export type ModelerWebviewMessage =
     /** The page has loaded and can take the model. */
     | { type: "ready" }
-    /** The diagram shown changed, by the viewer's own list. */
-    | { type: "diagramShown"; name: string }
-    /** Something to put in the extension's log. */
-    | { type: "log"; message: string };
+    /** The diagram shown, however it was picked: for the tab's title. */
+    | { type: "diagramShown"; name: string };
 
 /** Messages from the extension to the viewer. */
 export type ModelerHostMessage =

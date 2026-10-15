@@ -25,12 +25,7 @@ import {
     folderNames,
 } from "../connections/connectionFolders.js";
 import type { IStoredConnection } from "../connections/connectionStore.js";
-import {
-    diagramNames,
-    hasDiagrams,
-    hasDiagramsSql,
-    listDiagramsSql,
-} from "../modeler/diagramQueries.js";
+import { hasDiagrams, hasDiagramsSql } from "../modeler/diagramQueries.js";
 import type { DiagramService } from "../modeler/diagramService.js";
 import { withDefaultScheme } from "../connections/connectionUri.js";
 import {
@@ -480,7 +475,8 @@ export class ConnectionsModel {
     async #diagramsFolderOf(node: ISchemaNode): Promise<IDiagramsNode[]> {
         const connectionId = this.connections.connectionIdFor(
             node.uri, UI_BACKEND_SESSION);
-        if (connectionId === undefined) {
+        // Without the service there is nothing to list the diagrams with.
+        if (connectionId === undefined || this.diagrams === undefined) {
             return [];
         }
         try {
@@ -505,20 +501,9 @@ export class ConnectionsModel {
      * @returns Its diagram nodes.
      */
     async #diagramsOf(node: IDiagramsNode): Promise<IDiagramNode[]> {
-        let names: string[];
-        if (this.diagrams !== undefined) {
-            // On the Diagram session, put in the Actions as it runs.
-            names = await this.diagrams.listDiagrams(node.uri, node.schema);
-        } else {
-            const connectionId = this.connections.connectionIdFor(
-                node.uri, UI_BACKEND_SESSION);
-            if (connectionId === undefined) {
-                return [];
-            }
-            const api = await this.connections.api();
-            names = diagramNames(await api.executeSql(connectionId,
-                listDiagramsSql(node.schema)));
-        }
+        // On the Diagram session, put in the Actions as it runs.
+        const names = await this.diagrams?.listDiagrams(node.uri,
+            node.schema) ?? [];
 
         return names.map((name) => {
             return { kind: "diagram", uri: node.uri, schema: node.schema, name };

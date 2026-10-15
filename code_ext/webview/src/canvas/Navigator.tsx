@@ -19,7 +19,11 @@ import type { JSX } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import type { INavigatorState } from "./canvasTypes.js";
-import { MENU_BUTTON_SIZE, menuBarStyle } from "./CanvasMenu.js";
+import {
+    HamburgerButton,
+    MENU_BUTTON_SIZE,
+    pointUnder,
+} from "./CanvasMenu.js";
 import { SplitButton } from "./SplitButton.js";
 import type { IRect } from "../../../src/modeler/pageSettings.js";
 
@@ -43,7 +47,7 @@ const AREA_MIN_HEIGHT = 64;
 const AREA_MAX_HEIGHT = 192;
 
 /** The zooms the value's list offers. */
-export const ZOOM_PRESETS = [0.5, 0.75, 1, 1.5] as const;
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.5] as const;
 
 /** The slider's steps: the zoom on a log scale. */
 const SLIDER_STEPS = 1000;
@@ -89,7 +93,7 @@ export interface INavigatorProps {
      * The overview's area changed: where the canvas draws it, relative to
      * the canvas host (the canvas sits at its top left).
      */
-    onArea: (area: IRect | undefined) => void;
+    onArea: (area: IRect | undefined, panel?: IRect) => void;
     /** Pans the view by a distance dragged in the overview. */
     onPan: (dx: number, dy: number) => void;
     /** Centres the view on a point of the overview. */
@@ -100,6 +104,7 @@ export interface INavigatorProps {
 }
 
 export const Navigator = (props: INavigatorProps): JSX.Element => {
+    const root = useRef<HTMLDivElement>(null);
     const area = useRef<HTMLDivElement>(null);
     const drag = useRef<{ x: number; y: number } | undefined>(undefined);
     /** The zoom last picked from the list, which the value goes to. */
@@ -108,29 +113,35 @@ export const Navigator = (props: INavigatorProps): JSX.Element => {
     const height = Math.round(Math.min(AREA_MAX_HEIGHT,
         Math.max(AREA_MIN_HEIGHT, AREA_WIDTH * aspect)));
 
-    // The canvas draws into the area: tell it where the area is, whenever
-    // it moves or changes size, and that it is gone when the panel is.
+    // The canvas draws into the area: tell it where the area is, and the
+    // whole panel, which it keeps its menu buttons off, relative to the
+    // host the panel floats in - whenever they move or change size, and
+    // that they are gone when the panel is.
     const report = (): void => {
         const element = area.current;
-        const host = element?.closest(".modelCanvasHost");
-        if (element === null || element === undefined || host === null
+        const panel = root.current;
+        const host = panel?.offsetParent;
+        if (element === null || panel === null || host === null
             || host === undefined) {
             return;
         }
-        const rect = element.getBoundingClientRect();
-        const hostRect = host.getBoundingClientRect();
-        props.onArea({
-            left: rect.left - hostRect.left,
-            top: rect.top - hostRect.top,
-            width: rect.width,
-            height: rect.height,
-        });
+        const origin = host.getBoundingClientRect();
+        const relative = (rect: DOMRect): IRect => {
+            return {
+                left: rect.left - origin.left,
+                top: rect.top - origin.top,
+                width: rect.width,
+                height: rect.height,
+            };
+        };
+        props.onArea(relative(element.getBoundingClientRect()),
+            relative(panel.getBoundingClientRect()));
     };
     useLayoutEffect(report, [height]);
     useEffect(() => {
         const element = area.current;
-        const host = element?.closest(".modelCanvasHost");
-        if (element === null || element === undefined) {
+        const host = root.current?.offsetParent;
+        if (element === null) {
             return undefined;
         }
         const observer = new ResizeObserver(report);
@@ -153,24 +164,17 @@ export const Navigator = (props: INavigatorProps): JSX.Element => {
 
     const view = props.state?.view;
 
-    return <div className="navigator" role="region" aria-label="Navigator">
+    return <div ref={root} className="navigator" role="region"
+        aria-label="Navigator">
         <div className="navigatorTitle">
             <span>Navigator</span>
-            <button
-                type="button"
-                className={"navigatorMenuButton" + (props.menuOpen
-                    ? " open" : "")}
-                title="Navigator Menu"
-                aria-label="Navigator Menu"
-                style={menuBarStyle(MENU_BUTTON_SIZE)}
-                aria-haspopup="menu"
-                aria-expanded={props.menuOpen}
-                onClick={(event) => {
-                    const button = event.currentTarget.getBoundingClientRect();
-                    const host = event.currentTarget
-                        .closest(".modelCanvasHost")?.getBoundingClientRect();
-                    props.onMenu(button.left - (host?.left ?? 0),
-                        button.bottom - (host?.top ?? 0) + 2);
+            <HamburgerButton
+                size={MENU_BUTTON_SIZE}
+                label="Navigator Menu"
+                open={props.menuOpen}
+                onOpen={(button) => {
+                    const at = pointUnder(button, root.current?.offsetParent);
+                    props.onMenu(at.x, at.y);
                 }}
             />
         </div>

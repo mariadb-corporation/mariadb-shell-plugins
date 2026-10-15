@@ -42,7 +42,7 @@ export interface IHistoryEntry {
 }
 
 /** How many actions the history keeps by default. */
-export const DEFAULT_HISTORY_LIMIT = 500;
+const DEFAULT_HISTORY_LIMIT = 500;
 
 export class UndoStack {
     readonly #limit: number;

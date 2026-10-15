@@ -16,7 +16,8 @@
  */
 
 import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
-import { formatTime } from "../sql/executionService.js";
+import { mrsActionRow } from "../mrs/mrsActivity.js";
+import type { IMrsAction } from "../mrs/mrsActions.js";
 import { counted, errorText } from "../text.js";
 import type { IActionRow } from "../webview/protocol.js";
 import {
@@ -116,37 +117,42 @@ export class DiagramService {
         const id = `diagram-${String(this.#next)}-${String(Date.now())}`;
         const when = new Date();
         const started = performance.now();
-        const base = {
-            id,
-            time: formatTime(when),
-            connection: uri,
-            connectionLabel: DIAGRAM_SESSION,
-            statement: sql,
+        // As every action is put in the Actions (`mrsActionRow`): the
+        // spinner while it runs, then the statement with what it did -
+        // or, where it failed, the run with the failed statement under it.
+        const put = (action: Omit<IMrsAction, "id" | "when">): void => {
+            this.host.put(uri, mrsActionRow({ ...action, id, when }, uri,
+                DIAGRAM_SESSION));
         };
-        this.host.put(uri, {
-            ...base, role: "event", message: `${running}…`, kind: "pending",
-        });
-        const report = (message: string, failed: boolean): void => {
-            this.host.put(uri, {
-                ...base, role: "event", message,
-                kind: failed ? "error" : "info",
-                elapsedMs: performance.now() - started,
+        put({ message: `${running}…`, pending: true, elapsedMs: 0 });
+        const failed = (error: string): Error => {
+            const elapsedMs = performance.now() - started;
+            put({
+                message: running,
+                error,
+                statements: [{ sql, message: error, error, elapsedMs }],
+                elapsedMs,
             });
+
+            return new Error(error);
         };
         let result: IStatementResult;
         try {
-            const api = await this.host.api();
-            result = await api.executeSql(connectionId, sql);
+            result = await (await this.host.api()).executeSql(connectionId,
+                sql);
         } catch (error) {
-            report(errorText(error), true);
-            throw error;
+            throw failed(errorText(error));
         }
         // The server answers a failed statement with its error, not a throw.
         if (result.error !== undefined) {
-            report(result.error, true);
-            throw new Error(result.error);
+            throw failed(result.error);
         }
-        report(done(result), false);
+        const elapsedMs = performance.now() - started;
+        put({
+            message: done(result),
+            statements: [{ sql, message: done(result), elapsedMs }],
+            elapsedMs,
+        });
 
         return result;
     }

@@ -320,11 +320,6 @@ export interface ICanvasOverlay {
     size: number;
     /** The CSS transform about its top left corner (see `IEditPlacement`). */
     transform: string;
-    /**
-     * The box it covers on the screen, in CSS pixels relative to the
-     * canvas: for keeping it off what lies over the canvas.
-     */
-    bounds: IRect;
     /** The colour of its icon. */
     color: string;
 }
@@ -372,8 +367,11 @@ export interface ICanvasEvents {
     onEditPlacement(placement: IEditPlacement): void;
     /** The view changed without the toolbar: an orbit left the 2D view. */
     onViewMode?(mode: ViewMode): void;
-    /** The user orbited to angles of their own. */
-    onIsoAngles?(angles: IIsoAngles): void;
+    /**
+     * The user orbited to angles of their own: on every move, and once
+     * more, `final`, when the orbit ended - what is worth keeping.
+     */
+    onIsoAngles?(angles: IIsoAngles, final: boolean): void;
     /** What the Navigator shows, after every frame while it is shown. */
     onNavigator?(state: INavigatorState): void;
 }

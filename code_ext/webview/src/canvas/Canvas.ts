@@ -18,6 +18,7 @@
 import * as THREE from "three";
 
 import {
+    DEFAULT_PAGE_SETTINGS,
     layoutPages,
     paperBounds,
     type IPageSettings,
@@ -44,6 +45,8 @@ import type {
 } from "./canvasTypes.js";
 import {
     affineTransform,
+    boundsOf,
+    customPreset,
     easeInOut,
     fitZoom,
     gridSpacing,
@@ -52,6 +55,7 @@ import {
     liftFactor,
     MAX_TILT,
     orbitAngles,
+    overlapsRect,
     TOP_VIEW,
     viewQuaternion,
     type IIsoAngles,
@@ -67,6 +71,7 @@ import {
     rectSegments,
     segmentsGeometry,
     setDrawOrder,
+    Z,
 } from "./threeHelpers.js";
 import { UndoStack, type IHistoryEntry } from "./undoStack.js";
 
@@ -104,8 +109,6 @@ const GRID_SUB_OPACITY = 0.4;
 
 /** The zoom levels the view can be set to. */
 export const ZOOM_RANGE = { min: 0.05, max: 8 } as const;
-const MIN_ZOOM = ZOOM_RANGE.min;
-const MAX_ZOOM = ZOOM_RANGE.max;
 
 /** The Navigator's margin around the paper, in its pixels. */
 const NAVIGATOR_PADDING = 6;
@@ -272,8 +275,11 @@ export class Canvas {
     #hover?: string;
     /** The cursor a resize handle under the pointer asks for. */
     #hoverCursor?: string;
-    /** Whether menu buttons were reported, to report their going. */
-    #overlaysShown = false;
+    /** The lift and size the figure set last heard of. */
+    #lastView?: string;
+
+    /** The last report of each kind, as text, to skip one that repeats it. */
+    #reported = new Map<string, string>();
     #edit?: IEditSpec;
 
     /**
@@ -296,6 +302,8 @@ export class Canvas {
 
     /** Where the Navigator's overview goes on the canvas, in CSS pixels. */
     #navigatorArea?: IRect;
+    /** The whole Navigator panel, kept clear of menu buttons. */
+    #navigatorPanel?: IRect;
     /** The camera that looks straight down at the paper for it. */
     readonly #navigatorCamera = new THREE.OrthographicCamera(-1, 1, 1, -1,
         1, 10000);
@@ -624,11 +632,13 @@ export class Canvas {
      *
      * @param area The area, in CSS pixels relative to the canvas; nothing
      *             to show none.
+     * @param panel The whole panel, which no menu button is drawn under.
      *
      * @returns Nothing.
      */
-    public setNavigatorArea(area: IRect | undefined): void {
+    public setNavigatorArea(area: IRect | undefined, panel?: IRect): void {
         this.#navigatorArea = area;
+        this.#navigatorPanel = area === undefined ? undefined : panel;
         this.#invalidate();
     }
 
@@ -753,7 +763,9 @@ export class Canvas {
             view,
             aspect: this.#pages.height / this.#pages.width,
         };
-        this.#events.onNavigator?.(state);
+        if (this.#changed("navigator", state)) {
+            this.#events.onNavigator?.(state);
+        }
     }
 
     /**
@@ -834,6 +846,7 @@ export class Canvas {
     }
 
     #unmount(): void {
+        this.#lastView = undefined;
         this.#set?.unmount();
         this.#set = undefined;
         this.#edit = undefined;
@@ -867,7 +880,7 @@ export class Canvas {
             new THREE.PlaneGeometry(bounds.width, bounds.height),
             new THREE.MeshBasicMaterial({ color: this.#theme.paper }));
         const center = planeCenter(bounds);
-        paper.position.set(center.x, center.y, -3);
+        paper.position.set(center.x, center.y, Z.paper);
         this.#pageGroup.add(paper);
 
         // The sheets' edges, and the margins dashed inside them. Where the
@@ -895,11 +908,11 @@ export class Canvas {
             margins.push(...rectSegments(page.printable));
         }
         this.#pageGroup.add(new THREE.LineSegments(
-            segmentsGeometry(outline, -2),
+            segmentsGeometry(outline, Z.sheetLines),
             new THREE.LineBasicMaterial({ color: this.#theme.grid })));
         // Dotted, apart from the printable areas' longer dashes.
         const innerLine = new THREE.LineSegments(
-            segmentsGeometry(inner, -2),
+            segmentsGeometry(inner, Z.sheetLines),
             new THREE.LineDashedMaterial({
                 color: this.#theme.grid,
                 transparent: true,
@@ -910,7 +923,7 @@ export class Canvas {
         innerLine.computeLineDistances();
         this.#pageGroup.add(innerLine);
         const marginLine = new THREE.LineSegments(
-            segmentsGeometry(margins, -2),
+            segmentsGeometry(margins, Z.sheetLines),
             new THREE.LineDashedMaterial({
                 color: this.#theme.grid,
                 dashSize: 8,
@@ -979,11 +992,11 @@ export class Canvas {
         lines(minorStep, minor, Math.round(majorStep / minorStep));
         lines(majorStep, major, 0);
         const color = new THREE.Color(this.#theme.grid);
-        this.#gridSub = new THREE.LineSegments(segmentsGeometry(minor, -2.5),
+        this.#gridSub = new THREE.LineSegments(segmentsGeometry(minor, Z.grid),
             new THREE.LineBasicMaterial({
                 color, transparent: true, opacity: GRID_SUB_OPACITY,
             }));
-        const main = new THREE.LineSegments(segmentsGeometry(major, -2.5),
+        const main = new THREE.LineSegments(segmentsGeometry(major, Z.grid),
             new THREE.LineBasicMaterial({
                 color, transparent: true, opacity: GRID_MAIN_OPACITY,
             }));
@@ -1013,9 +1026,14 @@ export class Canvas {
         this.#invalidate();
     }
 
+    /** @returns The paper's page units per millimetre. */
+    #unitsPerMm(): number {
+        return (this.#pageSettings ?? DEFAULT_PAGE_SETTINGS).scale;
+    }
+
     /** @returns CSS pixels per page unit at the current zoom. */
     #scale(): number {
-        return pixelsPerUnit(this.#zoom, this.#pageSettings?.scale ?? 5);
+        return pixelsPerUnit(this.#zoom, this.#unitsPerMm());
     }
 
     /**
@@ -1057,11 +1075,18 @@ export class Canvas {
         this.#camera.updateProjectionMatrix();
         this.#camera.updateMatrixWorld();
         this.#liftedGroup.position.z = this.#planeHeight("lifted");
-        this.#set?.viewChanged?.();
+        // What the figure set draws depends on the lift and the canvas's
+        // size, not on the pan or the zoom: a pan pixel costs it nothing.
+        const { width, height } = this.#viewport();
+        const view = `${String(this.#lift())}|${String(width)}x${String(height)}`;
+        if (view !== this.#lastView) {
+            this.#lastView = view;
+            this.#set?.viewChanged?.();
+        }
     }
 
     #setZoom(zoom: number): void {
-        this.#zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+        this.#zoom = Math.min(ZOOM_RANGE.max, Math.max(ZOOM_RANGE.min, zoom));
         this.#updateGrid();
         this.#applyView();
         this.#events.onZoom(this.#zoom);
@@ -1178,8 +1203,8 @@ export class Canvas {
         plane: ItemPlane,
         elevation: number,
     ): IPoint {
-        // A little above the plane, as what is drawn on it is.
-        const lift = plane === "lifted" ? 0.5 : -0.7;
+        // On the surface of what is drawn there.
+        const lift = plane === "lifted" ? Z.faceText : Z.plateText;
 
         return this.#screenAt(new THREE.Vector3(x,
             this.#planeHeight(plane, elevation) + lift, y));
@@ -1204,13 +1229,31 @@ export class Canvas {
         width: number,
         height: number,
     ): string {
-        return affineTransform(
+        const [topLeft, topRight, , bottomLeft] = this.#screenCorners(rect,
+            plane, elevation);
+
+        return affineTransform(topLeft, topRight, bottomLeft, width, height);
+    }
+
+    /**
+     * Where a rectangle of a plane lands on the screen.
+     *
+     * @param rect The rectangle on the page.
+     * @param plane Its plane.
+     * @param elevation How far above the plane.
+     *
+     * @returns Its corners, clockwise from the top left.
+     */
+    #screenCorners(rect: IRect, plane: ItemPlane, elevation: number): IPoint[] {
+        const right = rect.left + rect.width;
+        const bottom = rect.top + rect.height;
+
+        return [
             this.#screenOfPage(rect.left, rect.top, plane, elevation),
-            this.#screenOfPage(rect.left + rect.width, rect.top, plane,
-                elevation),
-            this.#screenOfPage(rect.left, rect.top + rect.height, plane,
-                elevation),
-            width, height);
+            this.#screenOfPage(right, rect.top, plane, elevation),
+            this.#screenOfPage(right, bottom, plane, elevation),
+            this.#screenOfPage(rect.left, bottom, plane, elevation),
+        ];
     }
 
     #probe(screen: IPoint): IProbe {
@@ -1239,17 +1282,37 @@ export class Canvas {
         this.#updateDecorations();
         this.#renderer.render(this.#scene, this.#camera);
         this.#renderNavigator();
+        // What the viewer shows over the canvas is reported only where it
+        // changed: each report is a render of the viewer.
         const overlays = this.#overlays();
-        if (overlays.length > 0 || this.#overlaysShown) {
-            this.#overlaysShown = overlays.length > 0;
+        if (this.#changed("overlays", overlays)) {
             this.#events.onOverlays?.(overlays);
         }
         if (this.#edit !== undefined) {
             const placement = this.#editPlacement(this.#edit);
-            if (placement !== undefined) {
+            if (placement !== undefined
+                && this.#changed("placement", placement)) {
                 this.#events.onEditPlacement(placement);
             }
         }
+    }
+
+    /**
+     * Whether a report differs from the last one of its kind, keeping it.
+     *
+     * @param kind What is reported.
+     * @param value What it is now: plain data.
+     *
+     * @returns Whether it changed.
+     */
+    #changed(kind: string, value: unknown): boolean {
+        const text = JSON.stringify(value);
+        if (this.#reported.get(kind) === text) {
+            return false;
+        }
+        this.#reported.set(kind, text);
+
+        return true;
     }
 
     // --- Selection, handles and menu buttons ----------------------------------
@@ -1301,7 +1364,8 @@ export class Canvas {
             const center = planeCenter(rect);
             decoration.group.position.set(center.x, center.y,
                 this.#elevationOf(item) * this.#lift()
-                + (item.plane === "lifted" ? 0.6 : -0.45));
+                + (item.plane === "lifted" ? Z.liftedDecoration
+                    : Z.baseDecoration));
             const size = `${rect.width}x${rect.height}`;
             if (decoration.builtSize !== size) {
                 decoration.builtSize = size;
@@ -1448,7 +1512,7 @@ export class Canvas {
             // the item at every zoom.
             const side = size / scale;
             const inset = (HANDLE_PX / 2 + 4) / pixelsPerUnit(
-                MENU_BUTTON_REFERENCE_ZOOM, this.#pageSettings?.scale ?? 5);
+                MENU_BUTTON_REFERENCE_ZOOM, this.#unitsPerMm());
             const right = rect.left + rect.width - inset;
             const square = {
                 left: right - side,
@@ -1456,34 +1520,24 @@ export class Canvas {
                 width: side,
                 height: side,
             };
-            const elevation = this.#elevationOf(item);
-            const corners = [
-                [square.left, square.top],
-                [square.left + side, square.top],
-                [square.left + side, square.top + side],
-                [square.left, square.top + side],
-            ].map(([x, y]) => {
-                return this.#screenOfPage(x, y, item.plane, elevation);
-            });
-            const xs = corners.map((corner) => { return corner.x; });
-            const ys = corners.map((corner) => { return corner.y; });
-            const bounds = {
-                left: Math.min(...xs),
-                top: Math.min(...ys),
-                width: Math.max(...xs) - Math.min(...xs),
-                height: Math.max(...ys) - Math.min(...ys),
-            };
+            const corners = this.#screenCorners(square, item.plane,
+                this.#elevationOf(item));
+            // Never under the Navigator, whose overview area is clear.
+            if (this.#navigatorPanel !== undefined && overlapsRect(
+                boundsOf(corners), this.#navigatorPanel)) {
+                continue;
+            }
+            const [topLeft, topRight, , bottomLeft] = corners;
             overlays.push({
                 id,
                 size,
                 // In the 2D view a plain move to whole pixels, so the
                 // bars stay crisp; laid onto the item in a 3D one.
                 transform: this.#viewT === 0
-                    ? `translate(${Math.round(corners[0].x * ratio) / ratio}px, `
-                        + `${Math.round(corners[0].y * ratio) / ratio}px)`
-                    : this.#transformOnto(square, item.plane, elevation,
-                        size, size),
-                bounds,
+                    ? `translate(${Math.round(topLeft.x * ratio) / ratio}px, `
+                        + `${Math.round(topLeft.y * ratio) / ratio}px)`
+                    : affineTransform(topLeft, topRight, bottomLeft, size,
+                        size),
                 color: band.color,
             });
         }
@@ -1499,6 +1553,7 @@ export class Canvas {
             return;
         }
         this.#edit = spec;
+        this.#reported.set("placement", JSON.stringify(placement));
         this.#events.onEditRequest({
             text: spec.text,
             label: spec.label,
@@ -1771,7 +1826,7 @@ export class Canvas {
         this.#isoView.copy(isoQuaternion(angles));
         this.#applyView();
         this.#invalidate();
-        this.#events.onIsoAngles?.(angles);
+        this.#events.onIsoAngles?.(angles, false);
     }
 
     #moveTo(
@@ -1853,8 +1908,13 @@ export class Canvas {
         this.#pointer = undefined;
         switch (pointer.kind) {
             case "orbit": {
-                if (pointer.from === undefined && pointer.itemId !== undefined) {
-                    this.#select([pointer.itemId], true);
+                if (pointer.from === undefined) {
+                    if (pointer.itemId !== undefined) {
+                        this.#select([pointer.itemId], true);
+                    }
+                } else {
+                    this.#events.onIsoAngles?.(customPreset(
+                        this.#isoAngles.tilt, this.#isoAngles.turn), true);
                 }
                 break;
             }

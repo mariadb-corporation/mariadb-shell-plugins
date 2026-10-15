@@ -35,7 +35,7 @@ export interface IPaperFormat {
 }
 
 /** The paper formats a diagram can be laid out on. */
-export const PAPER_FORMATS: readonly IPaperFormat[] = [
+const PAPER_FORMATS: readonly IPaperFormat[] = [
     { name: "A3", width: 297, height: 420 },
     { name: "A4", width: 210, height: 297 },
     { name: "A5", width: 148, height: 210 },

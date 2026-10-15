@@ -276,52 +276,6 @@ button.toolbarText.toggled {
 }
 
 /*
- * The hamburger a selected figure carries in its header: three bars in
- * the header's text colour, set by the scene, on no background of its
- * own until hovered. Its place is the scene's transform about its top
- * left corner, which tilts it with the card in the 3D view.
- */
-.figureMenuButton {
-    position: absolute;
-    left: 0;
-    top: 0;
-    transform-origin: 0 0;
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    border: none;
-    border-radius: var(--vscode-cornerRadius-small, 4px);
-    background: transparent;
-    cursor: pointer;
-    z-index: 3;
-}
-
-.figureMenuButton::before {
-    /*
-     * Three bars in whole pixels, worked out from the button's size (see
-     * `MenuButton`), so that they line up at any zoom.
-     */
-    content: "";
-    position: absolute;
-    left: var(--bar-left);
-    top: var(--bar-top);
-    width: var(--bar-width);
-    height: var(--bar);
-    background: currentColor;
-    box-shadow: 0 calc(-1 * var(--bar-gap)) 0 currentColor,
-        0 var(--bar-gap) 0 currentColor;
-}
-
-.figureMenuButton:hover,
-.figureMenuButton.open {
-    background: rgba(128, 128, 128, 0.3);
-}
-
-.figureMenuButton:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder);
-}
-
-/*
  * The Navigator: a floating panel 15px in from the canvas's top right
  * corner. Its title and slider are opaque; its overview area is NOT - the
  * canvas draws the overview into that part of its own WebGL canvas, under
@@ -414,11 +368,14 @@ button.toolbarText.toggled {
     cursor: move;
 }
 
-/* The menu buttons: three bars, the panel's or an item's. */
-.navigatorMenuButton {
+/*
+ * A hamburger that opens a menu (`HamburgerButton`): three bars in whole
+ * device pixels, worked out from its size (`menuBarStyle`), on no
+ * background of its own until hovered or open.
+ */
+.menuButton {
     position: relative;
-    width: 20px;
-    height: 20px;
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
     border: none;
@@ -428,8 +385,7 @@ button.toolbarText.toggled {
     cursor: pointer;
 }
 
-.navigatorMenuButton::before {
-    /* The same bars as an item's menu button (see `menuBarStyle`). */
+.menuButton::before {
     content: "";
     position: absolute;
     left: var(--bar-left);
@@ -441,10 +397,27 @@ button.toolbarText.toggled {
         0 var(--bar-gap) 0 currentColor;
 }
 
-.navigatorMenuButton:hover,
-.navigatorMenuButton.open {
+.menuButton:hover,
+.menuButton.open {
     background: var(--vscode-toolbar-hoverBackground,
             rgba(128, 128, 128, 0.3));
+}
+
+.menuButton:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+/*
+ * An item's: laid onto the item by the canvas's transform about its top
+ * left corner, which tilts it with the item in the 3D view; in the
+ * colour of what it sits on, set by the canvas.
+ */
+.itemMenuButton {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    z-index: 3;
 }
 
 /* The toolbar's own menu, at its right end. */

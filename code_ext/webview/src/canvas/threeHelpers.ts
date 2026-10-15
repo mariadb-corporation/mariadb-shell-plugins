@@ -51,6 +51,32 @@ export const DRAW_ORDER = {
 } as const;
 
 /**
+ * How far above its plane each part is drawn, in page units: the order the
+ * depth test keeps them in, and where the canvas lays what it puts over
+ * them (outlines, menu buttons, inputs). One table, so the canvas and a
+ * figure set agree on where a surface is.
+ */
+export const Z = {
+    paper: -3,
+    grid: -2.5,
+    sheetLines: -2,
+    /** A base item's plate, its border, and the text on it. */
+    plate: -1,
+    plateBorder: -0.9,
+    plateText: -0.8,
+    shadow: -0.5,
+    /** The selection outline and handles of a base item. */
+    baseDecoration: -0.45,
+    /** A lifted item's slab, just under its face. */
+    slab: -0.05,
+    /** A lifted item's face, and the text on it. */
+    face: 0,
+    connection: 0.2,
+    faceText: 0.5,
+    liftedDecoration: 0.6,
+} as const;
+
+/**
  * Empties a group, releasing its meshes' and lines' GPU resources.
  *
  * @param group The group.

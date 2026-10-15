@@ -123,7 +123,7 @@ export const routeConnection = (start: IRect, end: IRect): IRoute => {
  *
  * @returns A unit vector pointing away from the figure.
  */
-export const outward = (side: Side): IPoint => {
+const outward = (side: Side): IPoint => {
     switch (side) {
         case "left": { return { x: -1, y: 0 }; }
         case "right": { return { x: 1, y: 0 }; }
@@ -212,7 +212,7 @@ export const oneMarker = (
 };
 
 /** How far a split connection's stubs reach out of their figures. */
-export const SPLIT_STUB_LENGTH = 40;
+const SPLIT_STUB_LENGTH = 40;
 
 /**
  * The lines of a split connection (Workbench's "draw split"): instead of

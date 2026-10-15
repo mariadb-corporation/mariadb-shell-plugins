@@ -47,6 +47,7 @@ import {
     polylineSegments,
     roundedRect,
     setDrawOrder,
+    Z,
 } from "../canvas/threeHelpers.js";
 import type { ITableCatalog } from "./catalog.js";
 import {
@@ -74,6 +75,7 @@ import {
     editRect,
     layoutTableCard,
     MIN_FIGURE_WIDTH,
+    tableOf,
     type CardIcons,
     type ICardItem,
     type ICardLayout,
@@ -117,7 +119,7 @@ const LAYER_RADIUS = 5;
 const LAYER_LABEL = { left: 6, top: 4, height: 18, fontSize: 12 } as const;
 
 /** How high a layer can be raised, in page units. */
-export const MAX_LAYER_ELEVATION = 240;
+const MAX_LAYER_ELEVATION = 240;
 
 /** The texture scales a card is drawn at: device pixels per unit. */
 const RASTER_STEPS = [0.25, 0.5, 1, 2, 3, 4];
@@ -340,7 +342,18 @@ export class EerFigureSet implements IFigureSet {
     #diagram: IModelDiagram;
     #host?: ICanvasHost;
     #icons?: CardIcons;
-    #headerIcons = new Map<string, CardIcons>();
+    /**
+     * The card icons by colour, loaded once each: a mount (every diagram
+     * switch) loads again only what a new theme's colours need.
+     */
+    #iconCache = new Map<string, Promise<CardIcons>>();
+    /** The layers' stacking, by id: see `#restack`. */
+    #stackRanks = new Map<string, number>();
+    /** The tables whose cards are to be drawn again, on the next frame. */
+    #rasterQueue = new Set<ITableNode>();
+    #rasterFrame?: number;
+    /** The cards, for hit-testing: kept, since the pointer asks often. */
+    #cardMeshes: THREE.Object3D[] = [];
     #tables = new Map<string, ITableNode>();
     #layers = new Map<string, ILayerNode>();
     #connections: IConnectionNode[] = [];
@@ -371,9 +384,8 @@ export class EerFigureSet implements IFigureSet {
 
     public async mount(host: ICanvasHost): Promise<void> {
         this.#host = host;
-        // The theme may have changed since the last mount.
-        this.#icons = await this.#options.loadIcons(host.theme.foreground);
-        this.#headerIcons.clear();
+        // In the theme's colour, which may have changed since the last mount.
+        this.#icons = await this.#iconsIn(host.theme.foreground);
         host.base.add(this.#base);
         host.lifted.add(this.#lifted);
         for (const layer of this.#diagram.layers) {
@@ -385,16 +397,23 @@ export class EerFigureSet implements IFigureSet {
         for (const connection of this.#diagram.connections) {
             this.#buildConnection(connection);
         }
+        this.#restack();
         this.viewChanged();
         host.invalidate();
     }
 
     public unmount(): void {
+        if (this.#rasterFrame !== undefined) {
+            cancelAnimationFrame(this.#rasterFrame);
+            this.#rasterFrame = undefined;
+        }
+        this.#rasterQueue.clear();
         disposeGroup(this.#base);
         disposeGroup(this.#lifted);
         this.#base.removeFromParent();
         this.#lifted.removeFromParent();
         this.#tables.clear();
+        this.#cardMeshes = [];
         this.#layers.clear();
         this.#connections = [];
         this.#host = undefined;
@@ -423,10 +442,7 @@ export class EerFigureSet implements IFigureSet {
     #tableHit(
         probe: IProbe,
     ): { node: ITableNode; uv: THREE.Vector2 } | undefined {
-        const meshes = [...this.#tables.values()].map((node) => {
-            return node.mesh;
-        });
-        const hit = probe.raycaster.intersectObjects(meshes, false)[0];
+        const hit = probe.raycaster.intersectObjects(this.#cardMeshes, false)[0];
         if (hit === undefined || hit.uv === undefined) {
             return undefined;
         }
@@ -553,11 +569,12 @@ export class EerFigureSet implements IFigureSet {
         const center = planeCenter(layerRect(layer));
         const z = this.#elevation(layer) * (this.#host?.lift() ?? 0);
         node.plate.position.set(center.x, center.y,
-            z - 1 + this.#stackHeight(layer));
-        node.border.position.set(center.x, center.y, z - 0.9);
+            z + Z.plate + this.#stackHeight(layer));
+        node.border.position.set(center.x, center.y, z + Z.plateBorder);
         node.label.position.set(
             layer.left + LAYER_LABEL.left + node.labelWidth / 2,
-            -(layer.top + LAYER_LABEL.top + LAYER_LABEL.height / 2), z - 0.8);
+            -(layer.top + LAYER_LABEL.top + LAYER_LABEL.height / 2),
+            z + Z.plateText);
     }
 
     /**
@@ -571,12 +588,28 @@ export class EerFigureSet implements IFigureSet {
      * @returns The offset, in page units.
      */
     #stackHeight(layer: IModelLayer): number {
-        const area = layer.width * layer.height;
-        const larger = this.#diagram.layers.filter((other) => {
-            return other.width * other.height > area;
-        }).length;
+        return (this.#stackRanks.get(layer.id) ?? 0) * 0.003;
+    }
 
-        return larger * 0.003;
+    /**
+     * Ranks the layers by size, largest first, for `#stackHeight`: once
+     * when they are drawn and again when one is resized, rather than
+     * comparing every layer with every other each time one is placed.
+     */
+    #restack(): void {
+        const byArea = [...this.#diagram.layers].sort((a, b) => {
+            return b.width * b.height - a.width * a.height;
+        });
+        this.#stackRanks.clear();
+        byArea.forEach((layer, index) => {
+            // Layers of one size share a rank, as they did.
+            const previous = byArea[index - 1];
+            const rank = previous !== undefined
+                && previous.width * previous.height === layer.width * layer.height
+                ? this.#stackRanks.get(previous.id)!
+                : index;
+            this.#stackRanks.set(layer.id, rank);
+        });
     }
 
     /**
@@ -615,7 +648,7 @@ export class EerFigureSet implements IFigureSet {
 
     #buildTable(figure: IModelFigure): void {
         const host = this.#host!;
-        const table = this.#options.catalog.table(figure.table ?? figure.name);
+        const table = this.#options.catalog.table(tableOf(figure));
         const layout = layoutTableCard(table, figure);
         keepAutoHeight(figure, layout);
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
@@ -664,6 +697,7 @@ export class EerFigureSet implements IFigureSet {
             },
         };
         this.#tables.set(figure.id, node);
+        this.#cardMeshes.push(mesh);
         this.#placeTable(node);
         void this.#raster(node);
     }
@@ -689,25 +723,43 @@ export class EerFigureSet implements IFigureSet {
 
         const lift = this.#host?.lift() ?? 0;
         const z = this.#elevation(node.layer) * lift;
-        node.mesh.position.set(center.x, center.y, z);
+        node.mesh.position.set(center.x, center.y, z + Z.face);
         // Just below the card, so the card's face wins the depth test.
-        node.slab.position.set(center.x, center.y, z - 0.05);
+        node.slab.position.set(center.x, center.y, z + Z.slab);
         // Flat in the 2D view, growing as the tables rise; never quite
         // zero, which would leave the geometry degenerate.
         node.slab.scale.z = Math.max(0.001, lift);
-        node.shadow.position.set(center.x + 1, center.y - 2, z - 0.5);
+        node.shadow.position.set(center.x + 1, center.y - 2, z + Z.shadow);
     }
 
-    /** Lays a table out again, after a change to what it shows. */
+    /**
+     * Lays a table out again, after a change to what it shows. Its card is
+     * drawn again on the next frame; its connections are the caller's to
+     * route, once for everything it changed.
+     */
     #relayout(node: ITableNode): void {
-        const table = this.#options.catalog.table(node.figure.table
-            ?? node.figure.name);
-        node.layout = layoutTableCard(table, node.figure);
+        node.layout = layoutTableCard(this.#options.catalog.table(
+            tableOf(node.figure)), node.figure);
         keepAutoHeight(node.figure, node.layout);
         this.#placeTable(node);
         node.rasterScale = 0;
-        void this.#raster(node);
-        this.#routeAll();
+        this.#requestRaster(node);
+    }
+
+    /**
+     * Draws a table's card again on the next frame, once however often it
+     * is asked for until then: a resize drag asks on every pointer move.
+     */
+    #requestRaster(node: ITableNode): void {
+        this.#rasterQueue.add(node);
+        this.#rasterFrame ??= requestAnimationFrame(() => {
+            this.#rasterFrame = undefined;
+            const queued = [...this.#rasterQueue];
+            this.#rasterQueue.clear();
+            for (const queuedNode of queued) {
+                void this.#raster(queuedNode);
+            }
+        });
     }
 
     /** The texture scale the zoom calls for. */
@@ -718,11 +770,16 @@ export class EerFigureSet implements IFigureSet {
             ?? RASTER_STEPS[RASTER_STEPS.length - 1];
     }
 
-    async #headerIconsFor(color: string): Promise<CardIcons> {
-        let icons = this.#headerIcons.get(color);
+    /**
+     * @param color A colour.
+     *
+     * @returns The card icons in it, loaded once.
+     */
+    #iconsIn(color: string): Promise<CardIcons> {
+        let icons = this.#iconCache.get(color);
         if (icons === undefined) {
-            icons = await this.#options.loadIcons(color);
-            this.#headerIcons.set(color, icons);
+            icons = this.#options.loadIcons(color);
+            this.#iconCache.set(color, icons);
         }
 
         return icons;
@@ -738,7 +795,7 @@ export class EerFigureSet implements IFigureSet {
         }
         // In the header's TEXT colour: the figure's own colour is the
         // header's background, on which the icon would not show.
-        const headerIcons = await this.#headerIconsFor(
+        const headerIcons = await this.#iconsIn(
             contrastingText(node.figure.color || DEFAULT_FIGURE_COLOR));
         if (this.#tables.get(node.figure.id) !== node) {
             return;
@@ -792,8 +849,8 @@ export class EerFigureSet implements IFigureSet {
         const route = routeConnection(this.#tableRect(node.start),
             this.#tableRect(node.end));
         const lift = this.#host?.lift() ?? 0;
-        const startZ = this.#elevation(node.start.layer) * lift + 0.2;
-        const endZ = this.#elevation(node.end.layer) * lift + 0.2;
+        const startZ = this.#elevation(node.start.layer) * lift + Z.connection;
+        const endZ = this.#elevation(node.end.layer) * lift + Z.connection;
         const path = node.connection.drawSplit === true
             ? splitStubs(route)
             : polylineSegments(route.points);
@@ -832,6 +889,31 @@ export class EerFigureSet implements IFigureSet {
         for (const node of this.#connections) {
             this.#route(node);
         }
+    }
+
+    /**
+     * Routes the connections of some tables, the others being where they
+     * were.
+     *
+     * @param tables The tables that moved or changed.
+     */
+    #routeOf(tables: ReadonlySet<ITableNode>): void {
+        for (const node of this.#connections) {
+            if (tables.has(node.start) || tables.has(node.end)) {
+                this.#route(node);
+            }
+        }
+    }
+
+    /**
+     * @param layer A layer.
+     *
+     * @returns The tables filed under it.
+     */
+    #filedUnder(layer: IModelLayer): ITableNode[] {
+        return [...this.#tables.values()].filter((node) => {
+            return node.figure.layer === layer.id;
+        });
     }
 
     // --- IFigureSet: the view -----------------------------------------------
@@ -885,6 +967,7 @@ export class EerFigureSet implements IFigureSet {
                     node.layer.top += dy;
                     this.#placeLayer(node);
                 }
+                const placed = new Set<ITableNode>();
                 for (const node of this.#tables.values()) {
                     // A table's position is its layer's plus its own: one
                     // carried along keeps its layer's share, one whose
@@ -899,15 +982,16 @@ export class EerFigureSet implements IFigureSet {
                     }
                     if (isCarried || layerMoves) {
                         this.#placeTable(node);
+                        placed.add(node);
                     }
                 }
-                this.#routeAll();
+                this.#routeOf(placed);
             },
             finish: () => {
                 for (const node of carried) {
                     this.#fileUnderLayer(node);
                 }
-                this.#routeAll();
+                this.#routeOf(carried);
 
                 if (layers.length === 1 && tables.length === 0) {
                     return `Move Layer ${layers[0].layer.name}`;
@@ -943,10 +1027,11 @@ export class EerFigureSet implements IFigureSet {
                     figure.height = rect.height;
                 }
                 this.#relayout(node);
+                this.#routeOf(new Set([node]));
             },
             finish: () => {
                 this.#fileUnderLayer(node);
-                this.#routeAll();
+                this.#routeOf(new Set([node]));
 
                 return `Resize ${node.figure.name}`;
             },
@@ -971,18 +1056,18 @@ export class EerFigureSet implements IFigureSet {
                     width: rect.width,
                     height: rect.height,
                 });
-                for (const table of this.#tables.values()) {
-                    if (table.figure.layer === layer.id) {
-                        table.figure.left -= dx;
-                        table.figure.top -= dy;
-                        this.#placeTable(table);
-                    }
+                const filed = new Set(this.#filedUnder(layer));
+                for (const table of filed) {
+                    table.figure.left -= dx;
+                    table.figure.top -= dy;
+                    this.#placeTable(table);
                 }
                 // A new size can change the stacking of every layer.
+                this.#restack();
                 for (const other of this.#layers.values()) {
                     this.#placeLayer(other);
                 }
-                this.#routeAll();
+                this.#routeOf(filed);
             },
             finish: () => {
                 const rect = layerRect(layer);
@@ -1011,7 +1096,13 @@ export class EerFigureSet implements IFigureSet {
                 wanted += dz;
                 node.layer.elevation = Math.min(MAX_LAYER_ELEVATION,
                     Math.max(0, wanted));
-                this.viewChanged();
+                // The layer, and the tables filed under it, rise.
+                this.#placeLayer(node);
+                const filed = new Set(this.#filedUnder(node.layer));
+                for (const table of filed) {
+                    this.#placeTable(table);
+                }
+                this.#routeOf(filed);
             },
             finish: () => {
                 return node.layer.elevation === 0
@@ -1065,6 +1156,7 @@ export class EerFigureSet implements IFigureSet {
             }
         }
         // Drawn again where shown: the snapshot may be of another diagram.
+        this.#restack();
         for (const node of this.#layers.values()) {
             this.#placeLayer(node);
         }
@@ -1084,12 +1176,14 @@ export class EerFigureSet implements IFigureSet {
     public menu(id: string): IMenuEntry[] {
         const layer = this.#layers.get(id);
         if (layer !== undefined) {
+            const empty = this.#tablesOn(layer.layer).length === 0;
+
             return [
                 { id: "renameLayer", caption: "Rename Layer" },
                 { id: "selectTables", caption: "Select Tables on Layer",
-                    disabled: this.#tablesOn(layer.layer).length === 0 },
+                    disabled: empty },
                 { id: "fitToTables", caption: "Fit to Tables",
-                    disabled: this.#tablesOn(layer.layer).length === 0 },
+                    disabled: empty },
             ];
         }
         const node = this.#tables.get(id);
@@ -1148,6 +1242,7 @@ export class EerFigureSet implements IFigureSet {
             host.change(label, () => {
                 apply(node.figure);
                 this.#relayout(node);
+                this.#routeOf(new Set([node]));
             });
         };
         switch (command) {
@@ -1324,7 +1419,7 @@ export class EerFigureSet implements IFigureSet {
         if (host === undefined || name === "" || name === item.text) {
             return;
         }
-        const tableName = node.figure.table ?? node.figure.name;
+        const tableName = tableOf(node.figure);
         if (catalog.table(tableName) === undefined) {
             return;
         }
@@ -1360,7 +1455,7 @@ export class EerFigureSet implements IFigureSet {
         this.#options.catalog.renameTable(from, to);
         for (const diagram of this.#options.diagrams) {
             for (const figure of diagram.figures) {
-                if ((figure.table ?? figure.name) === from) {
+                if (tableOf(figure) === from) {
                     figure.table = to;
                     figure.name = to;
                 }
@@ -1376,7 +1471,7 @@ export class EerFigureSet implements IFigureSet {
 
     /** Renames a column of the table a figure shows. */
     #renameColumn(figure: IModelFigure, index: number, name: string): void {
-        const tableName = figure.table ?? figure.name;
+        const tableName = tableOf(figure);
         const column = this.#options.catalog.table(tableName)?.columns[index];
         if (column !== undefined) {
             column.name = name;
@@ -1386,11 +1481,14 @@ export class EerFigureSet implements IFigureSet {
 
     /** Draws every shown figure of a table again. */
     #relayoutTable(tableName: string): void {
+        const changed = new Set<ITableNode>();
         for (const node of this.#tables.values()) {
-            if ((node.figure.table ?? node.figure.name) === tableName) {
+            if (tableOf(node.figure) === tableName) {
                 this.#relayout(node);
+                changed.add(node);
             }
         }
+        this.#routeOf(changed);
         this.#host?.invalidate();
     }
 }

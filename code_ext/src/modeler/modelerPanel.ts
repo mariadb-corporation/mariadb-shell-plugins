@@ -24,7 +24,7 @@ import type {
     ModelerHostMessage,
     ModelerWebviewMessage,
 } from "./modelerProtocol.js";
-import { DEFAULT_PAGE_SETTINGS, type IPageSettings } from "./pageSettings.js";
+import { DEFAULT_PAGE_SETTINGS } from "./pageSettings.js";
 
 /**
  * The webview panels of the schema diagram viewer: one per schema of a
@@ -41,8 +41,6 @@ export interface IModelerHost {
      * reload of the webview.
      */
     readModel(): Promise<{ model: ISchemaModel; source: string }>;
-    /** How the diagrams are laid out on paper. */
-    pageSettings?: IPageSettings;
     log(message: string): void;
 }
 
@@ -67,7 +65,7 @@ export const MODELER_VIEW_TYPE = "mariadb.modelViewer";
  *
  * @returns The HTML document.
  */
-export const buildModelerHtml = (
+const buildModelerHtml = (
     webview: vscode.Webview,
     extensionUri: vscode.Uri,
     title = "Schema Diagram",
@@ -81,7 +79,7 @@ export const buildModelerHtml = (
  *
  * @returns The panel's title.
  */
-export const modelerTitle = (schema: string, diagram: string): string => {
+const modelerTitle = (schema: string, diagram: string): string => {
     return `${diagram} (${schema})`;
 };
 
@@ -93,6 +91,8 @@ export class ModelerPanel {
     #disposables: vscode.Disposable[] = [];
     /** The diagram to show once the model is there. */
     #diagram: string;
+    /** The model being read for the page's first `ready`. */
+    #reading?: Promise<{ model: ISchemaModel; source: string }>;
 
     private constructor(
         panel: vscode.WebviewPanel,
@@ -152,6 +152,10 @@ export class ModelerPanel {
             title);
 
         const current = new ModelerPanel(panel, key, target, host);
+        // Read while the page starts, not after.
+        current.#reading = host.readModel();
+        // A read the page never asks for (closed first) fails quietly.
+        current.#reading.catch(() => { /* reported on ready */ });
         ModelerPanel.#open.set(key, current);
         current.#disposables.push(
             panel.webview.onDidReceiveMessage((message: unknown) => {
@@ -165,9 +169,14 @@ export class ModelerPanel {
         void this.#panel.webview.postMessage(message);
     }
 
-    #showDiagram(name: string): void {
+    /** The diagram shown, and the tab's title with it. */
+    #setDiagram(name: string): void {
         this.#diagram = name;
         this.#panel.title = modelerTitle(this.target.schema, name);
+    }
+
+    #showDiagram(name: string): void {
+        this.#setDiagram(name);
         this.#post({ type: "showDiagram", name });
     }
 
@@ -175,15 +184,18 @@ export class ModelerPanel {
         switch (message.type) {
             case "ready": {
                 try {
-                    const { model, source } = await this.host.readModel();
+                    // Started as the panel opened, alongside the page's own
+                    // start; a reload of the page reads again.
+                    const reading = this.#reading ?? this.host.readModel();
+                    this.#reading = undefined;
+                    const { model, source } = await reading;
                     this.host.log(`Showing the diagrams of ${model.schema} `
                         + `from ${source}`);
                     this.#post({
                         type: "load",
                         model,
                         source,
-                        pageSettings: this.host.pageSettings
-                            ?? DEFAULT_PAGE_SETTINGS,
+                        pageSettings: DEFAULT_PAGE_SETTINGS,
                         diagram: this.#diagram,
                     });
                 } catch (error) {
@@ -196,14 +208,7 @@ export class ModelerPanel {
             }
 
             case "diagramShown": {
-                this.#diagram = message.name;
-                this.#panel.title = modelerTitle(this.target.schema,
-                    message.name);
-                break;
-            }
-
-            case "log": {
-                this.host.log(message.message);
+                this.#setDiagram(message.name);
                 break;
             }
 

@@ -19,6 +19,7 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import { dismissOnOutside } from "../dismiss.js";
+import { MenuItems } from "./CanvasMenu.js";
 
 export interface ISplitButtonProps {
     caption: string;
@@ -74,23 +75,14 @@ export const SplitButton = (props: ISplitButtonProps): JSX.Element => {
             onClick={() => { setOpen(!open); }}
         />
         {open && <div className="splitMenu" role="menu">
-            {props.items.map((item) => {
-                const checked = item.id === props.selected;
-
-                return <button
-                    key={item.id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={checked}
-                    className={"splitMenuItem" + (checked ? " checked" : "")}
-                    onClick={() => {
-                        setOpen(false);
-                        props.onSelect(item.id);
-                    }}
-                >
-                    {item.caption}
-                </button>;
-            })}
+            <MenuItems
+                items={props.items.map((item) => {
+                    return { ...item, checked: item.id === props.selected };
+                })}
+                checkRole="menuitemradio"
+                onPick={props.onSelect}
+                onClose={() => { setOpen(false); }}
+            />
         </div>}
     </div>;
 };

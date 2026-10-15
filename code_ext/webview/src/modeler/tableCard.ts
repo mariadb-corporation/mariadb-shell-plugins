@@ -94,6 +94,15 @@ export const MIN_FIGURE_WIDTH = 60;
 export const TITLE_RESERVE = 26;
 
 /**
+ * @param figure A table figure.
+ *
+ * @returns The table it shows: its own name where it names none.
+ */
+export const tableOf = (figure: IModelFigure): string => {
+    return figure.table ?? figure.name;
+};
+
+/**
  * Lays a table's card out at the figure's width.
  *
  * The height grows with the content - unless the user sized the figure
@@ -138,7 +147,7 @@ const layoutContent = (
     const items: ICardItem[] = [{
         kind: "title",
         rect: { left: 0, top: 0, width, height: CARD.headerHeight },
-        text: figure.table ?? figure.name,
+        text: tableOf(figure),
         icon: "table",
         editable: table !== undefined,
     }];

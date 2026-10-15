@@ -27,7 +27,7 @@
  */
 
 /** The display's pixels per inch. */
-export const DISPLAY_PPI = 218;
+const DISPLAY_PPI = 218;
 
 /**
  * @param devicePixelRatio Device pixels per CSS pixel; the window's.
