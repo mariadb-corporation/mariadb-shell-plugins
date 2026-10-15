@@ -24,13 +24,16 @@ extension grows.
 | `src/util/` | Dump and Load: the operations' fields, the dialog, the commands, the task monitor, the Tasks view, a task's Actions row (`taskActions.ts`) and its log file (`taskLogs.ts`) (see [`context/dump-and-load.md`](context/dump-and-load.md)). |
 | `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/rest/` | The MariaDB REST Daemon: a sandbox deployed with the REST Service, its daemon following it, the REST Daemons view's commands, and `ActionGroup`, one Actions row with a row per step (see [`context/rest.md`](context/rest.md)). |
+| `src/modeler/` | The schema diagram viewer's extension side: the `msm_schema_diagrams` rows (`mwb-schema/1`, `mwb-diagram/1`) and their queries, the Diagram session's service, the page model (A4 sheets the diagram is printed on), and the panel (see [`context/modeler.md`](context/modeler.md)). |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command; `sqlLanguage.ts`, which documents are SQL; `ansiQuotes.ts`, the semantic tokens that mark `"..."` as an identifier where the connection has ANSI_QUOTES. |
 | `syntaxes/` | The MariaDB SQL TextMate grammar: the hand-written template, the generated `words.json`, and the built grammar (see [`context/sql-grammar.md`](context/sql-grammar.md)). |
 | `tools/grammar.mts` | `grammar:sync` reads the word lists out of the mariadb-server and mariadb-shell checkouts; `grammar:build` makes the grammar from the template. |
 | `language-configuration.json` | Comments, brackets and auto-closing pairs of the MariaDB SQL language. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`); what every webview shares - the HTML, CSP and options (`html.ts`), the hold-until-`ready` queue (`readyQueue.ts`), the dialogs' common messages (`dialogProtocol.ts`). |
-| `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog and the MRS dialogs. |
+| `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog, the MRS dialogs and the schema model viewer. |
+| `webview/src/canvas/` | The three.js canvas: 2D / 3D views, paper and grid, selection, moves, undo, the Navigator - generic, showing a figure set (see [`context/modeler.md`](context/modeler.md)). |
+| `webview/src/modeler/` | The EER diagram as a figure set of the canvas (tables, layers, connections), and the model viewer. |
 | `src/test/` | The extension-side test suite, mirroring the source layout; `grammar/` tokenizes with VS Code's own TextMate engine (word coverage, token classes, corpus snapshots). |
 | `webview/test/` | The frontend test suite, run under jsdom. |
 | `ui-test/` | The ExTester UI tests: the runner and its suites (`core`, `mrs`, `dump-load`, each with a sandbox of its own), the helpers, the test files (see [`context/testing-and-debugging.md`](context/testing-and-debugging.md)). |
@@ -60,6 +63,7 @@ change belongs to up to date, and this table with it.
 | [`context/actions-grid.md`](context/actions-grid.md) | The actions grid: run rows and their statements, errors and popups, scrolling, the jump arrows, and what the server had to report for it. |
 | [`context/commands.md`](context/commands.md) | Every contributed command and where it appears. |
 | [`context/mrs.md`](context/mrs.md) | The MariaDB REST Service tree and dialogs: REST SQL FORMAT=JSON reads, the `mrs.*` tools, several metadata schemas, the files, what was left out of the MySQL Shell's support, the opt-in end-to-end test, and every MRS action in the Actions tab. |
+| [`context/modeler.md`](context/modeler.md) | The schema model viewer (preview, `wip/canvas`): the split between the generic canvas and figure sets, the 2D / 3D views and orbiting, tables and layers (moves, elevation), the Navigator, the Workbench figure design and toolbar, in-place editing of names, the A4 page model, life-size 100%, the table catalog interface, why cards are canvas textures, the shortcuts and what is still missing. |
 | [`context/testing-and-debugging.md`](context/testing-and-debugging.md) | The interfaces everything external sits behind, the UI tests (ExTester) and their traps, and the F5 launch and watch task. |
 
 ## Known gaps
@@ -115,51 +119,26 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12):
+Checked at this checkpoint (2026-10-15):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/vscode_syntax_highlighter
+wip/canvas
 
-$ git -C code_ext status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mrs_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+$ git -C code_ext status --short
+(clean before this checkpoint's own edits)
 ```
 
-The `/code-review` fixes (UI runner signals and time limit, one source
-each for the Actions tab's top alignment and tree indent) are #44's:
-`b9642b1c` on `wip/mrs_code_ext`, merged forward as `22406105`.
-
-- **PR #45** `wip/vscode_syntax_highlighter` -> `wip/mrs_code_ext`: the
-  MariaDB SQL language, grammar, ANSI_QUOTES semantic tokens, splitter
-  fixes, the `sql_mode` round trip (`13b7e192`, `a7da1b99`, `75602592`),
-  the `/simplify` pass `4743e259`, and the merges of #44 (`3f0b66eb`,
-  `cef8b880`, `22406105`). See [`context/sql-grammar.md`](context/sql-grammar.md)
-  and [`context/running-sql.md`](context/running-sql.md).
-- **PR #44** `wip/mrs_code_ext` got the footer tab styling (`92c5b4d1`),
-  the UI tests in suites (`168972cc`), and the Actions tab's top
-  alignment and indent guides plus the process-group stop (`a9d1a668`),
-  the `/code-review` fixes (`b9642b1c`).
-- **#43 (Dump and Load) and #41 (the mrs_plugin / msm side) are merged**
-  (2026-10-13, squash-merged after review fixes), and so is
-  mariadb-shell #71. `main` is merged into #44, and from there into #45
-  and #48. Fixes go #44 -> #45 -> #48, always that direction.
-- **Session 2026-10-12:** footer tabs, the grammar (TextMate, generated,
-  not an LSP), semantic tokens for ANSI_QUOTES, the Actions tab's top
-  alignment and straight indent guides instead of Tabulator's L branch,
-  UI tests split into `core` / `mrs` / `dump-load` suites, `/simplify`,
-  then `/code-review` (9 findings, all fixed).
-- Suite: **1994 unit tests pass**, 8 skipped; UI suites core 24, mrs 29,
-  dump-load 15 pass (before the review fixes; after them a live run was
-  interrupted twice with Ctrl-C to check the runner: exit 130, nothing
-  left running); mcp_plugin's script/paging/session/sql tests 133 passed.
-- Not looked at in a running VS Code outside the UI tests: the
-  ANSI_QUOTES colouring, the indent guides after the move to
-  `--actionsTreeIndent`, and still the PR #34 / #38 items listed in
-  earlier checkpoints.
+- **`wip/canvas`** (from `main` at `411b22be`, pushed, **no PR yet**):
+  `39c889e1` "code_ext: schema diagram viewer on a three.js canvas" -
+  the generic canvas (`webview/src/canvas/`), the EER figure set
+  (`webview/src/modeler/`), the Diagrams folder in the Connections view
+  and the "Diagram" session. See [`context/modeler.md`](context/modeler.md).
+  This checkpoint's context edits are not committed.
+- `main` has #44, #45, #50, #51 and #52 merged since the last checkpoint;
+  the only other open PR is **#48** (`wip/vscode-copilot`).
+- Suite: **2186 unit tests pass**, 8 skipped; type check, lint and build
+  clean (2026-10-15). The UI tests were not run this session.
 
 ## Conventions
 

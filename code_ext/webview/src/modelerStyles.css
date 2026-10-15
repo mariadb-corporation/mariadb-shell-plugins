@@ -1,0 +1,500 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/* The schema model viewer: a toolbar over a canvas that takes the rest. */
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    color: var(--vscode-foreground);
+    background: var(--vscode-editorWidget-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+.modelViewer {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.modelCanvasHost {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.modelCanvasHost canvas {
+    display: block;
+    touch-action: none;
+}
+
+/* The toolbar, as the result view lays its own out. */
+.toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 2px 4px;
+    border-bottom: 1px solid var(--vscode-panel-border,
+            var(--vscode-widget-border, transparent));
+}
+
+.toolbar .toolbarLabel {
+    margin: 0 4px;
+    font-size: 0.8em;
+    white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+}
+
+.toolbar .toolbarDivider {
+    flex: 0 0 1px;
+    height: 16px;
+    margin: 0 6px;
+    background: var(--vscode-panel-border,
+            var(--vscode-widget-border, currentColor));
+}
+
+/*
+ * The MySQL Shell's schema diagram designer's icons, drawn as masks over
+ * the button's colour; the light files serve every theme.
+ */
+body {
+    --icon-tool-pointer: url("../../images/light/toolbar-tool-pointer.svg");
+    --icon-tool-hand: url("../../images/light/toolbar-tool-hand.svg");
+    --icon-tool-zoom: url("../../images/light/toolbar-tool-magnifier.svg");
+    --icon-view-grid: url("../../images/light/toolbar-view-grid.svg");
+    --icon-view-reset: url("../../images/light/toolbar-view-reset.svg");
+    --icon-view-lock: url("../../images/light/toolbar-view-lock.svg");
+    --icon-view-ruler: url("../../images/light/toolbar-view-ruler.svg");
+}
+
+.toolbarIcon,
+.toolbarText {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    margin: 0 2px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    font-family: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+.toolbarIcon {
+    width: 20px;
+}
+
+.toolbarText {
+    padding: 0 6px;
+    min-width: 36px;
+}
+
+button.toolbarIcon:hover,
+button.toolbarText:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+button.toolbarIcon.toggled,
+button.toolbarText.toggled {
+    background: var(--vscode-toolbar-activeBackground,
+            var(--vscode-toolbar-hoverBackground));
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.toolbarIcon::before {
+    content: "";
+    display: block;
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}
+
+.toolbarIcon.toolPointer::before { mask-image: var(--icon-tool-pointer); }
+.toolbarIcon.toolHand::before { mask-image: var(--icon-tool-hand); }
+.toolbarIcon.toolZoom::before { mask-image: var(--icon-tool-zoom); }
+.toolbarIcon.viewGrid::before { mask-image: var(--icon-view-grid); }
+.toolbarIcon.viewReset::before { mask-image: var(--icon-view-reset); }
+.toolbarIcon.viewLock::before { mask-image: var(--icon-view-lock); }
+.toolbarIcon.viewRuler::before { mask-image: var(--icon-view-ruler); }
+
+.toolbarSelect {
+    margin: 0 4px;
+    padding: 1px 4px;
+    border: 1px solid var(--vscode-dropdown-border, transparent);
+    border-radius: 2px;
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    font-family: inherit;
+    font-size: 0.85em;
+}
+
+/*
+ * A split button: the main part does what it says, the chevron beside it
+ * opens the choices below. Both share the toggled look of the main part.
+ */
+.splitButton {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin: 0 2px;
+}
+
+.splitButton .toolbarText {
+    margin: 0;
+}
+
+.splitButton .splitMain {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.splitButton .splitChevron {
+    width: 14px;
+    min-width: 14px;
+    padding: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid var(--vscode-panel-border,
+            var(--vscode-widget-border, transparent));
+}
+
+/* A small v, drawn with borders rather than an icon font. */
+.splitButton .splitChevron::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    margin-top: -3px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+}
+
+.splitButton .splitChevron.open {
+    background: var(--vscode-toolbar-activeBackground,
+            var(--vscode-toolbar-hoverBackground));
+}
+
+.splitMenu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: max-content;
+    padding: 4px 0;
+    border: 1px solid var(--vscode-menu-border,
+            var(--vscode-widget-border, transparent));
+    border-radius: 4px;
+    background: var(--vscode-menu-background);
+    color: var(--vscode-menu-foreground);
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+}
+
+.splitMenuItem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px 3px 8px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* Room for the check, ticked or not, so the captions line up. */
+.splitMenuItem::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 4px;
+    height: 8px;
+    margin: 0 4px -2px 2px;
+    border-right: 1.5px solid transparent;
+    border-bottom: 1.5px solid transparent;
+    transform: rotate(45deg) translateY(-3px);
+}
+
+.splitMenuItem.checked::before {
+    border-color: currentColor;
+}
+
+.splitMenuItem:hover,
+.splitMenuItem:focus-visible {
+    background: var(--vscode-menu-selectionBackground);
+    color: var(--vscode-menu-selectionForeground);
+    outline: none;
+}
+
+.splitMenuItem:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.splitMenuItem:disabled:hover {
+    background: transparent;
+    color: inherit;
+}
+
+.splitMenuSeparator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--vscode-menu-separatorBackground,
+            var(--vscode-widget-border, currentColor));
+}
+
+/*
+ * The Navigator: a floating panel 15px in from the canvas's top right
+ * corner. Its title and slider are opaque; its overview area is NOT - the
+ * canvas draws the overview into that part of its own WebGL canvas, under
+ * the panel - so the panel itself has no background.
+ */
+.navigator {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    width: 192px;
+    border: 1px solid var(--vscode-editorWidget-border,
+            var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+    border-radius: 4px;
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+}
+
+.navigatorTitle,
+.navigatorZoom {
+    background: var(--vscode-editorWidget-background);
+    color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+}
+
+.navigatorTitle {
+    /* The panel's top corners: it does not clip, so the zoom's list can
+       hang out of it. */
+    border-radius: 3px 3px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 24px;
+    padding: 0 4px 0 8px;
+    font-size: 0.85em;
+    font-weight: 600;
+    border-bottom: 1px solid var(--vscode-editorWidget-border,
+            var(--vscode-widget-border, transparent));
+}
+
+.navigatorZoom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+}
+
+.navigatorZoom input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--vscode-focusBorder);
+}
+
+/* The zoom's value with its list, as the Isometric button has one. */
+.navigatorZoom .splitButton {
+    flex: 0 0 auto;
+}
+
+.navigatorZoom .splitMain {
+    min-width: 3.4em;
+    font-variant-numeric: tabular-nums;
+}
+
+.navigatorZoom .splitMenu {
+    left: auto;
+    right: 0;
+}
+
+.navigatorArea {
+    position: relative;
+    width: 192px;
+}
+
+.navigatorView {
+    position: absolute;
+    inset: 0;
+    display: block;
+    cursor: pointer;
+}
+
+/*
+ * The part of the page in view: the input outline's blue, 1px, over a
+ * black that darkens what is under it a little.
+ */
+.navigatorView polygon {
+    fill: rgba(0, 0, 0, 0.07);
+    stroke: var(--vscode-focusBorder);
+    stroke-width: 1px;
+    cursor: move;
+}
+
+/*
+ * A hamburger that opens a menu (`HamburgerButton`): three bars in whole
+ * device pixels, worked out from its size (`menuBarStyle`), on no
+ * background of its own until hovered or open.
+ */
+.menuButton {
+    position: relative;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    cursor: pointer;
+}
+
+.menuButton::before {
+    content: "";
+    position: absolute;
+    left: var(--bar-left);
+    top: var(--bar-top);
+    width: var(--bar-width);
+    height: var(--bar);
+    background: currentColor;
+    box-shadow: 0 calc(-1 * var(--bar-gap)) 0 currentColor,
+        0 var(--bar-gap) 0 currentColor;
+}
+
+.menuButton:hover,
+.menuButton.open {
+    background: var(--vscode-toolbar-hoverBackground,
+            rgba(128, 128, 128, 0.3));
+}
+
+.menuButton:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+/*
+ * An item's: laid onto the item by the canvas's transform about its top
+ * left corner, which tilts it with the item in the 3D view; in the
+ * colour of what it sits on, set by the canvas.
+ */
+.itemMenuButton {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    z-index: 3;
+}
+
+/* The toolbar's own menu, at its right end. */
+.toolbarMenuButton {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+/* The spinner in the middle of the canvas while a slow load runs. */
+.modelLoading {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 28px;
+    height: 28px;
+    margin: -14px 0 0 -14px;
+    box-sizing: border-box;
+    border: 3px solid var(--vscode-progressBar-background,
+            var(--vscode-focusBorder));
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: modelLoadingSpin 0.8s linear infinite;
+    z-index: 5;
+}
+
+@keyframes modelLoadingSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modelLoading {
+        animation-duration: 2.4s;
+    }
+}
+
+/*
+ * The input laid over a name while it is edited in place, drawn as the
+ * Explorer draws its rename box: a 1px focus border outline inside the
+ * box, and the input box's small corner radius (4px; the variable is the
+ * workbench's, which a webview may not get). Its position, size and font
+ * size are set by the scene; the transform about its top left corner lays
+ * it onto the card, in the 3D view too.
+ */
+.inlineEditor {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 1px;
+    border: none;
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font-family: var(--vscode-font-family);
+    line-height: normal;
+    transform-origin: 0 0;
+    z-index: 2;
+}
+
+.modelStatus,
+.modelError {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    font-size: 0.8em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+    border-top: 1px solid var(--vscode-panel-border,
+            var(--vscode-widget-border, transparent));
+}
+
+.modelError {
+    color: var(--vscode-errorForeground, #f14c4c);
+}

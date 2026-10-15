@@ -30,6 +30,7 @@ import {
     ConnectionColorDecorations,
 } from "../../tree/connectionColors.js";
 import {
+    DIAGRAM_CLICK_COMMAND,
     FolderTreeItem,
     connectionIconFor,
     createTreeItem,
@@ -453,4 +454,35 @@ describe("createTreeItem for a folder", () => {
 
         expect(item.contextValue).toBe("mariadbFolder.empty");
     });
+});
+
+describe("the diagram rows", () => {
+    it("shows a schema's Diagrams folder, expandable", () => {
+        const item = createTreeItem({
+            kind: "diagrams", uri: "dba@localhost:3310", schema: "world",
+        }, resolveIcon);
+
+        expect(item.label).toBe("Diagrams");
+        expect(item.contextValue).toBe("mariadbDiagrams");
+        expect(item.collapsibleState)
+            .toBe(TreeItemCollapsibleState.Collapsed);
+    });
+
+    it("shows a diagram, which reports every click to tell a double one",
+        () => {
+            const node = {
+                kind: "diagram" as const, uri: "dba@localhost:3310",
+                schema: "world", name: "MRS",
+            };
+            const item = createTreeItem(node, resolveIcon);
+
+            expect(item.label).toBe("MRS");
+            expect(item.contextValue).toBe("mariadbDiagram");
+            expect(item.collapsibleState)
+                .toBe(TreeItemCollapsibleState.None);
+            expect(item.command).toMatchObject({
+                command: DIAGRAM_CLICK_COMMAND,
+                arguments: [node],
+            });
+        });
 });

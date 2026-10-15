@@ -142,6 +142,8 @@ The tree is:
 ```text
 dba@localhost:3310/world      connection (icon by scheme; "default" if default)
 └── world                     schema
+    ├── Diagrams              where it has an msm_schema_diagrams view
+    │   └── MRS               diagram: opens the diagram viewer
     ├── Tables                object group, one per supported type
     │   └── city              object
     ├── Views / Functions / Procedures / Sequences / Triggers / Events
@@ -156,8 +158,12 @@ dba@localhost:3310/world      connection (icon by scheme; "default" if default)
   for its children again on every refresh, so a connection that opened
   itself there could never be disconnected - the refresh that
   disconnecting fires would open it straight back up.
-- A schema lists all seven object folders without querying anything; the
-  query happens when a folder is opened.
+- A schema lists all seven object folders without querying for them; the
+  query happens when a folder is opened. Its one query is the look for an
+  `msm_schema_diagrams` view (`hasDiagramsSql`, UI Backend session; a
+  failure means no folder), which puts a **Diagrams** folder first where
+  the view is (2026-10-15). Its diagrams are listed on the "Diagram"
+  session, put in the Actions; see [modeler.md](modeler.md).
 - **A connection row is labelled `connectionLabel(uri)`**: the URI without
   its scheme and without its `?options`, so `user@host:port/schema`. The
   scheme is shown by the icon instead - `connectionMariaDB`,

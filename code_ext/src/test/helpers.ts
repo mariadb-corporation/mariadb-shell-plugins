@@ -186,6 +186,11 @@ export interface FakeApiOptions {
     pagedRows?: Array<Record<string, unknown>>;
     /** What `SELECT @@sql_mode` answers; the empty string unless given. */
     sqlMode?: string;
+    /**
+     * What `executeSql` answers to a statement, by its text: a result, or
+     * an error to throw. Statements not listed get the usual answers.
+     */
+    sqlResults?: Record<string, IStatementResult | Error>;
 }
 
 export interface FakeApi extends IMariaDbApi {
@@ -421,6 +426,12 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
 
         executeSql: (_id: string, sql: string, page?: IPageRequest) => {
             api.statements.push({ sql, ...(page ? { page } : {}) });
+            const answer = options.sqlResults?.[sql];
+            if (answer !== undefined) {
+                return answer instanceof Error
+                    ? Promise.reject(answer)
+                    : Promise.resolve(answer);
+            }
             if (sql === SQL_MODE_QUERY) {
                 return Promise.resolve({
                     result_sets: [{

@@ -15,6 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { DiagramService } from "../modeler/diagramService.js";
 import * as vscode from "vscode";
 
 import {
@@ -135,6 +136,9 @@ export class ConnectionsTreeProvider
      *        icon on the very first draw.
      * @param mrs The REST Service rows under each connection; left out,
      *        none are shown.
+     * @param diagrams Lists a schema's diagrams on their own session,
+     *        putting the query in the Actions; left out, no schema shows a
+     *        Diagrams folder.
      */
     public constructor(
         private readonly connections: ConnectionManager,
@@ -146,10 +150,11 @@ export class ConnectionsTreeProvider
         private readonly collapsedFolders =
         new FolderSet(undefined, COLLAPSED_FOLDERS_KEY),
         mrs?: MrsModel,
+        diagrams?: DiagramService,
     ) {
         this.#model = new ConnectionsModel(connections, connectOnOpen,
             (uri) => { return this.#attempts.get(uri); },
-            () => { return customFolders.list(); }, mrs);
+            () => { return customFolders.list(); }, mrs, diagrams);
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });

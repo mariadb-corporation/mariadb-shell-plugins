@@ -84,6 +84,12 @@ import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
+import { ModelerPanel } from "./modeler/modelerPanel.js";
+import { assembleSchemaModel } from "./modeler/modelFormat.js";
+import { DiagramService } from "./modeler/diagramService.js";
+import { DoubleClick } from "./tree/doubleClick.js";
+import { DIAGRAM_CLICK_COMMAND } from "./tree/treeItems.js";
+import type { IDiagramNode } from "./tree/connectionsModel.js";
 import type { IActionRow } from "./webview/protocol.js";
 import { reportMrsAction } from "./mrs/mrsActivity.js";
 import { MrsApi } from "./mrs/mrsApi.js";
@@ -294,6 +300,45 @@ export const activate = (context: vscode.ExtensionContext): void => {
     session.onMrsAction = (action) => {
         reportMrsAction(mrsActivity, action);
     };
+    /** Two quick clicks on a diagram's row open it. */
+    const diagramClicks = new DoubleClick();
+
+    // A schema's diagrams are listed and read on a session of their own,
+    // and every query is put in the Actions as it runs.
+    const diagrams = new DiagramService({
+        connect: (uri, name) => { return connections.connect(uri, name); },
+        api: () => { return connections.api(); },
+        put: (connection, row) => {
+            void resultView.putAction(connection, row);
+        },
+    });
+
+    /**
+     * Opens a schema's diagram in the viewer - in the schema's viewer
+     * where one is up - which reads every document of the schema's
+     * `msm_schema_diagrams` view and shows the diagram asked for.
+     *
+     * @param node The diagram's row.
+     */
+    const openSchemaDiagram = (node: IDiagramNode): void => {
+        ModelerPanel.show(context.extensionUri, {
+            connection: node.uri,
+            schema: node.schema,
+            diagram: node.name,
+        }, {
+            readModel: async () => {
+                const rows = await diagrams.readDiagrams(node.uri,
+                    node.schema);
+
+                return {
+                    model: assembleSchemaModel(rows),
+                    source: `${node.schema}.msm_schema_diagrams`,
+                };
+            },
+            log,
+        });
+    };
+
     // Where every call is logged, the listings and reads are too, and the
     // REST SQL of each action is the rows under it.
     const mrsApi = new MrsApi(async () => { return await connections.api(); },
@@ -310,6 +355,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         customFolders,
         collapsedFolders,
         mrsModel,
+        diagrams,
     );
     // The REST Daemon a tree row's URL goes to; the REST Daemons view
     // keeps the list, and is defined further down.
@@ -998,6 +1044,22 @@ export const activate = (context: vscode.ExtensionContext): void => {
             // as Refresh is for the connections.
             sandboxes.reload();
         }),
+
+        // A schema's diagram, from the Connections view: its inline
+        // button, its menu, or a double-click on the row.
+        vscode.commands.registerCommand("mariadb.openSchemaDiagram",
+            (node?: IDiagramNode) => {
+                if (node?.kind === "diagram") {
+                    openSchemaDiagram(node);
+                }
+            }),
+        vscode.commands.registerCommand(DIAGRAM_CLICK_COMMAND,
+            (node?: IDiagramNode) => {
+                if (node?.kind === "diagram" && diagramClicks.click(
+                    JSON.stringify([node.uri, node.schema, node.name]))) {
+                    openSchemaDiagram(node);
+                }
+            }),
 
         vscode.commands.registerCommand("mariadb.addSandbox", () => {
             SandboxEditorPanel.show(context.extensionUri, {

@@ -27,10 +27,21 @@ import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
     type IConnectionNode,
+    type IDiagramsNode,
     type IObjectGroupNode,
     type ISchemaNode,
 } from "../../tree/connectionsModel.js";
 import { MrsApi } from "../../mrs/mrsApi.js";
+import type { IStatementResult } from "../../mcp/types.js";
+import {
+    hasDiagramsSql,
+    listDiagramsSql,
+} from "../../modeler/diagramQueries.js";
+import {
+    DIAGRAM_SESSION,
+    DiagramService,
+} from "../../modeler/diagramService.js";
+import type { IActionRow } from "../../webview/protocol.js";
 import { MrsModel, type IMrsRootNode } from "../../tree/mrsModel.js";
 import {
     createFakeApi,
@@ -55,13 +66,38 @@ const connectionRoots = async (
 };
 
 /**
+ * A diagram service over a manager, its Actions rows kept.
+ *
+ * @param rows Where the rows go.
+ *
+ * @returns The factory `createModel` takes.
+ */
+const diagramService = (rows: IActionRow[] = []) => {
+    return (connections: ConnectionManager): DiagramService => {
+        return new DiagramService({
+            connect: (target, name) => { return connections.connect(target, name); },
+            api: () => { return connections.api(); },
+            put: (_connection, row) => { rows.push(row); },
+        });
+    };
+};
+
+/**
  * @param defaultConnection The default connection, if any.
  * @param connectOnOpen Whether expanding a closed connection opens it.
+ * @param sqlResults What chosen statements answer.
+ * @param diagrams The service that lists diagrams, if any.
  *
  * @returns A model over a fake server holding one schema with one table.
  */
-const createModel = (defaultConnection?: string, connectOnOpen = false) => {
+const createModel = (
+    defaultConnection?: string,
+    connectOnOpen = false,
+    sqlResults?: Record<string, IStatementResult | Error>,
+    diagrams?: (manager: ConnectionManager) => DiagramService,
+) => {
     const api = createFakeApi({
+        sqlResults,
         connections: ["dba@localhost:3310", "app@localhost:3311"],
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
         schemas: [
@@ -94,7 +130,8 @@ const createModel = (defaultConnection?: string, connectOnOpen = false) => {
     return {
         api,
         manager,
-        model: new ConnectionsModel(manager, () => { return connectOnOpen; }),
+        model: new ConnectionsModel(manager, () => { return connectOnOpen; },
+            undefined, undefined, undefined, diagrams?.(manager)),
     };
 };
 
@@ -457,9 +494,11 @@ describe("ConnectionsModel.getChildren", () => {
             ]);
     });
 
-    it("gives a schema one folder per object type, without querying",
+    it("gives a schema one folder per object type, and no Diagrams folder "
+        + "where it has no msm_schema_diagrams view",
         async () => {
-            const { api, manager, model } = createModel();
+            const { api, manager, model } = createModel(undefined, false,
+                undefined, diagramService());
             await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
             const schema: ISchemaNode = {
                 kind: "schema",
@@ -477,8 +516,12 @@ describe("ConnectionsModel.getChildren", () => {
                 "table", "view", "function", "procedure",
                 "sequence", "trigger", "event",
             ]);
-            // Expanding a schema costs nothing until a folder is opened.
+            // Expanding a schema costs one look for the diagrams view, and
+            // nothing more until a folder is opened.
             expect(api.scripts).toEqual([]);
+            expect(api.statements.map((statement) => {
+                return statement.sql;
+            })).toEqual([hasDiagramsSql("world")]);
         });
 
     it("names every object group", () => {
@@ -689,5 +732,94 @@ describe("ConnectionsModel with the REST Service", () => {
         await expect(model.getChildren({
             kind: "mrsAuthAppGroup", uri: "dba@localhost:3310",
         })).resolves.toEqual([]);
+    });
+});
+
+describe("ConnectionsModel: a schema's diagrams", () => {
+    const uri = "dba@localhost:3310";
+    const schema: ISchemaNode = {
+        kind: "schema", uri, schema: "world", schemaType: "User Schema",
+        comment: "",
+    };
+    const folder: IDiagramsNode = { kind: "diagrams", uri, schema: "world" };
+    const withView = {
+        [hasDiagramsSql("world")]: {
+            result_sets: [{ columns: ["1"], rows: [{ 1: 1 }] }],
+        },
+        [listDiagramsSql("world")]: {
+            result_sets: [{
+                columns: ["name"],
+                rows: [{ name: "MRS" }, { name: "MRS Status" }],
+            }],
+        },
+    };
+
+    it("puts a Diagrams folder first where the schema has the view",
+        async () => {
+            const { manager, model } = createModel(undefined, false, withView,
+                diagramService());
+            await manager.connect(uri, UI_BACKEND_SESSION);
+
+            const children = await model.getChildren(schema);
+
+            expect(children[0]).toEqual(folder);
+            expect((children[1] as IObjectGroupNode).objectType).toBe("table");
+        });
+
+    it("leaves the folder out where the schema cannot be looked into",
+        async () => {
+            const { manager, model } = createModel(undefined, false, {
+                [hasDiagramsSql("world")]: new Error("access denied"),
+            }, diagramService());
+            await manager.connect(uri, UI_BACKEND_SESSION);
+
+            const children = await model.getChildren(schema);
+
+            expect(children[0].kind).toBe("objectGroup");
+        });
+
+    it("shows no Diagrams folder without a service to list them", async () => {
+        const { api, manager, model } = createModel(undefined, false, withView);
+        await manager.connect(uri, UI_BACKEND_SESSION);
+
+        const children = await model.getChildren(schema);
+
+        expect(children[0].kind).toBe("objectGroup");
+        expect(api.statements).toEqual([]);
+    });
+
+    it("lists the diagrams the view names", async () => {
+        const { manager, model } = createModel(undefined, false, withView,
+            diagramService());
+        await manager.connect(uri, UI_BACKEND_SESSION);
+
+        await expect(model.getChildren(folder)).resolves.toEqual([
+            { kind: "diagram", uri, schema: "world", name: "MRS" },
+            { kind: "diagram", uri, schema: "world", name: "MRS Status" },
+        ]);
+    });
+
+    it("lists them on the Diagram session, put in the Actions", async () => {
+        const rows: IActionRow[] = [];
+        const { api, manager, model } = createModel(undefined, false,
+            withView, diagramService(rows));
+        await manager.connect(uri, UI_BACKEND_SESSION);
+
+        const diagrams = await model.getChildren(folder);
+
+        expect(diagrams).toHaveLength(2);
+        expect(manager.connectionIdFor(uri, DIAGRAM_SESSION)).toBeDefined();
+        expect(api.statements.at(-1)?.sql).toBe(listDiagramsSql("world"));
+        // The spinner while it runs, then what it read, both on the
+        // Diagram session with the statement beside them.
+        expect(rows.map((row) => { return row.kind; }))
+            .toEqual(["pending", "info"]);
+        expect(rows[1]).toMatchObject({
+            connection: uri,
+            connectionLabel: DIAGRAM_SESSION,
+            statement: listDiagramsSql("world"),
+            message: "Listed 2 diagrams of world",
+        });
+        expect(rows[0].id).toBe(rows[1].id);
     });
 });

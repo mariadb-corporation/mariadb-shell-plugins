@@ -27,6 +27,8 @@ import {
     type ConnectionsNode,
     type IConnectionNode,
     type IConnectionStatusNode,
+    type IDiagramNode,
+    type IDiagramsNode,
     type IFolderNode,
     type IObjectGroupNode,
     type IObjectNode,
@@ -286,6 +288,41 @@ export class SchemaTreeItem extends ConnectionBaseTreeItem<ISchemaNode> {
     }
 }
 
+/** The command a click on a diagram runs: two quick ones open it. */
+export const DIAGRAM_CLICK_COMMAND = "mariadb.diagramClicked";
+
+/** The folder of a schema's diagrams, first among its children. */
+export class DiagramsTreeItem extends ConnectionBaseTreeItem<IDiagramsNode> {
+    public override contextValue = "mariadbDiagrams";
+
+    public constructor(node: IDiagramsNode, resolveIcon: IconResolver) {
+        super(node, "Diagrams", new vscode.ThemeIcon("type-hierarchy-sub"),
+            true, resolveIcon);
+        this.tooltip = `The diagrams of ${node.schema}, from its `
+            + "msm_schema_diagrams view";
+    }
+}
+
+/**
+ * A diagram of a schema. Opened by its inline button, its menu, or a
+ * double-click: VS Code has no double-click on tree rows, so every click
+ * runs a command that opens on the second within a moment.
+ */
+export class DiagramTreeItem extends ConnectionBaseTreeItem<IDiagramNode> {
+    public override contextValue = "mariadbDiagram";
+
+    public constructor(node: IDiagramNode, resolveIcon: IconResolver) {
+        // The Diagrams folder's icon, until a diagram has one of its own.
+        super(node, node.name, new vscode.ThemeIcon("type-hierarchy-sub"),
+            false, resolveIcon);
+        this.command = {
+            command: DIAGRAM_CLICK_COMMAND,
+            title: "Open Diagram",
+            arguments: [node],
+        };
+    }
+}
+
 /** The folder holding all objects of one type in a schema. */
 export class ObjectGroupTreeItem
     extends ConnectionBaseTreeItem<IObjectGroupNode> {
@@ -340,6 +377,14 @@ export const createTreeItem = (
 
         case "schema": {
             return new SchemaTreeItem(node, resolveIcon);
+        }
+
+        case "diagrams": {
+            return new DiagramsTreeItem(node, resolveIcon);
+        }
+
+        case "diagram": {
+            return new DiagramTreeItem(node, resolveIcon);
         }
 
         case "objectGroup": {
