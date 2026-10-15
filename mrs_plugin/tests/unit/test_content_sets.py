@@ -334,6 +334,10 @@ def test_load_content_set_uploads_the_open_api_ui(phone_book, offline_swagger):
             session=session,
         )
 
+    with pytest.raises(ValueError, match="load_scripts is for a directory"):
+        load_content_set(service_path="/test", open_api_ui=True,
+                         load_scripts=True, session=session)
+
     result = load_content_set(
         service_path="/test", open_api_ui=True, session=session
     )

@@ -1014,6 +1014,48 @@ def _open_api_ui_service(session, service_path):
     )
 
 
+def check_load_options(
+    directory,
+    content_set_path,
+    open_api_ui=False,
+    ignore_list=None,
+    load_scripts=None,
+):
+    """Checks what load_content_set is asked to do, before anything is done.
+
+    The one place the options are checked: the plugin function and the MCP
+    tool call it first, so they cannot word or rule it differently.
+
+    Returns:
+        str: The content set's request path; /openApiUi for the OpenAPI UI
+        when none is given.
+
+    Raises:
+        ValueError: If the options do not go together.
+    """
+    if open_api_ui:
+        if directory is not None:
+            raise ValueError(
+                "An OpenAPI UI content set is made of downloaded files: pass "
+                "no directory with open_api_ui."
+            )
+        for name, value in (("ignore_list", ignore_list), ("load_scripts", load_scripts)):
+            if value is not None:
+                raise ValueError(
+                    f"{name} is for a directory's files: pass none with open_api_ui."
+                )
+        from mrs_plugin.lib import open_api_ui as ui
+
+        return content_set_path or ui.DEFAULT_REQUEST_PATH
+
+    if directory is None or content_set_path is None:
+        raise ValueError(
+            "Pass the directory and the content set's request path, or "
+            "open_api_ui to upload the REST service's OpenAPI UI."
+        )
+    return content_set_path
+
+
 def load_content_set(
     session,
     directory,
@@ -1046,12 +1088,10 @@ def load_content_set(
         A dict with the uploaded files and the result message of the last
         statement
     """
+    content_set_path = check_load_options(
+        directory, content_set_path, open_api_ui, ignore_list, load_scripts
+    )
     if open_api_ui:
-        if directory is not None:
-            raise ValueError(
-                "An OpenAPI UI content set is made of downloaded files: pass "
-                "no directory with open_api_ui."
-            )
         from mrs_plugin.lib import open_api_ui as ui
 
         name, root, full_path = _open_api_ui_service(session, service_path)
@@ -1076,8 +1116,6 @@ def load_content_set(
                 requires_auth=False if requires_auth is None else requires_auth,
             )
 
-    if directory is None:
-        raise ValueError("Pass the directory whose files to upload.")
     directory = os.path.abspath(os.path.expanduser(directory))
     if not os.path.isdir(directory):
         raise ValueError(f"The given directory '{directory}' does not exist.")

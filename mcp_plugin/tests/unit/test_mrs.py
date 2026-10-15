@@ -359,8 +359,11 @@ def test_the_open_api_ui_is_an_option_of_the_content_set_tool(content_set_tool):
 def test_the_content_set_tool_wants_a_directory_or_the_open_api_ui(content_set_tool):
     load, calls, checked = content_set_tool
 
-    with pytest.raises(Exception, match="leave directory empty"):
+    with pytest.raises(Exception, match="pass no directory"):
         asyncio.run(load(None, "c1", directory="/web", open_api_ui=True))
+    # What is for a directory's files is refused rather than ignored.
+    with pytest.raises(Exception, match="ignore_list is for a directory"):
+        asyncio.run(load(None, "c1", open_api_ui=True, ignore_list="*.md"))
     with pytest.raises(Exception, match="or open_api_ui"):
         asyncio.run(load(None, "c1", directory="/web"))
     assert calls == []

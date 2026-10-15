@@ -153,9 +153,10 @@ def load_content_set(directory=None, content_set_path=None, **kwargs):
             the current one.
         ignore_list (str): The list of file patterns to ignore, separated by
             comma, matched against the path relative to the directory.
-            Default "*node_modules/*, */.*".
+            Default "*node_modules/*, */.*". Not with open_api_ui.
         load_scripts (bool): Register the MRS scripts of the files. By default
-            they are registered if the directory holds any.
+            they are registered if the directory holds any. Not with
+            open_api_ui.
         replace (bool): Replace the content set, if it already exists.
         open_api_ui (bool): Upload the REST service's OpenAPI UI instead of
             a directory's files. Default False.
@@ -168,10 +169,13 @@ def load_content_set(directory=None, content_set_path=None, **kwargs):
         A dict with the request paths of the uploaded files and the result
         message
     """
-    if content_set_path is None:
-        if not kwargs.get("open_api_ui", False):
-            raise ValueError("Pass the request path of the content set.")
-        content_set_path = lib.open_api_ui.DEFAULT_REQUEST_PATH
+    content_set_path = lib.content_sets.check_load_options(
+        directory,
+        content_set_path,
+        kwargs.get("open_api_ui", False),
+        kwargs.get("ignore_list"),
+        kwargs.get("load_scripts"),
+    )
 
     if kwargs.get("open_api_ui", False):
         # Before the transaction, which a slow github.com would otherwise

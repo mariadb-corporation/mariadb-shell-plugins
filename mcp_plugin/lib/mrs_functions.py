@@ -57,6 +57,7 @@ def register_mrs_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from mrs_plugin import content_sets, dump, general as mrs_general
     from mrs_plugin import services as mrs_services
+    from mrs_plugin.lib import content_sets as content_set_files
     from mrs_plugin.lib import open_api_ui as open_api_ui_files
 
     tool = tool_registrar(server)
@@ -440,9 +441,10 @@ def register_mrs_tools(server, function_groups=()) -> None:
                 the current one.
             ignore_list: Comma-separated file patterns to ignore, matched
                 against the path relative to the directory. Defaults to
-                "*node_modules/*, */.*".
+                "*node_modules/*, */.*". Not with open_api_ui.
             load_scripts: Register the MRS scripts of the files. By default
-                they are registered if the directory holds any.
+                they are registered if the directory holds any. Not with
+                open_api_ui.
             replace: Replace the content set if it exists.
             open_api_ui: Upload the REST service's OpenAPI UI instead of a
                 directory's files.
@@ -454,18 +456,14 @@ def register_mrs_tools(server, function_groups=()) -> None:
             A dict with the request paths of the uploaded files and a
             message.
         """
-        if open_api_ui:
-            if directory is not None:
-                raise tool_error(
-                    "An OpenAPI UI is downloaded, not read from a directory: "
-                    "leave directory empty with open_api_ui."
-                )
-        else:
-            if directory is None or content_set_path is None:
-                raise tool_error(
-                    "Pass the directory and the content_set_path, or "
-                    "open_api_ui to upload the REST service's OpenAPI UI."
-                )
+        # Checked as the plugin checks them, before anything is downloaded.
+        try:
+            content_set_files.check_load_options(
+                directory, content_set_path, open_api_ui, ignore_list, load_scripts
+            )
+        except ValueError as error:
+            raise tool_error(str(error)) from error
+        if directory is not None:
             await general.require_allowed_path(ctx, directory)
 
         if open_api_ui:
