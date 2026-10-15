@@ -539,8 +539,23 @@ def _read_pid(directory: str) -> Optional[int]:
         return None
 
 
+# The daemons this server started, by pid: only these are its children, and
+# only these does it reap - another pid could be any child of this process,
+# a task's say, whose own Popen would then never learn how it ended.
+_started: dict = {}
+
+
 def _is_alive(pid: int) -> bool:
     """Returns whether a process is still running."""
+    started = _started.get(pid)
+    if started is not None:
+        # A daemon this server started and that has exited is its zombie
+        # until it is reaped, and a zombie still answers signal 0.
+        if started.poll() is None:
+            return True
+        del _started[pid]
+        return False
+
     if os.name == "nt":
         import ctypes
 
@@ -558,15 +573,6 @@ def _is_alive(pid: int) -> bool:
         finally:
             kernel32.CloseHandle(handle)
 
-    # A daemon this server started and that has exited is its zombie until it
-    # is reaped, and a zombie still answers signal 0.
-    try:
-        reaped, _ = os.waitpid(pid, os.WNOHANG)
-        if reaped == pid:
-            return False
-    except ChildProcessError:
-        pass
-
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -577,10 +583,73 @@ def _is_alive(pid: int) -> bool:
     return True
 
 
+def _command_line(pid: int) -> Optional[list]:
+    """A process's command line, or None where it cannot be read."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return None
+        try:
+            size = wintypes.DWORD(32768)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(
+                handle, 0, buffer, ctypes.byref(size)
+            ):
+                return None
+            # The image only: enough to tell a daemon from what reused its pid.
+            return [buffer.value]
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        completed = subprocess.run(
+            ["ps", "-ww", "-o", "args=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.split()
+
+
+def _is_daemon(pid: int, directory: str) -> bool:
+    """Whether a live process is this deployment's daemon, rather than what
+    reused the pid a killed one left in its pid file.
+
+    It runs this deployment's configuration file, or - where only the
+    executable can be told - is a mariadb-restd. A process whose command
+    line cannot be read at all is taken at its word.
+    """
+    if pid in _started:
+        return True
+    arguments = _command_line(pid)
+    if arguments is None:
+        return True
+    config = os.path.realpath(os.path.join(directory, CONFIG_FILE))
+    if os.name == "nt":
+        return os.path.basename(arguments[0]).lower().startswith(RESTD_NAME)
+    return any(os.path.realpath(argument) == config for argument in arguments)
+
+
 def running_pid(directory: str) -> Optional[int]:
-    """Returns the pid of a deployment's daemon if it is running, else None."""
+    """Returns the pid of a deployment's daemon if it is running, else None.
+
+    A pid file whose process is gone, or is not this daemon - the pid was
+    used again after the daemon was killed - is removed: it is stopped.
+    """
     pid = _read_pid(directory)
-    if pid is None or not _is_alive(pid):
+    if pid is None:
+        return None
+    if not _is_alive(pid) or not _is_daemon(pid, directory):
+        _remove_pid_file(directory)
         return None
     return pid
 
@@ -695,6 +764,7 @@ def start(restd: Optional[str], directory: str, timeout: float = START_TIMEOUT) 
     process = _spawn_detached(
         [restd, "-c", os.path.join(directory, CONFIG_FILE)], env, console_path
     )
+    _started[process.pid] = process
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -704,7 +774,9 @@ def start(restd: Optional[str], directory: str, timeout: float = START_TIMEOUT) 
                 f"The REST Daemon of '{directory}' exited with code "
                 f"{exit_code} at start.\n{_failure_log(directory, deployment)}"
             )
-        if is_listening(deployment["port"]):
+        # Up once it listens and has written its pid file, which may come a
+        # moment after the port: reported before it, it would be stopped.
+        if is_listening(deployment["port"]) and _read_pid(directory) is not None:
             return status(directory)
         time.sleep(0.2)
 

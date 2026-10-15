@@ -91,6 +91,9 @@ listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", port))
 listener.listen()
+if mode == "slow-pid":
+    # The pid file only once every plugin is loaded, a while after the port.
+    time.sleep(1)
 with open(pid_file, "w") as file:
     file.write(str(os.getpid()))
 def bye(*_):
@@ -284,6 +287,52 @@ def test_a_pid_file_left_by_a_killed_daemon_does_not_stop_a_start(fake_restd, tm
 
     try:
         assert restd.start(executable, directory)["status"] == "running"
+    finally:
+        restd.stop(directory)
+
+
+def test_a_pid_used_again_by_another_process_is_not_the_daemon(fake_restd, tmp_path):
+    """The daemon was killed and its pid went to another program, which a
+    stop must not end and a start must not take for the daemon."""
+    import subprocess
+
+    executable, _ = fake_restd
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory)
+    other = subprocess.Popen(["sleep", "30"])
+    try:
+        with open(os.path.join(directory, restd.PID_FILE), "w") as file:
+            file.write(str(other.pid))
+
+        assert restd.status(directory)["status"] == "stopped"
+        assert not os.path.exists(os.path.join(directory, restd.PID_FILE))
+
+        with open(os.path.join(directory, restd.PID_FILE), "w") as file:
+            file.write(str(other.pid))
+        restd.stop(directory)
+        assert other.poll() is None
+
+        # Nor does looking reap it: its own Popen still learns how it ended.
+        other.terminate()
+        assert other.wait(timeout=5) == -15
+    finally:
+        if other.poll() is None:
+            other.kill()
+
+
+def test_a_started_daemon_is_running_once_its_pid_file_is_there(
+    fake_restd, tmp_path, monkeypatch
+):
+    """mariadb-restd writes its pid file once all its plugins are loaded,
+    which can be after its port listens: started, it is not stopped."""
+    executable, _ = fake_restd
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory)
+    monkeypatch.setenv("FAKE_RESTD_MODE", "slow-pid")
+
+    try:
+        report = restd.start(executable, directory)
+        assert report["status"] == "running" and report["pid"] is not None
     finally:
         restd.stop(directory)
 
