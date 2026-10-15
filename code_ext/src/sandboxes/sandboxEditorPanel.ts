@@ -247,12 +247,6 @@ export class SandboxEditorPanel {
         }
     }
 
-    /**
-     * The versions to offer. A convenience, so a listing that fails never
-     * stands in the dialog's way: the version can still be typed.
-     *
-     * @returns The latest release of every series, or nothing.
-     */
     /** Whether the REST Daemons' certificate was trusted when it loaded. */
     #restCertificateTrusted = false;
 
@@ -272,6 +266,12 @@ export class SandboxEditorPanel {
         }
     }
 
+    /**
+     * The versions to offer. A convenience, so a listing that fails never
+     * stands in the dialog's way: the version can still be typed.
+     *
+     * @returns The latest release of every series, or nothing.
+     */
     async #versions(): Promise<string[]> {
         try {
             return await this.host.store.availableVersions();

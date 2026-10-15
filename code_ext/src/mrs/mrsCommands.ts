@@ -283,11 +283,6 @@ export class MrsCommands {
     // --- helpers -----------------------------------------------------
 
     /**
-     * @param node A REST Service row.
-     *
-     * @returns Where its calls go.
-     */
-    /**
      * Where the REST services of a tree row are served: the local REST
      * Daemon of its server and metadata schema, as the REST Daemons view
      * knows them, or else the mariadb.mrs.restDaemonUrl setting.
@@ -311,6 +306,11 @@ export class MrsCommands {
         return restDaemonUrl();
     }
 
+    /**
+     * @param node A REST Service row.
+     *
+     * @returns Where its calls go.
+     */
     #scope(node: IMrsNodeBase): IMrsScope {
         const scope = this.host.model.scopeOf(node);
         if (scope === undefined) {
