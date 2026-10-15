@@ -823,6 +823,7 @@ export class MrsToolsApi {
         servicePath: string,
         ignoreList: string,
         loadScripts: boolean | undefined,
+        requiresAuth: boolean,
     ): Promise<IContentSetUpload> {
         return await this.#tool("mrs.load_content_set", connectionId, {
             directory,
@@ -830,10 +831,44 @@ export class MrsToolsApi {
             service_path: servicePath,
             ignore_list: ignoreList,
             ...(loadScripts === undefined ? {} : { load_scripts: loadScripts }),
+            // Each file has a setting of its own, which the content set's,
+            // applied afterwards, does not change.
+            requires_auth: requiresAuth,
             replace: true,
         }, decodeObject<IContentSetUpload>,
         words(`Loading REST Content Set '${contentSetPath}' from ${directory}`,
             `Loaded REST Content Set '${contentSetPath}' from ${directory}`),
+        (upload) => { return counted(upload.files.length, "file"); },
+        MRS_UPLOAD_TIMEOUT_MS);
+    }
+
+    /**
+     * Uploads a service's OpenAPI UI as a content set: Swagger UI, which
+     * the plugin downloads from github.com and patches to show the
+     * service's OpenAPI catalog and to sign in with the REST Daemon.
+     *
+     * @param connectionId An open connection.
+     * @param contentSetPath Where it is served, `/openApiUi`.
+     * @param servicePath The service it is for.
+     * @param requiresAuth Whether its files require authentication.
+     *
+     * @returns What was uploaded.
+     */
+    public async loadOpenApiUi(
+        connectionId: string,
+        contentSetPath: string,
+        servicePath: string,
+        requiresAuth: boolean,
+    ): Promise<IContentSetUpload> {
+        return await this.#tool("mrs.load_content_set", connectionId, {
+            content_set_path: contentSetPath,
+            service_path: servicePath,
+            open_api_ui: true,
+            requires_auth: requiresAuth,
+            replace: true,
+        }, decodeObject<IContentSetUpload>,
+        words(`Loading the OpenAPI UI into REST Content Set '${contentSetPath}'`,
+            `Loaded the OpenAPI UI into REST Content Set '${contentSetPath}'`),
         (upload) => { return counted(upload.files.length, "file"); },
         MRS_UPLOAD_TIMEOUT_MS);
     }

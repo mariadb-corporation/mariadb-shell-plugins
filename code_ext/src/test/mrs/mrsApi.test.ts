@@ -544,10 +544,11 @@ describe("MrsToolsApi", () => {
         })));
 
         await expect(tools.loadContentSet("c1", "/dir", "/app", "/svc",
-            "*.git", undefined)).resolves.toEqual({
+            "*.git", undefined, true)).resolves.toEqual({
             files: ["/index.html"], message: "done",
         });
-        await tools.loadContentSet("c1", "/dir", "/app", "/svc", "", false);
+        await tools.loadContentSet("c1", "/dir", "/app", "/svc", "", false,
+            false);
 
         expect(calls[0]).toEqual({
             name: "mrs.load_content_set",
@@ -557,12 +558,15 @@ describe("MrsToolsApi", () => {
                 content_set_path: "/app",
                 service_path: "/svc",
                 ignore_list: "*.git",
+                requires_auth: true,
                 replace: true,
             },
             // A large folder takes what it takes.
             timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
         });
-        expect(calls[1]!.args).toMatchObject({ load_scripts: false });
+        // Each file gets the dialog's setting too.
+        expect(calls[1]!.args).toMatchObject({ load_scripts: false,
+            requires_auth: false });
     });
 
     it("reads a folder's script language, none as undefined", async () => {

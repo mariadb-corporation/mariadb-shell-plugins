@@ -26,6 +26,7 @@ from mrs_plugin.lib import services
 from mrs_plugin.lib import schemas
 from mrs_plugin.lib import rest_objects
 from mrs_plugin.lib import content_sets
+from mrs_plugin.lib import open_api_ui
 from mrs_plugin.lib import general
 from mrs_plugin.lib import dump
 from mrs_plugin.lib import database

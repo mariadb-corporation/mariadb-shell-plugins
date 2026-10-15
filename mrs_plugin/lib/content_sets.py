@@ -26,6 +26,7 @@ from mrs_plugin.lib import core
 
 import base64
 import os
+import tempfile
 import re
 import json
 import pathlib
@@ -927,14 +928,30 @@ def get_folder_mrs_script_definitions(
 DEFAULT_IGNORE_LIST = "*node_modules/*, */.*"
 
 
+def _authentication(requires_auth):
+    """The AUTHENTICATION clause for requires_auth, or nothing for None."""
+    if requires_auth is None:
+        return ""
+    return " AUTHENTICATION " + ("REQUIRED" if requires_auth else "NOT REQUIRED")
+
+
 def content_file_statement(
-    request_path, service_path, content_set_path, data: bytes, options: dict
+    request_path,
+    service_path,
+    content_set_path,
+    data: bytes,
+    options: dict,
+    requires_auth=None,
 ):
     """Returns the CREATE REST CONTENT FILE statement for a file.
 
     UTF-8 text without backslashes is sent as is, everything else base64
     encoded as BINARY CONTENT, so the statement reads the same with and
     without the NO_BACKSLASH_ESCAPES SQL mode.
+
+    A file has an AUTHENTICATION setting of its own, which the content
+    set's does not change, so requires_auth sets it here; None leaves the
+    server's default, which requires authentication.
     """
     try:
         text = data.decode("utf-8")
@@ -953,7 +970,90 @@ def content_file_statement(
         + (f" SERVICE {core.quote_service_path(service_path)}" if service_path else "")
         + f" CONTENT SET {core.quote_ident(content_set_path)}\n    {content}\n"
         f"    OPTIONS {json.dumps(options)}"
+        + _authentication(requires_auth)
     )
+
+
+def _open_api_ui_service(session, service_path):
+    """The service an OpenAPI UI is for: its name, request path and full path.
+
+    Resolved as ON SERVICE resolves a path: `/path` is the published
+    service, `mike,alfredo@/path` the one in development for exactly those
+    developers. Without a path, the plugin's current service - and the
+    content set then goes ON SERVICE its full path too, rather than to the
+    one USE REST SERVICE set for the REST SQL, which can be another.
+    """
+    from mrs_plugin.lib import services
+
+    if service_path is None:
+        service = services.get_current_service(session)
+    else:
+        developers, at, root = service_path.rpartition("@")
+        developer_list = None
+        if at:
+            developer_list = []
+            for developer in developers.split(","):
+                developer = developer.strip()
+                if len(developer) >= 2 and developer[0] == developer[-1] == "'":
+                    developer = developer[1:-1].replace("\\'", "'").replace("''", "'")
+                developer_list.append(developer)
+        service = services.get_service(
+            session, url_context_root=root, developer_list=developer_list
+        )
+    if service is None:
+        raise ValueError(
+            f"There is no REST service {service_path}."
+            if service_path is not None
+            else "There is no current REST service. Pass service_path."
+        )
+
+    return (
+        service.get("name") or service["url_context_root"],
+        service["url_context_root"],
+        service["full_service_path"],
+    )
+
+
+def check_load_options(
+    directory,
+    content_set_path,
+    open_api_ui=False,
+    ignore_list=None,
+    load_scripts=None,
+):
+    """Checks what load_content_set is asked to do, before anything is done.
+
+    The one place the options are checked: the plugin function and the MCP
+    tool call it first, so they cannot word or rule it differently.
+
+    Returns:
+        str: The content set's request path; /openApiUi for the OpenAPI UI
+        when none is given.
+
+    Raises:
+        ValueError: If the options do not go together.
+    """
+    if open_api_ui:
+        if directory is not None:
+            raise ValueError(
+                "An OpenAPI UI content set is made of downloaded files: pass "
+                "no directory with open_api_ui."
+            )
+        for name, value in (("ignore_list", ignore_list), ("load_scripts", load_scripts)):
+            if value is not None:
+                raise ValueError(
+                    f"{name} is for a directory's files: pass none with open_api_ui."
+                )
+        from mrs_plugin.lib import open_api_ui as ui
+
+        return content_set_path or ui.DEFAULT_REQUEST_PATH
+
+    if directory is None or content_set_path is None:
+        raise ValueError(
+            "Pass the directory and the content set's request path, or "
+            "open_api_ui to upload the REST service's OpenAPI UI."
+        )
+    return content_set_path
 
 
 def load_content_set(
@@ -965,6 +1065,8 @@ def load_content_set(
     load_scripts=None,
     replace=False,
     send_gui_message=None,
+    open_api_ui=False,
+    requires_auth=None,
 ):
     """Uploads the files of a directory to a content set via REST SQL.
 
@@ -973,10 +1075,47 @@ def load_content_set(
     SET ... LOAD TYPESCRIPT SCRIPTS. With load_scripts None, the scripts are
     registered if the directory holds any.
 
+    With open_api_ui, there is no directory: the files are the service's
+    OpenAPI UI, Swagger UI downloaded and patched for it (see
+    :mod:`mrs_plugin.lib.open_api_ui`), in a temporary folder that is
+    removed afterwards. It is served without authentication unless
+    requires_auth says otherwise: signing in is the UI's own Authorize.
+
+    requires_auth sets whether the content set and each of its files
+    require authentication; None leaves the server's default, which does.
+
     Returns:
         A dict with the uploaded files and the result message of the last
         statement
     """
+    content_set_path = check_load_options(
+        directory, content_set_path, open_api_ui, ignore_list, load_scripts
+    )
+    if open_api_ui:
+        from mrs_plugin.lib import open_api_ui as ui
+
+        name, root, full_path = _open_api_ui_service(session, service_path)
+        with tempfile.TemporaryDirectory(prefix="mrs-openapi-ui-") as temp_dir:
+            ui.prepare(
+                temp_dir,
+                name,
+                root,
+                content_set_path,
+                send_gui_message=send_gui_message,
+            )
+            return load_content_set(
+                session,
+                temp_dir,
+                content_set_path,
+                # The service the UI was made for, whatever is current.
+                service_path=full_path,
+                ignore_list="",
+                load_scripts=False,
+                replace=replace,
+                send_gui_message=send_gui_message,
+                requires_auth=False if requires_auth is None else requires_auth,
+            )
+
     directory = os.path.abspath(os.path.expanduser(directory))
     if not os.path.isdir(directory):
         raise ValueError(f"The given directory '{directory}' does not exist.")
@@ -989,7 +1128,10 @@ def load_content_set(
     )
 
     create = "CREATE OR REPLACE" if replace else "CREATE"
-    session.run_sql(f"{create} REST CONTENT SET {content_set_ref}{on_service}")
+    session.run_sql(
+        f"{create} REST CONTENT SET {content_set_ref}{on_service}"
+        + _authentication(requires_auth)
+    )
 
     files = []
     holds_scripts = False
@@ -1010,6 +1152,7 @@ def load_content_set(
                 content_set_path,
                 data,
                 {"last_modification": file_last_modification(full_name)},
+                requires_auth,
             )
         )
         files.append(request_path)

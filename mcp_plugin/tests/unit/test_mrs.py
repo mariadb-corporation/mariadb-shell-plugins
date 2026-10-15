@@ -285,3 +285,141 @@ def test_mrs_tools_work_on_a_rest_service(sandbox, allowed_temp_dir):
         pytest.skip("sandbox was not deployed")
 
     asyncio.run(_service_flow(sandbox.uri, allowed_temp_dir))
+
+
+# --- the OpenAPI UI ------------------------------------------------------------
+
+
+class _ToolRecorder:
+    """Stands in for the MCPServer, collecting the registered tools by name."""
+
+    def __init__(self):
+        self.tools = {}
+
+    def tool(self, name):
+        def decorator(fn):
+            self.tools[name] = fn
+            return fn
+
+        return decorator
+
+
+@pytest.fixture
+def content_set_tool(monkeypatch):
+    """mrs.load_content_set in-process, its plugin call and paths recorded."""
+    import contextlib
+
+    import mrs_plugin.content_sets
+    import mrs_plugin.lib.open_api_ui
+    from mcp_plugin.lib import db_functions, general, mrs_functions
+
+    calls, checked = [], []
+
+    def load(directory, content_set_path, **kwargs):
+        calls.append({"directory": directory, "content_set_path": content_set_path,
+                      **{k: v for k, v in kwargs.items() if k != "session"}})
+        return {"files": ["/index.html"], "message": None}
+
+    async def require(ctx, path):
+        checked.append(path)
+
+    @contextlib.contextmanager
+    def use_session(connection_id, client):
+        calls.append("session")
+        yield object()
+
+    monkeypatch.setattr(mrs_plugin.content_sets, "load_content_set", load)
+    monkeypatch.setattr(
+        mrs_plugin.lib.open_api_ui, "download_assets",
+        lambda: calls.append("download"),
+    )
+    monkeypatch.setattr(general, "require_allowed_path", require)
+    monkeypatch.setattr(general, "get_client_identity", lambda ctx: None)
+    monkeypatch.setattr(db_functions, "use_session", use_session)
+    recorder = _ToolRecorder()
+    mrs_functions.register_mrs_tools(recorder, ["db", "mrs"])
+
+    return recorder.tools["mrs.load_content_set"], calls, checked
+
+
+def test_the_open_api_ui_is_an_option_of_the_content_set_tool(content_set_tool):
+    """No directory, so no path to allow; the plugin does the download."""
+    load, calls, checked = content_set_tool
+
+    asyncio.run(load(None, "c1", service_path="/shop", open_api_ui=True))
+
+    # Downloaded before the connection's lock is taken.
+    assert calls == ["download", "session",
+                     {"directory": None, "content_set_path": None,
+                      "replace": False, "open_api_ui": True,
+                      "service_path": "/shop"}]
+    assert checked == []
+
+
+def test_the_content_set_tool_wants_a_directory_or_the_open_api_ui(content_set_tool):
+    load, calls, checked = content_set_tool
+
+    with pytest.raises(Exception, match="pass no directory"):
+        asyncio.run(load(None, "c1", directory="/web", open_api_ui=True))
+    # What is for a directory's files is refused rather than ignored.
+    with pytest.raises(Exception, match="ignore_list is for a directory"):
+        asyncio.run(load(None, "c1", open_api_ui=True, ignore_list="*.md"))
+    with pytest.raises(Exception, match="or open_api_ui"):
+        asyncio.run(load(None, "c1", directory="/web"))
+    assert calls == []
+
+    # A directory is still checked against the allowed paths.
+    asyncio.run(load(None, "c1", directory="/web", content_set_path="/app"))
+    assert checked == ["/web"]
+    assert "download" not in calls
+
+
+@pytest.mark.e2e
+def test_the_open_api_ui_is_downloaded_and_uploaded_for_real(sandbox):
+    """Swagger UI from github.com, its checksum, and the patched page served.
+
+    Marked e2e: it reaches the network.
+    """
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
+    async def run():
+        async with helpers.mcp_session(["db", "mrs"], timeout=300) as call:
+            connection_id = helpers.tool_payload(
+                await call("db.connect", {"uri": sandbox.uri}))
+
+            async def sql(statement):
+                result = await call("db.execute_sql",
+                                    {"connection_id": connection_id, "sql": statement})
+                assert result.is_error is False, result.content[0].text
+                return result
+
+            try:
+                await sql(f"CONFIGURE REST METADATA SCHEMA {_METADATA_SCHEMA}")
+                await sql("CREATE REST SERVICE /apiTest")
+                result = await call("mrs.load_content_set", {
+                    "connection_id": connection_id, "service_path": "/apiTest",
+                    "open_api_ui": True,
+                })
+                assert result.is_error is False, result.content[0].text
+                loaded = helpers.tool_payload(result)
+                assert "/swagger-initializer.js" in loaded["files"]
+                # What is patched is checked by mrs_plugin's own tests;
+                # here, that it is all on the server.
+                rows = helpers.tool_rows(await sql(
+                    "SHOW REST CONTENT FILES ON SERVICE /apiTest "
+                    "CONTENT SET /openApiUi"))
+                served = {next(iter(row.values())) for row in rows}
+                assert {"/index.html", "/swagger-initializer.js",
+                        "/favicon.svg"} <= served, served
+            finally:
+                await call("db.execute_sql", {
+                    "connection_id": connection_id,
+                    "sql": f"DROP DATABASE IF EXISTS {_METADATA_SCHEMA}"})
+                for role in _ROLES:
+                    await call("db.execute_sql", {
+                        "connection_id": connection_id,
+                        "sql": f"DROP ROLE IF EXISTS mcpt_mariadb_rest_service_{role}"})
+                await call("db.close", {"connection_id": connection_id})
+
+    asyncio.run(run())

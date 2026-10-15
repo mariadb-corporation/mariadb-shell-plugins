@@ -30,6 +30,7 @@ import {
     contentSetDefaults,
     DEFAULT_IGNORE_LIST,
     objectDefaults,
+    openApiUiDefaults,
     schemaDefaults,
     SDK_LANGUAGES,
     serviceDefaults,
@@ -990,6 +991,25 @@ describe("content set dialog", () => {
         expect(tabs()).toEqual(["Settings", "Options"]);
         expect(postedOf("analyzeFolder")).toHaveLength(0);
     });
+
+    it("asks no folder for the OpenAPI UI, and says what it downloads",
+        async () => {
+            await load("contentSet", openApiUiDefaults([], "/myService"),
+                { ...context, openApiUi: true }, "Deploy the OpenAPI Web UI");
+
+            expect(inputOf("Request Path").value).toBe("/openApiUi");
+            expect(host.textContent).not.toContain("Folder to upload");
+            expect(host.querySelector(".mrs-openapi-note")?.textContent)
+                .toContain("Swagger UI 5.17.14 is downloaded from github.com");
+
+            await pressOk();
+            expect(saved()).toMatchObject({ requestPath: "/openApiUi",
+                directory: "", requiresAuth: false });
+
+            await send({ type: "busy", busy: true });
+            expect(messages()).toContain(
+                "Downloading the OpenAPI UI and uploading its files...");
+        });
 
     it("refuses a missing folder on OK", async () => {
         await loadNew();

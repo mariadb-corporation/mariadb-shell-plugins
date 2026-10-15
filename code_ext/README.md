@@ -46,7 +46,11 @@ which exposes the backend functions over the Model Context Protocol.
   content sets, authentication apps, users and REST Daemons in the tree.
   Dialogs configure the service and add or edit each of them - a REST
   view's data mapping included - and the context menus copy or dump their
-  REST SQL, export the client SDK, and upload a folder as a content set.
+  REST SQL, export the client SDK, and upload a folder as a content set,
+  whose files then take the set's **Requires Auth** setting, also when it
+  is edited later. **Deploy OpenAPI Web UI...** on a REST service serves
+  its OpenAPI UI (Swagger UI, downloaded once and patched for the service)
+  at `/openApiUi`, open to everyone: signing in is the UI's own Authorize.
 - **Expanding a connection opens it**, so browsing a database takes one
   click. Set `mariadb.connections.connectMode` to `explicit` to go back to
   connecting with the button on the row.

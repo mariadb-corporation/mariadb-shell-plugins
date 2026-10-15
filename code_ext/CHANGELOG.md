@@ -47,6 +47,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   statement that caused it.
 - The **MariaDB: Restart MCP Server** and **MariaDB: Show MCP Server Log**
   commands.
+- **Deploy OpenAPI Web UI...** on a REST service's context menu: the
+  service's OpenAPI UI as a content set at `/openApiUi`, served without
+  authentication. The files of an uploaded content set take its **Requires
+  Auth** setting, and follow it when the content set is edited.
 
 - Blue dots in the editor gutter marking where each SQL statement starts.
   They are scanned in time slices, so the first dots appear almost

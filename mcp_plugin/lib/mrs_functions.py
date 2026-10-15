@@ -36,7 +36,7 @@ via MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 
 def register_mrs_tools(server, function_groups=()) -> None:
@@ -57,6 +57,8 @@ def register_mrs_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from mrs_plugin import content_sets, dump, general as mrs_general
     from mrs_plugin import services as mrs_services
+    from mrs_plugin.lib import content_sets as content_set_files
+    from mrs_plugin.lib import open_api_ui as open_api_ui_files
 
     tool = tool_registrar(server)
 
@@ -412,33 +414,64 @@ def register_mrs_tools(server, function_groups=()) -> None:
     async def load_content_set(
         ctx: Context,
         connection_id: str,
-        directory: str,
-        content_set_path: str,
+        directory: Optional[str] = None,
+        content_set_path: Optional[str] = None,
         service_path: Optional[str] = None,
         ignore_list: Optional[str] = None,
         load_scripts: Optional[bool] = None,
         replace: bool = False,
+        open_api_ui: bool = False,
+        requires_auth: Optional[bool] = None,
     ) -> Optional[dict]:
         """Uploads the files of a directory as a REST content set.
 
+        Or, with open_api_ui, the REST service's OpenAPI UI: Swagger UI,
+        downloaded from github.com and patched to show the service's OpenAPI
+        catalog (<service path>/open-api-catalog/) and to sign in with the
+        REST Daemon. It is then served at the content set's path, by default
+        /openApiUi, to a published service's users.
+
         Args:
             connection_id: The UUID returned by db.connect.
-            directory: The directory holding the files.
-            content_set_path: The request path of the content set.
+            directory: The directory holding the files. Leave empty with
+                open_api_ui.
+            content_set_path: The request path of the content set. Required
+                unless open_api_ui is set, which defaults it to /openApiUi.
             service_path: The request path of the REST service. Defaults to
                 the current one.
             ignore_list: Comma-separated file patterns to ignore, matched
                 against the path relative to the directory. Defaults to
-                "*node_modules/*, */.*".
+                "*node_modules/*, */.*". Not with open_api_ui.
             load_scripts: Register the MRS scripts of the files. By default
-                they are registered if the directory holds any.
+                they are registered if the directory holds any. Not with
+                open_api_ui.
             replace: Replace the content set if it exists.
+            open_api_ui: Upload the REST service's OpenAPI UI instead of a
+                directory's files.
+            requires_auth: Whether the content set and each of its files
+                require authentication. By default they do, except the
+                OpenAPI UI, which signs in with its Authorize button.
 
         Returns:
             A dict with the request paths of the uploaded files and a
             message.
         """
-        await general.require_allowed_path(ctx, directory)
+        # Checked as the plugin checks them, before anything is downloaded.
+        try:
+            content_set_files.check_load_options(
+                directory, content_set_path, open_api_ui, ignore_list, load_scripts
+            )
+        except ValueError as error:
+            raise tool_error(str(error)) from error
+        if directory is not None:
+            await general.require_allowed_path(ctx, directory)
+
+        if open_api_ui:
+            # Downloaded before the connection's lock is taken, so a slow
+            # github.com holds up no other call on it; the plugin then reads
+            # the files from where they are kept.
+            await anyio.to_thread.run_sync(open_api_ui_files.download_assets)
+
         return await _on_session(
             ctx,
             connection_id,
@@ -447,10 +480,12 @@ def register_mrs_tools(server, function_groups=()) -> None:
                 content_set_path,
                 session=session,
                 replace=replace,
+                open_api_ui=open_api_ui,
                 **_kwargs(
                     service_path=service_path,
                     ignore_list=ignore_list,
                     load_scripts=load_scripts,
+                    requires_auth=requires_auth,
                 ),
             ),
         )

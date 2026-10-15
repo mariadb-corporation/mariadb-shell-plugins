@@ -24,6 +24,7 @@ import {
     type IAuthAppContext,
     type IAuthAppDialogValues,
     type IConfigureContext,
+    OPEN_API_UI_VERSION,
     type IContentSetContext,
     type IObjectContext,
     type IObjectDialogValues,
@@ -82,7 +83,7 @@ export interface IDialogDefinition {
     /** The text of the OK button. */
     okLabel?: string;
     /** What the progress bar says while the host saves. */
-    busyLabel?: string;
+    busyLabel?: string | ((extras: IDialogExtras) => string);
     /**
      * Other fields that follow from a change, merged into the values with
      * it: a service picked offers its own REST schemas.
@@ -645,7 +646,11 @@ const scriptErrors = (definitions: IMrsScriptDefinitions | undefined): string =>
 };
 
 const contentSet: IDialogDefinition = {
-    busyLabel: "Uploading the files...",
+    busyLabel: (extras) => {
+        return (extras.context as IContentSetContext).openApiUi === true
+            ? "Downloading the OpenAPI UI and uploading its files..."
+            : "Uploading the files...";
+    },
     main: (ctx, extras) => {
         const context = extras.context as IContentSetContext;
         const editing = context.existingPath !== undefined;
@@ -658,7 +663,15 @@ const contentSet: IDialogDefinition = {
                     caption="REST Service Path" choices={context.services}
                     disabled={editing} hint="The REST Service to hold the content" />
                 {accessFlags(ctx)}
-                {editing ? null : (
+                {context.openApiUi === true ? (
+                    <p class="note mrs-openapi-note">
+                        {`Swagger UI ${OPEN_API_UI_VERSION} is downloaded `
+                            + "from github.com and patched to show the "
+                            + "REST Service's OpenAPI catalog and to sign "
+                            + "in with the REST Daemon. The service has to "
+                            + "be published for its catalog to be served."}
+                    </p>
+                ) : editing ? null : (
                     <>
                         <PathField ctx={ctx} field="directory"
                             caption="Folder to upload" folders

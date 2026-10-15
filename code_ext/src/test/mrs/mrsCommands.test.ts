@@ -1598,6 +1598,7 @@ describe("content sets", () => {
                     service_path: "/myService",
                     ignore_list: values.ignoreList,
                     load_scripts: false,
+                    requires_auth: values.requiresAuth,
                     replace: true,
                 },
                 timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
@@ -1619,6 +1620,51 @@ describe("content sets", () => {
             })).toEqual(["mrs.load_content_set", "SHOW REST CONTENT SETS",
                 "ALTER REST CONTENT SET"]);
         });
+
+    it("deploys the OpenAPI UI of the service it is asked on", async () => {
+        const other = { ...service, full_service_path: "/other",
+            url_context_root: "/other", is_current: true };
+        const { toolCalls, actions } = await setup({
+            [SERVICES]: [other, service],
+            "SHOW REST CONTENT SETS ON SERVICE /myService FORMAT=JSON":
+                [mrsContentSet({ request_path: "/openApiUi" })],
+        }, {
+            toolAnswers: {
+                "mrs.load_content_set": {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({ files: ["/index.html"] }),
+                    }],
+                },
+            },
+        });
+
+        await run("mariadb.mrs.deployOpenApiUi", serviceNode());
+
+        const spec = dialog();
+        expect(spec.title).toBe("Deploy the OpenAPI Web UI");
+        expect(spec.context).toEqual({ services: ["/other", "/myService"],
+            openApiUi: true });
+        const values = spec.values as IContentSetDialogValues;
+        // The service right-clicked, not the current one; open to everyone.
+        expect(values).toMatchObject({ servicePath: "/myService",
+            requestPath: "/openApiUi", requiresAuth: false, directory: "" });
+
+        await expect(spec.save(values)).resolves.toBeUndefined();
+        // No folder: the plugin downloads Swagger UI itself.
+        expect(toolCalls).toEqual([{
+            name: "mrs.load_content_set",
+            args: {
+                connection_id: "uuid-1", content_set_path: "/openApiUi",
+                service_path: "/myService", open_api_ui: true,
+                requires_auth: false, replace: true,
+            },
+            timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
+        }]);
+        expect(actions.at(-1)).toMatchObject({
+            message: "Created REST Content Set '/openApiUi'", detail: "1 file",
+        });
+    });
 
     it("leaves the scripts to the plugin where they are to be loaded",
         async () => {
@@ -1719,6 +1765,26 @@ describe("content sets", () => {
         expect(api.sent.at(-1)).toMatch(/^ALTER REST CONTENT SET \/app/);
         expect(toolCalls).toEqual([]);
     });
+
+    it("has a content set's files follow a change of its authentication",
+        async () => {
+            const { api } = await setup({
+                [SERVICES]: [service],
+                [STATUS]: mrsStatus({ metadata_schema: "acme_rest" }),
+            });
+
+            await run("mariadb.mrs.editContentSet", contentSetNode);
+
+            const spec = dialog();
+            await spec.save({
+                ...spec.values as IContentSetDialogValues,
+                requiresAuth: true,
+            });
+            expect(api.sent.at(-1)).toContain(
+                "UPDATE `acme_rest`.`content_file` SET requires_auth = 1"
+                + " WHERE content_set_id = "
+                + "'44444444-0000-0000-0000-000000000001'");
+        });
 
     it("uploads an Explorer folder to the one open connection", async () => {
         await setup({ ...CONFIGURED, [SERVICES]: [service] });

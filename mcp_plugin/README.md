@@ -316,6 +316,20 @@ connection opened with `db.connect`, so they are only registered when the `db` g
 is served as well. Every file and directory they take is checked against the allowed
 paths. A multi-tenant server does not serve the `mrs` group.
 
+`mrs.load_content_set` with `open_api_ui` uploads the REST service's OpenAPI UI
+instead of a directory: Swagger UI, which `mrs_plugin` downloads from github.com
+(pinned, checked by SHA-256) and patches to show the service's
+`/open-api-catalog/` and to sign in with the REST Daemon. It takes no directory, nor
+`ignore_list` or `load_scripts`, and the content set's path defaults to `/openApiUi`.
+The downloads are kept in the plugin's data folder, so they are made once, and before
+the connection is locked.
+
+`requires_auth` sets whether the content set and each of its files require
+authentication: a file has an `AUTHENTICATION` setting of its own, which the set's does
+not change, and the REST Daemon asks for a sign-in where either says so. Left out, the
+server's default applies, which requires it - except for the OpenAPI UI, which is
+public by default, since signing in is its own Authorize button.
+
 ### Sandbox tools (`sandbox`)
 
 Tools for deploying and managing local MariaDB/MySQL sandbox instances, wrapping the

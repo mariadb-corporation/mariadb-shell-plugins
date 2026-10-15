@@ -38,6 +38,10 @@ import {
     type JsonObject,
 } from "./mrsTypes.js";
 import {
+    quoteIdentifier,
+    quoteText,
+} from "./restSql.js";
+import {
     alterAuthAppSql,
     alterContentSetSql,
     alterSchemaSql,
@@ -1108,7 +1112,37 @@ export interface IContentSetContext {
     services: string[];
     /** The content set's path, when it is edited. */
     existingPath?: string;
+    /**
+     * Whether it is the service's OpenAPI UI: Swagger UI, which the MCP
+     * server downloads and patches, so there is no folder to choose.
+     */
+    openApiUi?: boolean;
 }
+
+/** Where a REST service's OpenAPI UI is served, unless told otherwise. */
+export const OPEN_API_UI_PATH = "/openApiUi";
+
+/** The Swagger UI release the OpenAPI UI is made of, as the plugin pins it. */
+export const OPEN_API_UI_VERSION = "5.17.14";
+
+/**
+ * @param services Every service.
+ * @param servicePath The service the UI is for.
+ *
+ * @returns The dialog's fields for a service's OpenAPI UI: served at
+ *          /openApiUi, to everyone - signing in is the UI's own Authorize.
+ */
+export const openApiUiDefaults = (
+    services: IMrsService[],
+    servicePath: string,
+): IContentSetDialogValues => {
+    return {
+        ...contentSetDefaults(services, undefined, servicePath),
+        requestPath: OPEN_API_UI_PATH,
+        requiresAuth: false,
+        ignoreList: "",
+    };
+};
 
 /** The files a folder upload leaves out unless told otherwise. */
 export const DEFAULT_IGNORE_LIST = "*node_modules/*, */.*";
@@ -1186,7 +1220,8 @@ export const validateContentSet = (
             ? [{ field: "servicePath", message: "Please select a REST service." }]
             : []),
         ...requestPathProblems(values.requestPath),
-        ...(context.existingPath === undefined && values.directory.trim() === ""
+        ...(context.existingPath === undefined && context.openApiUi !== true
+            && values.directory.trim() === ""
             ? [{
                 field: "directory",
                 message: "Please select the folder to upload.",
@@ -1210,10 +1245,21 @@ export const validateContentSet = (
  * @returns The statement that applies the settings. A new content set is
  *          uploaded first, by the host, and then given them with this.
  */
+/**
+ * @param values The dialog's fields.
+ * @param context What the dialog was opened on.
+ * @param existing The content set as it is.
+ * @param metadataSchema The REST metadata schema it is in: given where its
+ *                       files' authentication is to follow a change of
+ *                       the set's.
+ *
+ * @returns The statements that apply the dialog.
+ */
 export const contentSetStatements = (
     values: IContentSetDialogValues,
     context: IContentSetContext,
     existing?: IMrsContentSet,
+    metadataSchema?: string,
 ): string[] => {
     const generated = Object.fromEntries(Object.entries(
         existing?.options ?? {}).filter(([key]) => {
@@ -1233,7 +1279,31 @@ export const contentSetStatements = (
         },
         context.existingPath !== undefined && values.loadScripts
         && existing?.content_type !== "SCRIPTS",
-    )];
+    ), ...(metadataSchema !== undefined
+        && changesContentSetAuth(values, existing)
+        // A file has a setting of its own, which the set's does not change,
+        // and no REST SQL statement changes it once uploaded. The REST
+        // Daemon asks for a sign-in where either says so, so a set no
+        // longer requiring one would leave its files locked.
+        ? [`UPDATE ${quoteIdentifier(metadataSchema)}.\`content_file\``
+            + ` SET requires_auth = ${values.requiresAuth ? "1" : "0"}`
+            + ` WHERE content_set_id = ${quoteText(existing!.id)}`]
+        : [])];
+};
+
+/**
+ * @param values The content set dialog's fields.
+ * @param existing The content set as it is.
+ *
+ * @returns Whether applying them changes whether its files require a
+ *          sign-in, which takes its metadata schema's name.
+ */
+export const changesContentSetAuth = (
+    values: IContentSetDialogValues,
+    existing: IMrsContentSet | undefined,
+): boolean => {
+    return existing !== undefined
+        && existing.requires_auth !== values.requiresAuth;
 };
 
 // --- auth apps --------------------------------------------------------

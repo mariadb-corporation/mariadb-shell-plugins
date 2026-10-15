@@ -62,6 +62,8 @@ import {
     configureDefaults,
     configureStatements,
     contentSetDefaults,
+    openApiUiDefaults,
+    changesContentSetAuth,
     contentSetStatements,
     DEFAULT_METADATA_SCHEMA,
     objectDefaults,
@@ -231,6 +233,7 @@ export class MrsCommands {
             "mariadb.mrs.copyCreateDbObjectSql": this.copyCreateDbObjectSql,
             "mariadb.mrs.dumpCreateDbObjectSql": this.dumpCreateDbObjectSql,
             "mariadb.mrs.addContentSet": this.addContentSet,
+            "mariadb.mrs.deployOpenApiUi": this.deployOpenApiUi,
             "mariadb.mrs.addFolderAsContentSet": this.addFolderAsContentSet,
             "mariadb.mrs.editContentSet": this.editContentSet,
             "mariadb.mrs.deleteContentSet": this.deleteContentSet,
@@ -1172,6 +1175,7 @@ export class MrsCommands {
         service: IMrsService | undefined,
         contentSet: IMrsContentSetNode["contentSet"] | undefined,
         directory = "",
+        openApiUi = false,
     ): Promise<void> {
         const scope = this.#scope(node);
         const services = await this.host.api.services(scope);
@@ -1187,22 +1191,35 @@ export class MrsCommands {
             }),
             ...(contentSet === undefined
                 ? {} : { existingPath: contentSet.request_path }),
+            ...(openApiUi ? { openApiUi } : {}),
         };
         const tools = await this.host.tools();
 
         this.#show({
             dialog: "contentSet",
-            title: contentSet === undefined
-                ? "Enter Configuration Values for the New MRS Static Content Set"
-                : "Adjust the MRS Static Content Set Configuration",
-            values: contentSetDefaults(services, contentSet,
-                service?.full_service_path, directory),
+            title: openApiUi
+                ? "Deploy the OpenAPI Web UI"
+                : contentSet === undefined
+                    ? "Enter Configuration Values for the New MRS Static Content Set"
+                    : "Adjust the MRS Static Content Set Configuration",
+            // The UI of the service it was asked on, not the current one.
+            values: openApiUi && service !== undefined
+                ? openApiUiDefaults(services, service.full_service_path)
+                : contentSetDefaults(services, contentSet,
+                    service?.full_service_path, directory),
             context,
             save: async (saved) => {
                 const values = saved as IContentSetDialogValues;
                 if (contentSet !== undefined) {
+                    // Its files' authentication follows the set's, which
+                    // takes the metadata schema's name.
+                    const metadataSchema = changesContentSetAuth(values,
+                        contentSet)
+                        ? scope.metadataSchema
+                            ?? (await this.host.api.status(scope)).metadata_schema
+                        : undefined;
                     await this.host.api.run(scope, contentSetStatements(
-                        values, context, contentSet));
+                        values, context, contentSet, metadataSchema));
 
                     return;
                 }
@@ -1217,10 +1234,14 @@ export class MrsCommands {
                         if (scope.metadataSchema !== undefined) {
                             await this.host.api.run(scope, []);
                         }
-                        const upload = await tools.loadContentSet(
-                            scope.connectionId, values.directory, path,
-                            values.servicePath, values.ignoreList,
-                            values.loadScripts ? undefined : false);
+                        const upload = openApiUi
+                            ? await tools.loadOpenApiUi(scope.connectionId,
+                                path, values.servicePath, values.requiresAuth)
+                            : await tools.loadContentSet(
+                                scope.connectionId, values.directory, path,
+                                values.servicePath, values.ignoreList,
+                                values.loadScripts ? undefined : false,
+                                values.requiresAuth);
                         // The upload makes the set as the plugin does; its
                         // settings are this dialog's, applied once it
                         // exists.
@@ -1255,6 +1276,18 @@ export class MrsCommands {
     public async addContentSet(node?: IMrsServiceNode): Promise<void> {
         if (node?.kind === "mrsService") {
             await this.#contentSetDialog(node, node.service, undefined);
+        }
+    }
+
+    /**
+     * Deploys a service's OpenAPI UI: a content set of Swagger UI, which
+     * the MCP server downloads and patches to show the service's OpenAPI
+     * catalog. The content set dialog asks where and how it is served.
+     */
+    public async deployOpenApiUi(node?: IMrsServiceNode): Promise<void> {
+        if (node?.kind === "mrsService") {
+            await this.#contentSetDialog(node, node.service, undefined, "",
+                true);
         }
     }
 

@@ -129,16 +129,23 @@ def get_folder_mrs_script_definitions(path, **kwargs):
 
 
 @plugin_function("mrs.load.contentSet", shell=True, cli=True, web=True)
-def load_content_set(directory, content_set_path, **kwargs):
+def load_content_set(directory=None, content_set_path=None, **kwargs):
     """Uploads the files of a directory to a new REST content set.
 
     Sends a CREATE REST CONTENT SET statement and one CREATE REST CONTENT
     FILE statement per file, and registers the MRS scripts of the files with
     ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS.
 
+    With open_api_ui, the files are the REST service's OpenAPI UI instead,
+    Swagger UI downloaded from github.com and patched to show the service's
+    OpenAPI catalog and to sign in with the REST Daemon. No directory is
+    given then.
+
     Args:
-        directory (str): The directory holding the files.
-        content_set_path (str): The request path of the content set.
+        directory (str): The directory holding the files. Not given with
+            open_api_ui.
+        content_set_path (str): The request path of the content set. With
+            open_api_ui, /openApiUi when not given.
         **kwargs: Additional options
 
     Keyword Args:
@@ -146,10 +153,15 @@ def load_content_set(directory, content_set_path, **kwargs):
             the current one.
         ignore_list (str): The list of file patterns to ignore, separated by
             comma, matched against the path relative to the directory.
-            Default "*node_modules/*, */.*".
+            Default "*node_modules/*, */.*". Not with open_api_ui.
         load_scripts (bool): Register the MRS scripts of the files. By default
-            they are registered if the directory holds any.
+            they are registered if the directory holds any. Not with
+            open_api_ui.
         replace (bool): Replace the content set, if it already exists.
+        open_api_ui (bool): Upload the REST service's OpenAPI UI instead of
+            a directory's files. Default False.
+        requires_auth (bool): Whether the content set and its files require
+            authentication. By default they do, except the OpenAPI UI.
         session (object): The database session to use.
         send_gui_message (object): The function to send a message to the GUI.
 
@@ -157,6 +169,19 @@ def load_content_set(directory, content_set_path, **kwargs):
         A dict with the request paths of the uploaded files and the result
         message
     """
+    content_set_path = lib.content_sets.check_load_options(
+        directory,
+        content_set_path,
+        kwargs.get("open_api_ui", False),
+        kwargs.get("ignore_list"),
+        kwargs.get("load_scripts"),
+    )
+
+    if kwargs.get("open_api_ui", False):
+        # Before the transaction, which a slow github.com would otherwise
+        # keep open: inside it, the files are read from where they are kept.
+        lib.open_api_ui.download_assets(kwargs.get("send_gui_message"))
+
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
@@ -170,6 +195,8 @@ def load_content_set(directory, content_set_path, **kwargs):
                 load_scripts=kwargs.get("load_scripts"),
                 replace=kwargs.get("replace", False),
                 send_gui_message=kwargs.get("send_gui_message"),
+                open_api_ui=kwargs.get("open_api_ui", False),
+                requires_auth=kwargs.get("requires_auth"),
             )
 
         if lib.core.get_interactive_default():
