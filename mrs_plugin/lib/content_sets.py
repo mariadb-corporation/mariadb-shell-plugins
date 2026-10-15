@@ -975,24 +975,30 @@ def content_file_statement(
 
 
 def _open_api_ui_service(session, service_path):
-    """The service an OpenAPI UI is for: its name and request path.
+    """The service an OpenAPI UI is for: its name, request path and full path.
 
-    The one named - by its full path, `devs@/path` included, or its request
-    path alone - or the current one.
+    Resolved as ON SERVICE resolves a path: `/path` is the published
+    service, `mike,alfredo@/path` the one in development for exactly those
+    developers. Without a path, the plugin's current service - and the
+    content set then goes ON SERVICE its full path too, rather than to the
+    one USE REST SERVICE set for the REST SQL, which can be another.
     """
     from mrs_plugin.lib import services
 
     if service_path is None:
         service = services.get_current_service(session)
     else:
-        service = next(
-            (
-                candidate
-                for candidate in services.get_services(session)
-                if service_path
-                in (candidate.get("full_service_path"), candidate.get("url_context_root"))
-            ),
-            None,
+        developers, at, root = service_path.rpartition("@")
+        developer_list = None
+        if at:
+            developer_list = []
+            for developer in developers.split(","):
+                developer = developer.strip()
+                if len(developer) >= 2 and developer[0] == developer[-1] == "'":
+                    developer = developer[1:-1].replace("\\'", "'").replace("''", "'")
+                developer_list.append(developer)
+        service = services.get_service(
+            session, url_context_root=root, developer_list=developer_list
         )
     if service is None:
         raise ValueError(
@@ -1001,9 +1007,11 @@ def _open_api_ui_service(session, service_path):
             else "There is no current REST service. Pass service_path."
         )
 
-    return service.get("name") or service["url_context_root"], service[
-        "url_context_root"
-    ]
+    return (
+        service.get("name") or service["url_context_root"],
+        service["url_context_root"],
+        service["full_service_path"],
+    )
 
 
 def load_content_set(
@@ -1046,7 +1054,7 @@ def load_content_set(
             )
         from mrs_plugin.lib import open_api_ui as ui
 
-        name, root = _open_api_ui_service(session, service_path)
+        name, root, full_path = _open_api_ui_service(session, service_path)
         with tempfile.TemporaryDirectory(prefix="mrs-openapi-ui-") as temp_dir:
             ui.prepare(
                 temp_dir,
@@ -1059,7 +1067,8 @@ def load_content_set(
                 session,
                 temp_dir,
                 content_set_path,
-                service_path=service_path,
+                # The service the UI was made for, whatever is current.
+                service_path=full_path,
                 ignore_list="",
                 load_scripts=False,
                 replace=replace,

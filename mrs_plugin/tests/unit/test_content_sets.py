@@ -349,3 +349,60 @@ def test_the_open_api_ui_needs_no_sign_in(phone_book, offline_swagger):
         assert set(files.values()) == {0}
     finally:
         session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")
+
+
+def test_the_open_api_ui_goes_to_the_service_it_was_made_for(phone_book, offline_swagger):
+    """Not to the one USE REST SERVICE set, where the plugin's is another."""
+    session = phone_book["session"]
+    current = lib.services.get_current_service_id(session)
+    session.run_sql("CREATE REST SERVICE /otherUi")
+    try:
+        lib.services.set_current_service_id(
+            session, lib.services.get_service(session, url_context_root="/test")["id"]
+        )
+        session.run_sql("USE REST SERVICE /otherUi")
+
+        load_content_set(open_api_ui=True, session=session)
+
+        files = file_contents(session, "/openApiUi")
+        assert b'url: "/test/open-api-catalog/"' in files["/swagger-initializer.js"][0]
+        session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")
+    finally:
+        session.run_sql("DROP REST SERVICE /otherUi")
+        if current is not None:
+            lib.services.set_current_service_id(session, current)
+
+
+def test_the_open_api_ui_resolves_its_service_as_on_service_does(
+    phone_book, offline_swagger
+):
+    """/test is the published service, mike@/test the one in development."""
+    session = phone_book["session"]
+    session.run_sql("CREATE REST SERVICE mike@/test")
+    try:
+        load_content_set(service_path="mike@/test", open_api_ui=True, session=session)
+        load_content_set(service_path="/test", open_api_ui=True, session=session)
+
+        rows = session.run_sql(
+            lib.core.metadata_sql(
+                session,
+                """SELECT se.in_development IS NOT NULL
+            FROM <metadata>.content_set cs
+                JOIN <metadata>.service se ON se.id = cs.service_id
+            WHERE cs.request_path = '/openApiUi'
+            ORDER BY 1""",
+            )
+        ).fetch_all()
+        assert [row[0] for row in rows] == [0, 1]
+
+        # A path no published service has is no service, as for ON
+        # SERVICE, even where a service in development has it.
+        session.run_sql("CREATE REST SERVICE mike@/devOnly")
+        with pytest.raises(ValueError, match="There is no REST service /devOnly"):
+            load_content_set(service_path="/devOnly", open_api_ui=True,
+                             session=session)
+        session.run_sql("DROP REST SERVICE mike@/devOnly")
+    finally:
+        session.run_sql("DROP REST CONTENT SET /openApiUi FROM SERVICE /test")
+        session.run_sql("DROP REST SERVICE mike@/test")
+
