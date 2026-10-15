@@ -35,6 +35,9 @@ which exposes the backend functions over the Model Context Protocol.
   an output log and a tab per result set. A dropdown picks which
   connection's results are shown, the output accumulates until you clear
   it, and each output row can jump to the result set it produced.
+  General Actions - a sandbox deploy, a REST Daemon's steps - are shown
+  among every connection's, a failed row offers its log, and the actions
+  are kept for the next session.
 - A result that comes from a single table with a primary key can be
   **edited in place** — change cells, add and remove rows — and
   **Preview SQL** shows exactly the statements Apply would run, with a
@@ -51,6 +54,20 @@ which exposes the backend functions over the Model Context Protocol.
   is edited later. **Deploy OpenAPI Web UI...** on a REST service serves
   its OpenAPI UI (Swagger UI, downloaded once and patched for the service)
   at `/openApiUi`, open to everyone: signing in is the UI's own Authorize.
+- **MariaDB REST Daemons**, which serve the REST services over HTTPS:
+  - **New Sandbox** can set up the MariaDB REST Service with the sandbox:
+    a REST Daemon, the `MRS` authentication app with a REST user, and a
+    published REST service, ready to try. The daemon follows the sandbox
+    as it is started, stopped and deleted.
+  - **Set Up MariaDB REST Daemon...** on a connection's context menu sets
+    one up for any server, installing `mariadb-restd` first where it is
+    missing.
+  - Every daemon serves one HTTPS certificate, signed by a local
+    certificate authority. Both dialogs offer to have the system trust it
+    once, so browsers accept every daemon's `https://localhost` address.
+  - The **REST Daemons** view lists them, running or stopped, with Start,
+    Stop, Delete, Open Log and Open in Browser. A tree row's REST URLs go
+    to the daemon of its own server.
 - **Expanding a connection opens it**, so browsing a database takes one
   click. Set `mariadb.connections.connectMode` to `explicit` to go back to
   connecting with the button on the row.
@@ -92,6 +109,7 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 | --- | --- |
 | `mariadb.defaultConnection` | The connection URI new SQL editors run on. |
 | `mariadb.connections.connectMode` | Whether expanding a connection in the **Connections** view opens it (`onOpen`, the default) or only the Connect button does (`explicit`). |
+| `mariadb.mrs.restDaemonUrl` | Where REST requests go for a server no local REST Daemon serves: the **Open ... Request Path in Web Browser** commands and the client SDK's default service URL start with it. Default `https://localhost:8443`. |
 | `mariadb.sql.ansiQuotes` | Whether `"..."` in a SQL file is an identifier or a string: as the file's connection's `sql_mode` says (`auto`, the default), always an identifier (`on`), or always a string (`off`). The identifier colouring needs `editor.semanticHighlighting.enabled`, which the built-in themes turn on. |
 
 ## Commands

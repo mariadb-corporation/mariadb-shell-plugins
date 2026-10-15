@@ -283,7 +283,7 @@
         "mariadb.mrs.restDaemonUrl": {
           "type": "string",
           "default": "https://localhost:8443",
-          "markdownDescription": "Where the MariaDB REST Daemon serves REST requests. The **Open ... Request Path in Web Browser** commands and the client SDK's default service URL start with it."
+          "markdownDescription": "Where REST requests go for a server that no local REST Daemon serves; a tree row of a server with one, as the **REST Daemons** view lists them, uses that daemon instead. The **Open ... Request Path in Web Browser** commands and the client SDK's default service URL start with it."
         }
       }
     },
