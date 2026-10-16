@@ -176,11 +176,16 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         hand, or its connection deleted since - and the shell then does
         without one, as it always did.
         """
-        for kind in config.SUPPORTED_CONNECTION_KINDS:
-            uri = config.resolve_connection_uri(_sandbox_connection_uri(port), kind)
-            if uri is not None:
-                with contextlib.suppress(Exception):
-                    return config.get_connection_password(uri, kind)
+        found = config.find_connection(
+            _sandbox_connection_uri(port), kinds=config.SUPPORTED_CONNECTION_KINDS
+        )
+        if found is None:
+            return None
+        # deploy always stores a secret, "" included, so one that cannot be
+        # read was deleted from the store since. The shell then does without
+        # a password, as for a sandbox deployed by hand.
+        with contextlib.suppress(Exception):
+            return config.get_connection_password(*found)
         return None
 
     # Sync, and with no ``ctx``: it touches no path and asks the user nothing,
@@ -425,7 +430,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             entry per REST Daemon of the sandbox, as sandbox.start has them.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
-        if password is None:
+        # The shell signals a POSIX server to stop and shuts any other down
+        # over the client protocol, as root. Only then is the secret store
+        # read: elsewhere the shell would ignore the password.
+        if password is None and os.name != "posix":
             password = _stored_root_password(port)
         # Before the server, which it would otherwise keep reconnecting to.
         # A daemon that will not stop does not keep the server running.

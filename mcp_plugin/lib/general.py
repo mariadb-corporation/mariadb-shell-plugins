@@ -130,6 +130,42 @@ SUPPORTED_FUNCTION_GROUPS = (
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
+# The groups that register NOTHING unless another group is served too, and
+# that group. Consulted by the registrar of such a group and by the server
+# instructions alike, so the two cannot disagree about which tools a client
+# gets. A group that merely leaves out SOME tools (mrs, msm, rest) is not
+# listed: it is served either way.
+FUNCTION_GROUP_REQUIREMENTS = {FUNCTION_GROUP_UTIL: FUNCTION_GROUP_DB}
+
+
+def group_requirement_met(group, function_groups) -> bool:
+    """Whether a group registers its tools next to the given groups.
+
+    Args:
+        group (str): The function group.
+        function_groups: The function groups the server serves.
+
+    Returns:
+        bool: True unless the group's :data:`FUNCTION_GROUP_REQUIREMENTS`
+        entry is not among them.
+    """
+    required = FUNCTION_GROUP_REQUIREMENTS.get(group)
+    return required is None or required in function_groups
+
+
+def served_function_groups(function_groups) -> set:
+    """Returns the groups of the given ones that register any tools.
+
+    Args:
+        function_groups: The function groups the server was asked for.
+
+    Returns:
+        set: Those of them that meet their requirement (see
+        :func:`group_requirement_met`).
+    """
+    groups = set(function_groups)
+    return {group for group in groups if group_requirement_met(group, groups)}
+
 # The groups a multi-tenant server serves, and the only ones it may. The
 # sandbox, migrator and rest groups run local server processes and long jobs
 # that write to the server's disk - resources one user would take from all the

@@ -147,7 +147,7 @@ def register_util_tools(server, function_groups=()) -> None:
     Returns:
         None
     """
-    if general.FUNCTION_GROUP_DB not in function_groups:
+    if not general.group_requirement_met(general.FUNCTION_GROUP_UTIL, function_groups):
         return
 
     import anyio.to_thread

@@ -37,34 +37,25 @@ def test_a_client_receives_the_instructions_at_initialize():
     instructions = helpers.server_instructions(["db", "sandbox"])
 
     assert instructions == server.server_instructions(["db", "sandbox"])
-    assert "db.execute_sql_script" in instructions
-    assert "sandbox.deploy" in instructions
 
 
 def test_the_instructions_rule_out_the_command_line_clients():
     """The clients an agent reaches for are named, and passwords are off limits."""
-    instructions = server.server_instructions([general.FUNCTION_GROUP_DB])
-
-    for client in ("mariadb,", "mysql,", "mariadb-shell", "mysqlsh"):
-        assert client in instructions
-    assert "Never ask the user for a database password" in instructions
-    assert "mcp setup" in instructions
-
-
-def test_the_instructions_leave_the_clients_what_no_tool_covers():
-    """A feature the tools lack is no reason to stop the agent."""
-    instructions = server.server_instructions([general.FUNCTION_GROUP_DB])
-
-    assert "fine for what no tool here covers" in instructions
-
-
-def test_the_instructions_ask_for_a_random_sandbox_password():
-    """deploy stores what it is given, an empty password included."""
     instructions = server.server_instructions(
         [general.FUNCTION_GROUP_DB, general.FUNCTION_GROUP_SANDBOX]
     )
 
-    assert "freshly generated random password" in instructions
+    for marker in (
+        "mariadb,",
+        "mysql,",
+        "mariadb-shell",
+        "mysqlsh",
+        "Never ask the user for a database password",
+        "mcp setup",
+        "fine for what no tool here covers",
+        "freshly generated random password",
+    ):
+        assert marker in instructions
 
 
 def test_the_instructions_mention_only_the_groups_served():
@@ -80,6 +71,8 @@ def test_the_instructions_mention_only_the_groups_served():
     assert "util.*" in server.server_instructions(
         [general.FUNCTION_GROUP_DB, general.FUNCTION_GROUP_UTIL]
     )
+    # util registers nothing without db.
+    assert "util." not in server.server_instructions([general.FUNCTION_GROUP_UTIL])
 
 
 def test_the_instructions_use_the_published_tool_names():

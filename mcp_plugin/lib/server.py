@@ -148,10 +148,14 @@ def server_instructions(function_groups, tool_name_separator=".") -> str:
         str: The instructions.
     """
 
+    # Not tool_registrar.published_name, which reads the separator only set
+    # once the server these instructions go into is built.
     def name(group, tool):
         return f"{group}{tool_name_separator}{tool}"
 
-    groups = set(function_groups)
+    # Only the groups that register tools are pointed at: util without db
+    # registers none (see general.FUNCTION_GROUP_REQUIREMENTS).
+    groups = general.served_function_groups(function_groups)
     lines = [
         "This server is how you work with MariaDB servers. Rules for every "
         "session:",
@@ -219,15 +223,16 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     # `mcp` dependency is not available.
     from mcp.server.mcpserver import MCPServer
 
-    instructions = server_instructions(function_groups, tool_name_separator)
-    if auth is None:
-        server = MCPServer("MariaDB MCP Server", instructions=instructions)
-    else:
+    server_class, server_kwargs = MCPServer, {}
+    if auth is not None:
         from mcp_plugin.lib.auth import scoped_server_class
 
-        server = scoped_server_class()(
-            "MariaDB MCP Server", instructions=instructions, **auth.server_kwargs()
-        )
+        server_class, server_kwargs = scoped_server_class(), auth.server_kwargs()
+    server = server_class(
+        "MariaDB MCP Server",
+        instructions=server_instructions(function_groups, tool_name_separator),
+        **server_kwargs,
+    )
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
     from mcp_plugin.lib import tool_registrar
