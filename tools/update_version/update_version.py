@@ -37,7 +37,7 @@
 # prints the inputs to publish with, and when the release already exists it
 # checks the index against the release's own SERVER_SHA256SUMS.
 #
-# Add or remove an entry in PLUGIN_TARGETS / SHELL_TARGETS below to change
+# Add or remove an entry in PLUGIN_TARGETS below to change
 # which files are updated -- each entry is a regex that must match exactly once
 # in the file, plus a template for the replacement text ("{v}" is substituted
 # with the new version string).
@@ -127,18 +127,6 @@ PLUGIN_TARGETS = [
         "file": "msm_plugin/lib/general.py",
         "pattern": re.compile(r'^VERSION = "[^"]+"$', re.MULTILINE),
         "replacement": 'VERSION = "{v}"',
-    },
-]
-
-# One entry per file that names the shell release the plugins go out with.
-# Not mcp_plugin/README.md's "ships with MariaDB Shell X and later" line: that
-# is the first shell that bundled the plugin, a fact that does not move.
-SHELL_TARGETS = [
-    {
-        # The shell the extension requires, and installs when there is none.
-        "file": "code_ext/src/shell/constants.ts",
-        "pattern": re.compile(r'^export const MINIMUM_SHELL_VERSION = "[^"]+";$', re.MULTILINE),
-        "replacement": 'export const MINIMUM_SHELL_VERSION = "{v}";',
     },
 ]
 
@@ -558,7 +546,6 @@ def main() -> int:
     print(f"New plugin version: {new_version}")
 
     plans = [plan_update(target, new_version) for target in PLUGIN_TARGETS]
-    plans += [plan_update(target, shell_version) for target in SHELL_TARGETS]
     failed = [p for p in plans if not p["ok"]]
     if failed:
         print("Refusing to write anything -- some files didn't match as expected:")
