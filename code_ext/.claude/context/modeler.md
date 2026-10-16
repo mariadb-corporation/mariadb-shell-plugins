@@ -32,12 +32,18 @@ view, showing a live schema's diagrams. Started on `wip/canvas`
   `src/modeler/diagramService.ts`), and every such query is a row in the
   connection's Actions: the spinner while it runs, then what it read or
   its error, the statement beside it, "Diagram" in the Conn column (the
-  user's wish: "log the queries in the Action tab, as Diagram").
+  user's wish: "log the queries in the Action tab, as Diagram"). The rows
+  are `mrsActionRow`'s, so a failure (the session not opening included)
+  shows as every failed action does: the run, the failed statement under
+  it. Without a `DiagramService` the tree shows no Diagrams folder.
 - **The viewer** is one panel per schema of a connection
   (`ModelerPanel.show(extensionUri, {connection, schema, diagram}, host)`),
   titled "diagram (schema)" (escaped in the page's `<title>` by
-  `buildWebviewHtml`: a diagram's name is the database's). It reads every row of the view when its page
-  is ready and opens on the diagram asked for (`load.diagram`); opening
+  `buildWebviewHtml`, which escapes every webview's title: a diagram's
+  name is the database's - the security review's one item). It starts
+  reading the view's rows as the panel opens, sends them when the page
+  is ready, and opens on the diagram asked for (`load.diagram`; the
+  viewer keeps the diagram by name); opening
   another diagram of that schema reuses it (`showDiagram`), and the
   viewer's own Diagram list retitles it (`diagramShown`). A spinner shows
   in the middle of the canvas where loading takes longer than 0.3 s.
@@ -173,7 +179,7 @@ figure sets, so the canvas knows nothing of tables or layers:
   (`FigureState` incl. `layer`; `LayerState` incl. `name`, `elevation`);
   renames of tables and columns are actions of their own, covering every
   diagram and connection of the model. Cmd+Z / Cmd+Shift+Z (Ctrl
-  elsewhere); the history is kept (`entries`, `onHistory`) for a list the
+  elsewhere), not while locked; the history is kept (`entries`, `onHistory`) for a list the
   user wants later.
 
 ## The Navigator (2026-10-15)
@@ -255,16 +261,33 @@ are dropped when Cmd goes up, on blur and when hidden.
 
 ## Known gaps / next steps
 
-- Committed and pushed as `39c889e1` on `wip/canvas` (2026-10-15); no PR
-  yet. The user looked at the rendering in a running VS Code throughout
+- **Merged as PR #53** (`a9592af2` on `main`, squashed, 2026-10-15),
+  after a `/simplify` pass (less work per frame and per move - the set
+  hears of the view only when the lift or size changed, routes only the
+  connections it moved, redraws cards once per frame; the canvas reports
+  overlays, the Navigator and the input's place only when they changed,
+  and keeps menu buttons off the Navigator itself; one z table `Z`, one
+  `HamburgerButton`, one `MenuItems`), `/code-review --fix` (mount race,
+  failed icon loads not cached, a drag or edit dropped on unmount and the
+  input closed via `onEditEnd`, undo / redo blocked while locked) and
+  `/security-review` (no finding; the title escaping as hardening).
+- The user looked at the rendering in a running VS Code throughout
   (cards, menu buttons, grid, paper, Navigator, 3D view), with the MRS
-  model from the old file preview. NOT yet tried by the user: the
+  model from the old file preview, but NOT after the review passes. NOT
+  yet tried by the user: the
   Connections view's Diagrams folder against a live schema with the view,
   the double-click, the pre-selected diagram, the Actions rows on the
   "Diagram" session, the Navigator's zoom list, layer moves with their
   tables and Option + drag.
 - A diagram row has the Diagrams folder's icon (`type-hierarchy-sub`)
   until the user designs one of its own.
+- Left from `/code-review`: the Diagrams-folder lookup runs on every
+  schema expand and tree refresh, uncached (needs a staleness rule).
+- Left from `/simplify`: a generic `CanvasView` for what the viewer does
+  that is not EER (worth it once a second figure set exists); per-item
+  groups for elevation instead of each mesh multiplying by the lift;
+  `IRect` / `IPageSettings` still imported by the canvas from
+  `src/modeler/pageSettings.ts`.
 - Nothing writes the model back; the history is not shown anywhere yet.
 - No rubber-band selection, no connection captions, no mark on a card
   that cuts content off.

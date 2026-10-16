@@ -86,22 +86,19 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-16), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
-$ git -C msm_plugin branch --show-current
-wip/vscode_syntax_highlighter
+$ git branch --show-current
+wip/canvas
 
-$ git -C msm_plugin status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mrs_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+$ git status --short   (one repository: every project's lines)
+(clean before this checkpoint's own edits)
 ```
 
-- No msm_plugin change since the 2026-10-11 checkpoint; the branch checked
-  out is the VS Code extension's `wip/vscode_syntax_highlighter`.
-- msm_plugin's open work: `ba426f4d` (deployment backup through `lib.core.run_util`) is on `wip/mcp_dump_load`, **PR #43**, and with it on PR #44. PR #41 (`wip/mrs_schema_improvements`) carries msm_plugin changes of its own (metadata 5.0.0 side).
-- The msm suite passes in the plugins CI (22); those PRs fail CI on the mcp_plugin / mrs_plugin suites only, for want of mariadb-shell #71 / #73 on the runner.
-- `wip/msm_mrs_fixes` (merged as #36) is gone locally and on origin (checked 2026-10-11).
+- This session changed nothing in msm_plugin: it worked on code_ext
+  (the schema diagram viewer, PR #53, merged 2026-10-15).
+- On `main` since then: #41, #43, #44, #45 (2026-10-13), #50, #51, #52,
+  #53 (2026-10-15) merged; the only open PR is #48 (`wip/vscode-copilot`).
+  #41, #43, #44 and #45 (2026-10-13) carried msm_plugin changes
+  (`run_util`, the metadata 5.0.0 side); nothing since.

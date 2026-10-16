@@ -119,26 +119,27 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-15):
+Checked at this checkpoint (2026-10-16):
 
 ```text
-$ git -C code_ext branch --show-current
+$ git branch --show-current
 wip/canvas
 
-$ git -C code_ext status --short
+$ git status --short   (one repository: every project's lines)
 (clean before this checkpoint's own edits)
 ```
 
-- **`wip/canvas`** (from `main` at `411b22be`, pushed, **no PR yet**):
-  `39c889e1` "code_ext: schema diagram viewer on a three.js canvas" -
-  the generic canvas (`webview/src/canvas/`), the EER figure set
-  (`webview/src/modeler/`), the Diagrams folder in the Connections view
-  and the "Diagram" session. See [`context/modeler.md`](context/modeler.md).
-  This checkpoint's context edits are not committed.
-- `main` has #44, #45, #50, #51 and #52 merged since the last checkpoint;
-  the only other open PR is **#48** (`wip/vscode-copilot`).
-- Suite: **2186 unit tests pass**, 8 skipped; type check, lint and build
-  clean (2026-10-15). The UI tests were not run this session.
+- **PR #53 is merged** (squashed as `a9592af2` on `main`, 2026-10-15, by
+  Rene): the schema diagram viewer - canvas, EER figure set, Diagrams
+  folder, "Diagram" session - after `/simplify`, `/code-review --fix` and
+  `/security-review` passes. CI: Code-Ext-CI-Verification passed. See
+  [`context/modeler.md`](context/modeler.md).
+- `wip/canvas` still holds the five pre-squash commits and is 2 commits
+  behind `origin/main` (`a3553c9a`, the REST daemon's renamed variables,
+  came after). Start new work from `main`.
+- The only open PR is **#48** (`wip/vscode-copilot`).
+- Suite: **2188 unit tests pass**, 8 skipped; type check, lint and build
+  clean. The UI tests were not run.
 
 ## Conventions
 
