@@ -2621,6 +2621,11 @@ def register_db_tools(server, function_groups=()) -> None:
         def list_connections(ctx: Context) -> list:
             """Lists the configured database connection URIs.
 
+            These are the only servers that can be reached, and their
+            passwords stay in the secret store. When the server needed is not
+            listed, ask the user to add it with `mariadb-shell -- mcp setup`;
+            never ask for its password or connect to it some other way.
+
             Returns:
                 The list of connection URIs configured via mcp.setup. Any of
                 these can be passed to db.connect.
@@ -2944,6 +2949,9 @@ def register_db_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Executes a SQL statement on an open connection.
 
+        Use this instead of running the mariadb client or mariadb-shell from a
+        shell, which would need the password on its command line.
+
         Args:
             connection_id: The UUID returned by db.connect.
             sql: The SQL statement to run. May contain ? placeholders.
@@ -3030,6 +3038,10 @@ def register_db_tools(server, function_groups=()) -> None:
         The script is split into individual statements which are executed in
         order, so several semicolon-separated statements can be run in a single
         call. Use db.execute_sql for a single parameterized statement.
+
+        Use this instead of running a script through the mariadb client or
+        mariadb-shell (`mariadb < script.sql`, `mariadb-shell --sql -f`) from a
+        shell, which would need the password on its command line.
 
         The script can be provided either inline via sql_script or read from a
         file on disk via file_path. Exactly one of the two must be given. A

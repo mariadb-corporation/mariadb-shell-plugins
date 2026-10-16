@@ -241,6 +241,18 @@ The tools' descriptions and error messages name the other tools by the same
 names. A running server keeps its names until it is restarted, and
 `mcp setup --show` reports the setting.
 
+The server also answers `initialize` with **instructions**, which clients such
+as Claude Code put in the system prompt of every session. They tell the agent
+to run SQL through `db.connect`, `db.execute_sql` and `db.execute_sql_script`,
+not through `mariadb`, `mysql`, `mariadb-shell` or `mysqlsh` run from a shell,
+and to do the same for anything else a tool covers: a client run from a shell
+needs the password on its command line or in its environment, where it lands
+in the process list, in logs and in the transcript the model provider sees.
+What no tool covers is left to the clients. They also tell the agent never to
+ask for a password, to ask the user to add a missing server with
+`mariadb-shell -- mcp setup`, and to deploy sandboxes with a random password.
+Only the groups being served are mentioned, under the published tool names.
+
 ### Database connection tools (`db`)
 
 Tools for working with the connections configured via `mcp.setup`. Sessions opened
@@ -349,6 +361,12 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.delete` | `sandbox.delete` |
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
+
+`sandbox.deploy` registers the instance as a connection, `mariadb://root@127.0.0.1:<port>`,
+that `db.connect` opens, with the root password in the secret store. Its description asks an agent for a random
+password, which it then never needs again; left out, root gets an empty one, as
+the shell's own sandbox does. `sandbox.stop` uses the stored password where the
+shutdown needs it (on Windows), so it does not have to be passed again.
 
 A sandbox can have a MariaDB REST Daemon (see [REST Daemon tools](#rest-daemon-tools-rest)).
 It follows the sandbox: `sandbox.start` starts it after the server, `sandbox.stop` and

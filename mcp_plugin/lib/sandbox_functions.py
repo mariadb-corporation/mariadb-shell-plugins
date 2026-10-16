@@ -169,6 +169,20 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """
         return f"{config.DEFAULT_CONNECTION_SCHEME}://root@127.0.0.1:{port}"
 
+    def _stored_root_password(port: int) -> Optional[str]:
+        """The root password deploy stored for a sandbox, or None.
+
+        None when the instance has no registered connection - deployed by
+        hand, or its connection deleted since - and the shell then does
+        without one, as it always did.
+        """
+        for kind in config.SUPPORTED_CONNECTION_KINDS:
+            uri = config.resolve_connection_uri(_sandbox_connection_uri(port), kind)
+            if uri is not None:
+                with contextlib.suppress(Exception):
+                    return config.get_connection_password(uri, kind)
+        return None
+
     # Sync, and with no ``ctx``: it touches no path and asks the user nothing,
     # so it needs neither the request context nor a coroutine. It reads one
     # small file that ships with the plugin.
@@ -216,9 +230,19 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         started, the root password is set and the instance is left running.
         SSL/TLS is disabled by default; pass ssl=True to enable it.
 
+        The instance is registered as a connection that db.connect opens, its
+        root password kept in the secret store. Work with it through the db.*
+        tools, never by running the mariadb client or mariadb-shell from a
+        shell.
+
         Args:
             port: The port the new instance will listen on.
-            password: Password for the root user on the new instance.
+            password: Password for the root user on the new instance. Pass a
+                freshly generated random one (16 or more letters and digits)
+                unless the user asks for a particular password; it is stored
+                with the connection, so it is never needed again - do not
+                repeat it in a command, a file or a reply. Left out, root gets
+                an empty password.
             sandbox_dir: Path where the new instance will be deployed.
                 Leave empty to use the default sandbox path.
             allow_root_from: Host pattern for a remote root account to create.
@@ -391,7 +415,9 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         Args:
             port: The port of the instance to stop.
             sandbox_dir: Path where the instance is located.
-            password: Root password (used on Windows to request the shutdown).
+            password: Leave this out: the root password stored when the
+                instance was deployed is used (on Windows, to request the
+                shutdown).
             timeout: Seconds to wait for the instance to stop. Defaults to 60.
 
         Returns:
@@ -399,6 +425,8 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             entry per REST Daemon of the sandbox, as sandbox.start has them.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
+        if password is None:
+            password = _stored_root_password(port)
         # Before the server, which it would otherwise keep reconnecting to.
         # A daemon that will not stop does not keep the server running.
         outcomes = _follow_restd(port, sandbox_dir, restd.stop)

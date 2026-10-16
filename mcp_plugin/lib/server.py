@@ -123,6 +123,78 @@ def _registrar(group):
     return getattr(module, function_name)
 
 
+def server_instructions(function_groups, tool_name_separator=".") -> str:
+    """Returns the instructions the server hands every client at initialize.
+
+    A client that honours them - Claude Code puts them in the system prompt
+    of every session the server is connected to - learns before its first
+    tool call that database work goes through these tools, not through the
+    command-line clients run from a shell. That matters for more than style:
+    a client run from a shell needs the password, on its command line or in
+    an environment variable, where it ends up in the process list, in logs,
+    and in the transcript the model provider sees. A connection opened
+    through db.connect reads its password from the secret store, so the
+    model never sees one.
+
+    Only the groups being served are mentioned, under the names the tools
+    are published with.
+
+    Args:
+        function_groups (list): The function groups the server serves.
+        tool_name_separator (str): What separates a tool's group from its
+            name in the published tool names.
+
+    Returns:
+        str: The instructions.
+    """
+
+    def name(group, tool):
+        return f"{group}{tool_name_separator}{tool}"
+
+    groups = set(function_groups)
+    lines = [
+        "This server is how you work with MariaDB servers. Rules for every "
+        "session:",
+    ]
+    if general.FUNCTION_GROUP_DB in groups:
+        lines.append(
+            f"- Run SQL through {name('db', 'connect')}, "
+            f"{name('db', 'execute_sql')} and "
+            f"{name('db', 'execute_sql_script')}, not by running mariadb, "
+            "mysql, mariadb-shell or mysqlsh from a shell: a client run "
+            "from a shell needs the password on its command line or in its "
+            "environment, where it leaks into the process list, logs and "
+            "this conversation. The same goes for anything else one of "
+            "these tools does. A command-line client is fine for what no "
+            "tool here covers."
+        )
+        lines.append(
+            "- Never ask the user for a database password, and never put one "
+            "in a command, a file or a reply. Only the connections "
+            f"{name('db', 'list_connections')} lists can be opened; their "
+            "passwords stay in the operating system's secret store. If the "
+            "server you need is not listed, ask the user to add it "
+            "themselves with `mariadb-shell -- mcp setup` (interactive) or "
+            "its command-line options, then list the connections again."
+        )
+    if general.FUNCTION_GROUP_SANDBOX in groups:
+        lines.append(
+            f"- For a local test server use {name('sandbox', 'deploy')} "
+            "with a freshly generated random password. It is stored with "
+            "the connection deploy registers, which opens like any other, so "
+            f"you never need it again. Clean up with {name('sandbox', 'stop')} "
+            f"and {name('sandbox', 'delete')}."
+        )
+    if general.FUNCTION_GROUP_UTIL in groups:
+        lines.append(
+            "- Dump, load and copy data between servers with the "
+            f"{name('util', '*')} tools, not by piping mariadb-dump into "
+            "another client."
+        )
+
+    return "\n".join(lines)
+
+
 def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     """Builds and configures the MariaDB MCP server.
 
@@ -147,12 +219,15 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     # `mcp` dependency is not available.
     from mcp.server.mcpserver import MCPServer
 
+    instructions = server_instructions(function_groups, tool_name_separator)
     if auth is None:
-        server = MCPServer("MariaDB MCP Server")
+        server = MCPServer("MariaDB MCP Server", instructions=instructions)
     else:
         from mcp_plugin.lib.auth import scoped_server_class
 
-        server = scoped_server_class()("MariaDB MCP Server", **auth.server_kwargs())
+        server = scoped_server_class()(
+            "MariaDB MCP Server", instructions=instructions, **auth.server_kwargs()
+        )
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
     from mcp_plugin.lib import tool_registrar
