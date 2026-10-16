@@ -325,19 +325,21 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-16), repo `mariadb-shell-plugins` (mrs_plugin is a subfolder):
+Checked at this checkpoint (2026-10-12), repo `mariadb-shell-plugins` (mrs_plugin is a subfolder):
 
 ```text
-$ git branch --show-current
-wip/canvas
+$ git -C mrs_plugin branch --show-current
+wip/vscode_syntax_highlighter
 
-$ git status --short   (one repository: every project's lines)
-(clean before this checkpoint's own edits)
+$ git -C mrs_plugin status --short   (one repository: every project's lines)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
-- This session changed nothing in mrs_plugin: it worked on code_ext
-  (the schema diagram viewer, PR #53, merged 2026-10-15).
-- On `main` since then: #41, #43, #44, #45 (2026-10-13), #50, #51, #52,
-  #53 (2026-10-15) merged; the only open PR is #48 (`wip/vscode-copilot`).
-  #52 (OpenAPI Web UI on REST services) touched mrs_plugin; its context
-  files were not updated for it here.
+- No mrs_plugin change since the 2026-10-11 checkpoint. Its open work is
+  PR #41 (`wip/mrs_schema_improvements`), merged into #44
+  (`wip/mrs_code_ext`) and from there into the extension's
+  `wip/vscode_syntax_highlighter`, which is the branch checked out.
