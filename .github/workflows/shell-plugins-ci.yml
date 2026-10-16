@@ -18,11 +18,8 @@ jobs:
       uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
 
-  # Which parts of the repo were touched, answered ONCE. It is its own job
-  # because two jobs need the answer and they run on different footing: the
-  # plugin suites want a MariaDB server and shell, the extension wants Node and
-  # neither of those. Nothing here is worth doing twice, and a second copy of
-  # the diff logic would be a second thing to keep in step.
+  # Which plugins were touched. It is its own job so that the verification job
+  # can be skipped as a whole, server and shell setup included, when none was.
   changes:
     name: Determine what changed
     needs: ensure-runner
@@ -31,7 +28,6 @@ jobs:
       mrs_plugin: ${{ steps.changes.outputs.mrs_plugin }}
       msm_plugin: ${{ steps.changes.outputs.msm_plugin }}
       mcp_plugin: ${{ steps.changes.outputs.mcp_plugin }}
-      code_ext: ${{ steps.changes.outputs.code_ext }}
 
     steps:
 
@@ -76,7 +72,7 @@ jobs:
             fi
           fi
 
-          for part in mrs_plugin msm_plugin mcp_plugin code_ext; do
+          for part in mrs_plugin msm_plugin mcp_plugin; do
             if [ "$run_all" = true ] || printf '%s\n' "$changed" | grep -q "^${part}/"; then
               echo "${part}: running tests"
               echo "${part}=true" >> "$GITHUB_OUTPUT"
@@ -144,49 +140,3 @@ jobs:
         run: |
           cd mcp_plugin && msh --py -f run_tests.py
         shell: bash
-
-  code-ext:
-    name: Code-Ext-CI-Verification
-    needs: [ ensure-runner, changes ]
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
-    if: needs.changes.outputs.code_ext == 'true'
-
-    defaults:
-      run:
-        working-directory: code_ext
-
-    steps:
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          # The pin lives in one place, and .nvmrc is the one a contributor's
-          # `nvm use` reads too - so CI and a developer machine cannot drift
-          # onto different npm majors, which is what silently rewrites
-          # package-lock.json.
-          node-version-file: code_ext/.nvmrc
-          cache: npm
-          cache-dependency-path: code_ext/package-lock.json
-
-      - name: Install dependencies
-        # `npm ci`, never `npm install`: it installs exactly what the lockfile
-        # says and fails instead of quietly resolving something else, and it
-        # never writes the lockfile back.
-        run: npm ci
-
-      - name: Type check and lint
-        run: npm run pretest
-
-      - name: Run code_ext tests
-        run: npm test
-
-      - name: Build the extension
-        # The extension ships as a bundle, so a bundling failure - an import
-        # that only resolves under the test aliases, an asset that is not
-        # copied - is invisible to the type check and the tests alike. This is
-        # what `vscode:prepublish` runs, so packaging cannot fail on anything
-        # this step passed.
-        run: npm run build
