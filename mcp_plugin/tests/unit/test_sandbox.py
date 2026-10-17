@@ -478,19 +478,42 @@ def test_deploy_without_gui_stores_in_the_shared_list(monkeypatch):
 
 @pytest.mark.parametrize(
     "given, expected",
-    [({}, ""), ({"password": "chosen"}, "chosen")],
-    ids=["left-out", "chosen"],
+    [({"password": ""}, ""), ({"password": "chosen"}, "chosen")],
+    ids=["empty", "chosen"],
 )
 def test_deploy_stores_the_password_it_sets(monkeypatch, given, expected):
-    """Left out, root's password is the shell's default - empty - and so is the stored one."""
+    """The stored password is the one root was given, an empty one included."""
     calls, stored = [], []
     tools = _registered(monkeypatch, False, calls, stored)
 
     asyncio.run(tools["sandbox.deploy"](None, 3399, **given))
 
-    # Left out, the option is not passed at all, not passed as None.
     assert {k: v for k, v in calls[0][2].items() if k == "password"} == given
     assert [password for _, _, _, password in stored] == [expected]
+
+
+def test_deploy_without_a_password_stores_nothing(monkeypatch):
+    """The shell refuses a deploy without a password; no connection is left behind."""
+    calls, stored = [], []
+    tools = _registered(monkeypatch, False, calls, stored)
+
+    def refuse(port, options=None):
+        calls.append(("deploy", port, options))
+        if "password" not in options:
+            raise RuntimeError("Missing root password for the deployed instance.")
+
+    import mysqlsh.globals
+
+    monkeypatch.setattr(mysqlsh.globals.sandbox, "deploy", refuse)
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Missing root password"):
+        asyncio.run(tools["sandbox.deploy"](None, 3399))
+
+    # Left out, the option is not passed at all, not passed as None.
+    assert "password" not in calls[0][2]
+    assert stored == []
 
 
 def test_stop_uses_the_password_deploy_stored(monkeypatch):
@@ -559,6 +582,25 @@ def test_stop_with_a_secret_gone_from_the_store_passes_none(monkeypatch):
 
     asyncio.run(stop(None, 3399))
 
+    assert "password" not in calls[0][2]
+
+
+def test_stop_with_a_failing_lookup_passes_none(monkeypatch):
+    """The same connection stored under two spellings must not break stop."""
+    import mysqlsh
+
+    monkeypatch.setattr(os, "name", "nt")
+    calls = []
+    stop = _registered(monkeypatch, False, calls, [])["sandbox.stop"]
+
+    def ambiguous(uri, kinds=None, mcp_user_id=None):
+        raise mysqlsh.Error(f"'{uri}' names more than one configured connection")
+
+    monkeypatch.setattr(sandbox_functions.config, "find_connection", ambiguous)
+
+    asyncio.run(stop(None, 3399))
+
+    assert [name for name, _, _ in calls] == ["stop"]
     assert "password" not in calls[0][2]
 
 

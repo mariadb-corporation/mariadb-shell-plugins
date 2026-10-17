@@ -249,9 +249,13 @@ and to do the same for anything else a tool covers: a client run from a shell
 needs the password on its command line or in its environment, where it lands
 in the process list, in logs and in the transcript the model provider sees.
 What no tool covers is left to the clients. They also tell the agent never to
-ask for a password, to ask the user to add a missing server with
-`mariadb-shell -- mcp setup`, and to deploy sandboxes with a random password.
-Only the groups being served are mentioned, under the published tool names.
+ask for a password and to deploy sandboxes with a random password. For a
+missing server, a server that does not authenticate has the agent ask the user
+to add it with `mariadb-shell -- mcp setup`; a multi-tenant or OAuth server,
+whose connections come from a sign-in or from its administrator, has the agent
+ask the user to sign in with that server's account or have the administrator
+add it. Only the groups being served are mentioned, under the published tool
+names, and a server whose groups register no tools sends no instructions.
 
 ### Database connection tools (`db`)
 
@@ -364,8 +368,10 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 
 `sandbox.deploy` registers the instance as a connection, `mariadb://root@127.0.0.1:<port>`,
 that `db.connect` opens, with the root password in the secret store. Its description asks an agent for a random
-password, which it then never needs again; left out, root gets an empty one, as
-the shell's own sandbox does. `sandbox.stop` uses the stored password where the
+password, which it then never needs again. The shell refuses a deploy without a
+password. An empty string is accepted and gives root no password - which, with the
+default `allow_root_from` of `%`, opens root to any host that can reach the port - so
+the description tells the agent to pass one only when the user asks for it. `sandbox.stop` uses the stored password where the
 shutdown needs it (on Windows), so it does not have to be passed again.
 
 A sandbox can have a MariaDB REST Daemon (see [REST Daemon tools](#rest-daemon-tools-rest)).

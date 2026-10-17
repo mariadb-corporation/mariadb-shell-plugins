@@ -2623,8 +2623,9 @@ def register_db_tools(server, function_groups=()) -> None:
 
             These are the only servers that can be reached, and their
             passwords stay in the secret store. When the server needed is not
-            listed, ask the user to add it with `mariadb-shell -- mcp setup`;
-            never ask for its password or connect to it some other way.
+            listed, ask the user to have it added to the connections this MCP
+            server has configured for them; never ask for its password or
+            connect to it some other way.
 
             Returns:
                 The list of connection URIs configured via mcp.setup. Any of

@@ -116,9 +116,17 @@ def tool_group(tool_name) -> str:
     return re.split(r"[._-]", str(tool_name), maxsplit=1)[0]
 
 
-def published_name(tool_name) -> str:
-    """Returns the name a tool is published under."""
-    return str(tool_name).replace(".", _separator, 1)
+def published_name(tool_name, separator=None) -> str:
+    """Returns the name a tool is published under.
+
+    Args:
+        tool_name: The tool's name, as group.name.
+        separator (str): The separator to publish it with, or None for the
+            one the server being built uses (see use_tool_name_separator).
+    """
+    return str(tool_name).replace(
+        ".", _separator if separator is None else separator, 1
+    )
 
 
 def translate_tool_names(text):

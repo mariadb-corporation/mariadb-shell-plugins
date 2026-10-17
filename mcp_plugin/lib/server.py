@@ -123,7 +123,9 @@ def _registrar(group):
     return getattr(module, function_name)
 
 
-def server_instructions(function_groups, tool_name_separator=".") -> str:
+def server_instructions(
+    function_groups, tool_name_separator=".", authenticated=False
+) -> str:
     """Returns the instructions the server hands every client at initialize.
 
     A client that honours them - Claude Code puts them in the system prompt
@@ -143,25 +145,27 @@ def server_instructions(function_groups, tool_name_separator=".") -> str:
         function_groups (list): The function groups the server serves.
         tool_name_separator (str): What separates a tool's group from its
             name in the published tool names.
+        authenticated (bool): Whether the server authenticates its callers.
+            Their connections then come from their sign-in or from the
+            administrator, not from a setup they run themselves.
 
     Returns:
-        str: The instructions.
+        str: The instructions, or an empty string when no rule applies.
     """
+    from mcp_plugin.lib.tool_registrar import published_name
 
-    # Not tool_registrar.published_name, which reads the separator only set
-    # once the server these instructions go into is built.
+    # The separator is passed, not left to published_name: the one it falls
+    # back to is only set once the server these instructions go into is built.
     def name(group, tool):
-        return f"{group}{tool_name_separator}{tool}"
+        return published_name(f"{group}.{tool}", tool_name_separator)
 
     # Only the groups that register tools are pointed at: util without db
     # registers none (see general.FUNCTION_GROUP_REQUIREMENTS).
     groups = general.served_function_groups(function_groups)
-    lines = [
-        "This server is how you work with MariaDB servers. Rules for every "
-        "session:",
-    ]
-    if general.FUNCTION_GROUP_DB in groups:
-        lines.append(
+    serves_db = general.FUNCTION_GROUP_DB in groups
+    rules = []
+    if serves_db:
+        rules.append(
             f"- Run SQL through {name('db', 'connect')}, "
             f"{name('db', 'execute_sql')} and "
             f"{name('db', 'execute_sql_script')}, not by running mariadb, "
@@ -172,31 +176,58 @@ def server_instructions(function_groups, tool_name_separator=".") -> str:
             "these tools does. A command-line client is fine for what no "
             "tool here covers."
         )
-        lines.append(
+        if authenticated:
+            missing_server = (
+                "If the server you need is not listed, it is not one this "
+                "user can use here: their connections come from signing in "
+                "or from the administrator of this MCP server, so ask them "
+                "to sign in with that server's account or to have the "
+                "administrator add it, then list the connections again."
+            )
+        else:
+            missing_server = (
+                "If the server you need is not listed, ask the user to add "
+                "it themselves with `mariadb-shell -- mcp setup` "
+                "(interactive) or its command-line options, then list the "
+                "connections again."
+            )
+        rules.append(
             "- Never ask the user for a database password, and never put one "
             "in a command, a file or a reply. Only the connections "
             f"{name('db', 'list_connections')} lists can be opened; their "
-            "passwords stay in the operating system's secret store. If the "
-            "server you need is not listed, ask the user to add it "
-            "themselves with `mariadb-shell -- mcp setup` (interactive) or "
-            "its command-line options, then list the connections again."
+            "passwords stay in the secret store. " + missing_server
         )
     if general.FUNCTION_GROUP_SANDBOX in groups:
-        lines.append(
+        if serves_db:
+            stored = (
+                " It is stored with the connection deploy registers, which "
+                f"{name('db', 'connect')} opens like any other, so you never "
+                "need it again."
+            )
+        else:
+            stored = ""
+        rules.append(
             f"- For a local test server use {name('sandbox', 'deploy')} "
-            "with a freshly generated random password. It is stored with "
-            "the connection deploy registers, which opens like any other, so "
-            f"you never need it again. Clean up with {name('sandbox', 'stop')} "
-            f"and {name('sandbox', 'delete')}."
+            f"with a freshly generated random password.{stored} Clean up "
+            f"with {name('sandbox', 'stop')} and {name('sandbox', 'delete')}."
         )
     if general.FUNCTION_GROUP_UTIL in groups:
-        lines.append(
+        rules.append(
             "- Dump, load and copy data between servers with the "
             f"{name('util', '*')} tools, not by piping mariadb-dump into "
             "another client."
         )
 
-    return "\n".join(lines)
+    if not rules:
+        return ""
+
+    return "\n".join(
+        [
+            "This server is how you work with MariaDB servers. Rules for "
+            "every session:",
+            *rules,
+        ]
+    )
 
 
 def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
@@ -230,7 +261,11 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
         server_class, server_kwargs = scoped_server_class(), auth.server_kwargs()
     server = server_class(
         "MariaDB MCP Server",
-        instructions=server_instructions(function_groups, tool_name_separator),
+        # None, not "", when no rule applies: no instructions are sent then.
+        instructions=server_instructions(
+            function_groups, tool_name_separator, authenticated=auth is not None
+        )
+        or None,
         **server_kwargs,
     )
     # The full list of enabled groups is handed to every registrar, so a group

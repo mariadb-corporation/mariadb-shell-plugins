@@ -84,3 +84,41 @@ def test_the_instructions_use_the_published_tool_names():
     assert "db_execute_sql_script" in instructions
     assert "sandbox_deploy" in instructions
     assert "db.connect" not in instructions
+
+
+def test_a_missing_server_is_added_the_way_the_mode_provides():
+    """mcp setup is the user's own only on a server that authenticates no one."""
+    local = server.server_instructions([general.FUNCTION_GROUP_DB])
+    shared = server.server_instructions(
+        [general.FUNCTION_GROUP_DB], authenticated=True
+    )
+
+    assert "mcp setup" in local
+    # Multi-tenant and OAuth: the sign-in or the administrator provides them.
+    assert "mcp setup" not in shared
+    assert "sign in" in shared
+    assert "administrator" in shared
+
+
+def test_a_sandbox_without_db_promises_no_connection():
+    """--functionGroups=sandbox: no db tool opens the deployed instance."""
+    sandbox_only = server.server_instructions([general.FUNCTION_GROUP_SANDBOX])
+    with_db = server.server_instructions(
+        [general.FUNCTION_GROUP_DB, general.FUNCTION_GROUP_SANDBOX]
+    )
+
+    assert "sandbox.deploy" in sandbox_only
+    assert "never need it again" not in sandbox_only
+    assert "db." not in sandbox_only
+    assert "db.connect opens like any other" in with_db
+
+
+def test_no_instructions_when_no_tools_are_served():
+    """--functionGroups=util registers nothing, so there are no rules to send."""
+    assert server.server_instructions([general.FUNCTION_GROUP_UTIL]) == ""
+    assert server.server_instructions([]) == ""
+
+
+def test_a_server_without_tools_sends_no_instructions():
+    """Over a real stdio transport: an empty text is not sent at all."""
+    assert not helpers.server_instructions([general.FUNCTION_GROUP_UTIL])

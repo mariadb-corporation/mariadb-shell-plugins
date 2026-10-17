@@ -174,18 +174,20 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         None when the instance has no registered connection - deployed by
         hand, or its connection deleted since - and the shell then does
-        without one, as it always did.
+        without one, as it always did. Also None when the lookup fails, for
+        example because the connection is configured twice under two
+        spellings: the password is a convenience, never a reason to fail.
         """
-        found = config.find_connection(
-            _sandbox_connection_uri(port), kinds=config.SUPPORTED_CONNECTION_KINDS
-        )
-        if found is None:
-            return None
         # deploy always stores a secret, "" included, so one that cannot be
         # read was deleted from the store since. The shell then does without
         # a password, as for a sandbox deployed by hand.
         with contextlib.suppress(Exception):
-            return config.get_connection_password(*found)
+            found = config.find_connection(
+                _sandbox_connection_uri(port),
+                kinds=config.SUPPORTED_CONNECTION_KINDS,
+            )
+            if found is not None:
+                return config.get_connection_password(*found)
         return None
 
     # Sync, and with no ``ctx``: it touches no path and asks the user nothing,
@@ -246,8 +248,11 @@ def register_sandbox_tools(server, function_groups=()) -> None:
                 freshly generated random one (16 or more letters and digits)
                 unless the user asks for a particular password; it is stored
                 with the connection, so it is never needed again - do not
-                repeat it in a command, a file or a reply. Left out, root gets
-                an empty password.
+                repeat it in a command, a file or a reply. Required: the shell
+                refuses a deploy without one. Never pass an empty string unless
+                the user explicitly asks for it: root then has no password,
+                and with the default allow_root_from of '%' anyone who can
+                reach the port logs in as root.
             sandbox_dir: Path where the new instance will be deployed.
                 Leave empty to use the default sandbox path.
             allow_root_from: Host pattern for a remote root account to create.
@@ -313,16 +318,16 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         # Register the instance as a configured connection so it shows up in
         # db.list_connections and can be opened with db.connect. The root
-        # password provided to deploy is stored (empty string when none was
-        # given). It is filed in the Sandboxes folder, which only the VS Code
-        # extension shows; to an agent the folder is invisible.
+        # password provided to deploy is stored with it. It is filed in the
+        # Sandboxes folder, which only the VS Code extension shows; to an agent
+        # the folder is invisible.
         #
         # Into the shared MCP list unless the extension asked otherwise: an
         # agent deploying a sandbox has to be able to open it, and without
         # --gui there is no other list to put it in.
         config.store_connection(
             _sandbox_connection_uri(port),
-            password if password is not None else "",
+            password,
             kind=(
                 config.CONNECTION_KIND_MCP
                 if mcp_access
