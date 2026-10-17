@@ -34,7 +34,7 @@ import asyncio
 
 import pytest
 
-from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
+from mcp_plugin.lib.tool_registrar import published_name, tool_error, tool_registrar
 
 
 class _FakeServer:
@@ -232,3 +232,9 @@ def test_registration_arguments_and_the_tool_identity_are_forwarded():
     assert server.calls == [((), {"name": "db.documented", "title": "Documented"})]
     assert wrapper.__name__ == "documented_tool"
     assert wrapper.__doc__ == "A one-line description the SDK would publish."
+
+
+def test_published_name_takes_an_explicit_separator():
+    """Without one it falls back to the separator of the server being built."""
+    assert published_name("db.connect", "_") == "db_connect"
+    assert published_name("db.connect", ".") == "db.connect"

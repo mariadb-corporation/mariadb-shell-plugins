@@ -341,7 +341,15 @@ def test_list_instances_by_port_without_an_instance_is_empty(monkeypatch, tmp_pa
     assert asked == []
 
 
-def _registered(monkeypatch, gui, sandbox_calls, stored, deleted=None, stored_under=None):
+def _registered(
+    monkeypatch,
+    gui,
+    sandbox_calls,
+    stored,
+    deleted=None,
+    stored_under=None,
+    stored_password=None,
+):
     """Registers the sandbox tools in or out of GUI mode, against stand-ins.
 
     Args:
@@ -349,15 +357,23 @@ def _registered(monkeypatch, gui, sandbox_calls, stored, deleted=None, stored_un
         gui (bool): Whether the server is in GUI mode.
         sandbox_calls (list): Every call to the shell's sandbox, as
             ``(name, port, options)``.
-        stored (list): Every stored connection, as ``(uri, kind, path)``.
+        stored (list): Every stored connection, as
+            ``(uri, kind, path, password)``.
         deleted (list): Every deleted connection, as ``(uri, kind)``.
         stored_under (dict): kind -> the URI configured in that list, for
-            resolve_connection_uri to answer with.
+            resolve_connection_uri and find_connection to answer with.
+        stored_password: What the secret store holds for it, or an exception
+            for a secret it cannot read.
 
     Returns:
         The registered tools, by name.
     """
     import mysqlsh.globals
+
+    def read_secret(uri, kind=None):
+        if isinstance(stored_password, Exception):
+            raise stored_password
+        return stored_password
 
     def recorder(name):
         return lambda port, options=None: sandbox_calls.append((name, port, options))
@@ -365,13 +381,19 @@ def _registered(monkeypatch, gui, sandbox_calls, stored, deleted=None, stored_un
     monkeypatch.setattr(
         mysqlsh.globals,
         "sandbox",
-        SimpleNamespace(deploy=recorder("deploy"), delete=recorder("delete")),
+        SimpleNamespace(
+            deploy=recorder("deploy"),
+            delete=recorder("delete"),
+            stop=recorder("stop"),
+        ),
         raising=False,
     )
     monkeypatch.setattr(
         sandbox_functions.config,
         "store_connection",
-        lambda uri, password, kind=None, path=None: stored.append((uri, kind, path)),
+        lambda uri, password, kind=None, path=None: stored.append(
+            (uri, kind, path, password)
+        ),
     )
     monkeypatch.setattr(
         sandbox_functions.config,
@@ -384,6 +406,26 @@ def _registered(monkeypatch, gui, sandbox_calls, stored, deleted=None, stored_un
         lambda uri, kind=None: (deleted if deleted is not None else []).append(
             (uri, kind)
         ),
+    )
+    monkeypatch.setattr(
+        sandbox_functions.config,
+        "find_connection",
+        lambda uri, kinds=None, mcp_user_id=None: next(
+            (
+                ((stored_under or {})[kind], kind)
+                for kind in kinds
+                if kind in (stored_under or {})
+            ),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        sandbox_functions.config,
+        "get_connection_password",
+        read_secret,
+    )
+    monkeypatch.setattr(
+        sandbox_functions.restd, "sandbox_deployment_dirs", lambda base, port: []
     )
     monkeypatch.setattr(sandbox_functions.general, "is_gui_mode", lambda: gui)
 
@@ -415,11 +457,11 @@ def test_deploy_stores_the_connection_in_the_list_asked_for(monkeypatch):
     asyncio.run(tools["sandbox.deploy"](None, 3399, password="pw"))
     asyncio.run(tools["sandbox.deploy"](None, 3398, password="pw", mcp_access=False))
 
-    assert [(uri, kind) for uri, kind, _ in stored] == [
+    assert [(uri, kind) for uri, kind, _, _ in stored] == [
         ("mariadb://root@127.0.0.1:3399", config.CONNECTION_KIND_MCP),
         ("mariadb://root@127.0.0.1:3398", config.CONNECTION_KIND_GUI),
     ]
-    assert {path for _, _, path in stored} == {config.SANDBOX_CONNECTION_PATH}
+    assert {path for _, _, path, _ in stored} == {config.SANDBOX_CONNECTION_PATH}
     # Not an option of the shell's own deploy.
     assert all("mcpAccess" not in options for _, _, options in calls)
 
@@ -432,6 +474,134 @@ def test_deploy_without_gui_stores_in_the_shared_list(monkeypatch):
     asyncio.run(tools["sandbox.deploy"](None, 3399, password="pw"))
 
     assert stored[0][1] == config.CONNECTION_KIND_MCP
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [({"password": ""}, ""), ({"password": "chosen"}, "chosen")],
+    ids=["empty", "chosen"],
+)
+def test_deploy_stores_the_password_it_sets(monkeypatch, given, expected):
+    """The stored password is the one root was given, an empty one included."""
+    calls, stored = [], []
+    tools = _registered(monkeypatch, False, calls, stored)
+
+    asyncio.run(tools["sandbox.deploy"](None, 3399, **given))
+
+    assert {k: v for k, v in calls[0][2].items() if k == "password"} == given
+    assert [password for _, _, _, password in stored] == [expected]
+
+
+def test_deploy_without_a_password_stores_nothing(monkeypatch):
+    """The shell refuses a deploy without a password; no connection is left behind."""
+    calls, stored = [], []
+    tools = _registered(monkeypatch, False, calls, stored)
+
+    def refuse(port, options=None):
+        calls.append(("deploy", port, options))
+        if "password" not in options:
+            raise RuntimeError("Missing root password for the deployed instance.")
+
+    import mysqlsh.globals
+
+    monkeypatch.setattr(mysqlsh.globals.sandbox, "deploy", refuse)
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Missing root password"):
+        asyncio.run(tools["sandbox.deploy"](None, 3399))
+
+    # Left out, the option is not passed at all, not passed as None.
+    assert "password" not in calls[0][2]
+    assert stored == []
+
+
+def test_stop_uses_the_password_deploy_stored(monkeypatch):
+    """Windows asks for the shutdown with root's password; the caller has none."""
+    monkeypatch.setattr(os, "name", "nt")
+    calls = []
+    stop = _registered(
+        monkeypatch,
+        False,
+        calls,
+        [],
+        stored_under={config.CONNECTION_KIND_MCP: "mariadb://root@127.0.0.1:3399"},
+        stored_password="from-the-store",
+    )["sandbox.stop"]
+
+    asyncio.run(stop(None, 3399))
+    asyncio.run(stop(None, 3399, password="given"))
+
+    assert [options["password"] for _, _, options in calls] == [
+        "from-the-store",
+        "given",
+    ]
+
+
+def test_stop_off_windows_does_not_read_the_store(monkeypatch):
+    """Elsewhere the shell ignores the password, so none is looked up."""
+    monkeypatch.setattr(os, "name", "posix")
+    calls = []
+    stop = _registered(
+        monkeypatch,
+        False,
+        calls,
+        [],
+        stored_under={config.CONNECTION_KIND_MCP: "mariadb://root@127.0.0.1:3399"},
+        stored_password="from-the-store",
+    )["sandbox.stop"]
+
+    asyncio.run(stop(None, 3399))
+
+    assert "password" not in calls[0][2]
+
+
+def test_stop_without_a_stored_password_passes_none(monkeypatch):
+    """A sandbox deployed by hand has no connection; the shell does without."""
+    monkeypatch.setattr(os, "name", "nt")
+    calls = []
+    stop = _registered(monkeypatch, False, calls, [])["sandbox.stop"]
+
+    asyncio.run(stop(None, 3399))
+
+    assert "password" not in calls[0][2]
+
+
+def test_stop_with_a_secret_gone_from_the_store_passes_none(monkeypatch):
+    """The connection is registered but its secret was deleted since."""
+    monkeypatch.setattr(os, "name", "nt")
+    calls = []
+    stop = _registered(
+        monkeypatch,
+        False,
+        calls,
+        [],
+        stored_under={config.CONNECTION_KIND_MCP: "mariadb://root@127.0.0.1:3399"},
+        stored_password=RuntimeError("Could not find secret"),
+    )["sandbox.stop"]
+
+    asyncio.run(stop(None, 3399))
+
+    assert "password" not in calls[0][2]
+
+
+def test_stop_with_a_failing_lookup_passes_none(monkeypatch):
+    """The same connection stored under two spellings must not break stop."""
+    import mysqlsh
+
+    monkeypatch.setattr(os, "name", "nt")
+    calls = []
+    stop = _registered(monkeypatch, False, calls, [])["sandbox.stop"]
+
+    def ambiguous(uri, kinds=None, mcp_user_id=None):
+        raise mysqlsh.Error(f"'{uri}' names more than one configured connection")
+
+    monkeypatch.setattr(sandbox_functions.config, "find_connection", ambiguous)
+
+    asyncio.run(stop(None, 3399))
+
+    assert [name for name, _, _ in calls] == ["stop"]
+    assert "password" not in calls[0][2]
 
 
 def test_delete_removes_the_connection_from_either_list(monkeypatch):

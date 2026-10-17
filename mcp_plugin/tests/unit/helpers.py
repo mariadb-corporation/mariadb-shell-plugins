@@ -229,6 +229,32 @@ def list_tools(function_groups, timeout=None, gui=False):
     return {tool.name: tool for tool in tools}
 
 
+async def _ainstructions(function_groups):
+    """The instructions a server answers initialize with."""
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client
+
+    params = _stdio_server_params(function_groups, False)
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            result = await session.initialize()
+
+            return result.instructions
+
+
+def server_instructions(function_groups):
+    """Returns the instructions a server sends its clients over stdio.
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+
+    Returns:
+        The instructions, or None when the server sends none.
+    """
+    return asyncio.run(_ainstructions(function_groups))
+
+
 def list_tool_names(function_groups, timeout=None, gui=False):
     """Returns the names of the tools a server advertises over stdio.
 
