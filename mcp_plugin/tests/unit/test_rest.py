@@ -59,15 +59,6 @@ _SESSION_TOOLS = {
 }
 
 
-def _write(directory, relative_path, text):
-    path = os.path.join(directory, *relative_path.split("/"))
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-
-    return path
-
-
 def test_the_session_tools_need_the_db_group():
     """Without db.connect there is no session, so they are left out."""
     alone = set(helpers.list_tool_names(["rest"]))
@@ -98,8 +89,8 @@ def test_version_and_sdk_base_classes():
 
 
 def test_mrs_scripts_are_found_in_a_folder(allowed_temp_dir):
-    _write(allowed_temp_dir, "src/hello.mts", _MRS_SCRIPT)
-    _write(allowed_temp_dir, "static/index.html", "<html></html>")
+    helpers.write_file(allowed_temp_dir, "src/hello.mts", _MRS_SCRIPT)
+    helpers.write_file(allowed_temp_dir, "static/index.html", "<html></html>")
 
     language = helpers.tool_payload(
         helpers.call_tool(
@@ -240,9 +231,9 @@ async def _service_flow(uri, directory):
 
             # A directory uploaded as a content set, its MRS script registered.
             web = os.path.join(directory, "web")
-            _write(web, "src/hello.mts", _MRS_SCRIPT)
-            _write(web, "static/index.html", "<html></html>")
-            _write(web, "dist/hello.mjs", "export class Hello {}")
+            helpers.write_file(web, "src/hello.mts", _MRS_SCRIPT)
+            helpers.write_file(web, "static/index.html", "<html></html>")
+            helpers.write_file(web, "dist/hello.mjs", "export class Hello {}")
             loaded = await rest(
                 "rest.load_content_set",
                 directory=web,
