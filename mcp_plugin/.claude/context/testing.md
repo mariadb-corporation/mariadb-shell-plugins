@@ -115,7 +115,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Files that matter
 
-- run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home
+- run_tests.py -> symlinks mcp_plugin + msm_plugin + rest_plugin into a temp config home
   (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
   requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
   requirements.txt is what makes the `mcp < 3.0.0` pin actually bind), then runs pytest.
@@ -249,8 +249,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.
 
 - **A shell with the BUILT-IN `mrs` module** (2026-10-08): it registers the `MRS` SQL
-  handler itself. An mrs_plugin that still registers one fails to load (`An SQL Handler
-  named 'MRS' already exists`); the current mrs_plugin no longer does, so no option is
+  handler itself. An rest_plugin that still registers one fails to load (`An SQL Handler
+  named 'MRS' already exists`); the current rest_plugin no longer does, so no option is
   needed (the shell's `--disable-modules=mrs` workaround was removed again).
   `run_tests.py -M/--shell-options` (default: `MARIADB_SHELL_OPTIONS`) passes options to
   the pip/pytest shells and exports `MARIADB_SHELL_OPTIONS`; `helpers.shell_options()` /

@@ -13,198 +13,38 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""MCP tools for the MariaDB REST Daemon (mariadb-restd).
+"""MCP tools wrapping the MariaDB REST Service (``rest``) plugin.
 
-The daemon serves the REST services defined in a server's REST metadata.
-``rest.configure_restd`` sets one up for a server and starts it - for a
-sandbox in the sandbox's own folder, so that it follows the sandbox - and the
-other tools start, stop, list and delete the deployments. What a deployment
-is, and how its daemon is run, is in :mod:`mcp_plugin.lib.restd`.
+The REST services themselves are managed with REST SQL (``CREATE REST
+SERVICE ...``, ``SHOW REST SERVICES FORMAT=JSON``), which the shell's
+built-in ``mrs`` module handles, so a client sends it through
+``db.execute_sql`` like any other statement. What REST SQL cannot do is work
+with the client's files, and that is what the ``rest_plugin`` functions
+wrapped here are for: client SDK generation, dumping and loading services and
+projects, uploading a directory as a content set, MRS script analysis and the
+audit log export.
 
-A daemon keeps running when the MCP server ends, as a sandbox's server does.
+The tools run while the shell is in non-interactive mode, so the wrapped
+plugin functions return their results instead of printing them. Path
+arguments are authorized through
+:func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user -
+via MCP elicitation - to trust a path that is not yet allowed.
 """
 
-# cSpell:ignore mysqlsh MariaDB restd
+# cSpell:ignore mysqlsh MariaDB mcpserver
 
-import json
-import os
-import re
 from typing import Optional
 
-from mcp_plugin.lib import db_functions, general, restd, restd_certs, restd_install
+from mcp_plugin.lib import db_functions, general
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
-
-# The part of a metadata schema's name its roles are named after; the roles
-# carry the schema's prefix and postfix around it.
-_METADATA_BASE_NAME = restd.DEFAULT_METADATA_SCHEMA
-_ROLES = ("meta_provider", "data_provider")
-
-
-def _role_names(metadata_schema: str) -> list:
-    """The roles of a metadata schema the daemon's account needs.
-
-    ``acme_mariadb_rest_service_eu`` has ``acme_mariadb_rest_service_meta_provider_eu``,
-    as CONFIGURE REST METADATA names them.
-    """
-    prefix, _, postfix = metadata_schema.partition(_METADATA_BASE_NAME)
-    return [f"{prefix}{_METADATA_BASE_NAME}_{role}{postfix}" for role in _ROLES]
-
-
-def _metadata_schemas(session) -> list:
-    """The names of the REST metadata schemas the account can see."""
-    row = session.run_sql("SHOW REST METADATA SCHEMAS FORMAT=JSON").fetch_one()
-    schemas = json.loads(row[0]) if row and row[0] else []
-    return [schema["schema_name"] for schema in schemas]
-
-
-def _choose_metadata_schema(session, metadata_schema: Optional[str]) -> tuple:
-    """Picks the metadata schema to serve.
-
-    The one named, else the only one there is, else the default - which is
-    then still to be created. Several and none named is refused: which of
-    them a daemon serves is not a guess to make.
-
-    Returns:
-        tuple: The schema's name, and whether it exists.
-    """
-    existing = _metadata_schemas(session)
-    if metadata_schema is not None:
-        return metadata_schema, metadata_schema in existing
-    if len(existing) == 1:
-        return existing[0], True
-    if not existing:
-        return restd.DEFAULT_METADATA_SCHEMA, False
-
-    raise tool_error(
-        "The server has several REST metadata schemas: "
-        + ", ".join(existing)
-        + ". Pass metadata_schema to say which one the REST Daemon serves."
-    )
-
-
-def _parse_uri(uri: str) -> dict:
-    """A connection URI's parts, as the shell parses it."""
-    from mysqlsh.globals import shell
-
-    return dict(shell.parse_uri(uri))
-
-
-def _open_session(connection: dict, password: str):
-    """Opens a session of its own on the connection, with this password."""
-    from mysqlsh.globals import shell
-
-    return shell.open_session({**connection, "password": password})
-
-
-def _grants(session) -> list:
-    return [row[0] for row in session.run_sql("SHOW GRANTS").fetch_all()]
-
-
-_GRANT_ON = re.compile(r"^GRANT (?P<privileges>.+?) ON (?P<object>\S+) TO ")
-_GRANT_ROLE = re.compile(r"^GRANT (?P<role>\S+) TO ")
-
-
-def _server_of(deployment: dict) -> str:
-    """The server a deployment serves, as a message names it."""
-    if deployment.get("server_port") is None and deployment.get("socket"):
-        return deployment["socket"]
-    return f"{deployment.get('host')}:{deployment.get('server_port')}"
-
-
-def _schema_pattern_matches(pattern: str, schema: str) -> bool:
-    """Whether a schema-level grant's database covers a schema.
-
-    The server reads it as a LIKE pattern: `_` and `%` are wildcards, and
-    `\\_`, `\\%` - how a grant on a name with underscores is usually
-    written, so that they are not - are the characters themselves.
-    """
-    expression = ""
-    escaped = False
-    for char in pattern:
-        if escaped:
-            expression += re.escape(char)
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == "%":
-            expression += ".*"
-        elif char == "_":
-            expression += "."
-        else:
-            expression += re.escape(char)
-    return re.fullmatch(expression, schema, re.IGNORECASE | re.DOTALL) is not None
-
-
-def _missing_privileges(grants: list, metadata_schema: str) -> list:
-    """What the account lacks of what ``mariadb-restd --setup`` needs.
-
-    The setup registers the daemon in the metadata, creates an account and
-    grants it the metadata schema's roles, so it needs SELECT, INSERT and
-    UPDATE on the schema, CREATE USER with the GRANT OPTION, and both roles
-    WITH ADMIN OPTION. Read from SHOW GRANTS, which lists what the active role
-    gives as well; ALL PRIVILEGES on everything WITH GRANT OPTION covers it
-    all, as it does for root.
-
-    Args:
-        grants (list): The lines of SHOW GRANTS.
-        metadata_schema (str): The metadata schema.
-
-    Returns:
-        list: What is missing, as text; empty when nothing is.
-    """
-    # name -> privileges, for the global level and the schema's; the roles
-    # held WITH ADMIN OPTION
-    on_global, on_schema, roles = set(), set(), set()
-    global_grant_option = False
-    for grant in grants:
-        text = " ".join(grant.replace("`", "").split())
-        privileges_grant = _GRANT_ON.match(text)
-        if privileges_grant:
-            privileges = {
-                privilege.strip().upper()
-                for privilege in privileges_grant["privileges"].split(",")
-            }
-            target = privileges_grant["object"].lower()
-            if target == "*.*":
-                on_global |= privileges
-                global_grant_option |= text.upper().endswith("WITH GRANT OPTION")
-            elif target.endswith(".*") and _schema_pattern_matches(
-                target[:-2], metadata_schema
-            ):
-                on_schema |= privileges
-            continue
-        role_grant = _GRANT_ROLE.match(text)
-        if role_grant and text.upper().endswith("WITH ADMIN OPTION"):
-            roles.add(role_grant["role"].lower())
-
-    if "ALL PRIVILEGES" in on_global and global_grant_option:
-        return []
-
-    missing = []
-    if "CREATE USER" not in on_global and "ALL PRIVILEGES" not in on_global:
-        missing.append("CREATE USER on *.*")
-    if not global_grant_option:
-        missing.append("the GRANT OPTION on *.*")
-
-    held = on_global | on_schema
-    for privilege in ("SELECT", "INSERT", "UPDATE"):
-        if privilege not in held and "ALL PRIVILEGES" not in held:
-            missing.append(f"{privilege} on {metadata_schema}.*")
-
-    for role in _role_names(metadata_schema):
-        if role.lower() not in roles:
-            missing.append(f"the role {role} WITH ADMIN OPTION")
-
-    return missing
 
 
 def register_rest_tools(server, function_groups=()) -> None:
-    """Registers the REST Daemon tools on the given server.
+    """Registers the MariaDB REST Service tools on the given server.
 
-    Starting, stopping, listing and deleting deployments works on their
-    folders and is always registered; rest.configure_restd sets one up for a
-    connection opened with db.connect, so it is registered only together with
-    the db group.
+    The tools that only read files are always registered. The ones that work
+    on a REST service need a database connection opened with db.connect, so
+    they are only registered when the db function group is served as well.
 
     Args:
         server: The MCPServer instance to register the tools on.
@@ -215,429 +55,481 @@ def register_rest_tools(server, function_groups=()) -> None:
     """
     import anyio.to_thread
     from mcp.server.mcpserver import Context
-    from mysqlsh.globals import shell
+    from rest_plugin import content_sets, dump, general as rest_general
+    from rest_plugin import services as rest_services
+    from rest_plugin.lib import content_sets as content_set_files
+    from rest_plugin.lib import open_api_ui as open_api_ui_files
 
     tool = tool_registrar(server)
 
-    def _sandbox_base_dir(sandbox_dir: Optional[str] = None) -> str:
-        return os.path.abspath(
-            os.path.expanduser(sandbox_dir or shell.options["sandboxDir"])
+    def _kwargs(**pairs) -> dict:
+        """Builds a kwargs dict, dropping keys whose value is None."""
+        return {key: value for key, value in pairs.items() if value is not None}
+
+    async def _on_session(ctx, connection_id, work):
+        """Runs work(session) on the connection, on a worker thread.
+
+        Everything work does blocks - waiting for the connection's lock, then
+        the plugin's SQL - so it must not run on the thread driving the event
+        loop, see msm.deploy_schema.
+        """
+        # Read here, while this is still the request's own context; the
+        # worker thread has no request context to read it from.
+        client = general.get_client_identity(ctx)
+
+        def _run():
+            with db_functions.use_session(connection_id, client) as session:
+                return work(session)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @tool(name="rest.version")
+    def version() -> str:
+        """Returns the version of the MariaDB REST Service plugin.
+
+        Returns:
+            The plugin version.
+        """
+        return rest_general.version()
+
+    @tool(name="rest.get_sdk_base_classes")
+    def get_sdk_base_classes(
+        sdk_language: str = "TypeScript",
+        prepare_for_runtime: bool = False,
+    ) -> str:
+        """Returns the source of the client SDK base classes.
+
+        Args:
+            sdk_language: The SDK language, TypeScript or Python.
+            prepare_for_runtime: Prepare the code to run in an editor at
+                runtime rather than to be written to files.
+
+        Returns:
+            The source of the base classes.
+        """
+        return rest_services.get_sdk_base_classes(
+            sdk_language=sdk_language, prepare_for_runtime=prepare_for_runtime
         )
 
-    async def _require_deployment_access(ctx, directory: str) -> str:
-        """Authorizes a deployment folder a tool is to work on.
+    @tool(name="rest.get_sdk_options")
+    async def get_sdk_options(ctx: Context, directory: str) -> Optional[dict]:
+        """Reads the SDK options stored with an exported client SDK.
 
-        One the server lists - a sandbox's in the default sandbox path, or
-        one in the deployments root, where rest.configure_restd puts them
-        without asking - needs no allowed path: refusing what the server
-        made itself would only have the agent ask the user to trust a
-        folder they never chose. Any other folder is checked as every
-        path argument is.
+        Args:
+            directory: The directory holding the mrs.config.json file.
 
         Returns:
-            The folder as it was authorized - `~` expanded, made absolute -
-            which is what the tool then works on.
+            The stored SDK options, or an empty dict if there are none.
         """
-        resolved = os.path.abspath(os.path.expanduser(directory))
-        if resolved in restd.deployment_dirs(_sandbox_base_dir()):
-            return resolved
         await general.require_allowed_path(ctx, directory)
-        return resolved
+        return rest_services.get_stored_sdk_options(directory)
 
-    @tool(name="rest.get_restd_status")
-    def get_restd_status() -> list:
-        """Lists the REST Daemon deployments, and whether each is running.
-
-        The deployments of the sandboxes in the default sandbox path and
-        those set up for other servers.
-
-        Returns:
-            One object per deployment, with its 'directory', the 'host' and
-            'server_port' of the server it serves, its own 'port' and 'url',
-            'status' ('running' or 'stopped'), 'pid' (None when stopped),
-            'log_path', 'metadata_schema', 'connection_uri' (the connection
-            it was set up with), 'socket' (the server's, where it was set up
-            through one, else None) and 'sandbox_port' (None when it is not a
-            sandbox's).
-        """
-        return [
-            restd.status(directory)
-            for directory in restd.deployment_dirs(_sandbox_base_dir())
-        ]
-
-    @tool(name="rest.start_restd")
-    async def start_restd(
+    @tool(name="rest.get_folder_mrs_script_language")
+    async def get_folder_mrs_script_language(
         ctx: Context,
-        directory: str,
-        restd_path: Optional[str] = None,
-    ) -> dict:
-        """Starts the REST Daemon of a deployment.
-
-        Nothing is done when it is running already. It keeps running after
-        the MCP server ends.
+        path: str,
+        ignore_list: Optional[str] = None,
+    ) -> Optional[str]:
+        """Checks whether a directory holds MRS scripts.
 
         Args:
-            directory: The deployment's folder, as rest.get_restd_status lists
-                it.
-            restd_path: The mariadb-restd executable to run, or its folder.
-                Found on the PATH, in ~/.local/bin or among the installed
-                releases when empty.
+            path: The directory to check.
+            ignore_list: Comma-separated file patterns to ignore.
 
         Returns:
-            The deployment's status, as rest.get_restd_status reports it.
+            "TypeScript" if the directory holds MRS scripts, else None.
         """
-        directory = await _require_deployment_access(ctx, directory)
-        await general.require_allowed_path(ctx, restd_path)
+        await general.require_allowed_path(ctx, path)
+        return content_sets.get_folder_mrs_scripts_language(
+            path, **_kwargs(ignore_list=ignore_list)
+        )
 
-        def work():
-            executable = restd.find_restd(restd_path)
-            return restd.start(executable, directory)
-
-        return await anyio.to_thread.run_sync(work)
-
-    @tool(name="rest.stop_restd")
-    async def stop_restd(ctx: Context, directory: str) -> dict:
-        """Stops the REST Daemon of a deployment.
-
-        Nothing is done when it is stopped already. A daemon that does not
-        end within 30 seconds is killed.
-
-        Args:
-            directory: The deployment's folder, as rest.get_restd_status lists
-                it.
-
-        Returns:
-            The deployment's status, as rest.get_restd_status reports it.
-        """
-        directory = await _require_deployment_access(ctx, directory)
-        return await anyio.to_thread.run_sync(lambda: restd.stop(directory))
-
-    @tool(name="rest.get_certificate_status")
-    def get_certificate_status() -> dict:
-        """Says whether this system trusts the REST Daemons' HTTPS certificate.
-
-        Asks the system itself, so a certificate that is stored but not
-        trusted counts as not trusted. Makes nothing: before the first REST
-        Daemon setup there is no certificate yet.
-
-        Returns:
-            'exists' (whether the first setup made it), 'trusted', and
-            'ca_path', the local certificate authority's certificate.
-        """
-        ca_path = restd_certs.ca_path()
-        exists = os.path.isfile(ca_path)
-        return {
-            "exists": exists,
-            "trusted": exists and restd_certs.is_trusted(),
-            "ca_path": ca_path,
-        }
-
-    @tool(name="rest.trust_certificate")
-    async def trust_certificate(ctx: Context) -> dict:
-        """Has this system trust the HTTPS certificate of the REST Daemons.
-
-        Every REST Daemon on this machine serves one certificate, made by the
-        first setup and signed by a local certificate authority. Trusting
-        that authority once makes browsers accept every daemon's
-        https://localhost address. It is added to the user's own store - the
-        login keychain on macOS, the Root store on Windows, the NSS database
-        on Linux - and macOS and Windows ask the user to confirm in a system
-        dialog. Nothing is done where it is trusted already.
-
-        Returns:
-            'trusted' (True), 'changed' (whether it was added now) and
-            'ca_path', the authority's certificate.
-        """
-        def trusted():
-            restd_certs.ensure()
-            return restd_certs.is_trusted()
-
-        if await anyio.to_thread.run_sync(trusted):
-            return {"trusted": True, "changed": False,
-                    "ca_path": restd_certs.ca_path()}
-        # A trusted root is the user's to grant; Linux asks nothing itself.
-        if not general.is_gui_mode() and not await _confirm_trust(ctx):
-            raise tool_error("The certificate was not trusted: the user did not confirm.")
-
-        return await anyio.to_thread.run_sync(restd_certs.trust)
-
-    @tool(name="rest.delete_restd_config")
-    async def delete_restd_config(
+    @tool(name="rest.get_folder_mrs_script_definitions")
+    async def get_folder_mrs_script_definitions(
         ctx: Context,
-        directory: str,
-        connection_id: Optional[str] = None,
-        drop_accounts: bool = True,
-    ) -> str:
-        """Deletes a REST Daemon deployment.
-
-        The daemon is stopped, the server account the setup created for it is
-        dropped together with its registration in the REST metadata, and the
-        deployment's folder is deleted.
+        path: str,
+        ignore_list: Optional[str] = None,
+        language: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Returns the MRS script definitions of the files in a directory.
 
         Args:
-            directory: The deployment's folder, as rest.get_restd_status lists
-                it.
-            connection_id: A connection to the deployment's server, opened
-                with db.connect, to drop the account with. Needed unless
-                drop_accounts is False.
-            drop_accounts: Whether to drop the account and the registration.
-                Pass False to delete the folder only, when the server is gone
-                or will be.
+            path: The directory to analyse.
+            ignore_list: Comma-separated file patterns to ignore.
+            language: The language the MRS scripts are written in. Detected
+                from the files if not given.
 
         Returns:
-            A message saying what was deleted.
+            A dict with the script_modules, the interfaces they use and the
+            errors found.
         """
-        directory = await _require_deployment_access(ctx, directory)
-        if not restd.is_deployment(directory):
-            raise tool_error(f"'{directory}' is no {restd.RESTD_NAME} deployment.")
+        await general.require_allowed_path(ctx, path)
+        return await anyio.to_thread.run_sync(
+            lambda: content_sets.get_folder_mrs_script_definitions(
+                path, **_kwargs(ignore_list=ignore_list, language=language)
+            )
+        )
 
-        client = general.get_client_identity(ctx)
+    @tool(name="rest.get_file_mrs_script_definitions")
+    async def get_file_mrs_script_definitions(
+        ctx: Context,
+        path: str,
+        language: str = "TypeScript",
+    ) -> list:
+        """Returns the MRS script modules defined in one file.
 
-        def work():
-            deployment = restd.read_deployment(directory)
-            notes = []
-            if drop_accounts:
-                if connection_id is None:
-                    raise tool_error(
-                        "Pass the connection_id of a connection to "
-                        f"{_server_of(deployment)} to "
-                        "drop the REST Daemon's account with, or "
-                        "drop_accounts=False to delete the folder only."
-                    )
-                notes = _drop_server_objects(deployment, connection_id, client)
+        Args:
+            path: The file to analyse.
+            language: The language the MRS scripts are written in, the only
+                one supported being TypeScript.
 
-            restd.delete_directory(directory)
-            return " ".join([f"Deleted the REST Daemon deployment '{directory}'."] + notes)
+        Returns:
+            The script modules of the file, each with its class_name,
+            properties and scripts.
+        """
+        await general.require_allowed_path(ctx, path)
+        return content_sets.get_file_mrs_script_definitions(path, language=language)
 
-        return await anyio.to_thread.run_sync(work)
+    # Registered only together with the db group: these work on a REST
+    # service and need a connection opened with db.connect, which they would
+    # have no way to obtain otherwise.
+    if general.FUNCTION_GROUP_DB not in function_groups:
+        return
 
-    def _drop_server_objects(deployment, connection_id, client) -> list:
-        """Drops a deployment's account and registration; says what failed."""
-        notes = []
-        schema = db_functions.quote_identifier(deployment["metadata_schema"])
-        with db_functions.use_session(connection_id, client) as session:
-            for account in restd.generated_accounts(deployment):
-                # A generated name is letters, digits and _, safe to quote so.
-                session.run_sql(f"DROP USER IF EXISTS '{account}'@'%'")
-            if deployment["rest_daemon_id"]:
-                try:
-                    session.run_sql(
-                        f"DELETE FROM {schema}.rest_daemon WHERE id = ?",
-                        [deployment["rest_daemon_id"]],
-                    )
-                except Exception as error:  # noqa: BLE001 - reported, not fatal
-                    notes.append(
-                        "Its registration in the REST metadata was kept: "
-                        f"{error}"
-                    )
-        return notes
-
-    # Registered only together with the db group, and last (see server.md):
-    # it sets a daemon up for a connection opened with db.connect.
-    if general.FUNCTION_GROUP_DB in function_groups:
-        _register_configure_restd(tool, Context, anyio, _sandbox_base_dir)
-
-
-async def _confirm_trust(ctx) -> bool:
-    """Asks the user, via MCP elicitation, whether to trust the local CA."""
-    return await general.confirm(
-        ctx,
-        "Have this system trust the local certificate authority of the "
-        "MariaDB REST Daemons, so that browsers accept their "
-        f"https://localhost addresses? ({restd_certs.certs_dir()})",
-        "trust",
-        "Trust the REST Daemons' local certificate authority?",
-    )
-
-
-async def _confirm_install(ctx) -> bool:
-    """Asks the user, via MCP elicitation, whether to install mariadb-restd."""
-    return await general.confirm(
-        ctx,
-        "The MariaDB REST Daemon (mariadb-restd) is not installed. "
-        "Download and install its latest release into "
-        f"{restd.install_prefix()}?",
-        "install",
-        "Download and install the latest mariadb-restd release?",
-    )
-
-
-def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
-    """Registers rest.configure_restd."""
-
-    @tool(name="rest.configure_restd")
-    async def configure_restd(
+    @tool(name="rest.get_sdk_service_classes")
+    async def get_sdk_service_classes(
         ctx: Context,
         connection_id: str,
-        password: Optional[str] = None,
-        sandbox_port: Optional[int] = None,
-        sandbox_dir: Optional[str] = None,
-        port: Optional[int] = None,
-        metadata_schema: Optional[str] = None,
-        restd_path: Optional[str] = None,
-    ) -> dict:
-        """Sets up a MariaDB REST Daemon for a server and starts it.
-
-        In this order: the account of the connection is checked; the REST
-        metadata is configured if the server has none; mariadb-restd is
-        installed if it cannot be found; `mariadb-restd --setup` creates the
-        deployment - an account of its own on the server, a keyring, a TLS
-        certificate and its configuration - and the daemon is started, to keep
-        running after the MCP server ends.
-
-        For a sandbox the deployment is in the sandbox's folder and follows
-        it: sandbox.start, sandbox.stop and sandbox.delete start, stop and
-        delete it too. Otherwise it is in ~/.mariadb-restd/<host>_<port>.
+        service_id: Optional[str] = None,
+        service_url: Optional[str] = None,
+        sdk_language: str = "TypeScript",
+        prepare_for_runtime: bool = False,
+    ) -> str:
+        """Returns the source of the client SDK classes of a REST service.
 
         Args:
-            connection_id: A connection to the server, opened with db.connect.
-                Its account needs CREATE USER WITH GRANT OPTION, SELECT, INSERT
-                and UPDATE on the metadata schema and its roles WITH ADMIN
-                OPTION - or, when the server has no REST metadata yet, the
-                privileges to create it.
-            password: The account's password. The connection's stored one when
-                empty.
-            sandbox_port: The port of the sandbox the server is, for a
-                sandbox's daemon.
-            sandbox_dir: Path the sandbox is in. The default sandbox path when
-                empty.
-            port: The port the daemon serves HTTPS on. The first free one
-                from 8443 up when empty.
-            metadata_schema: The REST metadata schema to serve. Needed only
-                when the server has several; the one there is otherwise, or
-                mariadb_rest_service, which is created when there is none.
-            restd_path: The mariadb-restd executable to use, or its folder.
+            connection_id: The UUID returned by db.connect.
+            service_id: The id of the REST service. Defaults to the current
+                service, or the only one.
+            service_url: The URL the REST service is reached at.
+            sdk_language: The SDK language, TypeScript or Python.
+            prepare_for_runtime: Prepare the code to run in an editor at
+                runtime rather than to be written to files.
 
         Returns:
-            The deployment's status, as rest.get_restd_status reports it, plus
-            'installed' (whether mariadb-restd was installed for it) and
-            'setup_output', what the setup printed.
+            The source of the service classes.
         """
-        await general.require_allowed_path(ctx, sandbox_dir)
-        await general.require_allowed_path(ctx, restd_path)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.get_sdk_service_classes(
+                session=session,
+                sdk_language=sdk_language,
+                prepare_for_runtime=prepare_for_runtime,
+                **_kwargs(service_id=service_id, service_url=service_url),
+            ),
+        )
 
-        client = general.get_client_identity(ctx)
-        base_dir = sandbox_base_dir(sandbox_dir)
+    @tool(name="rest.dump_sdk_service_files")
+    async def dump_sdk_service_files(
+        ctx: Context,
+        connection_id: str,
+        directory: str,
+        options: Optional[dict] = None,
+    ) -> bool:
+        """Writes the client SDK files of a REST service to a directory.
 
-        def prepare():
-            uri, stored_password = db_functions.connection_credentials(
-                connection_id, client
+        Args:
+            connection_id: The UUID returned by db.connect.
+            directory: The directory to write the SDK files to.
+            options: How the SDK is generated: service_id or
+                url_context_root (the service), sdk_language, service_url
+                (required unless stored in the directory already),
+                add_app_base_class, header, db_connection_uri.
+
+        Returns:
+            True on success.
+        """
+        await general.require_allowed_path(ctx, directory)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.dump_sdk_service_files(
+                session=session, directory=directory, **_kwargs(options=options)
+            ),
+        )
+
+    @tool(name="rest.get_runtime_management_code")
+    async def get_runtime_management_code(ctx: Context, connection_id: str) -> str:
+        """Returns the TypeScript code that manages REST services at runtime.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+
+        Returns:
+            The TypeScript source.
+        """
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.get_runtime_management_code(session=session),
+        )
+
+    @tool(name="rest.dump_service")
+    async def dump_service(
+        ctx: Context,
+        connection_id: str,
+        service_path: str,
+        file_path: str,
+        endpoints: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Writes the REST SQL script that recreates a REST service to a file.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            service_path: The request path of the REST service.
+            file_path: The file to write.
+            endpoints: The endpoints to include: DATABASE (the default),
+                DATABASE AND STATIC, DATABASE AND STATIC AND DYNAMIC or ALL.
+                An empty string writes only the CREATE REST SERVICE statement.
+            overwrite: Overwrite the file if it exists.
+
+        Returns:
+            None
+        """
+        await general.require_allowed_path(ctx, file_path)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.dump_service(
+                service_path,
+                file_path,
+                session=session,
+                overwrite=overwrite,
+                **_kwargs(endpoints=endpoints),
+            ),
+        )
+
+    @tool(name="rest.load_service")
+    async def load_service(
+        ctx: Context,
+        connection_id: str,
+        file_path: str,
+        as_path: Optional[str] = None,
+    ) -> None:
+        """Runs a REST SQL script written by rest.dump_service.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            file_path: The REST SQL script.
+            as_path: Create the REST service under this request path instead
+                of the one in the script.
+
+        Returns:
+            None
+        """
+        await general.require_allowed_path(ctx, file_path)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.load_service(
+                file_path, session=session, **_kwargs(as_path=as_path)
+            ),
+        )
+
+    @tool(name="rest.dump_service_project")
+    async def dump_service_project(
+        ctx: Context,
+        connection_id: str,
+        destination: str,
+        services: list,
+        settings: dict,
+        schemas: Optional[list] = None,
+        overwrite: bool = False,
+        zip: bool = False,
+    ) -> None:
+        """Writes REST services and their database schemas as an MRS project.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            destination: The directory to create the project in.
+            services: The services to include, each a dict with name
+                (the request path) and the include_database_endpoints,
+                include_static_endpoints and include_dynamic_endpoints flags.
+            settings: The project details: name, icon_path, description,
+                publisher, version.
+            schemas: The database schemas to include, each a dict with name
+                and file_path (a schema script to copy).
+            overwrite: Overwrite the destination if it exists.
+            zip: Zip the project directory.
+
+        Returns:
+            None
+        """
+        await general.require_allowed_path(ctx, destination)
+        await general.require_allowed_path(ctx, (settings or {}).get("icon_path"))
+        for schema in schemas or []:
+            await general.require_allowed_path(ctx, schema.get("file_path"))
+
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.dump_service_as_project(
+                session=session,
+                destination=destination,
+                services=services,
+                schemas=schemas or [],
+                settings=settings,
+                overwrite=overwrite,
+                zip=zip,
+            ),
+        )
+
+    @tool(name="rest.load_service_project")
+    async def load_service_project(
+        ctx: Context,
+        connection_id: str,
+        source: str,
+    ) -> None:
+        """Loads an MRS project written by rest.dump_service_project.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            source: The project directory or zip file.
+
+        Returns:
+            None
+        """
+        await general.require_allowed_path(ctx, source)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: rest_services.load_service_project(
+                session=session, source=source
+            ),
+        )
+
+    @tool(name="rest.load_content_set")
+    async def load_content_set(
+        ctx: Context,
+        connection_id: str,
+        directory: Optional[str] = None,
+        content_set_path: Optional[str] = None,
+        service_path: Optional[str] = None,
+        ignore_list: Optional[str] = None,
+        load_scripts: Optional[bool] = None,
+        replace: bool = False,
+        open_api_ui: bool = False,
+        requires_auth: Optional[bool] = None,
+    ) -> Optional[dict]:
+        """Uploads the files of a directory as a REST content set.
+
+        Or, with open_api_ui, the REST service's OpenAPI UI: Swagger UI,
+        downloaded from github.com and patched to show the service's OpenAPI
+        catalog (<service path>/open-api-catalog/) and to sign in with the
+        REST Daemon. It is then served at the content set's path, by default
+        /openApiUi, to a published service's users.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            directory: The directory holding the files. Leave empty with
+                open_api_ui.
+            content_set_path: The request path of the content set. Required
+                unless open_api_ui is set, which defaults it to /openApiUi.
+            service_path: The request path of the REST service. Defaults to
+                the current one.
+            ignore_list: Comma-separated file patterns to ignore, matched
+                against the path relative to the directory. Defaults to
+                "*node_modules/*, */.*". Not with open_api_ui.
+            load_scripts: Register the MRS scripts of the files. By default
+                they are registered if the directory holds any. Not with
+                open_api_ui.
+            replace: Replace the content set if it exists.
+            open_api_ui: Upload the REST service's OpenAPI UI instead of a
+                directory's files.
+            requires_auth: Whether the content set and each of its files
+                require authentication. By default they do, except the
+                OpenAPI UI, which signs in with its Authorize button.
+
+        Returns:
+            A dict with the request paths of the uploaded files and a
+            message.
+        """
+        # Checked as the plugin checks them, before anything is downloaded.
+        try:
+            content_set_files.check_load_options(
+                directory, content_set_path, open_api_ui, ignore_list, load_scripts
             )
-            connection = _parse_uri(uri)
-            secret = stored_password if password is None else password
-            if sandbox_port is not None and connection.get("port") != sandbox_port:
-                raise tool_error(
-                    f"The connection is to port {connection.get('port')}, not "
-                    f"to the sandbox on port {sandbox_port}."
-                )
+        except ValueError as error:
+            raise tool_error(str(error)) from error
+        if directory is not None:
+            await general.require_allowed_path(ctx, directory)
 
-            # Opened with the password given rather than the connection's own
-            # session: that password is the one the setup gets, so it is the
-            # one that has to work.
-            try:
-                session = _open_session(connection, secret)
-            except Exception as error:  # noqa: BLE001 - reported with its cause
-                raise tool_error(
-                    f"Could not connect as {connection.get('user')}: {error}"
-                ) from error
-            try:
-                schema, exists = _choose_metadata_schema(session, metadata_schema)
-                # Through a socket, the server says which port it is, so a
-                # daemon is the server's however it is reached.
-                reported_port = None
-                if connection.get("socket"):
-                    reported_port = int(
-                        session.run_sql("SELECT @@port").fetch_one()[0] or 0
-                    )
-            finally:
-                session.close()
+        if open_api_ui:
+            # Downloaded before the connection's lock is taken, so a slow
+            # github.com holds up no other call on it; the plugin then reads
+            # the files from where they are kept.
+            await anyio.to_thread.run_sync(open_api_ui_files.download_assets)
 
-            return uri, connection, secret, schema, exists, reported_port
-
-        (
-            uri, connection, secret, schema, exists, reported_port
-        ) = await anyio.to_thread.run_sync(prepare)
-
-        executable = await anyio.to_thread.run_sync(restd.find_restd, restd_path)
-        installed = False
-        if executable is None:
-            if not general.is_gui_mode() and not await _confirm_install(ctx):
-                raise tool_error(
-                    f"{restd.RESTD_NAME} was not found in "
-                    f"{restd.searched_places()}, and was not installed. "
-                    "Install it, or pass restd_path."
-                )
-            await anyio.to_thread.run_sync(restd_install.install)
-            executable = await anyio.to_thread.run_sync(restd.find_restd)
-            if executable is None:
-                raise tool_error(
-                    f"{restd.RESTD_NAME} was installed but is not in "
-                    f"{restd.searched_places()}."
-                )
-            installed = True
-
-        def work():
-            # One daemon per server and metadata schema, whatever account
-            # the connection uses, and however it reaches the server.
-            directory, host, server_port, socket_path = restd.server_deployment(
-                connection, reported_port, schema
-            )
-            if sandbox_port is not None:
-                directory = restd.sandbox_deployment_dir(
-                    base_dir, sandbox_port, schema
-                )
-            if restd.is_deployment(directory):
-                raise tool_error(
-                    f"There is a REST Daemon deployment in '{directory}' "
-                    "already. Delete it with rest.delete_restd_config first."
-                )
-
-            session = _open_session(connection, secret)
-            try:
-                if not exists:
-                    statement = "CONFIGURE REST METADATA"
-                    if schema != restd.DEFAULT_METADATA_SCHEMA:
-                        statement += f" SCHEMA {db_functions.quote_identifier(schema)}"
-                    session.run_sql(statement + " ENABLED")
-                missing = _missing_privileges(_grants(session), schema)
-            finally:
-                session.close()
-            if missing:
-                raise tool_error(
-                    f"The account {connection.get('user')} cannot set up a "
-                    "REST Daemon. It lacks " + "; ".join(missing) + "."
-                )
-
-            daemon_port = port
-            if daemon_port is None:
-                daemon_port = restd.choose_port(restd.taken_ports(base_dir))
-            elif not restd.is_port_free(daemon_port, restd.taken_ports(base_dir)):
-                raise tool_error(f"Port {daemon_port} is in use.")
-
-            # The one certificate every daemon here serves, made by the
-            # first setup: trusted once, it is trusted for all of them.
-            certificate = restd_certs.ensure()
-            output = restd.setup(
-                executable,
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: content_sets.load_content_set(
                 directory,
-                connection,
-                secret,
-                daemon_port,
-                schema,
-                certificate=certificate,
-                record={
-                    "connection_uri": uri,
-                    "host": host,
-                    "server_port": server_port,
-                    # A server reached through a socket is matched on it.
-                    "socket": socket_path,
-                    "sandbox_port": sandbox_port,
-                    "created": general.utc_timestamp(),
-                },
-            )
-            report = restd.start(executable, directory)
-            report["installed"] = installed
-            report["setup_output"] = output
-            return report
+                content_set_path,
+                session=session,
+                replace=replace,
+                open_api_ui=open_api_ui,
+                **_kwargs(
+                    service_path=service_path,
+                    ignore_list=ignore_list,
+                    load_scripts=load_scripts,
+                    requires_auth=requires_auth,
+                ),
+            ),
+        )
 
-        return await anyio.to_thread.run_sync(work)
+    @tool(name="rest.dump_audit_log")
+    async def dump_audit_log(
+        ctx: Context,
+        connection_id: str,
+        file_path: str,
+        audit_log_position_file: Optional[str] = None,
+        audit_log_position: Optional[int] = None,
+        starting_from_today: Optional[bool] = None,
+        when_server_is_writeable: Optional[bool] = None,
+    ) -> None:
+        """Appends the new entries of the MRS audit log to a file.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            file_path: The file to write the audit log to.
+            audit_log_position_file: The file keeping the export position.
+                Defaults to mrs_audit_log_position.json next to file_path.
+            audit_log_position: The position to export from; everything up
+                to it counts as exported.
+            starting_from_today: Only export entries from today on when no
+                position is known. Defaults to true.
+            when_server_is_writeable: Only export when the server is not
+                read only. Defaults to false.
+
+        Returns:
+            None
+        """
+        await general.require_allowed_path(ctx, file_path)
+        await general.require_allowed_path(ctx, audit_log_position_file)
+        return await _on_session(
+            ctx,
+            connection_id,
+            lambda session: dump.export_audit_log(
+                file_path,
+                session=session,
+                **_kwargs(
+                    audit_log_position_file=audit_log_position_file,
+                    audit_log_position=audit_log_position,
+                    starting_from_today=starting_from_today,
+                    when_server_is_writeable=when_server_is_writeable,
+                ),
+            ),
+        )

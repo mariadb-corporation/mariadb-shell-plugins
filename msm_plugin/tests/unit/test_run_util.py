@@ -134,7 +134,7 @@ def test_the_lock_is_shared_by_every_plugin():
     lock = core._global_session_lock()
     assert lock is core._global_session_lock()
     assert sys.modules[core._GLOBAL_SESSION_LOCK_MODULE].lock is lock
-    for other in ("msm_plugin.lib.core", "mrs_plugin.lib.core"):
+    for other in ("msm_plugin.lib.core", "rest_plugin.lib.core"):
         try:
             module = importlib.import_module(other)
         except ImportError:

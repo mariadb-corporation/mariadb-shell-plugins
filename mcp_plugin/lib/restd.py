@@ -19,7 +19,7 @@ A deployment is the directory ``mariadb-restd --setup -d <dir>`` writes: the
 configuration, a keyring, a TLS certificate, and the daemon's log and run
 folders. This module finds the mariadb-restd executable, sets a deployment
 up, starts and stops its daemon and lists the deployments it knows of. The
-MCP tools are in :mod:`mcp_plugin.lib.rest_functions`, and the sandbox tools
+MCP tools are in :mod:`mcp_plugin.lib.restd_functions`, and the sandbox tools
 use it to have a sandbox's daemon follow the sandbox.
 
 Deployments live in two places:

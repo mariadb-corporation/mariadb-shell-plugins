@@ -107,7 +107,10 @@ _multi_tenant = False
 # MCP function groups that can be loaded independently
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
-FUNCTION_GROUP_MRS = "mrs"
+# The MariaDB REST Service: client SDKs, dumping and loading services and
+# projects, content sets and the audit log - what REST SQL cannot do. The
+# tools that work on a service register only alongside the db group.
+FUNCTION_GROUP_REST = "rest"
 FUNCTION_GROUP_SANDBOX = "sandbox"
 # The migrator group is supported wherever the group list is concerned, but its
 # tools register only where the migration tooling is actually installed - see
@@ -118,22 +121,22 @@ FUNCTION_GROUP_MIGRATOR = "migrator"
 FUNCTION_GROUP_UTIL = "util"
 # The MariaDB REST Daemon: setting one up for a server, and starting, stopping
 # and deleting it. Setting up needs a connection, the rest does not.
-FUNCTION_GROUP_REST = "rest"
+FUNCTION_GROUP_RESTD = "restd"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
-    FUNCTION_GROUP_MRS,
+    FUNCTION_GROUP_REST,
     FUNCTION_GROUP_SANDBOX,
     FUNCTION_GROUP_MIGRATOR,
     FUNCTION_GROUP_UTIL,
-    FUNCTION_GROUP_REST,
+    FUNCTION_GROUP_RESTD,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
 # The groups that register NOTHING unless another group is served too, and
 # that group. Consulted by the registrar of such a group and by the server
 # instructions alike, so the two cannot disagree about which tools a client
-# gets. A group that merely leaves out SOME tools (mrs, msm, rest) is not
+# gets. A group that merely leaves out SOME tools (msm, rest, restd) is not
 # listed: it is served either way.
 FUNCTION_GROUP_REQUIREMENTS = {FUNCTION_GROUP_UTIL: FUNCTION_GROUP_DB}
 
@@ -167,7 +170,7 @@ def served_function_groups(function_groups) -> set:
     return {group for group in groups if group_requirement_met(group, groups)}
 
 # The groups a multi-tenant server serves, and the only ones it may. The
-# sandbox, migrator and rest groups run local server processes and long jobs
+# sandbox, migrator and restd groups run local server processes and long jobs
 # that write to the server's disk - resources one user would take from all the
 # others - the util group's dumps and loads are such jobs too, and the msm
 # group works on schema project folders, which live on the developer's own

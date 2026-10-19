@@ -2,7 +2,7 @@ name: Trigger MariaDB Shell Release
 
 # The release packages are built in mariadb-corporation/mariadb-shell, not here:
 # its MariaDB-Shell-Release workflow checks this repo out at release/candidate,
-# copies mrs_plugin/msm_plugin/mcp_plugin into plugins/external/ before Configure,
+# copies rest_plugin/msm_plugin/mcp_plugin into plugins/external/ before Configure,
 # and CPacks them into the shell tarballs. A push here therefore has to tell that
 # repo to rebuild -- nothing in the shell repo changed, so its own push trigger
 # will not fire.

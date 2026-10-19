@@ -21,7 +21,7 @@ opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 pa
 - **CI fix:** the code and two test modules imported `httpx`, which the shell no longer
   ships (SDK 2.3 uses `httpx2`); now `httpx2` everywhere (`850626ee`). See
   working-practices.md.
-- **Sign-in page restyled** after mrs_plugin's
+- **Sign-in page restyled** after rest_plugin's
   `default_static_content/index.html` (colours, welcome header, joined fields, round next
   button, error bubble, separator, footer), without its script (the CSP allows none).
   The page's style is `lib/assets/sign-in-page.css`, the logo the official vertical MariaDB

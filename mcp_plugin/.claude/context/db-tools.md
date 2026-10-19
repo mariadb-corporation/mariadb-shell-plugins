@@ -217,9 +217,9 @@ handling are in [connections.md](connections.md).
     the measurement below, and the user said commit. Do not switch it back.
 
 - **REST SQL** (commit 0e97c9e9): `db.execute_sql` can run MRS REST SQL (e.g.
-  `CONFIGURE REST METADATA`) because `mrs_plugin` registers a shell SQL handler
+  `CONFIGURE REST METADATA`) because `rest_plugin` registers a shell SQL handler
   (`@sql_handler("MRS", prefixes=...)`, prefixes incl. "CONFIGURE REST ") that intercepts
-  `session.run_sql`. Requires mrs_plugin loaded in the server subprocess (symlinked by
+  `session.run_sql`. Requires rest_plugin loaded in the server subprocess (symlinked by
   run_tests). antlr4 (MRS parser dep) is bundled in mariadb-shell.
 
 ## Current state
@@ -312,7 +312,7 @@ handling are in [connections.md](connections.md).
   `MINIMUM_SHELL_VERSION` bump, so `db.execute_sql_script` filters on this side instead.
 
 - **REST SQL / MRS session duplication**: MRS runs metadata DDL on a SECOND session so
-  `USE x` etc. don't disturb the caller. `mrs_plugin/lib/general.py` originally did
+  `USE x` etc. don't disturb the caller. `rest_plugin/lib/general.py` originally did
   `if "shell.Object" in str(type(session))` -> no-arg `shell.open_session()` = duplicate the
   GLOBAL session (carries password). The MCP db layer uses `shell.open_session(connection_data)`
   and sets NO global session -> that path raised "An open session is required when

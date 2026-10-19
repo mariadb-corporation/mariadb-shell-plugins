@@ -26,10 +26,10 @@ Path arguments are authorized through
 :func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
 MCP elicitation - to trust a path that is not yet allowed.
 
-A sandbox can have a MariaDB REST Daemon, set up with ``rest.configure_restd``
+A sandbox can have a MariaDB REST Daemon, set up with ``restd.configure_restd``
 in ``<sandboxDir>/<port>/mariadb-restd``. It follows the sandbox: started after
 it, stopped before it, and stopped before the sandbox's folder is deleted with
-it (see :mod:`mcp_plugin.lib.restd`). That holds whether or not the rest group
+it (see :mod:`mcp_plugin.lib.restd`). That holds whether or not the restd group
 is served, so a daemon is never left running on a deleted folder.
 
 A sandbox normally runs whatever server binary is on the PATH. ``sandbox.deploy``
@@ -398,7 +398,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         # After the server: the daemon reads the REST metadata as it starts.
         # A daemon that does not come up leaves the sandbox started; the
-        # message says why, and rest.start_restd can try again.
+        # message says why, and restd.start_restd can try again.
         outcomes = _follow_restd(
             port, sandbox_dir, lambda restd_dir: restd.start(None, restd_dir)
         )

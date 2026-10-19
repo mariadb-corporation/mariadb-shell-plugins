@@ -98,11 +98,11 @@ from mcp_plugin.lib import config, db_functions, general, tenants
 _FUNCTION_GROUP_REGISTRARS = {
     general.FUNCTION_GROUP_DB: ("db_functions", "register_db_tools"),
     general.FUNCTION_GROUP_MSM: ("msm_functions", "register_msm_tools"),
-    general.FUNCTION_GROUP_MRS: ("mrs_functions", "register_mrs_tools"),
+    general.FUNCTION_GROUP_REST: ("rest_functions", "register_rest_tools"),
     general.FUNCTION_GROUP_SANDBOX: ("sandbox_functions", "register_sandbox_tools"),
     general.FUNCTION_GROUP_MIGRATOR: ("migrator_functions", "register_migrator_tools"),
     general.FUNCTION_GROUP_UTIL: ("util_functions", "register_util_tools"),
-    general.FUNCTION_GROUP_REST: ("rest_functions", "register_rest_tools"),
+    general.FUNCTION_GROUP_RESTD: ("restd_functions", "register_restd_tools"),
 }
 
 
