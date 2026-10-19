@@ -365,3 +365,32 @@ def test_a_datetime_keeps_its_fraction_when_the_precision_is_unknown():
     assert db_functions._time_text(value.replace(microsecond=0), 31) == (
         "2026-01-01 00:00:00"
     )
+
+
+def test_a_zerofill_decimal_or_double_is_padded_too():
+    """The server pads every ZEROFILL column, not only an integer one."""
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn(
+                "dec", "DECIMAL", "UNSIGNED ZEROFILL NUM", length=7
+            ),
+            helpers.MetadataColumn(
+                "dbl", "DOUBLE", "UNSIGNED ZEROFILL NUM", length=6,
+                fractional_digits=2,
+            ),
+        ],
+        [["1.50", 2.5]],
+    )])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3] == "| 0001.50 | 002.50 |"
+
+
+def test_bidirectional_controls_are_escaped():
+    """An override would reorder the rest of the grid line on the terminal."""
+    result = helpers.MultiSetResult([(["t"], [["a‮b⁦c"]])])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3] == "| a\\u202eb\\u2066c |"

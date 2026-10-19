@@ -61,7 +61,9 @@ handling are in [connections.md](connections.md).
   the client: a NULL binary/BIT value is `NULL` (the client prints a bare
   `0x`), a tab is escaped (the client prints it raw). Escaped in labels and
   values: `\\` `\n` `\r` `\t` `\0`, every other C0/DEL/C1 control as `\xNN`,
-  U+2028/2029 as `\uNNNN`. A wide (East Asian W/F) character counts two
+  U+2028/2029 and the bidi embeddings/overrides/isolates (U+202A-202E,
+  U+2066-2069) as `\uNNNN`. A ZEROFILL column is padded whatever its
+  numeric type (INT, DECIMAL, FLOAT, DOUBLE). A wide (East Asian W/F) character counts two
   cells, categories Mn/Me/Cf none. A set without rows still shows its
   header (the client would print "Empty set"). Both tools go through
   `_shape_result` (serialize, cut the page, draw), so the order lives in one

@@ -1593,9 +1593,7 @@ def _read_result_set(
                 ]
                 for row in result.fetch_all()
             ],
-            "align_right": [
-                "NUM" in column.get_flags().split() for column in metadata
-            ],
+            "align_right": [column.numeric for column in grid_columns],
         }
     else:
         output = _read_json_rows(result, metadata)
@@ -1632,11 +1630,10 @@ def _read_json_rows(result, metadata) -> dict:
             value = row[index]
             # Values that are not natively JSON-serializable have to be
             # converted, as the tool result is returned as JSON. The shell
-            # hands the types that have no JSON equivalent of their own -
-            # decimals, dates and times - back as text already, so only
-            # binary data needs converting; anything else the shell might
-            # return in a type of its own falls back to its text form
-            # rather than failing to serialize.
+            # hands decimals back as text already; binary data comes as hex,
+            # DATETIME, TIMESTAMP and TIME values as the server writes them,
+            # and anything else the shell might return in a type of its own
+            # falls back to its text form rather than failing to serialize.
             if isinstance(value, (bytes, bytearray)):
                 value = value.hex()
             elif isinstance(
@@ -2035,14 +2032,23 @@ def _escape_code(code: int) -> str:
 
 
 # Characters that would break a grid line or act on the terminal it is shown
-# in: every control character (C0, DEL, C1 - ESC among them) and the Unicode
-# line and paragraph separators. A newline, carriage return, tab and NUL are
+# in: every control character (C0, DEL, C1 - ESC among them), the Unicode
+# line and paragraph separators, and the bidirectional embeddings, overrides
+# and isolates, which would reorder the rest of the line. A newline, carriage return, tab and NUL are
 # written as the mariadb client writes them in its batch output, the others
 # as \xNN or \uNNNN - and the backslash itself as \\, so that a value holding
 # a backslash and an n still reads apart from one holding a newline.
 _GRID_ESCAPES = {
     code: _escape_code(code)
-    for code in [*range(0x20), *range(0x7F, 0xA0), 0x5C, 0x2028, 0x2029]
+    for code in [
+        *range(0x20),
+        *range(0x7F, 0xA0),
+        0x5C,
+        0x2028,
+        0x2029,
+        *range(0x202A, 0x202F),
+        *range(0x2066, 0x206A),
+    ]
 }
 
 # Characters a terminal draws in no cell of their own: combining marks (Mn,
@@ -2176,15 +2182,18 @@ class _GridColumn(NamedTuple):
     length: int
     fractional_digits: int
     zerofill: bool
+    numeric: bool
 
     @classmethod
     def of(cls, column) -> "_GridColumn":
         """Reads it off a column of ``result.get_columns()``."""
+        flags = column.get_flags().split()
         return cls(
             column.get_type().data,
             column.get_length(),
             column.get_fractional_digits(),
-            "ZEROFILL" in column.get_flags().split(),
+            "ZEROFILL" in flags,
+            "NUM" in flags,
         )
 
 
@@ -2211,20 +2220,24 @@ def _grid_cell(value, column: _GridColumn) -> str:
         return "0x" + value.to_bytes(size, "big").hex().upper()
     if isinstance(value, bool):
         return "1" if value else "0"
-    if isinstance(value, int) and column.zerofill:
-        # The server pads a ZEROFILL column to its display width, and the
-        # shell's int has lost the zeros.
-        return str(value).zfill(column.length)
+    if isinstance(value, (datetime.datetime, datetime.time, datetime.timedelta)):
+        return _time_text(value, column.fractional_digits)
     if isinstance(value, float):
         # A FLOAT(M,D) or DOUBLE(M,D) - or ROUND(x, D) - is written with
         # exactly D digits after the point, 1.50 and not 1.5.
         if 0 < column.fractional_digits < _NOT_FIXED_DEC:
-            return f"{value:.{column.fractional_digits}f}"
-        return _double_text(value)
-    if isinstance(value, (datetime.datetime, datetime.time, datetime.timedelta)):
-        return _time_text(value, column.fractional_digits)
+            text = f"{value:.{column.fractional_digits}f}"
+        else:
+            text = _double_text(value)
+    else:
+        text = str(value).translate(_GRID_ESCAPES)
+    if column.zerofill:
+        # The server pads a ZEROFILL column - an integer, DECIMAL, FLOAT or
+        # DOUBLE - to its display width, and the shell's value has lost the
+        # zeros.
+        text = text.zfill(column.length)
 
-    return str(value).translate(_GRID_ESCAPES)
+    return text
 
 
 def _text_grid(columns: list, rows: list, align_right: list) -> str:
