@@ -215,6 +215,36 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     assert results[0]["session_restarted"] is True
 
 
+
+def test_a_failed_first_statement_still_carries_the_restart_flag(
+    tools, monkeypatch
+):
+    """The flag rides on the first entry even when that entry is a failure.
+
+    A statement that fails BECAUSE the session was replaced - on a temporary
+    table that went with the old one - is where the caller most needs to
+    hear it, and the next entry must not carry it instead.
+    """
+    connection = next(iter(db_functions._sessions.values()))
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    assert db_functions._close_idle_sessions() == 1
+    open_session = db_functions._open_session
+
+    def _failing_on_the_temporary_table(*args, **kwargs):
+        session = open_session(*args, **kwargs)
+        session.fail_on = {"SELECT * FROM tmp"}
+        return session
+
+    monkeypatch.setattr(
+        db_functions, "_open_session", _failing_on_the_temporary_table
+    )
+
+    results = tools.script("SELECT * FROM tmp; SELECT 1;", stop_on_error=False)
+
+    assert results[0]["error"] == "no"
+    assert results[0]["session_restarted"] is True
+    assert "session_restarted" not in results[1]
+
 def test_every_result_set_of_a_call_is_read():
     """Every set is in result_sets, in order; the one without data is not."""
     result = helpers.MultiSetResult([

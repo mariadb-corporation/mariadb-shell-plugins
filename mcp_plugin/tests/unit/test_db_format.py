@@ -108,6 +108,86 @@ def test_wide_characters_take_two_cells():
     ]
 
 
+
+def test_zero_width_characters_take_no_cell():
+    """Thai vowel signs, a variation selector and a joiner draw in no cell."""
+    result = helpers.MultiSetResult([(["w"], [["\u0e01\u0e31"], ["a\u200db\ufe0f"]])])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3:5] == [
+        "| \u0e01\u0e31  |",
+        "| a\u200db\ufe0f |",
+    ]
+
+
+def test_other_control_characters_are_escaped_too():
+    """None of them may break the line or reach the terminal raw."""
+    result = helpers.MultiSetResult([(["t"], [["a\x0bb\x0c\x1b[2J\x85\u2028z"]])])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3] == (
+        "| a\\x0bb\\x0c\\x1b[2J\\x85\\u2028z |"
+    )
+
+
+def test_labels_are_the_ones_the_server_sent():
+    """Two columns called id are both id: the _2 suffix is for JSON keys."""
+    result = helpers.MultiSetResult([(["id", "id"], [[1, 2]])])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[1] == "| id | id |"
+
+
+@pytest.mark.parametrize(
+    "value, text",
+    [
+        # As the mariadb client shows them, from a 12.3 server.
+        (1.1, "1.1"),
+        (123456.0, "123456"),
+        (1234570.0, "1234570"),
+        (1e15, "1e15"),
+        (1e16, "1e16"),
+        (1e21, "1e21"),
+        (3.4e38, "3.4e38"),
+        (1.7976931348623157e308, "1.7976931348623157e308"),
+        (1.2345678901234567e19, "1.2345678901234567e19"),
+        (0.30000000000000004, "0.30000000000000004"),
+        (1e-4, "0.0001"),
+        (1e-5, "0.00001"),
+        (1e-7, "0.0000001"),
+        (-2.5, "-2.5"),
+        (-0.0001, "-0.0001"),
+        (100.0, "100"),
+        (0.0, "0"),
+        # Where my_gcvt turns to the e format below 1.
+        (1e-15, "0.000000000000001"),
+        (1e-16, "1e-16"),
+        (-1.5e-20, "-1.5e-20"),
+    ],
+)
+def test_a_double_is_written_as_the_server_writes_it(value, text):
+    assert db_functions._double_text(value) == text
+
+
+def test_bit_and_bool_values_are_written_as_the_client_writes_them():
+    """BIT as the bytes of its column, in hex; a bool as 1 or 0."""
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn("b16", "BIT", "UNSIGNED", length=16),
+            helpers.MetadataColumn("b1", "BIT", "UNSIGNED", length=1),
+            helpers.MetadataColumn("t", "INT", "NUM"),
+            helpers.MetadataColumn("d", "DOUBLE", "NUM"),
+        ],
+        [[5, 1, True, 1e16]],
+    )])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3] == "| 0x0005 | 0x01 | 1 | 1e16 |"
+
 def test_a_set_without_rows_still_shows_its_header():
     result = helpers.MultiSetResult([(["a", "b"], [])])
 

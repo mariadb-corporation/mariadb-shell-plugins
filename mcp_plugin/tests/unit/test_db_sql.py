@@ -124,6 +124,31 @@ async def _db_flow(uri, script_dir):
             "row_count": 2,
         }
 
+        # Every cell as the mariadb client (--binary-as-hex) shows it - the
+        # expected grid is the client's own, but for the column widths it
+        # pads binary columns to: both labels id, the server's text of a
+        # double, fractional seconds to the column's precision, 1 for TRUE.
+        client_payload = helpers.result_set(helpers.tool_payload(
+            await call(
+                "db.execute_sql",
+                {
+                    "connection_id": connection_id,
+                    "sql": (
+                        "SELECT 1 AS id, 2 AS id, CAST(1e16 AS DOUBLE) AS d, "
+                        "CAST(0.00001 AS DOUBLE) AS small, b'101' AS bits, "
+                        "CAST('2026-01-01 00:00:00' AS DATETIME(3)) AS dt, "
+                        "TRUE AS t"
+                    ),
+                    "output_format": "table",
+                },
+            )
+        ))
+        assert client_payload["table"].splitlines()[1:4] == [
+            "| id | id | d    | small   | bits | dt                      | t |",
+            "+----+----+------+---------+------+-------------------------+---+",
+            "|  1 |  2 | 1e16 | 0.00001 | 0x05 | 2026-01-01 00:00:00.000 | 1 |",
+        ]
+
         # Multi-statement script: create schema, table and insert rows in one
         # call, exercising db.execute_sql_script.
         schema = "mcp_test_" + uuid.uuid4().hex

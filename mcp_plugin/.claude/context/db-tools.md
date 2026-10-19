@@ -45,13 +45,24 @@ handling are in [connections.md](connections.md).
   `columns`/`rows` with `table` (the grid) and `row_count`;
   `has_more_pages` stays, and `column_metadata` stays only if asked for.
   The grid is drawn AFTER `_page_result`, so the extra paging row is never
-  in it, by `_text_grid`. Alignment uses the `NUM`
-  flag, which the server sets on every numeric type (measured on 12.3:
-  INT, DECIMAL, DOUBLE, FLOAT, YEAR (as TINYINT), NULL; not BIT). So
-  table mode always reads the column metadata. The grid writes `NULL`,
-  `0x` + upper-case hex for BYTES/GEOMETRY (as `--binary-as-hex` does) and
-  `\\` `\n` `\r` `\t` `\0` escaped, in labels as in values. A wide (East Asian W/F) character counts as two
-  cells, a combining mark as none. A set without rows still shows its
+  in it, by `_text_grid`. Its cells are made in `_read_result_set(grid=True)`
+  from the RAW values (rows become lists of cell texts, `columns` the labels
+  as sent - `id | id`, not the JSON `id_2` - plus `align_right`), because
+  only there is a binary value still bytes. Verified cell for cell against
+  `mariadb --table --binary-as-hex` on 12.3 (2026-10-19, a 21-column query
+  and 34 doubles): alignment by the `NUM` flag (INT, DECIMAL, DOUBLE, FLOAT,
+  YEAR, NULL, TRUE; not BIT); bytes -> `0x` + upper-case hex; BIT -> `0x`
+  hex padded to the column's bytes (`get_length()`, BIT(16) 5 = `0x0005`);
+  a bool 1/0; FLOAT/DOUBLE through `_double_text`, a port of the server's
+  `my_gcvt` at its field width (shortest digits, f format while the decimal
+  point is within 15 places: `1e15`, `0.00001`, `0.000000000000001`,
+  `1e-16`; Python's repr gives `1e+15`, `1e-05`); DATETIME/TIME with the
+  column's `get_fractional_digits()` (`00:00:00.000`). Deliberately NOT as
+  the client: a NULL binary/BIT value is `NULL` (the client prints a bare
+  `0x`), a tab is escaped (the client prints it raw). Escaped in labels and
+  values: `\\` `\n` `\r` `\t` `\0`, every other C0/DEL/C1 control as `\xNN`,
+  U+2028/2029 as `\uNNNN`. A wide (East Asian W/F) character counts two
+  cells, categories Mn/Me/Cf none. A set without rows still shows its
   header (the client would print "Empty set"). Both tools go through
   `_shape_result` (serialize, cut the page, draw), so the order lives in one
   place. An unknown value is refused by the SDK's argument model, from the
@@ -62,7 +73,10 @@ handling are in [connections.md](connections.md).
   tools over a stub session are `helpers.stub_db_tools(monkeypatch,
   make_session)` (yields `sql`, `script`, `opened`), the tool recorder
   `helpers.ToolRecorder`.
-  Tests: `test_db_format.py`, plus a grid of a real UNION in `_db_flow`.
+  Tests: `test_db_format.py`, plus two real-server grids in `_db_flow`.
+  **The shell cannot fetch a TIME outside 00:00-23:59** (negative, or
+  838:59:59): `fetch_all()` raises `Invalid date value` / `Valid hour range
+  is 0-23`, in json mode too. A mariadb-shell bug, not handled here.
 
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
   for the VS Code extension, branch `wip/vscode_syntax_highlighter`).

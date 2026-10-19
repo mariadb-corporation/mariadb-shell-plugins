@@ -596,10 +596,13 @@ class StubType:
 class MetadataColumn:
     """A column with the shell's Column getters the db tools read."""
 
-    def __init__(self, label, kind="STRING", flags=""):
+    def __init__(self, label, kind="STRING", flags="", length=0,
+                 fractional_digits=0):
         self.label = label
         self.kind = kind
         self.flags = flags
+        self.length = length
+        self.fractional_digits = fractional_digits
 
     def get_column_label(self):
         return self.label
@@ -609,6 +612,12 @@ class MetadataColumn:
 
     def get_flags(self):
         return self.flags
+
+    def get_length(self):
+        return self.length
+
+    def get_fractional_digits(self):
+        return self.fractional_digits
 
 
 class MultiSetResult:
@@ -646,7 +655,6 @@ class MultiSetResult:
         return []
 
 
-
 class TableSession:
     """Answers every statement from a table of rows of one column.
 
@@ -671,6 +679,7 @@ class TableSession:
 
     def close(self):
         pass
+
 
 # --- the db tools over a stub session, without a server -----------------------
 

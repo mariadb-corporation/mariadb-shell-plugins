@@ -133,6 +133,7 @@ the log is the only place the attempt can be seen at all.
 # cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
 import asyncio
+import datetime
 import json
 import threading
 import time
@@ -1555,20 +1556,61 @@ def _column_metadata(column) -> dict:
     }
 
 
-def _read_result_set(result, column_metadata: bool = False) -> dict:
+def _read_result_set(
+    result, column_metadata: bool = False, grid: bool = False
+) -> dict:
     """Reads the result set a result is on now: its columns and every row.
 
     Args:
         result: The result object returned by ``session.run_sql``, on a
             result set that has data.
         column_metadata (bool): Whether to report each column's metadata too.
+        grid (bool): Whether to read the rows as the cells of a text grid.
 
     Returns:
         A dict with the column labels (columns) and the rows (rows), each row
         a dict keyed by those labels, and - when asked for - each column's
         metadata in the same order (column_metadata).
+
+        For a grid, columns are the labels as the server sent them, each row
+        is a list of cell texts, and align_right says which columns are
+        numeric.
     """
     metadata = result.get_columns()
+    if grid:
+        output = {
+            "columns": [column.get_column_label() for column in metadata],
+            # Made from the values the shell returned, before anything is
+            # converted for JSON: a binary value is still bytes here, and a
+            # BIT column still knows its length.
+            "rows": [
+                [_grid_cell(value, column) for value, column in zip(row, metadata)]
+                for row in result.fetch_all()
+            ],
+            "align_right": [
+                "NUM" in column.get_flags().split() for column in metadata
+            ],
+        }
+    else:
+        output = _read_json_rows(result, metadata)
+    if column_metadata:
+        output["column_metadata"] = [
+            _column_metadata(column) for column in metadata
+        ]
+
+    return output
+
+
+def _read_json_rows(result, metadata) -> dict:
+    """Reads a result set's rows for JSON, each a dict keyed by its label.
+
+    Args:
+        result: The result object, on a result set that has data.
+        metadata: The result set's columns, from ``result.get_columns()``.
+
+    Returns:
+        A dict with the column labels, made unique (columns), and the rows.
+    """
     columns = _unique_column_labels(metadata)
     rows = []
     for row in result.fetch_all():
@@ -1595,13 +1637,7 @@ def _read_result_set(result, column_metadata: bool = False) -> dict:
             item[column] = value
         rows.append(item)
 
-    output = {"columns": columns, "rows": rows}
-    if column_metadata:
-        output["column_metadata"] = [
-            _column_metadata(column) for column in metadata
-        ]
-
-    return output
+    return {"columns": columns, "rows": rows}
 
 
 def _serialize_result(
@@ -1610,6 +1646,7 @@ def _serialize_result(
     statement_index: Optional[int] = None,
     execution_time: Optional[float] = None,
     column_metadata: bool = False,
+    grid: bool = False,
 ) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
@@ -1624,6 +1661,8 @@ def _serialize_result(
         execution_time (float): How long this statement took, in seconds.
         column_metadata (bool): Whether each result set reports its columns'
             metadata too.
+        grid (bool): Whether the rows are read as the cells of a text grid,
+            see ``_read_result_set``.
 
     Returns:
         A dict with the statement's result sets (result_sets, a list - empty
@@ -1653,7 +1692,7 @@ def _serialize_result(
     result_sets = []
     while True:
         if result.has_data():
-            result_sets.append(_read_result_set(result, column_metadata))
+            result_sets.append(_read_result_set(result, column_metadata, grid))
         next_result = getattr(result, "next_result", None)
         if next_result is None or not next_result():
             break
@@ -1964,23 +2003,42 @@ def _page_result(serialized: dict, limit: int) -> dict:
 # client prints.
 OutputFormat = Literal["json", "table"]
 
-# The column types whose values come as hex text, which the grid marks with
-# 0x as the mariadb client does with --binary-as-hex.
-_HEX_TYPES = ("BYTES", "GEOMETRY")
+def _escape_code(code: int) -> str:
+    """Returns how the grid writes a character that would break its line."""
+    named = {0: "\\0", 9: "\\t", 10: "\\n", 13: "\\r", 92: "\\\\"}
+    if code in named:
+        return named[code]
 
-# Characters that would break a grid line, written the way the mariadb client
-# writes them in its batch output - the backslash too, so that a value that
-# holds a backslash and an n still reads apart from one that holds a newline.
-_GRID_ESCAPES = str.maketrans(
-    {"\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\0": "\\0"}
-)
+    return f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}"
+
+
+# Characters that would break a grid line or act on the terminal it is shown
+# in: every control character (C0, DEL, C1 - ESC among them) and the Unicode
+# line and paragraph separators. A newline, carriage return, tab and NUL are
+# written as the mariadb client writes them in its batch output, the others
+# as \xNN or \uNNNN - and the backslash itself as \\, so that a value holding
+# a backslash and an n still reads apart from one holding a newline.
+_GRID_ESCAPES = {
+    code: _escape_code(code)
+    for code in [*range(0x20), *range(0x7F, 0xA0), 0x5C, 0x2028, 0x2029]
+}
+
+# Characters a terminal draws in no cell of their own: combining marks (Mn,
+# Me) and format characters (Cf) such as the zero width joiner and the
+# variation selectors' kin.
+_ZERO_WIDTH_CATEGORIES = ("Mn", "Me", "Cf")
+
+# The f format is kept for a decimal point at most this many places from the
+# first digit, as the server's my_gcvt does (MAX_DECPT_FOR_F_FORMAT, DBL_DIG).
+_MAX_DECPT_FOR_F_FORMAT = 15
 
 
 def _display_width(text: str) -> int:
     """Returns how many terminal cells a text takes up.
 
     A wide character - most of Chinese, Japanese and Korean - takes two, and
-    a combining mark none, so that a grid holding them still lines up.
+    a combining mark or format character none, so that a grid holding them
+    still lines up.
 
     Args:
         text (str): The text to measure.
@@ -1994,33 +2052,111 @@ def _display_width(text: str) -> int:
         return len(text)
 
     return sum(
-        0 if unicodedata.combining(character)
+        0 if unicodedata.category(character) in _ZERO_WIDTH_CATEGORIES
         else 2 if unicodedata.east_asian_width(character) in "WF"
         else 1
         for character in text
     )
 
 
-def _grid_cell(value, column: dict) -> str:
-    """Returns a value as the mariadb client shows it in a grid.
+def _double_text(value: float) -> str:
+    """Returns a FLOAT or DOUBLE value as the server writes it as text.
+
+    The server's ``my_gcvt`` with its field width (FLOATING_POINT_BUFFER,
+    room for every digit): the shortest digits that read back as the value,
+    in fixed notation unless the decimal point is more than 15 places from
+    them, then as ``1e16``, ``1.5e-20``. Python's shortest repr has the same
+    digits; only where they go differs (``1e+16``, ``1e-05``, ``123456.0``).
 
     Args:
-        value: The value as the JSON result carries it.
-        column (dict): The column's metadata, from ``_column_metadata``.
+        value (float): The value, as the shell returned it.
+
+    Returns:
+        The text.
+    """
+    if value == 0:
+        return "0"
+    sign = "-" if value < 0 else ""
+    mantissa, _, exponent = repr(abs(value)).partition("e")
+    whole, _, fraction = mantissa.partition(".")
+    whole = whole.lstrip("0")
+    # Where the decimal point is, counted from the first significant digit:
+    # after it for 123.4 (3), before it for 0.001 (-2).
+    if whole:
+        decpt = len(whole)
+    else:
+        decpt = len(fraction.lstrip("0")) - len(fraction)
+    decpt += int(exponent or 0)
+    digits = (whole + fraction).strip("0")
+
+    if decpt > -_MAX_DECPT_FOR_F_FORMAT and (
+        decpt <= _MAX_DECPT_FOR_F_FORMAT or len(digits) > decpt
+    ):
+        if decpt <= 0:
+            return f"{sign}0.{'0' * -decpt}{digits}"
+        if decpt < len(digits):
+            return f"{sign}{digits[:decpt]}.{digits[decpt:]}"
+        return f"{sign}{digits}{'0' * (decpt - len(digits))}"
+
+    rest = f".{digits[1:]}" if len(digits) > 1 else ""
+    return f"{sign}{digits[0]}{rest}e{decpt - 1}"
+
+
+def _time_text(value, fractional_digits: int) -> str:
+    """Returns a DATETIME, TIMESTAMP or TIME value as the server writes it.
+
+    With as many digits after the seconds as the column has - DATETIME(3)
+    writes 00:00:00.000 - and none for a column without them.
+
+    Args:
+        value: The value, a datetime or a time.
+        fractional_digits (int): The column's fractional seconds precision.
+
+    Returns:
+        The text.
+    """
+    if isinstance(value, datetime.datetime):
+        text = value.isoformat(" ", "seconds")
+    else:
+        text = value.isoformat("seconds")
+    if 0 < fractional_digits <= 6:
+        text += "." + f"{value.microsecond:06d}"[:fractional_digits]
+
+    return text
+
+
+def _grid_cell(value, column) -> str:
+    """Returns a value as the mariadb client shows it in a grid.
+
+    With ``--binary-as-hex``, as for a tool the hex is the only safe way to
+    show bytes: binary values as 0x and upper-case hex, a BIT value as the
+    bytes of its column, so BIT(16) shows 5 as 0x0005.
+
+    Args:
+        value: The value as the shell returned it.
+        column: The column's metadata, from ``result.get_columns()``.
 
     Returns:
         The cell's text.
     """
     if value is None:
         return "NULL"
-    if column["type"] in _HEX_TYPES:
-        # Upper case, as the client prints it.
-        return f"0x{value.upper()}"
+    if isinstance(value, (bytes, bytearray)):
+        return "0x" + value.hex().upper()
+    if column.get_type().data == "BIT":
+        size = max(1, (column.get_length() + 7) // 8)
+        return "0x" + value.to_bytes(size, "big").hex().upper()
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        return _double_text(value)
+    if isinstance(value, (datetime.datetime, datetime.time)):
+        return _time_text(value, column.get_fractional_digits())
 
     return str(value).translate(_GRID_ESCAPES)
 
 
-def _text_grid(columns: list, rows: list, metadata: list) -> str:
+def _text_grid(columns: list, rows: list, align_right: list) -> str:
     """Draws a result set as the grid the mariadb client prints.
 
     Numeric columns are right aligned and every other one left aligned, as
@@ -2028,16 +2164,16 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
     A result set without rows still shows its header.
 
     Args:
-        columns (list): The column labels.
-        rows (list): The rows, each a dict keyed by those labels.
-        metadata (list): Each column's metadata, from ``_column_metadata``.
+        columns (list): The column labels, as the server sent them.
+        rows (list): The rows, each a list of cell texts.
+        align_right (list): Which columns are right aligned.
 
     Returns:
         The grid, its lines joined by newlines.
     """
     # Each cell with its width, measured once for the column widths and the
-    # padding both.
-    # A label is escaped as a value is: an alias can hold a newline too.
+    # padding both. A label is escaped as a value is: an alias can hold a
+    # newline too.
     header = []
     for label in columns:
         text = label.translate(_GRID_ESCAPES)
@@ -2046,17 +2182,15 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
     cells = []
     for row in rows:
         measured = []
-        for index, (label, column) in enumerate(zip(columns, metadata)):
-            text = _grid_cell(row[label], column)
+        for index, text in enumerate(row):
             text_width = _display_width(text)
             widths[index] = max(widths[index], text_width)
             measured.append((text, text_width))
         cells.append(measured)
-    numeric = ["NUM" in column["flags"] for column in metadata]
 
-    def line(texts, align_right):
+    def line(texts, right_aligned):
         padded = []
-        for (text, text_width), width, right in zip(texts, widths, align_right):
+        for (text, text_width), width, right in zip(texts, widths, right_aligned):
             padding = " " * (width - text_width)
             padded.append(padding + text if right else text + padding)
 
@@ -2064,7 +2198,7 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
 
     border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
     lines = [border, line(header, [False] * len(columns)), border]
-    lines.extend(line(row, numeric) for row in cells)
+    lines.extend(line(row, align_right) for row in cells)
     if cells:
         lines.append(border)
 
@@ -2082,17 +2216,17 @@ def _shape_result(
     """Serializes a statement's result, cut to its page, in the format asked for.
 
     For table, each result set's columns and rows are replaced by the grid
-    (table) and the number of rows in it (row_count). The grid aligns its
-    columns by their metadata, so that is read for it, and stays only where
-    it was asked for. The grid is drawn after the page is cut, so the row
-    fetched to tell whether there is more is never in it.
+    (table) and the number of rows in it (row_count). The grid is drawn after
+    the page is cut, so the row fetched to tell whether there is more is
+    never in it.
 
     Args:
         result: The result object returned by ``session.run_sql``.
         limited (bool): Whether the statement ran with the paging limit.
         limit (int): The rows asked for, when limited.
         output_format (str): json or table.
-        column_metadata (bool): Whether the caller asked for column metadata.
+        column_metadata (bool): Whether each result set reports its columns'
+            metadata too.
         **serialize_args: The rest of ``_serialize_result``'s arguments.
 
     Returns:
@@ -2100,20 +2234,15 @@ def _shape_result(
     """
     table = output_format == "table"
     serialized = _serialize_result(
-        result, column_metadata=column_metadata or table, **serialize_args
+        result, column_metadata=column_metadata, grid=table, **serialize_args
     )
     if limited:
         serialized = _page_result(serialized, limit)
     if table:
         for result_set in serialized["result_sets"]:
             rows = result_set.pop("rows")
-            metadata = (
-                result_set["column_metadata"]
-                if column_metadata
-                else result_set.pop("column_metadata")
-            )
             result_set["table"] = _text_grid(
-                result_set.pop("columns"), rows, metadata
+                result_set.pop("columns"), rows, result_set.pop("align_right")
             )
             result_set["row_count"] = len(rows)
 
@@ -3149,11 +3278,14 @@ def register_db_tools(server, function_groups=()) -> None:
             no column is lost. Binary values come as hex text.
 
             With output_format table, each result set has table and
-            row_count in place of columns and rows. The grid puts NULL for
-            a NULL, 0x before binary values in hex, and writes a backslash,
-            newline, carriage return, tab or NUL inside a value or label as
-            \\\\, \\n, \\r, \\t or \\0, so that every row stays on one line.
-            A result set without rows still shows its header.
+            row_count in place of columns and rows. The grid shows what the
+            mariadb client shows with --binary-as-hex: the column labels as
+            the server sent them, NULL for a NULL, binary and BIT values as
+            0x and hex, numbers as the server writes them. A backslash,
+            newline, carriage return, tab or NUL inside a value or label is
+            written \\\\, \\n, \\r, \\t or \\0, and any other control
+            character as \\xNN, so that every row stays on one line. A result
+            set without rows still shows its header.
 
             With column_metadata true, each result set also has
             column_metadata: one dict per column, in the order of columns,
@@ -3365,16 +3497,21 @@ def register_db_tools(server, function_groups=()) -> None:
                         f"{index} failed for "
                         f"{general.describe_client(client)}: {error}"
                     )
-                    results.append(
-                        {
-                            "statement_index": index,
-                            "execution_time": round(
-                                time.perf_counter() - started, 6
-                            ),
-                            "statement": _abbreviate(statement),
-                            "error": str(error),
-                        }
-                    )
+                    failure = {
+                        "statement_index": index,
+                        "execution_time": round(
+                            time.perf_counter() - started, 6
+                        ),
+                        "statement": _abbreviate(statement),
+                        "error": str(error),
+                    }
+                    # The first entry says the session was reopened, failed
+                    # or not: a statement that failed for it - on a temporary
+                    # table that went with the old session, say - is where
+                    # the caller most needs to know.
+                    if restarted and not results:
+                        failure["session_restarted"] = True
+                    results.append(failure)
 
                     if stop_on_error:
                         break
