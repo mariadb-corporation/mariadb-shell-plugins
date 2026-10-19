@@ -965,6 +965,65 @@ def test_substitution_helpers():
         identifier("/*<msm:schema_prefix>*/my-schema")
 
 
+def test_source_statements(temp_dir):
+    sections = os.path.join(temp_dir, "sections")
+    os.makedirs(sections)
+    with open(os.path.join(sections, "part.sql"), "w") as f:
+        f.write("-- header\nSELECT 1;\nSELECT 2;\n-- footer\n")
+    substitute = lib.management.substitute_source_statements_with_content
+
+    def expand(statement):
+        return substitute(f"USE s;\n{statement}\nSELECT 3;\n", temp_dir)
+
+    whole = "USE s;\n-- header\nSELECT 1;\nSELECT 2;\n-- footer\nSELECT 3;\n"
+    # Without a slice, or with an empty one, the whole file
+    assert expand("SOURCE './sections/part.sql'; -- all") == whole
+    assert expand('SOURCE "./sections/part.sql"[:];') == whole
+    # Character offsets, as before
+    assert expand("SOURCE './sections/part.sql'[10:-10];") == (
+        "USE s;\nSELECT 1;\nSELECT 2;\nSELECT 3;\n"
+    )
+    # Line numbers: 1-based, the end line included, ln-1 the last line
+    lines = {
+        "[ln2:]": "SELECT 1;\nSELECT 2;\n-- footer\n",
+        "[ln2:ln3]": "SELECT 1;\nSELECT 2;\n",
+        "[ln2:ln-2]": "SELECT 1;\nSELECT 2;\n",
+        "[:ln1]": "-- header\n",
+        "[ln-1:]": "-- footer\n",
+        "[ln3:ln99]": "SELECT 2;\n-- footer\n",
+        "[ln2:-10]": "SELECT 1;\nSELECT 2;\n",
+    }
+    for slicing, content in lines.items():
+        assert expand(f"SOURCE './sections/part.sql'{slicing};") == (
+            f"USE s;\n{content}SELECT 3;\n"
+        ), slicing
+    # Indentation is applied to every line; the last line needs no line break
+    assert substitute("  SOURCE './sections/part.sql'[ln2:ln3];", temp_dir) == (
+        "  SELECT 1;\n  SELECT 2;\n"
+    )
+    # Only "\n" ends a line, and a last line without one counts
+    with open(os.path.join(sections, "form_feed.sql"), "w") as f:
+        f.write("SELECT 1;\f-- page\nSELECT 2;")
+    assert expand("SOURCE './sections/form_feed.sql'[ln2:];") == (
+        "USE s;\nSELECT 2;SELECT 3;\n"
+    )
+    assert expand("SOURCE './sections/form_feed.sql'[:ln-2];") == (
+        "USE s;\nSELECT 1;\f-- page\nSELECT 3;\n"
+    )
+    # The path ends on the directive's line, and only ASCII white space counts
+    assert expand("SOURCE './sections/\npart.sql';") == (
+        "USE s;\nSOURCE './sections/\npart.sql';\nSELECT 3;\n"
+    )
+    assert expand("SOURCE\u00a0'./sections/part.sql';") == (
+        "USE s;\nSOURCE\u00a0'./sections/part.sql';\nSELECT 3;\n"
+    )
+    for slicing in ("[ln0:]", "[ln:]", "[-:]"):
+        with pytest.raises(ValueError, match="neither a character offset"):
+            expand(f"SOURCE './sections/part.sql'{slicing};")
+    with pytest.raises(ValueError, match="could not be resolved"):
+        expand("SOURCE './sections/missing.sql';")
+
+
 def test_deployment_with_substitutions(sandbox_session, temp_dir):
     # The schema name and the role carry the placeholders. Run without
     # substitutions the comments are whitespace, so the plain names are
