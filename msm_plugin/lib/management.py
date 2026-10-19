@@ -35,6 +35,8 @@ from datetime import date
 from textwrap import indent
 import mysqlsh
 
+from msm_plugin.lib.source import expand_source_directives
+
 # Regex to match MSM sections, excluding the license and the last section
 MSM_SECTIONS_REGEX = r"--\s+#+\s+--\s+MSM\s+Section\s+(\d+):\s*(.*?)$\s+.*?--\s+#+"
 
@@ -105,17 +107,6 @@ MSM_SCHEMA_VERSION_VIEW_VALUES = (
     r"CREATE.*?VIEW.*?`msm_schema_version`.*?"
     r"\(.*?`major`.*?`minor`.*?`patch`.*?\).*?AS.*?SELECT.*?"
     r"((\d+).*?,.*?(\d+).*?,.*?(\d+))"
-)
-
-# SOURCE '<path>'[<start>:<end>]; -- comment
-# The slice is optional (the whole file without it). A bound is empty, a
-# character offset (Python slice semantics) or a line number lnN (1-based, the
-# end line included, ln-1 is the last line). The path ends at a matching quote
-# on the directive's line. Matched with re.ASCII, so \s and \d are ASCII only,
-# as the language server's scan (mariadb-lsp src/source_include.cc) takes them.
-MSM_SECTION_SOURCE_REGEX = (
-    r'^([ \t]*)SOURCE\s+([\'"])([^\n]*?)\2'
-    r"\s*(?:\[\s*((?:ln)?-?\d*)\s*:\s*((?:ln)?-?\d*)\s*\])?\s*;[^\n]*(?:\n|\Z)"
 )
 
 MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS = (
@@ -1616,67 +1607,13 @@ def get_available_licenses() -> list[str]:
     return files
 
 
-def get_source_slice_offset(content: str, bound: str, is_end: bool) -> int | None:
-    """Returns the character offset a bound of a SOURCE slice stands for
-
-    Args:
-        content: The content of the referenced file
-        bound: The bound as written: "", a character offset or lnN
-        is_end: Whether it is the end bound (the line it names is included)
-
-    Returns:
-        The character offset, or None for an empty bound
-    """
-    if bound == "":
-        return None
-    is_line = bound.startswith("ln")
-    number = bound[2:] if is_line else bound
-    if number in ("", "-") or (is_line and int(number) == 0):
-        raise ValueError(
-            f"The SOURCE slice bound `{bound}` is neither a character offset nor a "
-            "line number (lines count from 1)."
-        )
-    if not is_line:
-        return int(number)
-
-    line = int(number)
-    # Lines end at "\n" only (reading in text mode made "\r\n" one), as an
-    # editor counts them; str.splitlines() would also break at "\f" and others
-    line_starts = [0] + [m.end() for m in re.finditer("\n", content)]
-    if line_starts[-1] != len(content):
-        line_starts.append(len(content))
-    line_count = len(line_starts) - 1
-
-    # The index of the first line taken, or of the first line after the slice
-    if is_end:
-        index = line if line > 0 else line_count + line + 1
-    else:
-        index = line - 1 if line > 0 else line_count + line
-    return line_starts[max(0, min(index, line_count))]
-
-
-def get_source_slice(content: str, start: str, end: str) -> str:
-    """Returns the part of a referenced file a SOURCE slice selects
-
-    Args:
-        content: The content of the referenced file
-        start: The start bound as written: "", a character offset or lnN
-        end: The end bound as written: "", a character offset or lnN
-
-    Returns:
-        The selected part of the content
-    """
-    return content[
-        get_source_slice_offset(content, start, False) : get_source_slice_offset(
-            content, end, True
-        )
-    ]
-
-
 def substitute_source_statements_with_content(
     script: str, source_absolute_file_path: str
 ):
     """Returns the script with substituted source statements
+
+    See :mod:`msm_plugin.lib.source`, which also mcp_plugin's
+    db.execute_sql_script expands them with.
 
     Args:
         script: The script content as string
@@ -1685,43 +1622,7 @@ def substitute_source_statements_with_content(
     Returns:
         The script with substituted source statements
     """
-
-    matches = re.finditer(MSM_SECTION_SOURCE_REGEX, script, re.MULTILINE | re.ASCII)
-    # for match_id, match in enumerate(matches, start=1):
-    #     print("Match {match_id} was found at {start}-{end}: {match}".format(
-    #         match_id=match_id, start=match.start(), end=match.end(), match=match.group()))
-    #     for group_id in range(0, len(match.groups())):
-    #         group_id = group_id + 1
-    #         print("Group {group_id} found at {start}-{end}: {group}".format(group_id=group_id,
-    #               start=match.start(group_id), end=match.end(group_id), group=match.group(group_id)))
-
-    for match in reversed(list(matches)):
-        source_indention = len(match.group(1))
-        source_file_path = match.group(3)
-        slice_start = match.group(4) or ""
-        slice_end = match.group(5) or ""
-
-        # If a relative file path is defined in the SOURCE statement, convert it to an absolute path
-        if not source_file_path.startswith("/"):
-            source_file_path = os.path.normpath(
-                os.path.join(source_absolute_file_path, source_file_path)
-            )
-
-        if not os.path.exists(source_file_path):
-            raise ValueError(
-                f"The give SOURCE file path `{source_file_path}` could not be resolved."
-            )
-
-        with open(source_file_path, "r") as f:
-            # Without a slice, the whole file
-            source_file_content = get_source_slice(f.read(), slice_start, slice_end)
-
-        if source_indention > 0:
-            source_file_content = indent(source_file_content, source_indention * " ")
-
-        script = script[: match.start()] + source_file_content + script[match.end() :]
-
-    return script
+    return expand_source_directives(script, source_absolute_file_path)[0]
 
 
 def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:

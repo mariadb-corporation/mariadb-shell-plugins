@@ -973,6 +973,30 @@ def get_client_address(ctx) -> Optional[str]:
     )
 
 
+def path_not_allowed(path) -> str:
+    """Says that a path is not allowed, and who can allow it.
+
+    In multi-tenant mode only an administrator can, with ``mcp.setup``.
+
+    Args:
+        path: The path that was refused.
+
+    Returns:
+        The message.
+    """
+    if is_multi_tenant():
+        return (
+            f"Access to path '{path}' is not allowed. Ask the administrator "
+            "to add it (or a parent directory) to your allowed paths with "
+            "mcp.setup."
+        )
+
+    return (
+        f"Access to path '{path}' is not allowed. Add it (or a parent "
+        "directory) to the allowed paths with mcp.setup."
+    )
+
+
 async def require_allowed_path(ctx, path) -> None:
     """Ensures the given path is within a directory the MCP server may access.
 
@@ -1010,11 +1034,7 @@ async def require_allowed_path(ctx, path) -> None:
         if config.is_path_allowed(checked, get_client_identity(ctx).user):
             return
 
-        raise tool_error(
-            f"Access to path '{checked}' is not allowed. Ask the administrator "
-            "to add it (or a parent directory) to your allowed paths with "
-            "mcp.setup."
-        )
+        raise tool_error(path_not_allowed(checked))
 
     if path is None:
         return
@@ -1026,10 +1046,7 @@ async def require_allowed_path(ctx, path) -> None:
         config.add_allowed_path(path)
         return
 
-    raise tool_error(
-        f"Access to path '{path}' is not allowed. Add it (or a parent "
-        "directory) to the allowed paths with mcp.setup."
-    )
+    raise tool_error(path_not_allowed(path))
 
 
 async def _confirm_trust_path(ctx, path) -> bool:

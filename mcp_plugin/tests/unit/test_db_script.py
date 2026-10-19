@@ -36,6 +36,10 @@ them. The split is the real one: these run inside the shell, so
 
 # cSpell:ignore mysqlsh MariaDB
 
+import os
+import re
+import sys
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -410,3 +414,273 @@ def test_a_script_of_comments_reports_nothing_and_asks_nothing(tools):
     """There is no entry to carry the report."""
     assert tools.script("-- only a note\n", report_sql_mode=True) == []
     assert _ran(tools) == []
+
+
+# --- SOURCE directives ---------------------------------------------------------
+
+
+SECTION = "SELECT 2;\nSELECT 3;\n"
+
+
+def test_a_script_file_runs_with_its_sections(tools, allowed_temp_dir):
+    """Relative to the file's own folder, as msm takes them to development/."""
+    section = helpers.write_file(allowed_temp_dir, "sections/a.sql", SECTION)
+    script = helpers.write_file(
+        allowed_temp_dir,
+        "dev.sql",
+        "SELECT 1;\nSOURCE 'sections/a.sql'; -- the a part\nSELECT 9;\n",
+    )
+
+    results = tools.script(None, file_path=script)
+
+    assert _ran(tools) == ["SELECT 1", "SELECT 2", "SELECT 3", "SELECT 9"]
+    # The index is the script's own: both included statements are the
+    # directive's, and the statement after it keeps its place.
+    assert [entry["statement_index"] for entry in results] == [0, 1, 1, 3]
+    assert [entry.get("source") for entry in results] == [
+        None,
+        {"file": os.path.realpath(section), "line": 1},
+        {"file": os.path.realpath(section), "line": 2},
+        None,
+    ]
+
+
+def test_an_inline_script_takes_relative_paths_from_source_dir(
+    tools, allowed_temp_dir
+):
+    helpers.write_file(allowed_temp_dir, "sections/a.sql", SECTION)
+
+    tools.script("SOURCE 'sections/a.sql';", source_dir=allowed_temp_dir)
+
+    assert _ran(tools) == ["SELECT 2", "SELECT 3"]
+
+
+def test_an_absolute_path_needs_no_source_dir(tools, allowed_temp_dir):
+    section = helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    tools.script(f"SOURCE '{section}';")
+
+    assert _ran(tools) == ["SELECT 2", "SELECT 3"]
+
+
+@pytest.mark.parametrize(
+    "slice_, ran",
+    [
+        ("", ["SELECT 2", "SELECT 3"]),
+        ("[:]", ["SELECT 2", "SELECT 3"]),
+        ("[0:9]", ["SELECT 2"]),
+        ("[10:]", ["SELECT 3"]),
+        ("[ln2:ln2]", ["SELECT 3"]),
+        ("[ln1:ln-2]", ["SELECT 2"]),
+        ("[ln-1:]", ["SELECT 3"]),
+    ],
+)
+def test_a_slice_selects_by_characters_or_lines(
+    tools, allowed_temp_dir, slice_, ran
+):
+    helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    tools.script(f"SOURCE 'a.sql'{slice_};", source_dir=allowed_temp_dir)
+
+    assert _ran(tools) == ran
+
+
+def test_a_directive_in_a_procedure_body_is_expanded_before_the_split(
+    tools, allowed_temp_dir
+):
+    """The include is text: it becomes part of the routine, not a statement."""
+    helpers.write_file(
+        allowed_temp_dir,
+        "body.sql",
+        "-- the body\nINSERT INTO t VALUES (3);\nSELECT 4;\n-- left out\n",
+    )
+    script = (
+        "DELIMITER %%\n"
+        "CREATE PROCEDURE p()\n"
+        "BEGIN\n"
+        "    SOURCE 'body.sql'[ln2:ln3];\n"
+        "END%%\n"
+        "DELIMITER ;\n"
+        "SELECT 5;\n"
+    )
+
+    results = tools.script(script, source_dir=allowed_temp_dir)
+
+    assert _ran(tools) == [
+        "CREATE PROCEDURE p()\nBEGIN\n"
+        "    INSERT INTO t VALUES (3);\n    SELECT 4;\nEND",
+        "SELECT 5",
+    ]
+    # The routine starts in the script, so it has the script's index and no
+    # source; the statement after it keeps its own.
+    assert [(entry["statement_index"], entry.get("source")) for entry in results] == [
+        (0, None),
+        (1, None),
+    ]
+
+
+def test_ansi_quotes_and_limit_apply_to_the_expanded_text(tools, allowed_temp_dir):
+    helpers.write_file(allowed_temp_dir, "a.sql", 'SELECT "a\\"; SELECT 1;\nSELECT n FROM t;\n')
+
+    tools.script(
+        "SOURCE 'a.sql';", source_dir=allowed_temp_dir, ansi_quotes=True, limit=5
+    )
+
+    # Split as the server reads "..." under ANSI_QUOTES - two statements, not
+    # one unfinished string - and every SELECT limited.
+    assert _ran(tools) == [
+        'SELECT "a\\"\nLIMIT 6',
+        "SELECT 1\nLIMIT 6",
+        "SELECT n FROM t\nLIMIT 6",
+    ]
+
+
+def test_a_failed_included_statement_says_where_it_came_from(
+    tools, allowed_temp_dir
+):
+    section = helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+    tools.opened[0].fail_on = {"SELECT 3"}
+
+    results = tools.script("SOURCE 'a.sql';", source_dir=allowed_temp_dir)
+
+    assert results[-1]["error"] == "no"
+    assert results[-1]["statement"] == "SELECT 3"
+    assert results[-1]["source"] == {"file": os.path.realpath(section), "line": 2}
+
+
+def _refused(tools, match, script, **kwargs):
+    """Asserts the call is refused with nothing run."""
+    with pytest.raises(Exception, match=match):
+        tools.script(script, **kwargs)
+    assert _ran(tools) == []
+
+
+def test_an_include_outside_the_allowed_paths_is_refused(tools, allowed_temp_dir):
+    with tempfile.TemporaryDirectory() as elsewhere:
+        outside = helpers.write_file(elsewhere, "a.sql", SECTION)
+
+        _refused(
+            tools,
+            r"SOURCE '.*a\.sql' on line 2 of the script: Access to path .* is not allowed",
+            f"SELECT 1;\nSOURCE '{outside}';",
+            source_dir=allowed_temp_dir,
+        )
+
+
+def test_dot_dot_cannot_leave_the_allowed_paths(tools, allowed_temp_dir):
+    """Resolved before it is checked, symlinks too."""
+    inner = os.path.join(allowed_temp_dir, "inner")
+    os.makedirs(inner)
+    with tempfile.TemporaryDirectory(dir=os.path.dirname(allowed_temp_dir)) as near:
+        helpers.write_file(near, "a.sql", SECTION)
+        os.symlink(os.path.join(near, "a.sql"), os.path.join(inner, "link.sql"))
+        escape = os.path.join("..", "..", os.path.basename(near), "a.sql")
+
+        _refused(tools, "is not allowed", f"SOURCE '{escape}';", source_dir=inner)
+        _refused(tools, "is not allowed", "SOURCE 'link.sql';", source_dir=inner)
+
+
+def test_a_missing_include_is_refused(tools, allowed_temp_dir):
+    _refused(
+        tools,
+        "SOURCE 'gone.sql' on line 1 of the script: .* is not a file that exists",
+        "SOURCE 'gone.sql';\nSELECT 1;",
+        source_dir=allowed_temp_dir,
+    )
+
+
+@pytest.mark.parametrize("slice_", ["[ln0:]", "[ln:ln2]", "[-:]"])
+def test_a_malformed_slice_is_refused(tools, allowed_temp_dir, slice_):
+    helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    _refused(
+        tools,
+        "neither a character offset nor a line number",
+        f"SELECT 1;\nSOURCE 'a.sql'{slice_};",
+        source_dir=allowed_temp_dir,
+    )
+
+
+def test_a_source_line_in_an_include_is_refused(tools, allowed_temp_dir):
+    """msm would leave it in place, to fail halfway through the script."""
+    helpers.write_file(allowed_temp_dir, "b.sql", "SELECT 2;\n")
+    helpers.write_file(allowed_temp_dir, "a.sql", "SELECT 1;\nSOURCE 'b.sql';\n")
+
+    _refused(
+        tools,
+        "holds a SOURCE directive itself",
+        "SELECT 0;\nSOURCE 'a.sql';",
+        source_dir=allowed_temp_dir,
+    )
+    # Outside the slice it is never included, and does no harm.
+    tools.script("SOURCE 'a.sql'[ln1:ln1];", source_dir=allowed_temp_dir)
+    assert _ran(tools) == ["SELECT 1"]
+
+
+def test_a_relative_include_inline_needs_source_dir(tools):
+    _refused(
+        tools,
+        "SOURCE 'a.sql' on line 1 of the script: a relative path, and no folder",
+        "SOURCE 'a.sql';",
+    )
+
+
+def test_a_source_dir_outside_the_allowed_paths_is_refused(tools, allowed_temp_dir):
+    with tempfile.TemporaryDirectory() as elsewhere:
+        _refused(tools, "is not allowed", "SELECT 1;", source_dir=elsewhere)
+
+
+def test_source_dir_does_not_go_with_file_path(tools, allowed_temp_dir):
+    script = helpers.write_file(allowed_temp_dir, "dev.sql", "SELECT 1;")
+
+    _refused(
+        tools,
+        "'source_dir' goes with 'sql_script'",
+        None,
+        file_path=script,
+        source_dir=allowed_temp_dir,
+    )
+
+
+def test_the_file_is_named_when_its_directive_fails(tools, allowed_temp_dir):
+    script = helpers.write_file(allowed_temp_dir, "dev.sql", "SELECT 1;\n\nSOURCE 'gone.sql';\n")
+
+    _refused(
+        tools, f"on line 3 of {re.escape(script)}", None, file_path=script
+    )
+
+
+def test_a_source_dir_that_is_no_folder_is_refused(tools, allowed_temp_dir):
+    not_a_folder = helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    _refused(tools, "is no folder", "SELECT 1;", source_dir=not_a_folder)
+
+
+def test_without_msm_a_directive_is_refused_and_other_scripts_run(
+    tools, monkeypatch
+):
+    """The db tools do not need msm_plugin, until a script holds SOURCE."""
+    # Gone as a module and as the package's attribute, as on a shell
+    # without the plugin.
+    monkeypatch.setitem(sys.modules, "msm_plugin.lib.source", None)
+    if "msm_plugin.lib" in sys.modules:
+        monkeypatch.delattr(sys.modules["msm_plugin.lib"], "source", raising=False)
+
+    _refused(tools, "needs msm_plugin", "SELECT 1;\nSOURCE '/x.sql';")
+    tools.script("SELECT 'SOURCE';")
+    assert _ran(tools) == ["SELECT 'SOURCE'"]
+
+
+def test_included_statements_say_where_they_came_from_in_table_format(
+    tools, allowed_temp_dir
+):
+    section = helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    results = tools.script(
+        "SOURCE 'a.sql';", source_dir=allowed_temp_dir, output_format="table"
+    )
+
+    assert [entry["source"]["line"] for entry in results] == [1, 2]
+    assert {entry["source"]["file"] for entry in results} == {
+        os.path.realpath(section)
+    }

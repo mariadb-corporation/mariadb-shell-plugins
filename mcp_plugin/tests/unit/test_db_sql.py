@@ -943,6 +943,86 @@ async def _db_flow(uri, script_dir):
         assert reused.is_error is True
 
 
+async def _source_flow(uri, script_dir):
+    """Runs a development script with two section files, by file_path.
+
+    The tables come from one section, and the body of a procedure - inside a
+    DELIMITER block - from lines of the other, as an MSM project's
+    development script pulls its sections in.
+    """
+    schema = "mcp_source_" + uuid.uuid4().hex
+    project = os.path.join(script_dir, schema)
+    tables = helpers.write_file(
+        project,
+        "sections/tables.sql",
+        f"CREATE TABLE `{schema}`.`t` (id INT PRIMARY KEY);\n"
+        f"INSERT INTO `{schema}`.`t` VALUES (1), (2);\n",
+    )
+    helpers.write_file(
+        project,
+        "sections/body.sql",
+        "-- the body\n"
+        f"INSERT INTO `{schema}`.`t` VALUES (3);\n"
+        f"SELECT COUNT(*) AS n FROM `{schema}`.`t`;\n"
+        "-- not part of it\n",
+    )
+    script_path = helpers.write_file(
+        project,
+        "schema_next.sql",
+        f"CREATE SCHEMA `{schema}`;\n"
+        "SOURCE 'sections/tables.sql';\n"
+        "DELIMITER %%\n"
+        f"CREATE PROCEDURE `{schema}`.`p`()\n"
+        "BEGIN\n"
+        "    SOURCE 'sections/body.sql'[ln2:ln3];\n"
+        "END%%\n"
+        "DELIMITER ;\n",
+    )
+
+    async with helpers.mcp_session(["db"]) as call:
+        connection_id = helpers.tool_payload(await call("db.connect", {"uri": uri}))
+        try:
+            entries = helpers.tool_payload(
+                await call(
+                    "db.execute_sql_script",
+                    {"connection_id": connection_id, "file_path": script_path},
+                )
+            )
+            assert [entry.get("error") for entry in entries] == [None] * 4, entries
+            # The script's own numbering: the section's two statements are
+            # the directive's, and the procedure keeps its place.
+            assert [entry["statement_index"] for entry in entries] == [0, 1, 1, 2]
+            assert entries[2]["source"] == {
+                "file": os.path.realpath(tables),
+                "line": 2,
+            }
+
+            # The tables, the rows and the procedure built from the sections.
+            called = helpers.result_set(
+                helpers.tool_payload(
+                    await call(
+                        "db.execute_sql",
+                        {"connection_id": connection_id, "sql": f"CALL `{schema}`.`p`()"},
+                    )
+                )
+            )
+            assert called["rows"] == [{"n": 3}]
+        finally:
+            await call(
+                "db.execute_sql",
+                {"connection_id": connection_id, "sql": f"DROP SCHEMA IF EXISTS `{schema}`"},
+            )
+            await call("db.close", {"connection_id": connection_id})
+
+
+def test_a_development_script_runs_with_its_section_files(sandbox):
+    """SOURCE directives against the shared sandbox, as MSM writes them."""
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
+    asyncio.run(_source_flow(sandbox.uri, sandbox.sandbox_dir))
+
+
 def test_db_connect_execute_and_close(sandbox):
     """Exercises the db connection/SQL tools against the shared sandbox.
 

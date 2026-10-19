@@ -133,8 +133,11 @@ the log is the only place the attempt can be seen at all.
 # cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
 import asyncio
+import bisect
 import datetime
 import json
+import os
+import re
 import threading
 import time
 import unicodedata
@@ -2333,6 +2336,138 @@ def _shape_result(
     return serialized
 
 
+def _read_allowed_include(path: str, user) -> tuple:
+    """Reads a file a SOURCE directive names, if the caller may read it.
+
+    Resolved - symlinks too - and checked with the same rule as file_path;
+    the resolved path is the one read, so a link swapped in after the check
+    is not followed.
+
+    Args:
+        path (str): The file, as the directive's path resolves.
+        user: The calling user, in multi-tenant mode.
+
+    Returns:
+        The resolved path and the file's content.
+
+    Raises:
+        ValueError: For a path that cannot or may not be read.
+    """
+    resolved = os.path.realpath(path)
+    if not config.is_path_allowed(resolved, user):
+        raise ValueError(general.path_not_allowed(resolved))
+    if not os.path.isfile(resolved):
+        raise ValueError(f"`{resolved}` is not a file that exists.")
+    with open(resolved, "r", encoding="utf-8") as include_file:
+        return resolved, include_file.read()
+
+
+def _expand_sources(script: str, base_dir: Optional[str], where: str, user):
+    """Expands the MSM SOURCE directives of a script, before anything runs.
+
+    msm_plugin's implementation (msm_plugin.lib.source), so a script runs
+    with what prepare_release would put in its place. Every directive is
+    resolved, checked and read here, and a nested SOURCE - which msm would
+    leave in place, to fail halfway through the script - is refused.
+
+    Args:
+        script (str): The script as given.
+        base_dir (str): The folder relative paths are taken from, or None.
+        where (str): What to call the script in an error: "the script" or
+            the file it was read from.
+        user: The calling user, in multi-tenant mode.
+
+    Returns:
+        The expanded script and its segments, or None for a script without
+        a directive.
+
+    Raises:
+        ToolError: For a directive that cannot be expanded, naming its line
+            and its file.
+    """
+    try:
+        from msm_plugin.lib import source
+    except ImportError:
+        if re.search(r"^[ \t]*SOURCE\s", script, re.MULTILINE):
+            raise tool_error(
+                f"{where} holds a SOURCE directive, and expanding one needs "
+                "msm_plugin, which this shell does not have. Nothing was run."
+            ) from None
+        return None
+
+    if not source.contains_source_directive(script):
+        return None
+    try:
+        return source.expand_source_directives(
+            script,
+            base_dir,
+            lambda path: _read_allowed_include(path, user),
+            allow_nested=False,
+        )
+    except source.SourceError as error:
+        raise tool_error(
+            f"SOURCE '{error.path}' on line {error.line} of {where}: "
+            f"{error.reason} Nothing was run."
+        ) from None
+
+
+def _piece_starts(text: str, pieces: list) -> list:
+    """Returns where each piece the splitter returned starts in the text.
+
+    A piece is a stretch of the text as written, so each is found after the
+    one before it.
+
+    Args:
+        text (str): The text that was split.
+        pieces (list): Its pieces, in order.
+
+    Returns:
+        One offset per piece.
+    """
+    starts = []
+    position = 0
+    for piece in pieces:
+        found = text.find(piece, position)
+        start = found if found >= 0 else position
+        starts.append(start)
+        position = start + len(piece)
+
+    return starts
+
+
+def _place_statements(
+    script: str, written: list, expansion: tuple, statements: list
+) -> list:
+    """Says where each statement of an expanded script was written.
+
+    Its statement_index is the one of the caller's own script - the text
+    before expansion, as a caller that split it for itself numbers it - so
+    every statement a SOURCE directive brought in has the directive's index.
+    One that starts in an included file also says which file and line.
+
+    Args:
+        script (str): The script as given.
+        written (list): Its non-empty pieces, split as the expanded one was.
+        expansion (tuple): The expanded script and its segments.
+        statements (list): The non-empty pieces of the expanded script.
+
+    Returns:
+        One (statement_index, source) per statement, source being None or a
+        dict with file and line.
+    """
+    from msm_plugin.lib import source
+
+    expanded, segments = expansion
+    written_starts = _piece_starts(script, written)
+    places = []
+    for start in _piece_starts(expanded, statements):
+        origin, file, line = source.locate(expanded, segments, start)
+        index = max(0, bisect.bisect_right(written_starts, origin) - 1)
+        places.append((index, {"file": file, "line": line} if file else None))
+
+    return places
+
+
 def _check_paging(limit: Optional[int], offset: Optional[int] = None) -> None:
     """Refuses a limit or offset that is not a whole number of rows.
 
@@ -3429,6 +3564,7 @@ def register_db_tools(server, function_groups=()) -> None:
         ansi_quotes: bool = False,
         report_sql_mode: bool = False,
         output_format: OutputFormat = "json",
+        source_dir: Optional[str] = None,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -3443,6 +3579,26 @@ def register_db_tools(server, function_groups=()) -> None:
         The script can be provided either inline via sql_script or read from a
         file on disk via file_path. Exactly one of the two must be given. A
         file_path must be within one of the directories allowed via mcp.setup.
+
+        MSM SOURCE directives are expanded first, as MariaDB Schema
+        Management does when it releases a schema project, so a project's
+        development script (development/<schema>_next.sql) runs with its
+        section files. A directive is a line of its own:
+
+            SOURCE '<path>'[<start>:<end>]; -- optional comment
+
+        and is replaced - its comment and line break with it - by the part of
+        the file the slice selects. The slice is optional: without one, or
+        with [:], the whole file. A bound is empty, a character offset
+        (Python slice semantics, so [100:200] or [-50:]) or a line number lnN
+        (from 1, the end line included, ln-1 the last line): [ln3:ln10]. A
+        directive works anywhere in the text, inside a procedure body too.
+        One level only: an included part must not hold a SOURCE directive.
+        A relative path is relative to the folder of file_path, or to
+        source_dir for an inline script; an inline script without
+        source_dir can only use absolute paths. Every included file must be
+        within the allowed directories, as file_path must, and a directive
+        that cannot be expanded fails the call before any statement runs.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -3481,6 +3637,10 @@ def register_db_tools(server, function_groups=()) -> None:
                 db.execute_sql: json (the default) for columns and rows,
                 table for the text grid the mariadb client prints (table)
                 and its row_count, to show a result to the user as it is.
+            source_dir: The folder relative SOURCE paths of an inline
+                sql_script are taken from - the folder the script was saved
+                in. It must be within the allowed directories. Not with
+                file_path, whose own folder is used.
 
         Returns:
             A list with one entry per statement that ran, each a dict with its
@@ -3493,6 +3653,13 @@ def register_db_tools(server, function_groups=()) -> None:
             and output_format.
             Each entry also carries warnings_count, and warnings - the level,
             code and message of each - where the statement produced any.
+
+            For a script with SOURCE directives, statement_index is still
+            the position in the script as given, so every statement a
+            directive brought in carries the directive's statement_index -
+            several entries can share one. Such an entry also has source:
+            the included file (file, its resolved path) and the line the
+            statement starts on in it (line, from 1).
 
             A statement that is nothing but a -- or # line comment is NOT run
             and has no entry, since it carries no SQL. It still takes up a
@@ -3542,26 +3709,50 @@ def register_db_tools(server, function_groups=()) -> None:
             )
 
         client = general.get_client_identity(ctx)
+        where = "the script"
         if file_path is not None:
-            if not config.is_path_allowed(file_path, client.user):
+            if source_dir is not None:
                 raise tool_error(
-                    f"Access to path '{file_path}' is not allowed. Add it (or a "
-                    "parent directory) to the allowed paths with mcp.setup."
+                    "'source_dir' goes with 'sql_script': the SOURCE paths of "
+                    "a file are relative to the file's own folder."
                 )
+            if not config.is_path_allowed(file_path, client.user):
+                raise tool_error(general.path_not_allowed(file_path))
             with open(file_path, "r", encoding="utf-8") as script_file:
                 sql_script = script_file.read()
+            # As msm takes them relative to development/.
+            source_dir = os.path.dirname(os.path.abspath(file_path))
+            where = file_path
+        elif source_dir is not None:
+            if not config.is_path_allowed(source_dir, client.user):
+                raise tool_error(general.path_not_allowed(source_dir))
+            if not os.path.isdir(source_dir):
+                raise tool_error(f"'source_dir' {source_dir!r} is no folder.")
+            source_dir = os.path.abspath(source_dir)
+
+        def split(script):
+            return [
+                piece
+                for piece in mysqlsh.mysql.split_script(
+                    script, {"ansiQuotes": ansi_quotes}
+                )
+                if piece.strip() != ""
+            ]
+
+        # Expanded before it is split, never per statement: a directive can
+        # sit inside a routine body. And before the session is used, so a
+        # directive that cannot be expanded is refused with nothing run.
+        expansion = _expand_sources(sql_script, source_dir, where, client.user)
 
         with use_session(connection_id, client) as session:
             restarted = _session_was_restarted(connection_id)
-            statements = [
-                statement
-                for statement in mysqlsh.mysql.split_script(
-                    sql_script, {"ansiQuotes": ansi_quotes}
-                )
-                if statement.strip() != ""
-            ]
+            statements = split(expansion[0] if expansion else sql_script)
+            places = expansion and _place_statements(
+                sql_script, split(sql_script), expansion, statements
+            )
             results = []
-            for index, statement in enumerate(statements):
+            for position, statement in enumerate(statements):
+                index, source = places[position] if places else (position, None)
                 # A whole-line comment is one of these, and running it would
                 # report a result for a statement nobody wrote. It keeps its
                 # index all the same: a caller that split the script for
@@ -3598,6 +3789,8 @@ def register_db_tools(server, function_groups=()) -> None:
                     # the caller most needs to know.
                     if restarted and not results:
                         failure["session_restarted"] = True
+                    if source:
+                        failure["source"] = source
                     results.append(failure)
 
                     if stop_on_error:
@@ -3605,20 +3798,21 @@ def register_db_tools(server, function_groups=()) -> None:
 
                     continue
 
-                results.append(
-                    _shape_result(
-                        result,
-                        limited,
-                        limit,
-                        output_format,
-                        column_metadata,
-                        # On the first result only: one session was opened,
-                        # once, before any of these statements ran.
-                        session_restarted=restarted and not results,
-                        statement_index=index,
-                        execution_time=time.perf_counter() - started,
-                    )
+                shaped = _shape_result(
+                    result,
+                    limited,
+                    limit,
+                    output_format,
+                    column_metadata,
+                    # On the first result only: one session was opened,
+                    # once, before any of these statements ran.
+                    session_restarted=restarted and not results,
+                    statement_index=index,
+                    execution_time=time.perf_counter() - started,
                 )
+                if source:
+                    shaped["source"] = source
+                results.append(shaped)
 
             if report_sql_mode and results:
                 results[-1]["ansi_quotes"] = ansi_quotes

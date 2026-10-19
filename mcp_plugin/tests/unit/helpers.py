@@ -765,3 +765,22 @@ def stub_db_tools(monkeypatch, make_session):
     finally:
         general.set_active_transport(None)
         db_functions._sessions.clear()
+
+
+def write_file(directory, relative_path, text):
+    """Writes a file under directory, making its folders, and returns its path.
+
+    Args:
+        directory: The folder the path is relative to.
+        relative_path: The file's path in it, with / between folders.
+        text: What to write, as UTF-8.
+
+    Returns:
+        The file's path.
+    """
+    path = os.path.join(directory, *relative_path.split("/"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as written:
+        written.write(text)
+
+    return path

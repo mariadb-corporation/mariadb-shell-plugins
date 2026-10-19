@@ -270,7 +270,7 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | `db.list_objects` | Lists the objects of one type (`table`, `view`, `function`, `procedure`, `sequence`, `trigger`, `event`; defaults to `table`) in a schema. |
 | `db.get_object_details` | Describes one object in detail: columns, constraints, foreign keys in both directions, parameters, or type-specific properties. |
 | `db.execute_sql` | Runs a single SQL statement (with optional parameters) on a connection UUID. |
-| `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
+| `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID, inline (`sql_script`) or from a file (`file_path`). Expands MSM `SOURCE '<path>'[<start>:<end>];` directives first, as schema management does, so a project's development script runs with its section files: relative paths are taken from the file's folder, or from `source_dir` for an inline script, and every included file must be within the allowed paths. A directive that cannot be expanded fails the call before any statement runs. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
 
 ### Schema management tools (`msm`)
@@ -696,8 +696,8 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   a remote server; none of them are offered to tenants. Neither is `--gui`,
   and neither is stdio, which has no request to carry a key. A user's token
   has to grant the scope of a tool's group (`mcp:db`; set with `--setScopes`).
-- **Paths** are a user's own: `db.execute_sql_script` only reads a script file
-  from the user's allowed paths. A path that is not allowed is refused, never
+- **Paths** are a user's own: `db.execute_sql_script` only reads a script file,
+  and the files its SOURCE directives include, from the user's allowed paths. A path that is not allowed is refused, never
   offered to the client to trust.
 - **Changes apply at once.** A user removed or disabled, or given a new key, is
   refused from their next request on, and their open connections are closed.
