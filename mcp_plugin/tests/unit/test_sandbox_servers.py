@@ -1261,20 +1261,6 @@ def test_the_listing_tool_reports_a_bad_series():
     assert "major.minor" in helpers.tool_payload(result)
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 def _deploy_tool(monkeypatch, resolved):
     """Registers the sandbox tools against stand-ins and returns sandbox.deploy.
 
@@ -1315,7 +1301,7 @@ def _deploy_tool(monkeypatch, resolved):
 
     monkeypatch.setattr(sandbox_servers, "resolve", resolve)
 
-    recorder = _ToolRecorder()
+    recorder = helpers.ToolRecorder()
     sandbox_functions.register_sandbox_tools(recorder)
     return recorder.tools["sandbox.deploy"], deployed
 

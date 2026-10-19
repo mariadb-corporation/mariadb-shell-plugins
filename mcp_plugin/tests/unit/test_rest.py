@@ -290,20 +290,6 @@ def test_mrs_tools_work_on_a_rest_service(sandbox, allowed_temp_dir):
 # --- the OpenAPI UI ------------------------------------------------------------
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 @pytest.fixture
 def content_set_tool(monkeypatch):
     """rest.load_content_set in-process, its plugin call and paths recorded."""
@@ -336,7 +322,7 @@ def content_set_tool(monkeypatch):
     monkeypatch.setattr(general, "require_allowed_path", require)
     monkeypatch.setattr(general, "get_client_identity", lambda ctx: None)
     monkeypatch.setattr(db_functions, "use_session", use_session)
-    recorder = _ToolRecorder()
+    recorder = helpers.ToolRecorder()
     rest_functions.register_rest_tools(recorder, ["db", "rest"])
 
     return recorder.tools["rest.load_content_set"], calls, checked

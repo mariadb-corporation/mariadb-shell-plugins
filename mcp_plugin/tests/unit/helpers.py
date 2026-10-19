@@ -30,7 +30,8 @@ import shutil
 import socket
 import subprocess
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from types import SimpleNamespace
 
 from mcp_plugin.lib import config
 
@@ -580,3 +581,187 @@ def restore_connections(connections: dict) -> None:
             config.store_connection(uri, password, kind, **details)
         except Exception:  # noqa: BLE001 - best-effort restore
             pass
+
+
+# --- stubs of shell results, for the tests of the db tools' serialization -----
+
+
+class StubType:
+    """A mysql.Type constant: its name is its data."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class MetadataColumn:
+    """A column with the shell's Column getters the db tools read."""
+
+    def __init__(self, label, kind="STRING", flags="", length=0,
+                 fractional_digits=0):
+        self.label = label
+        self.kind = kind
+        self.flags = flags
+        self.length = length
+        self.fractional_digits = fractional_digits
+
+    def get_column_label(self):
+        return self.label
+
+    def get_type(self):
+        return StubType(self.kind)
+
+    def get_flags(self):
+        return self.flags
+
+    def get_length(self):
+        return self.length
+
+    def get_fractional_digits(self):
+        return self.fractional_digits
+
+
+class MultiSetResult:
+    """A result over several result sets, walked as the shell walks them.
+
+    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
+    None for one without - the status a CALL ends on. A column is a
+    ``MetadataColumn``, or just its label for a plain STRING column.
+    """
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def __init__(self, sets):
+        self._sets = sets
+        self._at = 0
+
+    def has_data(self):
+        return self._sets[self._at] is not None
+
+    def get_columns(self):
+        return [
+            MetadataColumn(column) if isinstance(column, str) else column
+            for column in self._sets[self._at][0]
+        ]
+
+    def fetch_all(self):
+        return self._sets[self._at][1]
+
+    def next_result(self):
+        self._at += 1
+        return self._at < len(self._sets)
+
+    def get_warnings(self):
+        return []
+
+
+class TableSession:
+    """Answers every statement from a table of rows of one column.
+
+    It honours the LIMIT and OFFSET the paging adds, on a line of their own,
+    and records every statement it is asked to run.
+    """
+
+    def __init__(self, rows, column="n"):
+        self.rows = list(rows)
+        self.column = column
+        self.statements = []
+
+    def run_sql(self, sql, _params=None):
+        self.statements.append(sql)
+        rows = self.rows
+        if "\nLIMIT " in sql:
+            parts = sql.rsplit("\nLIMIT ", 1)[1].split(" OFFSET ")
+            offset = int(parts[1]) if len(parts) > 1 else 0
+            rows = rows[offset:offset + int(parts[0])]
+
+        return MultiSetResult([([self.column], [[value] for value in rows])])
+
+    def close(self):
+        pass
+
+
+# --- the db tools over a stub session, without a server -----------------------
+
+
+class ToolRecorder:
+    """Stands in for the MCPServer, collecting the registered tools by name."""
+
+    def __init__(self):
+        self.tools = {}
+
+    def tool(self, name):
+        def decorator(fn):
+            self.tools[name] = fn
+            return fn
+
+        return decorator
+
+
+@contextmanager
+def stub_db_tools(monkeypatch, make_session):
+    """Registers the db tools over stub sessions and connects one.
+
+    The tools are called as an HTTP client would call them, from one address
+    on one MCP session, on a connection to a stored URI whose sessions
+    ``make_session`` builds.
+
+    Args:
+        monkeypatch: The pytest monkeypatch fixture.
+        make_session: Builds a session; called once per session opened.
+
+    Yields:
+        A namespace with ``sql`` and ``script`` - db.execute_sql and
+        db.execute_sql_script on that connection, taking the statement or
+        script and keyword arguments - and ``opened``, the sessions opened,
+        so a test can see what reached the server.
+    """
+    # Imported here: the db tools need the MCP SDK, which the tests that use
+    # only the other helpers do not.
+    from mcp_plugin.lib import db_functions, general
+
+    uri = "root@127.0.0.1:3306"
+    opened = []
+
+    def _fake_open_session(_uri, kind=None, mcp_user_id=None):
+        session = make_session()
+        opened.append(session)
+
+        return session
+
+    monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
+    monkeypatch.setattr(
+        db_functions.config,
+        "list_stored_connection_uris",
+        lambda kind=None, mcp_user_id=None: [uri],
+    )
+
+    recorder = ToolRecorder()
+    db_functions.register_db_tools(recorder)
+
+    db_functions._sessions.clear()
+    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
+    context = SimpleNamespace(
+        request_context=SimpleNamespace(
+            request=SimpleNamespace(
+                client=SimpleNamespace(host="192.0.2.10", port=54321),
+                headers={
+                    general.MCP_SESSION_ID_HEADER: "0123456789abcdef0123456789abcdef"
+                },
+            )
+        )
+    )
+    try:
+        connection_id = recorder.tools["db.connect"](context, uri)
+        yield SimpleNamespace(
+            sql=lambda sql, **kwargs: recorder.tools["db.execute_sql"](
+                context, connection_id, sql, **kwargs
+            ),
+            script=lambda script, **kwargs: recorder.tools[
+                "db.execute_sql_script"
+            ](context, connection_id, script, **kwargs),
+            opened=opened,
+        )
+    finally:
+        general.set_active_transport(None)
+        db_functions._sessions.clear()

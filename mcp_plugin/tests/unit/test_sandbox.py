@@ -159,20 +159,6 @@ def test_sandbox_dir_outside_allowed_paths_is_rejected(allowed_temp_dir, tmp_pat
     assert isinstance(payload, str) and "not allowed" in payload
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 def _list_instances_tool(monkeypatch, sandbox_dir, versions=None):
     """Registers the sandbox tools against stand-ins; returns list_instances.
 
@@ -209,7 +195,7 @@ def _list_instances_tool(monkeypatch, sandbox_dir, versions=None):
         raising=False,
     )
 
-    recorder = _ToolRecorder()
+    recorder = helpers.ToolRecorder()
     sandbox_functions.register_sandbox_tools(recorder)
     return recorder.tools["sandbox.list_instances"], asked
 
@@ -429,7 +415,7 @@ def _registered(
     )
     monkeypatch.setattr(sandbox_functions.general, "is_gui_mode", lambda: gui)
 
-    recorder_server = _ToolRecorder()
+    recorder_server = helpers.ToolRecorder()
     sandbox_functions.register_sandbox_tools(recorder_server)
     return recorder_server.tools
 

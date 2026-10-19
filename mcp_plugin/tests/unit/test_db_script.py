@@ -44,23 +44,11 @@ import pytest
 pytest.importorskip("mcp")
 
 from mcp_plugin.lib import db_functions, general
-
-CLIENT_ADDRESS = "192.0.2.10"
-SESSION_ID = "0123456789abcdef0123456789abcdef"
+import mcp_plugin.tests.unit.helpers as helpers
 
 # The header the extension's New SQL Editor button writes at the top of every
 # file it generates, followed by a query - the script that first showed this.
 GENERATED_FILE = "-- MariaDB connection: dba@localhost:3310\n\nSELECT 1;\n"
-
-
-class _StubResult:
-    """The least a shell SQL result has to be for _serialize_result."""
-
-    affected_items_count = 0
-    warnings_count = 0
-
-    def has_data(self):
-        return False
 
 
 class _ModeResult:
@@ -96,7 +84,7 @@ class _RecordingSession:
         if sql == "SELECT @@sql_mode":
             return _ModeResult(self.sql_mode)
 
-        return _StubResult()
+        return helpers.MultiSetResult([None])
 
     def close(self):
         self.closed = True
@@ -104,59 +92,9 @@ class _RecordingSession:
 
 @pytest.fixture
 def tools(monkeypatch):
-    """Registers the db tools over a stub session factory.
-
-    Yields the tools by name, the context to call them with and the list the
-    opened sessions land in, so a test can see what reached the server.
-    """
-    uri = "root@127.0.0.1:3306"
-    opened = []
-
-    def _fake_open_session(_uri, kind=None, mcp_user_id=None):
-        session = _RecordingSession()
-        opened.append(session)
-
-        return session
-
-    monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
-    monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
-    )
-
-    recorder = SimpleNamespace(tools={})
-
-    def _tool(name):
-        def decorator(fn):
-            recorder.tools[name] = fn
-
-            return fn
-
-        return decorator
-
-    recorder.tool = _tool
-    db_functions.register_db_tools(recorder)
-
-    db_functions._sessions.clear()
-    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
-    context = SimpleNamespace(
-        request_context=SimpleNamespace(
-            request=SimpleNamespace(
-                client=SimpleNamespace(host=CLIENT_ADDRESS, port=54321),
-                headers={general.MCP_SESSION_ID_HEADER: SESSION_ID},
-            )
-        )
-    )
-    try:
-        connection_id = recorder.tools["db.connect"](context, uri)
-        yield SimpleNamespace(
-            run=lambda script, **kwargs: recorder.tools[
-                "db.execute_sql_script"
-            ](context, connection_id, script, **kwargs),
-            opened=opened,
-        )
-    finally:
-        general.set_active_transport(None)
-        db_functions._sessions.clear()
+    """Registers the db tools over sessions recording what they run."""
+    with helpers.stub_db_tools(monkeypatch, _RecordingSession) as stubbed:
+        yield stubbed
 
 
 def _ran(tools):
@@ -175,7 +113,7 @@ def test_a_leading_line_comment_is_not_run(tools):
     Without this the header ran on every execution and reported a result of
     its own, so a one-statement file looked like a two-statement one.
     """
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert _ran(tools) == ["SELECT 1"]
     assert len(results) == 1
@@ -188,14 +126,14 @@ def test_a_comment_keeps_its_place_in_the_numbering(tools):
     split by this number. Numbering the query 0 here would hand its result to
     the caller's statement 0 - the comment.
     """
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert results[0]["statement_index"] == 1
 
 
 def test_a_hash_comment_is_left_out_too(tools):
     """The splitter treats `# ...` the same way, and so does this."""
-    results = tools.run("# a note\nSELECT 1;\n")
+    results = tools.script("# a note\nSELECT 1;\n")
 
     assert _ran(tools) == ["SELECT 1"]
     assert [result["statement_index"] for result in results] == [1]
@@ -203,7 +141,7 @@ def test_a_hash_comment_is_left_out_too(tools):
 
 def test_a_comment_between_two_statements_is_left_out(tools):
     """A comment anywhere in the script, not only at the top of it."""
-    results = tools.run("SELECT 1;\n-- mid\nSELECT 2;\n")
+    results = tools.script("SELECT 1;\n-- mid\nSELECT 2;\n")
 
     assert _ran(tools) == ["SELECT 1", "SELECT 2"]
     # Zero, the comment, two: the numbering counts what was split, not what
@@ -213,7 +151,7 @@ def test_a_comment_between_two_statements_is_left_out(tools):
 
 def test_a_script_of_nothing_but_comments_runs_nothing(tools):
     """Nothing reaches the server, and there is nothing to report."""
-    assert tools.run("-- one\n-- two\n") == []
+    assert tools.script("-- one\n-- two\n") == []
     assert _ran(tools) == []
 
 
@@ -226,21 +164,21 @@ def test_a_comment_inside_a_statement_stays_with_it(tools):
     Only a comment that OPENS a statement is split out, which is what makes
     "begins with a line comment" enough to recognize one.
     """
-    tools.run("SELECT 1 -- a note\nAS a;\n")
+    tools.script("SELECT 1 -- a note\nAS a;\n")
 
     assert _ran(tools) == ["SELECT 1 -- a note\nAS a"]
 
 
 def test_a_version_comment_is_a_statement_and_runs(tools):
     """`/*!...*/` carries SQL, however much it looks like a comment."""
-    tools.run("/*!40101 SET NAMES utf8 */;\n")
+    tools.script("/*!40101 SET NAMES utf8 */;\n")
 
     assert _ran(tools) == ["/*!40101 SET NAMES utf8 */"]
 
 
 def test_an_optimizer_hint_is_not_mistaken_for_a_comment(tools):
     """`/*+...*/` belongs to the statement it leads, and goes with it."""
-    tools.run("/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1;\n")
+    tools.script("/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1;\n")
 
     assert _ran(tools) == ["/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1"]
 
@@ -272,48 +210,44 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
     assert db_functions._close_idle_sessions() == 1
 
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert results[0]["session_restarted"] is True
 
 
-class _MultiSetResult:
-    """A result over several result sets, walked as the shell walks them.
 
-    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
-    None for one without - the status a CALL ends on.
+def test_a_failed_first_statement_still_carries_the_restart_flag(
+    tools, monkeypatch
+):
+    """The flag rides on the first entry even when that entry is a failure.
+
+    A statement that fails BECAUSE the session was replaced - on a temporary
+    table that went with the old one - is where the caller most needs to
+    hear it, and the next entry must not carry it instead.
     """
+    connection = next(iter(db_functions._sessions.values()))
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    assert db_functions._close_idle_sessions() == 1
+    open_session = db_functions._open_session
 
-    affected_items_count = 0
-    warnings_count = 0
+    def _failing_on_the_temporary_table(*args, **kwargs):
+        session = open_session(*args, **kwargs)
+        session.fail_on = {"SELECT * FROM tmp"}
+        return session
 
-    def __init__(self, sets):
-        self._sets = sets
-        self._at = 0
+    monkeypatch.setattr(
+        db_functions, "_open_session", _failing_on_the_temporary_table
+    )
 
-    def has_data(self):
-        return self._sets[self._at] is not None
+    results = tools.script("SELECT * FROM tmp; SELECT 1;", stop_on_error=False)
 
-    def get_columns(self):
-        return [
-            SimpleNamespace(get_column_label=lambda label=label: label)
-            for label in self._sets[self._at][0]
-        ]
-
-    def fetch_all(self):
-        return self._sets[self._at][1]
-
-    def next_result(self):
-        self._at += 1
-        return self._at < len(self._sets)
-
-    def get_warnings(self):
-        return []
-
+    assert results[0]["error"] == "no"
+    assert results[0]["session_restarted"] is True
+    assert "session_restarted" not in results[1]
 
 def test_every_result_set_of_a_call_is_read():
     """Every set is in result_sets, in order; the one without data is not."""
-    result = _MultiSetResult([
+    result = helpers.MultiSetResult([
         (["a"], [[1]]),
         (["b", "c"], [[2, 3], [4, 5]]),
         None,
@@ -327,39 +261,16 @@ def test_every_result_set_of_a_call_is_read():
     ]
 
 
-class _Type:
-    """A mysql.Type constant: its name is its data."""
-
-    def __init__(self, data):
-        self.data = data
-
-
-class _MetadataColumn:
-    """A column with the shell's Column getters the metadata reads."""
-
-    def __init__(self, label, kind, flags=""):
-        self.label = label
-        self.kind = kind
-        self.flags = flags
-
-    def get_column_label(self):
-        return self.label
-
-    def get_type(self):
-        return _Type(self.kind)
-
-    def get_flags(self):
-        return self.flags
-
-
 def test_column_metadata_is_what_the_shell_reports():
     """Nothing is worked out: a BLOB is BYTES with its flags alongside."""
-    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
-    result.get_columns = lambda: [
-        _MetadataColumn("i", "INT", "NOT_NULL NUM"),
-        _MetadataColumn("vb", "BYTES", "BINARY "),
-        _MetadataColumn("b", "BYTES", "BLOB BINARY "),
-    ]
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn("i", "INT", "NOT_NULL NUM"),
+            helpers.MetadataColumn("vb", "BYTES", "BINARY "),
+            helpers.MetadataColumn("b", "BYTES", "BLOB BINARY "),
+        ],
+        [[1, b"\x00\xff", b"x"]],
+    )])
 
     output = db_functions._serialize_result(result, column_metadata=True)
 
@@ -378,8 +289,7 @@ def test_column_metadata_is_what_the_shell_reports():
 
 
 def test_column_metadata_is_left_out_unless_asked_for():
-    result = _MultiSetResult([(["a"], [[1]])])
-    result.get_columns = lambda: [_MetadataColumn("a", "INT")]
+    result = helpers.MultiSetResult([([helpers.MetadataColumn("a", "INT")], [[1]])])
 
     output = db_functions._serialize_result(result)
 
@@ -387,10 +297,11 @@ def test_column_metadata_is_left_out_unless_asked_for():
 
 
 def test_every_result_set_of_a_call_has_its_own_metadata():
-    result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
-    kinds = iter([[_MetadataColumn("a", "INT")],
-                  [_MetadataColumn("b", "BYTES", "BLOB BINARY")]])
-    result.get_columns = lambda: next(kinds)
+    result = helpers.MultiSetResult([
+        ([helpers.MetadataColumn("a", "INT")], [[1]]),
+        ([helpers.MetadataColumn("b", "BYTES", "BLOB BINARY")], [[b"x"]]),
+        None,
+    ])
 
     output = db_functions._serialize_result(result, column_metadata=True)
 
@@ -400,7 +311,7 @@ def test_every_result_set_of_a_call_has_its_own_metadata():
 
 def test_a_result_with_no_data_has_no_result_sets():
     """A statement with no result set reports an empty list of them."""
-    output = db_functions._serialize_result(_MultiSetResult([None]))
+    output = db_functions._serialize_result(helpers.MultiSetResult([None]))
 
     assert output["result_sets"] == []
     assert "columns" not in output
@@ -408,7 +319,7 @@ def test_a_result_with_no_data_has_no_result_sets():
 
 def test_a_result_that_cannot_walk_on_reads_its_one_set():
     """A result without next_result is read as the one set it has."""
-    result = _MultiSetResult([(["a"], [[1]])])
+    result = helpers.MultiSetResult([(["a"], [[1]])])
     del_next = SimpleNamespace(
         has_data=result.has_data,
         get_columns=result.get_columns,
@@ -437,21 +348,21 @@ def test_double_quotes_are_split_as_a_string_by_default(tools):
     So the string never closes, and the rest of the script - its last
     semicolon included - is one unfinished statement.
     """
-    tools.run(ENDS_IN_BACKSLASH)
+    tools.script(ENDS_IN_BACKSLASH)
 
     assert _ran(tools) == [ENDS_IN_BACKSLASH]
 
 
 def test_double_quotes_are_split_as_an_identifier_with_ansi_quotes(tools):
     """The server's reading under ANSI_QUOTES: two statements."""
-    tools.run(ENDS_IN_BACKSLASH, ansi_quotes=True)
+    tools.script(ENDS_IN_BACKSLASH, ansi_quotes=True)
 
     assert _ran(tools) == ['SELECT "a\\"', "SELECT 1"]
 
 
 def test_the_sql_mode_is_not_reported_unless_asked_for(tools):
     """Nothing extra reaches the server, and nothing extra comes back."""
-    results = tools.run("SELECT 1; SELECT 2;", ansi_quotes=True)
+    results = tools.script("SELECT 1; SELECT 2;", ansi_quotes=True)
 
     assert _ran(tools) == ["SELECT 1", "SELECT 2"]
     assert all(
@@ -462,7 +373,7 @@ def test_the_sql_mode_is_not_reported_unless_asked_for(tools):
 
 def test_the_last_entry_reports_the_split_and_the_sql_mode(tools):
     """Read after the script, so a script that changed it says so."""
-    results = tools.run(
+    results = tools.script(
         "SELECT 1; SELECT 2;", ansi_quotes=True, report_sql_mode=True
     )
 
@@ -474,10 +385,10 @@ def test_the_last_entry_reports_the_split_and_the_sql_mode(tools):
 
 def test_a_failed_statement_still_carries_the_report(tools):
     """The entry of the statement a script stopped at is the last one."""
-    tools.run("SELECT 0;")
+    tools.script("SELECT 0;")
     tools.opened[0].fail_on = {"SELECT 2"}
 
-    results = tools.run("SELECT 1; SELECT 2; SELECT 3;", report_sql_mode=True)
+    results = tools.script("SELECT 1; SELECT 2; SELECT 3;", report_sql_mode=True)
 
     assert results[-1]["error"] == "no"
     assert results[-1]["ansi_quotes"] is False
@@ -486,10 +397,10 @@ def test_a_failed_statement_still_carries_the_report(tools):
 
 def test_a_mode_that_cannot_be_read_leaves_only_the_split(tools):
     """The script's results still come back; sql_mode is left out."""
-    tools.run("SELECT 0;")
+    tools.script("SELECT 0;")
     tools.opened[0].sql_mode = RuntimeError("gone")
 
-    results = tools.run("SELECT 1;", report_sql_mode=True)
+    results = tools.script("SELECT 1;", report_sql_mode=True)
 
     assert results[-1]["ansi_quotes"] is False
     assert "sql_mode" not in results[-1]
@@ -497,5 +408,5 @@ def test_a_mode_that_cannot_be_read_leaves_only_the_split(tools):
 
 def test_a_script_of_comments_reports_nothing_and_asks_nothing(tools):
     """There is no entry to carry the report."""
-    assert tools.run("-- only a note\n", report_sql_mode=True) == []
+    assert tools.script("-- only a note\n", report_sql_mode=True) == []
     assert _ran(tools) == []

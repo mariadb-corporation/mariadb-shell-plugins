@@ -38,6 +38,56 @@ handling are in [connections.md](connections.md).
   nothing tells a VECTOR from a VARBINARY. Values are unchanged: binary
   still comes as hex.
 
+- **Text grid output** (2026-10-19, branch `wip/sql-format-grid`):
+  `output_format: Literal["json", "table"] = "json"` on `db.execute_sql`
+  and `db.execute_sql_script`, so an agent can show a result to the user
+  as the mariadb client prints it. `table` replaces each result set's
+  `columns`/`rows` with `table` (the grid) and `row_count`;
+  `has_more_pages` stays, and `column_metadata` stays only if asked for.
+  The grid is drawn AFTER `_page_result`, so the extra paging row is never
+  in it, by `_text_grid`. Its cells are made in `_read_result_set(grid=True)`
+  from the RAW values (rows become lists of cell texts, `columns` the labels
+  as sent - `id | id`, not the JSON `id_2` - plus `align_right`), because
+  only there is a binary value still bytes. Verified cell for cell against
+  `mariadb --table --binary-as-hex` on 12.3 (2026-10-19, a 21-column query
+  and 34 doubles): alignment by the `NUM` flag (INT, DECIMAL, DOUBLE, FLOAT,
+  YEAR, NULL, TRUE; not BIT); bytes -> `0x` + upper-case hex; BIT -> `0x`
+  hex padded to the column's bytes (`get_length()`, BIT(16) 5 = `0x0005`);
+  a bool 1/0; FLOAT/DOUBLE through `_double_text`, a port of the server's
+  `my_gcvt` at its field width (shortest digits, f format while the decimal
+  point is within 15 places: `1e15`, `0.00001`, `0.000000000000001`,
+  `1e-16`; Python's repr gives `1e+15`, `1e-05`); DATETIME/TIME with the
+  column's `get_fractional_digits()` (`00:00:00.000`). Deliberately NOT as
+  the client: a NULL binary/BIT value is `NULL` (the client prints a bare
+  `0x`), a tab is escaped (the client prints it raw). Escaped in labels and
+  values: `\\` `\n` `\r` `\t` `\0`, every other C0/DEL/C1 control as `\xNN`,
+  U+2028/2029 as `\uNNNN`. A wide (East Asian W/F) character counts two
+  cells, categories Mn/Me/Cf none. A set without rows still shows its
+  header (the client would print "Empty set"). Both tools go through
+  `_shape_result` (serialize, cut the page, draw), so the order lives in one
+  place. An unknown value is refused by the SDK's argument model, from the
+  Literal; a direct call (the stub tests) gets json. The result stubs the
+  tests share are `helpers.MultiSetResult` (a column is a `MetadataColumn`
+  or a plain label) / `MetadataColumn`, and `helpers.TableSession` (one
+  column, honours the paging LIMIT/OFFSET); the db
+  tools over a stub session are `helpers.stub_db_tools(monkeypatch,
+  make_session)` (yields `sql`, `script`, `opened`), the tool recorder
+  `helpers.ToolRecorder`.
+  Tests: `test_db_format.py`, plus two real-server grids in `_db_flow`.
+  **TIME outside 00:00-23:59** (negative, or up to 838:59:59): released
+  shells cannot fetch it (`fetch_all()` raises `Invalid date value` /
+  `Valid hour range is 0-23`, json mode too). Fixed on mariadb-shell
+  `wip/time-out-of-day-range` (`5f5883393`, pushed, no PR yet): such a
+  value comes to Python as a `datetime.timedelta`, a time of day stays a
+  `datetime.time`. `_time_text` writes a timedelta as the server does
+  (`-838:59:59.00`, `-00:30:00`, the column's fractional digits) in the grid
+  AND in json (where `str()` would say `-1 day, 11:59:59.750000`); the grid
+  was identical to `mariadb --table` on a sandbox. Since the commit "json writes every DATETIME, ..." (user's
+  call, 2026-10-19) json writes EVERY DATETIME/TIMESTAMP/TIME value that
+  way (`2026-01-01 00:00:00.000` for DATETIME(3), `10:20:30.50` for TIME(2)),
+  not with `str()` (`...:30.500000`), so a column has one form. DATE stays
+  `str()`, which is already the server's form.
+
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
   for the VS Code extension, branch `wip/vscode_syntax_highlighter`).
   `db.execute_sql_script(ansi_quotes=False, report_sql_mode=False)`.

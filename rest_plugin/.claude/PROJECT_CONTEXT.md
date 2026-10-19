@@ -325,21 +325,23 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
+Checked at this checkpoint (2026-10-19), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
 
 ```text
 $ git -C rest_plugin branch --show-current
-wip/vscode_syntax_highlighter
+wip/sql-format-grid
 
 $ git -C rest_plugin status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M rest_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+ M mcp_plugin/.claude/context/db-tools.md
+ M mcp_plugin/lib/db_functions.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_db_format.py
+ M mcp_plugin/tests/unit/test_db_script.py
+ M mcp_plugin/tests/unit/test_db_sql.py
+(plus this checkpoint's own context edits)
 ```
 
-- No rest_plugin change since the 2026-10-11 checkpoint. Its open work is
-  PR #41 (`wip/mrs_schema_improvements`), merged into #44
-  (`wip/mrs_code_ext`) and from there into the extension's
-  `wip/vscode_syntax_highlighter`, which is the branch checked out.
+- No rest_plugin change since the 2026-10-12 checkpoint. PR #41 is merged;
+  the branch checked out is mcp_plugin's `wip/sql-format-grid` (PR #59),
+  which touches only mcp_plugin. Since then `main` got #57 (REST naming:
+  `rest_plugin` and its `rest` global) and #58 (version 26.10.3).

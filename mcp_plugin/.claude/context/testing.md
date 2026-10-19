@@ -193,6 +193,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   runs it — but it does mean "I filtered to it and it still did not run" is the expected
   behaviour, not a bug. Combine the two: `--only=migration_e2e --e2e`.
 
+- **The `--e2e` tests rot unnoticed, so run them when a change touches what
+  they assert.** `test_migration_e2e` failed on `main` for weeks: since shell
+  26.9.3 connections are stored (and reported by `mcp setup`, the
+  connection list and the migrator config) as `mariadb://root@...`, while
+  the test still built `root@...` URIs. Fixed 2026-10-19 (`dba204f7`, PR #59)
+  by spelling the test's URIs with the scheme, NOT by normalizing both sides
+  (that would stop catching a change in the reported form). With `--e2e`
+  the suite was 845 passed, 1 skipped (Keycloak) on that branch.
+
 - **Registering the `e2e` marker in `pytest-coverage.ini` is not optional bookkeeping** —
   without the `markers =` entry every run prints a `PytestUnknownMarkWarning`, and the
   suite is otherwise warning-free, so it would be noise nobody reads.
