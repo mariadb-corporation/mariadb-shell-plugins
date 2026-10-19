@@ -1001,6 +1001,15 @@ def test_source_statements(temp_dir):
     assert substitute("  SOURCE './sections/part.sql'[ln2:ln3];", temp_dir) == (
         "  SELECT 1;\n  SELECT 2;\n"
     )
+    # Only "\n" ends a line, and a last line without one counts
+    with open(os.path.join(sections, "form_feed.sql"), "w") as f:
+        f.write("SELECT 1;\f-- page\nSELECT 2;")
+    assert expand("SOURCE './sections/form_feed.sql'[ln2:];") == (
+        "USE s;\nSELECT 2;SELECT 3;\n"
+    )
+    assert expand("SOURCE './sections/form_feed.sql'[:ln-2];") == (
+        "USE s;\nSELECT 1;\f-- page\nSELECT 3;\n"
+    )
     for slicing in ("[ln0:]", "[ln:]", "[-:]"):
         with pytest.raises(ValueError, match="neither a character offset"):
             expand(f"SOURCE './sections/part.sql'{slicing};")

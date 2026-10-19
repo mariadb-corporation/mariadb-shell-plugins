@@ -1638,9 +1638,11 @@ def get_source_slice_offset(content: str, bound: str, is_end: bool) -> int | Non
         return int(number)
 
     line = int(number)
-    line_starts = [0]
-    for text in content.splitlines(keepends=True):
-        line_starts.append(line_starts[-1] + len(text))
+    # Lines end at "\n" only (reading in text mode made "\r\n" one), as an
+    # editor counts them; str.splitlines() would also break at "\f" and others
+    line_starts = [0] + [m.end() for m in re.finditer("\n", content)]
+    if line_starts[-1] != len(content):
+        line_starts.append(len(content))
     line_count = len(line_starts) - 1
 
     # The index of the first line taken, or of the first line after the slice
