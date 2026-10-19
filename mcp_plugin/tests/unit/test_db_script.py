@@ -684,3 +684,12 @@ def test_included_statements_say_where_they_came_from_in_table_format(
     assert {entry["source"]["file"] for entry in results} == {
         os.path.realpath(section)
     }
+
+
+def test_inline_line_breaks_are_made_newlines_as_a_files_are(tools, allowed_temp_dir):
+    """A directive after a lone \\r is expanded, as it is in a file."""
+    helpers.write_file(allowed_temp_dir, "a.sql", SECTION)
+
+    tools.script("SELECT 1;\rSOURCE 'a.sql';\r\nSELECT 'x\ry';", source_dir=allowed_temp_dir)
+
+    assert _ran(tools) == ["SELECT 1", "SELECT 2", "SELECT 3", "SELECT 'x\ny'"]

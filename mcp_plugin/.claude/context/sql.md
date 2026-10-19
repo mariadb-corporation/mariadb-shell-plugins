@@ -41,7 +41,8 @@ All agreed with the user on 2026-10-19 (memory `sql-group-plan`):
   lone `\r`, `lsp-server .../source_include.cc` `find_source_directives`):
   `COMMENT '\rSOURCE '/home/u/.ssh/id_rsa'[0:2000];\r'` was never checked,
   and `sql.outline` returned the file in the comment (reproduced). Now
-  `_prepare` normalizes `\r\n`/`\r` to `\n`, expands with
+  `db_functions.read_sql_input` normalizes `\r\n`/`\r` to `\n` (inline
+  text; a file is read in text mode, so is already), `_prepare` expands with
   `db_functions.expand_sources(..., consequence="Nothing was checked.")`
   (msm's `expand_source_directives` + the checked `_read_allowed_include`,
   as `db.execute_sql_script`), and every check/outline call passes
@@ -76,5 +77,7 @@ All agreed with the user on 2026-10-19 (memory `sql-group-plan`):
 - Not in `MULTI_TENANT_FUNCTION_GROUPS` (no `mcp:sql` scope).
 - Never let the binary resolve an include again without checking what it
   READ: two scanners disagreeing on one byte was enough for an arbitrary
-  file read. The lsp-server's scanner still takes a lone `\r` as a line
-  break, unlike msm (worth aligning there).
+  file read. The lsp-server takes a lone `\r` as a line break ON PURPOSE
+  (user): msm reads files in text mode, where it already is one, and VS
+  Code counts it as a line end too; the gap was inline text, now
+  normalized in `read_sql_input`.

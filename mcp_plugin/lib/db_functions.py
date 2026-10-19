@@ -2345,6 +2345,11 @@ def read_sql_input(
     own folder is where its SOURCE paths are taken from. source_dir is that
     folder for inline text: allowed, a folder, and refused with a file.
 
+    Line breaks come back as "\\n" whichever way the SQL came: a file read
+    in text mode is so already, and inline text is made so - "\\r\\n" and
+    a lone "\\r" alike, as msm, the language server and editors count a
+    line - so that a SOURCE directive is found wherever it starts a line.
+
     Args:
         user: The calling user, in multi-tenant mode.
         text (str): The SQL given inline, or None.
@@ -2374,6 +2379,8 @@ def read_sql_input(
             text = script_file.read()
         # As msm takes them relative to development/.
         return text, os.path.dirname(os.path.abspath(file_path)), file_path
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     if source_dir is not None:
         if not config.is_path_allowed(source_dir, user):
@@ -3671,6 +3678,8 @@ def register_db_tools(server, function_groups=()) -> None:
         source_dir can only use absolute paths. Every included file must be
         within the allowed directories, as file_path must, and a directive
         that cannot be expanded fails the call before any statement runs.
+        Line breaks are made \\n first - \\r\\n and a lone \\r, inside string
+        literals too - as reading a file does.
 
         Args:
             connection_id: The UUID returned by db.connect.

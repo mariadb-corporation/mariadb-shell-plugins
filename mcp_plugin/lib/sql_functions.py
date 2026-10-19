@@ -207,8 +207,8 @@ def register_sql_tools(server, function_groups=()) -> None:
         The binary reads no file of its own (--no-source): SOURCE directives
         are expanded here, by msm_plugin's own code, each include resolved
         and checked against the caller's allowed paths before it is read -
-        the reader db.execute_sql_script uses. Line breaks are made "\\n"
-        first, so that a directive after a lone "\\r" is found as one.
+        the reader db.execute_sql_script uses. read_sql_input has made the
+        line breaks "\\n", so a directive after a lone "\\r" is found too.
         """
         user = general.get_client_identity(ctx).user
         sql, source_dir, where = db_functions.read_sql_input(
@@ -218,7 +218,6 @@ def register_sql_tools(server, function_groups=()) -> None:
             raise tool_error(
                 f"The SQL is larger than {MAX_SQL_BYTES // (1024 * 1024)} MB."
             )
-        sql = sql.replace("\r\n", "\n").replace("\r", "\n")
         expansion = (
             db_functions.expand_sources(
                 sql, source_dir, where, user, "Nothing was checked."

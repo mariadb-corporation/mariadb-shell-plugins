@@ -104,6 +104,10 @@ handling are in [connections.md](connections.md).
   only `expand_source_directives`. mcp imports `msm_plugin.lib.source` lazily in `_expand_sources`,
   as the msm tools import msm: without msm_plugin a script with a directive
   is refused, any other runs.
+  - Line breaks: `read_sql_input` makes inline `\r\n` and lone `\r` into
+    `\n` (user's decision, 2026-10-19), as a file read in text mode already
+    is, so a directive after a lone `\r` is expanded; a `\r` in a string
+    literal of an inline script arrives as `\n`, as from a file.
   - Expanded BEFORE `split_script` (a directive can be in a routine body)
     and before the session is used. Every include is resolved, checked and
     read up front: relative to the file_path's folder, or to the new
