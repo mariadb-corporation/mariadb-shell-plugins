@@ -82,9 +82,11 @@ handling are in [connections.md](connections.md).
   `datetime.time`. `_time_text` writes a timedelta as the server does
   (`-838:59:59.00`, `-00:30:00`, the column's fractional digits) in the grid
   AND in json (where `str()` would say `-1 day, 11:59:59.750000`); the grid
-  was identical to `mariadb --table` on a sandbox. A json time of day still
-  has its old `str()` form (`10:20:30.500000`), so one TIME column can mix
-  the two forms - left as is, the user to decide.
+  was identical to `mariadb --table` on a sandbox. Since the commit "json writes every DATETIME, ..." (user's
+  call, 2026-10-19) json writes EVERY DATETIME/TIMESTAMP/TIME value that
+  way (`2026-01-01 00:00:00.000` for DATETIME(3), `10:20:30.50` for TIME(2)),
+  not with `str()` (`...:30.500000`), so a column has one form. DATE stays
+  `str()`, which is already the server's form.
 
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
   for the VS Code extension, branch `wip/vscode_syntax_highlighter`).

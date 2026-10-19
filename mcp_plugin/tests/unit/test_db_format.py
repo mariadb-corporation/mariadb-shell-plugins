@@ -264,8 +264,31 @@ def test_a_time_outside_one_day_comes_as_the_servers_text_in_json():
     output = db_functions._shape_result(_time_result(), False, None, "json", False)
 
     [result_set] = output["result_sets"]
-    # The time of day is left to the str() it always had.
-    assert [row["t"] for row in result_set["rows"]][:5] == _SERVER_TIMES[:5]
+    # A time of day too, so that the column has one form.
+    assert [row["t"] for row in result_set["rows"]] == _SERVER_TIMES
+
+
+def test_a_datetime_in_json_has_the_columns_fractional_digits():
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn("dt", "DATETIME", "BINARY", fractional_digits=3),
+            helpers.MetadataColumn("d0", "DATETIME", "BINARY"),
+            helpers.MetadataColumn("da", "DATE", "BINARY"),
+        ],
+        [[
+            datetime.datetime(2026, 1, 1),
+            datetime.datetime(2026, 10, 19, 12, 34, 56),
+            datetime.date(2026, 10, 19),
+        ]],
+    )])
+
+    output = db_functions._shape_result(result, False, None, "json", False)
+
+    assert output["result_sets"][0]["rows"] == [{
+        "dt": "2026-01-01 00:00:00.000",
+        "d0": "2026-10-19 12:34:56",
+        "da": "2026-10-19",
+    }]
 
 def test_json_is_left_as_it_was():
     result = helpers.MultiSetResult([(["a"], [["x"]])])

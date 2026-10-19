@@ -1630,9 +1630,13 @@ def _read_json_rows(result, metadata) -> dict:
             # rather than failing to serialize.
             if isinstance(value, (bytes, bytearray)):
                 value = value.hex()
-            elif isinstance(value, datetime.timedelta):
-                # A TIME outside one day, from a shell that can fetch one:
-                # its str() would be "-1 day, 11:59:59.750000".
+            elif isinstance(
+                value, (datetime.datetime, datetime.time, datetime.timedelta)
+            ):
+                # As the server writes it, with the column's fractional
+                # digits, so that every value of a column has one form - a
+                # TIME outside one day comes from a shell that can fetch it
+                # as a timedelta, whose str() says "-1 day, 11:59:59.75".
                 value = _time_text(
                     value, metadata[index].get_fractional_digits()
                 )
@@ -3293,7 +3297,10 @@ def register_db_tools(server, function_groups=()) -> None:
             those labels. Where a query selects two columns with the same
             label - joining two tables that both have an id, say - the later
             one is listed and keyed as label_2 (then _3, and so on), so that
-            no column is lost. Binary values come as hex text.
+            no column is lost. Binary values come as hex text, and
+            DATETIME, TIMESTAMP and TIME values as the server writes them,
+            with the column's fractional seconds (2026-01-01 00:00:00.000,
+            -838:59:59).
 
             With output_format table, each result set has table and
             row_count in place of columns and rows. The grid shows what the
