@@ -14,22 +14,40 @@
 # 3. The sandbox server index (mcp_plugin/lib/sandbox_server_versions.json),
 #    pointing each package at the release it is, or will be, published in.
 #
-# The release does not exist yet, so the index is built from what it will be
-# made of. publish-release.yml attaches, for each of its server_11_tag,
-# server_12_tag and server_13_tag inputs, the artifacts of the latest
-# successful Sandbox Server run (sandbox-server.yml) whose run-name is
-# "Sandbox Server <tag>". This script picks the tags -- the newest
-# mariadb-<major>.x.y tag of MariaDB/server for each series -- finds those
-# same runs the same way, downloads their artifacts (~10 MB each) and hashes
-# the tarballs inside.
+# Each series is decided by its tag, not by its bytes. A series whose newest
+# tag is the server version the index already has, from a release that is
+# published and whose SERVER_SHA256SUMS carries those packages under those
+# checksums, is left exactly as it is: nothing is downloaded, nothing is
+# rebuilt, and publish-release is not given its tag. Release assets do not
+# expire, so this holds for as long as the release exists -- unlike the
+# Sandbox Server run's artifacts, which GitHub deletes after 90 days. A
+# rebuild of a server version already out would not even reproduce it: the
+# builds are not bit-for-bit reproducible, so its checksums would change and
+# the same version would be shipped again.
 #
-# A package whose checksum is the one already in the index, and which the
-# release that index entry points at really carries under that checksum (its
-# SERVER_SHA256SUMS says so), is left as it is: the same bytes do not need
-# publishing again, and the entry keeps pointing at the release that already
-# has them. Only a package that is new or changed gets a URL under the tag
-# publish-release will give this release, v<MYSQL_VERSION>, and only a series
-# with such a package has to be given to publish-release at all.
+# Only these series need a build, and get their packages from one:
+#
+#   new      the newest tag is newer than the index's version, or the series
+#            is not in the index yet;
+#   pending  the index has the version, but points it at a release that is not
+#            published -- this one, or one that was abandoned -- so it still
+#            has to ship, and does with this release;
+#   refresh  named with --refresh: the version is the same, but its packages
+#            are to be replaced by the newest build, after a rebuild.
+#
+# For them, publish-release.yml attaches the artifacts of the latest
+# successful Sandbox Server run (sandbox-server.yml) whose run-name is
+# "Sandbox Server <tag>", for each of its server_11_tag, server_12_tag and
+# server_13_tag inputs. This script finds that same run the same way,
+# downloads its artifacts (~10 MB each), hashes the tarballs inside and points
+# the series at v<MYSQL_VERSION>, the tag publish-release gives this release.
+# Only those series have to be given to publish-release at all.
+#
+# A series whose index entry points at a published release that does not carry
+# it under the indexed checksums (no SERVER_SHA256SUMS, a package missing from
+# it, a different checksum) is inconsistent: the index or the release was
+# changed by hand. Nothing is written; rebuild the tag and run again with
+# --refresh <major>, or fix the index.
 #
 # The index is only right if the release is published from those same runs:
 # a newer Sandbox Server run for one of the tags, finished between this script
@@ -330,55 +348,146 @@ def published_checksums(release_tag: str):
     return _published_checksums_cache[release_tag]
 
 
-def collect_server_packages(release_tag: str, previous: dict):
-    """Resolves each series' build the way publish-release will, and hashes it.
+_release_exists_cache = {}
 
-    A package whose checksum is what the previous index already has for that
-    server version and platform, and which the release that entry points at
-    really carries under that checksum, keeps its entry: the same bytes are
-    out already and are not published again. Any other package is new, and
-    goes under release_tag.
+
+def release_exists(release_tag: str) -> bool:
+    """Whether the shell repo has a published (non-draft) release for a tag."""
+    if release_tag not in _release_exists_cache:
+        result = subprocess.run(
+            ["gh", "release", "view", release_tag, "-R", SHELL_REPO, "--json", "isDraft", "--jq", ".isDraft"],
+            capture_output=True, text=True,
+        )
+        _release_exists_cache[release_tag] = result.returncode == 0 and result.stdout.strip() == "false"
+    return _release_exists_cache[release_tag]
+
+
+def index_series(index: dict) -> dict:
+    """Returns {major: (version tuple, {platform key: package})}, the newest
+    patch of each supported series in an index."""
+    series = {}
+    for entry in index.get("serverVersions", []):
+        if entry.get("major") not in SERVER_MAJORS:
+            continue
+        for patch_group in entry.get("patches", []):
+            for patch, packages in patch_group.items():
+                version = (entry["major"], entry["minor"], int(patch))
+                if entry["major"] not in series or version > series[entry["major"]][0]:
+                    series[entry["major"]] = (version, {package["os"]: package for package in packages})
+    return series
+
+
+def classify_series(tag_version: tuple, indexed) -> tuple:
+    """Decides what a series needs, from its newest tag and its index entry.
+
+    Returns:
+        (status, reason): status is "unchanged", "new", "pending",
+        "inconsistent" or "problem".
+    """
+    if indexed is None:
+        return "new", "not in the index yet"
+    version, packages = indexed
+    indexed_text = "{}.{}.{}".format(*version)
+    if tag_version > version:
+        return "new", f"newer than the index's {indexed_text}"
+    if tag_version < version:
+        return "problem", f"older than the index's {indexed_text}"
+
+    missing = [key for key in EXPECTED_PLATFORMS if key not in packages]
+    if missing:
+        return "inconsistent", f"the index has {indexed_text} without {', '.join(missing)}"
+
+    unpublished, wrong = set(), []
+    for key, package in sorted(packages.items()):
+        previous_tag, previous_name = split_package_url(package.get("url", ""))
+        if not release_exists(previous_tag):
+            unpublished.add(previous_tag)
+            continue
+        published = published_checksums(previous_tag)
+        if published is None:
+            wrong.append(f"{key}: {previous_tag} has no {SERVER_CHECKSUMS_ASSET}")
+        elif previous_name not in published:
+            wrong.append(f"{key}: {previous_tag} does not carry {previous_name}")
+        elif published[previous_name] != package.get("sha256sum"):
+            wrong.append(f"{key}: {previous_tag} carries {previous_name} under another checksum")
+    if wrong:
+        return "inconsistent", f"the index has {indexed_text}, but " + "; ".join(wrong)
+    if unpublished:
+        return "pending", f"the index has {indexed_text} in {', '.join(sorted(unpublished))}, not published yet"
+    releases = sorted({split_package_url(p["url"])[0] for p in packages.values()})
+    return "unchanged", f"the index has {indexed_text} from {', '.join(releases)}, matching its {SERVER_CHECKSUMS_ASSET}"
+
+
+def collect_server_packages(release_tag: str, old_index: dict, refresh: set):
+    """Decides each series by its tag, and builds the new index.
 
     Args:
         release_tag: The tag publish-release will give the shell release.
-        previous: The current index, flattened by index_packages().
+        old_index: The current index.
+        refresh: Majors whose packages are to come from their newest build
+            even though their version is unchanged.
 
     Returns:
         A tuple of (the new index, {major: tag or None} to publish with -- a
-        tag only for a series with a new package, None when the release has
-        nothing to carry for it -- and the earliest artifact expiry among the
-        runs to publish, or None when there is nothing to publish). Exits
-        without returning when any series cannot be resolved to a complete
-        build.
+        tag only for a series whose packages come from a build, the earliest
+        artifact expiry among those builds, or None when there are none).
+        Exits without returning when any series cannot be resolved.
     """
     print(f"Finding the newest MariaDB/server tag of the {', '.join(f'{m}.x' for m in SERVER_MAJORS)} series...")
     tags = latest_server_tags()
-
-    successful_runs = gh_json(
-        "run", "list", "-R", SHELL_REPO, "--workflow", SANDBOX_SERVER_WORKFLOW,
-        "--status", "success", "--limit", str(RUN_SEARCH_LIMIT),
-        "--json", "databaseId,displayTitle,headBranch,createdAt",
-    )
-    pending_runs = [
-        candidate
-        for status in ("in_progress", "queued")
-        for candidate in gh_json(
-            "run", "list", "-R", SHELL_REPO, "--workflow", SANDBOX_SERVER_WORKFLOW,
-            "--status", status, "--json", "databaseId,displayTitle",
-        )
-    ]
+    indexed = index_series(old_index)
 
     problems = []
     series = {}
     to_publish = {major: None for major in SERVER_MAJORS}
     expiries = []
+    successful_runs = pending_runs = None
     for major in SERVER_MAJORS:
         tag = tags.get(major)
         if tag is None:
             problems.append(f"MariaDB/server has no mariadb-{major}.x.y release tag")
             continue
-
+        tag_version = tuple(int(part) for part in tag.split("-")[1].split("."))
         build_hint = f"gh workflow run {SANDBOX_SERVER_WORKFLOW} -R {SHELL_REPO} -f mariadb_version={tag}"
+
+        status, reason = classify_series(tag_version, indexed.get(major))
+        if major in refresh:
+            if status in ("unchanged", "inconsistent", "pending"):
+                status, reason = "refresh", f"--refresh: replacing the index's packages ({reason})"
+        print(f"  {major}.x {tag}: {status} -- {reason}")
+
+        if status == "problem":
+            problems.append(f"{tag}: {reason}")
+            continue
+        if status == "inconsistent":
+            problems.append(
+                f"{tag}: {reason}. Rebuild it with: {build_hint} -- then run this again with "
+                f"--refresh {major}; or fix the index by hand"
+            )
+            continue
+        if status == "unchanged":
+            packages = dict(indexed[major][1])
+            kept = sorted({split_package_url(p["url"])[0] for p in packages.values()})
+            print(f"    unchanged, kept in {', '.join(kept)}: {', '.join(sorted(packages))}")
+            series[tag_version] = packages
+            continue
+
+        # new, pending or refresh: the packages come from the build.
+        if successful_runs is None:
+            successful_runs = gh_json(
+                "run", "list", "-R", SHELL_REPO, "--workflow", SANDBOX_SERVER_WORKFLOW,
+                "--status", "success", "--limit", str(RUN_SEARCH_LIMIT),
+                "--json", "databaseId,displayTitle,headBranch,createdAt",
+            )
+            pending_runs = [
+                candidate
+                for run_status in ("in_progress", "queued")
+                for candidate in gh_json(
+                    "run", "list", "-R", SHELL_REPO, "--workflow", SANDBOX_SERVER_WORKFLOW,
+                    "--status", run_status, "--json", "databaseId,displayTitle",
+                )
+            ]
+
         pending = [p for p in pending_runs if p["displayTitle"] == f"Sandbox Server {tag}"]
         if pending:
             problems.append(
@@ -392,11 +501,10 @@ def collect_server_packages(release_tag: str, previous: dict):
             problems.append(f"{tag}: no successful Sandbox Server build -- start one with: {build_hint}")
             continue
 
-        print(f"  {tag}: run {run_info['databaseId']} ({run_info['headBranch']}, {run_info['createdAt']})")
+        print(f"    Sandbox Server run {run_info['databaseId']} ({run_info['headBranch']}, {run_info['createdAt']})")
         checksums, expiry = hash_run_packages(run_info, problems)
 
         packages = {}
-        kept = {}  # platform key -> the release its unchanged package stays in
         for name, sha256sum in sorted(checksums.items()):
             match = SERVER_PACKAGE_PATTERN.match(name)
             if match is None:
@@ -407,33 +515,17 @@ def collect_server_packages(release_tag: str, previous: dict):
                 problems.append(f"{tag}: run {run_info['databaseId']} built {name}, not {tag}")
                 continue
             key = platform_key(*match.groups()[3:])
-
-            previous_package = previous.get((version, key))
-            if previous_package is not None and previous_package.get("sha256sum") == sha256sum:
-                previous_tag, previous_name = split_package_url(previous_package.get("url", ""))
-                if (published_checksums(previous_tag) or {}).get(previous_name) == sha256sum:
-                    packages[key] = dict(previous_package)
-                    kept[key] = previous_tag
-                    continue
-            packages[key] = {
-                "os": key,
-                "url": package_url(release_tag, name),
-                "sha256sum": sha256sum,
-            }
+            packages[key] = {"os": key, "url": package_url(release_tag, name), "sha256sum": sha256sum}
 
         missing = [key for key in EXPECTED_PLATFORMS if key not in packages]
         if checksums and missing:
             problems.append(f"{tag}: run {run_info['databaseId']} has no package for {', '.join(missing)}")
         if packages and not missing:
-            series[tuple(int(part) for part in tag.split("-")[1].split("."))] = packages
-            new = [key for key in sorted(packages) if key not in kept]
-            if kept:
-                print(f"    unchanged, kept in {', '.join(sorted(set(kept.values())))}: {', '.join(sorted(kept))}")
-            if new:
-                print(f"    new or changed, to publish in {release_tag}: {', '.join(new)}")
-                to_publish[major] = tag
-                if expiry:
-                    expiries.append(expiry)
+            series[tag_version] = packages
+            print(f"    new or changed, to publish in {release_tag}: {', '.join(sorted(packages))}")
+            to_publish[major] = tag
+            if expiry:
+                expiries.append(expiry)
 
     if problems:
         raise SystemExit(
@@ -486,10 +578,10 @@ def check_against_release(release_tag: str, index: dict) -> None:
     print(f"Shell release {release_tag} is already published, and its {SERVER_CHECKSUMS_ASSET} matches.")
 
 
-def plan_server_index(release_tag: str):
+def plan_server_index(release_tag: str, refresh: set):
     abs_path = REPO_ROOT / SERVER_INDEX_FILE
     old_index = json.loads(abs_path.read_text(encoding="utf-8"))
-    new_index, server_tags, expiry = collect_server_packages(release_tag, index_packages(old_index))
+    new_index, server_tags, expiry = collect_server_packages(release_tag, old_index, refresh)
     check_against_release(release_tag, new_index)
 
     def summary(index):
@@ -528,6 +620,11 @@ def main() -> int:
         help=f"Shell repo branch to read MYSQL_VERSION from (default: {SHELL_VERSION_BRANCH}).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing files.")
+    parser.add_argument(
+        "--refresh", type=int, action="append", default=[], choices=SERVER_MAJORS, metavar="MAJOR",
+        help="Replace a series' packages with its newest Sandbox Server build even though its version is "
+        "unchanged -- after rebuilding it, to repair an inconsistent index. Repeatable.",
+    )
     args = parser.parse_args()
 
     current_version = read_current_version()
@@ -553,7 +650,7 @@ def main() -> int:
             print(f"  {p['file']}: {p['reason']}")
         return 1
 
-    index_plan, server_tags, expiry = plan_server_index(release_tag)
+    index_plan, server_tags, expiry = plan_server_index(release_tag, set(args.refresh))
     plans.append(index_plan)
 
     print()
