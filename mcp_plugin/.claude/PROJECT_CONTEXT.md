@@ -23,8 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **865 pass, 6 skipped (~120s)** on PR #59's working tree at the
-2026-10-19 checkpoint (the 6 are opt-in: 5 `--e2e`, 1 `--keycloak`); 616 / 3 on PR #44's
+Standard suite: **937 pass, 6 skipped (~130s)** on `main` after #63 at the
+2026-10-19 evening checkpoint (the 6 are opt-in: 5 `--e2e`, 1 `--keycloak`); 865 / 6 on PR #59's
+tree earlier that day; 616 / 3 on PR #44's
 tree at the 2026-10-11 checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
 on `wip/mcp-multi-tenant` at the 2026-10-07 checkpoint, with Rene's review fixes in the
 working tree (584 / 4 after the simplification pass; 585 / 3 at the 2026-10-06 evening
@@ -68,6 +69,7 @@ this table with it.
 | [`context/connections.md`](context/connections.md) | The two connection lists, URI resolution, `use_session`, and every session safeguard: client binding, idle timeout, hard TTL, caps, audit log, locking. |
 | [`context/security-review.md`](context/security-review.md) | The numbered review behind most of that: S1..S8 and T1..T9, one entry each, with what was verified and which revert probe pinned it. |
 | [`context/db-tools.md`](context/db-tools.md) | `db.execute_sql` / `execute_sql_script` including the per-statement script results, the three introspection tools and their SQL. |
+| [`context/source-includes.md`](context/source-includes.md) | MSM SOURCE directives in `db.execute_sql_script` and the `sql` tools: msm's shared `lib/source.py`, path resolution and allowed-path checks, line-break normalization, how statements and positions are placed back in the script or the included file. |
 | [`context/migrator.md`](context/migrator.md) | The migration tooling: the naming rule, the four `migrator.*` tools, the install, the Windows gate and the opt-in end-to-end test. |
 | [`context/setup.md`](context/setup.md) | `mcp.setup`: the three interactive modules, the shell's own prompt types, and the command-line option surface. |
 | [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, the shell process each task runs in, how a crashed load is resumed, and what the extension does with the tasks. |
@@ -87,36 +89,26 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19):
+Checked at this checkpoint (2026-10-19, evening):
 
 ```text
 $ git -C mcp_plugin branch --show-current
-wip/sql-format-grid
+main
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
- M mcp_plugin/.claude/context/db-tools.md
- M mcp_plugin/lib/db_functions.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_db_format.py
- M mcp_plugin/tests/unit/test_db_script.py
- M mcp_plugin/tests/unit/test_db_sql.py
-(plus this checkpoint's own context edits)
+(clean)
 ```
 
-- **`wip/sql-format-grid`, PR #59** (from `main` at `b7b2d8fb`, pushed up
-  to `3eef3b6f`): `output_format: "json" | "table"` on `db.execute_sql`
-  and `db.execute_sql_script`, the text grid the mariadb client prints
-  (see [`context/db-tools.md`](context/db-tools.md), "Text grid output"),
-  shared test stubs and fixture in `tests/unit/helpers.py`, and the
-  `test_migration_e2e` URI fix (see [`context/testing.md`](context/testing.md)).
-- **Uncommitted** (the fixes of the second `/code-review`, all verified on a
-  sandbox against `mariadb --table --binary-as-hex`; the user has not yet
-  said to commit them): cells made from the raw values in
-  `_read_result_set(grid=True)`, `_double_text` (port of `my_gcvt`), BIT
-  padded hex, fractional seconds, original labels, all control characters
-  escaped, zero-width categories, the restart flag on a failed first
-  statement; tests for each. Suite 865 passed, 6 skipped.
-- Earlier PRs #41, #43, #44, #45 and mariadb-shell #71 are merged; `main`
-  is at #58 (version 26.10.3). `code_ext` moved to its own repository.
+- **Merged today:** #59 (`output_format` text grid), #62 (its zero-fill and
+  bidi follow-ups, which missed #59's merge by 90 s), #61
+  (`db.execute_sql_script` expands MSM SOURCE), #63 (the `sql` group, see
+  [`context/sql.md`](context/sql.md), with the security fix: the plugin
+  expands SOURCE, `mariadb-lsp` gets `--no-source`). Every merged `wip/`
+  branch and worktree is deleted, locally and on origin; none is left.
+- **Elsewhere, open:** mariadb-shell `wip/time-out-of-day-range`
+  (`5f5883393`, pushed, NO PR yet - the user's call): TIME values outside
+  one day fetchable, as `datetime.timedelta` in Python. lsp-server
+  `wip/source-dir` (`8e98d91`, `mariadb-lsp --source-dir`): no longer
+  needed by the `sql` tools, which send expanded text on stdin.
 - [`context/history.md`](context/history.md) is deliberately NOT updated,
   as by every session since `wip/sandbox-binaries`.

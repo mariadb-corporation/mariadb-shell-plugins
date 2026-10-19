@@ -12,7 +12,7 @@
 - **Section model.** Scripts are split by banners `-- ####...\n-- MSM Section NNN: Title\n...-- ####` (`MSM_SECTIONS_REGEX`); text before the first banner is pseudo-section `license`. Sections are edited by id with `msm.set.sectionSqlContent` / read with `msm.get.sqlContentFromSection`; `write_sections_to_file` rejoins them with `\n`.
 - **Project layout** (`templates/msm.project/` copied, `*.md` placeholders substituted, copyright block replaced): `msm.project.json`, `README.md`, `CHANGELOG.md`, `development/<file>_next.sql`, `releases/{versions,updates,deployment}/` (each with a README). `<file>` = schema name with whitespace→`_` and `\/:*?"<>|` removed (`schemaFileName`). Folder name `<file>.msm.project`.
 - **Version storage.** The development version lives ONLY in section 910's `CREATE OR REPLACE ... VIEW msm_schema_version (major,minor,patch) AS SELECT x, y, z` (regex `MSM_SCHEMA_VERSION_VIEW_VALUES`); new projects start at `0.0.1`. Released versions are derived from file names in `releases/versions/` (`.*(\d+)\.(\d+)\.(\d+)\.sql`), deployable ones from `releases/deployment/`. Deployed version = the view on the server; `0.0.0` while a create/update runs.
-- **prepare_release** (`lib/management.py`): requires version ≥ last released and next_version > version (or ≥ with `allow_to_stay_on_same_version`); inlines `SOURCE '<path>'[a:b];` lines (`substitute_source_statements_with_content`, one level, relative to `development/`, indentation applied; the slice is optional = whole file, each bound empty, a character offset with Python slice semantics, or `lnN` = 1-based line, end line included, `ln-1` the last; `get_source_slice`) into the dev script; fills template `schema_a.b.c.sql` section-by-section from the dev script (only section ids present in the TEMPLATE survive), drops empty sections except `license`/`001`; writes `versions/<file>_<v>.sql`; if a previous release exists and differs, writes the EMPTY update script `updates/<file>_<prev>_to_<v>.sql` from `schema_x.y.z_to_a.b.c.sql`; then sets section 910 of the dev file to next_version.
+- **prepare_release** (`lib/management.py`): requires version ≥ last released and next_version > version (or ≥ with `allow_to_stay_on_same_version`); inlines `SOURCE '<path>'[a:b];` lines (`substitute_source_statements_with_content`, now a thin wrapper of `lib/source.py`'s `expand_source_directives` - see Files that matter; one level, relative to `development/`, indentation applied; the slice is optional = whole file, each bound empty, a character offset with Python slice semantics, or `lnN` = 1-based line, end line included, `ln-1` the last; `get_source_slice`) into the dev script; fills template `schema_a.b.c.sql` section-by-section from the dev script (only section ids present in the TEMPLATE survive), drops empty sections except `license`/`001`; writes `versions/<file>_<v>.sql`; if a previous release exists and differs, writes the EMPTY update script `updates/<file>_<prev>_to_<v>.sql` from `schema_x.y.z_to_a.b.c.sql`; then sets section 910 of the dev file to next_version.
 - **generate_deployment_script**: first release → plain copy of the version file. Later releases → `schema_deployment_a.b.c.sql` with target sections 130/140/150/170/190 and, per consecutive released pair (`MSM-LOOP-START/END:UPDATABLE-VERSIONS` blocks, `(indent=N)`), the update script's sections 230/240/270/290. Target 180 (REST) is emitted after 370, run in full every time (since the 2026-10-05 fix). Section 140 → body of `msm_create_<target>()`, each 240 → `msm_update_<from>_to_<to>()`, 170 → `msm_auth_<target>()`, 270 → `msm_auth_<from>_to_<to>()`; dispatcher `msm_create_or_update()` / `msm_auth()` pick fresh-create vs. chained updates (via `@msm_schema_init`, `@msm_current_version`); all `msm_*` procs dropped at the end. SIGNAL errnos 32100 (exists, unmanaged), 32101 (stuck at 0.0.0), 32102 (version not updatable). Requires an update file for EVERY consecutive released pair (`get_updatable_versions` raises otherwise).
 - **Authorization model (verified 2026-10-05):** `msm_auth` runs the 270 step procedures, then ALWAYS the target's 170 (fresh install: only 170). So 170 must be re-runnable (`CREATE ROLE IF NOT EXISTS`, `GRANT`) and new roles/grants reach upgraded schemas through it; 270 is only for `REVOKE`/`DROP ROLE`. Upgrade and fresh install then end with identical roles and grants. The ai-plugins skills say to `GRANT` in 270 — wrong, and dangerous with issue 14.
 - **deploy_schema** (`lib/management.py`): checks released == deployment-script versions, picks latest if no version; refuses an existing unmanaged schema; no-op message if already on version; message (not error) if server is NEWER than the project; refuses a version not in the update chain. Takes the per-schema update lock (`lib.core.msm_update_lock`, `GET_LOCK(CONCAT("MSM_METADATA_LOCK", "_", MD5(schema)), 1)`) before it looks at the schema and holds it through the backup, the script and the drop/restore; runs the script via `lib.core.execute_msm_sql_script(take_lock=False)` (`mysqlsh.mysql.split_script`, so `DELIMITER` works). `backup=True` (default False, added in a MariaDB session) + existing schema: sets `GLOBAL local_infile=1` if needed, `util.dump_schemas` (through `lib.core.run_util`: the given session becomes the global one only for the call, under the `_mariadb_shell_plugins_global_session` lock the rest_plugin shares) to `backup_directory` (default `plugin_data/msm_plugin/backups/<file>_backup_<ver>[_N]`), on failure DROP + `util.load_dump`, removes the dump either way. Without backup a failed UPDATE leaves the schema as the failure left it; a failed fresh CREATE drops the schema. Every step goes to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
@@ -20,7 +20,7 @@
 
 ## Current state
 
-- **Suite: 22 pass** on `wip/mcp_dump_load` (2026-10-10; `tests/unit/test_run_util.py` adds 6 with fakes for `mysqlsh`); 16 at the 2026-10-05 checkpoint (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
+- **Suite: 26 pass** on `main` (2026-10-19, after #60/#61/#63); 22 on `wip/mcp_dump_load` (2026-10-10; `tests/unit/test_run_util.py` adds 6 with fakes for `mysqlsh`); 16 at the 2026-10-05 checkpoint (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
 - **Verified end to end on 12.3.2 (2026-10-05, scratch sandbox, script in the docs session scratchpad):** create project → fill 140/150/170/180 → release 1.0.0 → deploy fresh → redeploy (no-op message) → release 1.1.0 with 240 ALTER+UPDATE and 270 GRANT → update with `backup=True` (dump taken and removed) → fresh install of 1.1.0 → unmanaged-schema refusal; version-order refusals; CLI output of `get` functions; `msm cd/pwd/ls`.
 - **Known issues (confirmed live unless noted):**
   1. **Update script section 250 is unused by design, but still advertised.** The deployment script brings tables up through the chained 240 steps, THEN runs the target's full section 150 once, so views/routines always end in the target state whatever the start version; intermediate definitions are never needed (user's design, verified 2026-10-05: 1.0.0→1.2.0, 1.1.0→1.2.0 and fresh 1.2.0 give identical views/routines, a view on a renamed column ends valid, only the target's routine body is in the script). Removals go in 240 (`DROP ... IF EXISTS`), since 150 cannot express them. Caveat (code reading): during the 240 chain the objects are still the START version's, so a later 240 step cannot rely on a routine an intermediate version introduced — use 230 helpers. The real defect is documentation: the update template's 250 and the ai-plugins `-release`/overview skills tell authors to fill 250, which is never executed.
@@ -45,7 +45,8 @@
 - `management.py` -> the `@plugin_function` wrappers for project, release, deployment, server checks (what the CLI, Python and `mcp_plugin` call)
 - `general.py` -> `msm.info/version/pwd/cd/ls`
 - `modeling.py` -> `msm.getSchemaDiagram` (stub)
-- `lib/management.py` -> sections, SOURCE inlining, project creation, copyrights/licenses, `prepare_release`, `generate_deployment_script`, `deploy_schema`
+- `lib/source.py` -> the ONE implementation of MSM SOURCE (regex, slices, `resolve_include_path`, `expand_source_directives` with segments, `locate`, `directives`); no shell imports, so mcp_plugin's `db.execute_sql_script` and `sql.*` tools import it too (PRs #60, #61, #63, 2026-10-19). Keep it in step with the language server's rules (lsp-server docs/plans/source-includes.md).
+- `lib/management.py` -> sections, project creation, copyrights/licenses, `prepare_release`, `generate_deployment_script`, `deploy_schema`
 - `lib/core.py` -> `ConfigFile`, working dir, interactive check, `MsmDbExec`, update log, `execute_msm_sql_script` (lock + split_script)
 - `templates/scripts/schema_next.sql`, `schema_a.b.c.sql`, `schema_x.y.z_to_a.b.c.sql`, `schema_deployment_a.b.c.sql` -> the section layouts; the deployment template's placeholders decide which sections ever reach a server
 - `templates/msm.project/` -> scaffolded project files; `templates/license/` -> license headers
@@ -86,22 +87,17 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-19, evening), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current
-wip/sql-format-grid
+main
 
 $ git -C msm_plugin status --short   (one repository: every project's lines)
- M mcp_plugin/.claude/context/db-tools.md
- M mcp_plugin/lib/db_functions.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_db_format.py
- M mcp_plugin/tests/unit/test_db_script.py
- M mcp_plugin/tests/unit/test_db_sql.py
-(plus this checkpoint's own context edits)
+(clean)
 ```
 
-- No msm_plugin change since the 2026-10-12 checkpoint. PRs #41 and #43
-  are merged; the branch checked out is mcp_plugin's `wip/sql-format-grid`
-  (PR #59), which touches only mcp_plugin.
+- PR #60 (SOURCE without a slice = whole file, `lnN` slices) is merged; the
+  SOURCE code moved to `lib/source.py` in #61 and gained `directives()`,
+  `Segment.first_column`/`indent` and a 4-tuple `locate` in #63. No open
+  msm_plugin branch.

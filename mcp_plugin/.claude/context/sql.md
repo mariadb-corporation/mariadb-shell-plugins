@@ -4,8 +4,8 @@
 formatted by the MariaDB SQL language server's binary, `mariadb-lsp`
 (mariadb-corporation/lsp-server, `~/git/lsp-server`), without a database.
 
-Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The SOURCE rules it
-shares are in [db-tools.md](db-tools.md) (MSM SOURCE directives).
+Merged as PR #63 (2026-10-19). Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The SOURCE rules it
+shares are in [source-includes.md](source-includes.md).
 
 ## Architecture / key decisions
 
