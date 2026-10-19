@@ -49,8 +49,8 @@ handling are in [connections.md](connections.md).
   flag, which the server sets on every numeric type (measured on 12.3:
   INT, DECIMAL, DOUBLE, FLOAT, YEAR (as TINYINT), NULL; not BIT). So
   table mode always reads the column metadata. The grid writes `NULL`,
-  `0x` + hex for BYTES/GEOMETRY (as `--binary-as-hex` does) and `\n` `\r`
-  `\t` `\0` escaped. A wide (East Asian W/F) character counts as two
+  `0x` + upper-case hex for BYTES/GEOMETRY (as `--binary-as-hex` does) and
+  `\\` `\n` `\r` `\t` `\0` escaped, in labels as in values. A wide (East Asian W/F) character counts as two
   cells, a combining mark as none. A set without rows still shows its
   header (the client would print "Empty set"). Both tools go through
   `_shape_result` (serialize, cut the page, draw), so the order lives in one

@@ -70,8 +70,26 @@ def test_null_binary_and_line_breaks_are_written_as_the_client_writes_them():
     [result_set] = _table(result)["result_sets"]
 
     assert result_set["table"].splitlines()[3:5] == [
-        "| 0x00ff | a\\nb\\tc |",
+        "| 0x00FF | a\\nb\\tc |",
         "| NULL   | NULL    |",
+    ]
+
+
+def test_a_backslash_and_a_label_line_break_are_escaped():
+    result = helpers.MultiSetResult([(
+        [helpers.MetadataColumn("a\nb")],
+        [["c:\\new"], ["x\ny"]],
+    )])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines() == [
+        "+---------+",
+        "| a\\nb    |",
+        "+---------+",
+        "| c:\\\\new |",
+        "| x\\ny    |",
+        "+---------+",
     ]
 
 

@@ -1969,9 +1969,10 @@ OutputFormat = Literal["json", "table"]
 _HEX_TYPES = ("BYTES", "GEOMETRY")
 
 # Characters that would break a grid line, written the way the mariadb client
-# writes them in its batch output.
+# writes them in its batch output - the backslash too, so that a value that
+# holds a backslash and an n still reads apart from one that holds a newline.
 _GRID_ESCAPES = str.maketrans(
-    {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\0": "\\0"}
+    {"\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\0": "\\0"}
 )
 
 
@@ -2013,7 +2014,8 @@ def _grid_cell(value, column: dict) -> str:
     if value is None:
         return "NULL"
     if column["type"] in _HEX_TYPES:
-        return f"0x{value}"
+        # Upper case, as the client prints it.
+        return f"0x{value.upper()}"
 
     return str(value).translate(_GRID_ESCAPES)
 
@@ -2035,18 +2037,21 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
     """
     # Each cell with its width, measured once for the column widths and the
     # padding both.
-    header = [(label, _display_width(label)) for label in columns]
+    # A label is escaped as a value is: an alias can hold a newline too.
+    header = []
+    for label in columns:
+        text = label.translate(_GRID_ESCAPES)
+        header.append((text, _display_width(text)))
+    widths = [text_width for _, text_width in header]
     cells = []
     for row in rows:
-        texts = [
-            _grid_cell(row[label], column)
-            for label, column in zip(columns, metadata)
-        ]
-        cells.append([(text, _display_width(text)) for text in texts])
-    widths = [
-        max(cell[index][1] for cell in [header] + cells)
-        for index in range(len(columns))
-    ]
+        measured = []
+        for index, (label, column) in enumerate(zip(columns, metadata)):
+            text = _grid_cell(row[label], column)
+            text_width = _display_width(text)
+            widths[index] = max(widths[index], text_width)
+            measured.append((text, text_width))
+        cells.append(measured)
     numeric = ["NUM" in column["flags"] for column in metadata]
 
     def line(texts, align_right):
@@ -3145,10 +3150,10 @@ def register_db_tools(server, function_groups=()) -> None:
 
             With output_format table, each result set has table and
             row_count in place of columns and rows. The grid puts NULL for
-            a NULL, 0x before binary values in hex, and writes a newline,
-            carriage return, tab or NUL inside a value as \\n, \\r, \\t or
-            \\0, so that every row stays on one line. A result set without
-            rows still shows its header.
+            a NULL, 0x before binary values in hex, and writes a backslash,
+            newline, carriage return, tab or NUL inside a value or label as
+            \\\\, \\n, \\r, \\t or \\0, so that every row stays on one line.
+            A result set without rows still shows its header.
 
             With column_metadata true, each result set also has
             column_metadata: one dict per column, in the order of columns,
