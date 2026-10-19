@@ -74,9 +74,17 @@ handling are in [connections.md](connections.md).
   make_session)` (yields `sql`, `script`, `opened`), the tool recorder
   `helpers.ToolRecorder`.
   Tests: `test_db_format.py`, plus two real-server grids in `_db_flow`.
-  **The shell cannot fetch a TIME outside 00:00-23:59** (negative, or
-  838:59:59): `fetch_all()` raises `Invalid date value` / `Valid hour range
-  is 0-23`, in json mode too. A mariadb-shell bug, not handled here.
+  **TIME outside 00:00-23:59** (negative, or up to 838:59:59): released
+  shells cannot fetch it (`fetch_all()` raises `Invalid date value` /
+  `Valid hour range is 0-23`, json mode too). Fixed on mariadb-shell
+  `wip/time-out-of-day-range` (`5f5883393`, pushed, no PR yet): such a
+  value comes to Python as a `datetime.timedelta`, a time of day stays a
+  `datetime.time`. `_time_text` writes a timedelta as the server does
+  (`-838:59:59.00`, `-00:30:00`, the column's fractional digits) in the grid
+  AND in json (where `str()` would say `-1 day, 11:59:59.750000`); the grid
+  was identical to `mariadb --table` on a sandbox. A json time of day still
+  has its old `str()` form (`10:20:30.500000`), so one TIME column can mix
+  the two forms - left as is, the user to decide.
 
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
   for the VS Code extension, branch `wip/vscode_syntax_highlighter`).

@@ -22,7 +22,9 @@ matters is the text drawn from it; the grid of a real server's result is
 checked in test_db_sql.py.
 """
 
-# cSpell:ignore mysqlsh MariaDB
+# cSpell:ignore mysqlsh MariaDB timedelta timedeltas
+
+import datetime
 
 import pytest
 
@@ -221,6 +223,49 @@ def test_column_metadata_is_kept_only_when_asked_for():
         "column_metadata"
     ] == [{"type": "INT", "flags": ["NUM"]}]
 
+
+
+def _time_result():
+    """A TIME(2) column with the values a fixed shell returns as timedeltas."""
+    return helpers.MultiSetResult([(
+        [helpers.MetadataColumn("t", "TIME", "BINARY", fractional_digits=2)],
+        [
+            [-datetime.timedelta(hours=838, minutes=59, seconds=59)],
+            [datetime.timedelta(hours=838, minutes=59, seconds=59)],
+            [-datetime.timedelta(hours=12, microseconds=250000)],
+            [-datetime.timedelta(minutes=30)],
+            [datetime.timedelta(days=1)],
+            [datetime.time(10, 20, 30, 500000)],
+        ],
+    )])
+
+
+# As the server writes them, from a 12.3 server's TIME(2) column.
+_SERVER_TIMES = [
+    "-838:59:59.00",
+    "838:59:59.00",
+    "-12:00:00.25",
+    "-00:30:00.00",
+    "24:00:00.00",
+    "10:20:30.50",
+]
+
+
+def test_a_time_outside_one_day_is_written_as_the_server_writes_it():
+    [result_set] = _table(_time_result())["result_sets"]
+
+    assert [
+        line.strip("| ") for line in result_set["table"].splitlines()[3:-1]
+    ] == _SERVER_TIMES
+
+
+def test_a_time_outside_one_day_comes_as_the_servers_text_in_json():
+    """Not as str(timedelta), which says -1 day, 11:59:59.750000."""
+    output = db_functions._shape_result(_time_result(), False, None, "json", False)
+
+    [result_set] = output["result_sets"]
+    # The time of day is left to the str() it always had.
+    assert [row["t"] for row in result_set["rows"]][:5] == _SERVER_TIMES[:5]
 
 def test_json_is_left_as_it_was():
     result = helpers.MultiSetResult([(["a"], [["x"]])])

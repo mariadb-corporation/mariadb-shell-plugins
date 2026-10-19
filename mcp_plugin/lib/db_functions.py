@@ -1630,6 +1630,12 @@ def _read_json_rows(result, metadata) -> dict:
             # rather than failing to serialize.
             if isinstance(value, (bytes, bytearray)):
                 value = value.hex()
+            elif isinstance(value, datetime.timedelta):
+                # A TIME outside one day, from a shell that can fetch one:
+                # its str() would be "-1 day, 11:59:59.750000".
+                value = _time_text(
+                    value, metadata[index].get_fractional_digits()
+                )
             elif value is not None and not isinstance(
                 value, (bool, int, float, str)
             ):
@@ -2106,21 +2112,33 @@ def _time_text(value, fractional_digits: int) -> str:
     """Returns a DATETIME, TIMESTAMP or TIME value as the server writes it.
 
     With as many digits after the seconds as the column has - DATETIME(3)
-    writes 00:00:00.000 - and none for a column without them.
+    writes 00:00:00.000 - and none for a column without them. A TIME that is
+    no time of day - negative, or 24 hours or more, which a shell with that
+    fix returns as a timedelta - is written as the server writes it too:
+    -838:59:59, -00:30:00, 24:00:00.
 
     Args:
-        value: The value, a datetime or a time.
+        value: The value, a datetime, a time or a timedelta.
         fractional_digits (int): The column's fractional seconds precision.
 
     Returns:
         The text.
     """
-    if isinstance(value, datetime.datetime):
+    if isinstance(value, datetime.timedelta):
+        sign = "-" if value < datetime.timedelta(0) else ""
+        microseconds = abs(value) // datetime.timedelta(microseconds=1)
+        seconds, microsecond = divmod(microseconds, 1_000_000)
+        minutes, second = divmod(seconds, 60)
+        hours, minute = divmod(minutes, 60)
+        text = f"{sign}{hours:02d}:{minute:02d}:{second:02d}"
+    elif isinstance(value, datetime.datetime):
         text = value.isoformat(" ", "seconds")
+        microsecond = value.microsecond
     else:
         text = value.isoformat("seconds")
+        microsecond = value.microsecond
     if 0 < fractional_digits <= 6:
-        text += "." + f"{value.microsecond:06d}"[:fractional_digits]
+        text += "." + f"{microsecond:06d}"[:fractional_digits]
 
     return text
 
@@ -2150,7 +2168,7 @@ def _grid_cell(value, column) -> str:
         return "1" if value else "0"
     if isinstance(value, float):
         return _double_text(value)
-    if isinstance(value, (datetime.datetime, datetime.time)):
+    if isinstance(value, (datetime.datetime, datetime.time, datetime.timedelta)):
         return _time_text(value, column.get_fractional_digits())
 
     return str(value).translate(_GRID_ESCAPES)
