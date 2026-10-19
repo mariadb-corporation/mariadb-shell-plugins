@@ -140,7 +140,7 @@ import time
 import unicodedata
 import uuid
 from contextlib import contextmanager
-from typing import Literal, Optional
+from typing import Literal, NamedTuple, Optional
 
 import mysqlsh
 
@@ -1578,13 +1578,19 @@ def _read_result_set(
     """
     metadata = result.get_columns()
     if grid:
+        # What each cell needs of its column, read once per column rather
+        # than once per cell, as every read is a call into the shell.
+        grid_columns = [_GridColumn.of(column) for column in metadata]
         output = {
             "columns": [column.get_column_label() for column in metadata],
             # Made from the values the shell returned, before anything is
             # converted for JSON: a binary value is still bytes here, and a
             # BIT column still knows its length.
             "rows": [
-                [_grid_cell(value, column) for value, column in zip(row, metadata)]
+                [
+                    _grid_cell(value, column)
+                    for value, column in zip(row, grid_columns)
+                ]
                 for row in result.fetch_all()
             ],
             "align_right": [
@@ -1612,6 +1618,9 @@ def _read_json_rows(result, metadata) -> dict:
         A dict with the column labels, made unique (columns), and the rows.
     """
     columns = _unique_column_labels(metadata)
+    # Read from the shell once per column, and only for one that has a
+    # temporal value at all.
+    fractional_digits = {}
     rows = []
     for row in result.fetch_all():
         item = {}
@@ -1637,9 +1646,11 @@ def _read_json_rows(result, metadata) -> dict:
                 # digits, so that every value of a column has one form - a
                 # TIME outside one day comes from a shell that can fetch it
                 # as a timedelta, whose str() says "-1 day, 11:59:59.75".
-                value = _time_text(
-                    value, metadata[index].get_fractional_digits()
-                )
+                if index not in fractional_digits:
+                    fractional_digits[index] = metadata[
+                        index
+                    ].get_fractional_digits()
+                value = _time_text(value, fractional_digits[index])
             elif value is not None and not isinstance(
                 value, (bool, int, float, str)
             ):
@@ -2013,6 +2024,7 @@ def _page_result(serialized: dict, limit: int) -> dict:
 # client prints.
 OutputFormat = Literal["json", "table"]
 
+
 def _escape_code(code: int) -> str:
     """Returns how the grid writes a character that would break its line."""
     named = {0: "\\0", 9: "\\t", 10: "\\n", 13: "\\r", 92: "\\\\"}
@@ -2143,11 +2155,40 @@ def _time_text(value, fractional_digits: int) -> str:
         microsecond = value.microsecond
     if 0 < fractional_digits <= 6:
         text += "." + f"{microsecond:06d}"[:fractional_digits]
+    elif fractional_digits > 6 and microsecond:
+        # A precision no temporal column has - NOT_FIXED_DEC, from an
+        # expression the server could not type exactly: keep every digit
+        # rather than drop the fraction the value does have.
+        text += "." + f"{microsecond:06d}"
 
     return text
 
 
-def _grid_cell(value, column) -> str:
+# The fractional digits the server reports for a FLOAT or DOUBLE that has no
+# fixed number of them (NOT_FIXED_DEC): written by my_gcvt, not my_fcvt.
+_NOT_FIXED_DEC = 31
+
+
+class _GridColumn(NamedTuple):
+    """What a grid cell needs to know of its column."""
+
+    kind: str
+    length: int
+    fractional_digits: int
+    zerofill: bool
+
+    @classmethod
+    def of(cls, column) -> "_GridColumn":
+        """Reads it off a column of ``result.get_columns()``."""
+        return cls(
+            column.get_type().data,
+            column.get_length(),
+            column.get_fractional_digits(),
+            "ZEROFILL" in column.get_flags().split(),
+        )
+
+
+def _grid_cell(value, column: _GridColumn) -> str:
     """Returns a value as the mariadb client shows it in a grid.
 
     With ``--binary-as-hex``, as for a tool the hex is the only safe way to
@@ -2156,7 +2197,7 @@ def _grid_cell(value, column) -> str:
 
     Args:
         value: The value as the shell returned it.
-        column: The column's metadata, from ``result.get_columns()``.
+        column (_GridColumn): What the cell needs of its column.
 
     Returns:
         The cell's text.
@@ -2165,15 +2206,23 @@ def _grid_cell(value, column) -> str:
         return "NULL"
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex().upper()
-    if column.get_type().data == "BIT":
-        size = max(1, (column.get_length() + 7) // 8)
+    if column.kind == "BIT":
+        size = max(1, (column.length + 7) // 8)
         return "0x" + value.to_bytes(size, "big").hex().upper()
     if isinstance(value, bool):
         return "1" if value else "0"
+    if isinstance(value, int) and column.zerofill:
+        # The server pads a ZEROFILL column to its display width, and the
+        # shell's int has lost the zeros.
+        return str(value).zfill(column.length)
     if isinstance(value, float):
+        # A FLOAT(M,D) or DOUBLE(M,D) - or ROUND(x, D) - is written with
+        # exactly D digits after the point, 1.50 and not 1.5.
+        if 0 < column.fractional_digits < _NOT_FIXED_DEC:
+            return f"{value:.{column.fractional_digits}f}"
         return _double_text(value)
     if isinstance(value, (datetime.datetime, datetime.time, datetime.timedelta)):
-        return _time_text(value, column.get_fractional_digits())
+        return _time_text(value, column.fractional_digits)
 
     return str(value).translate(_GRID_ESCAPES)
 

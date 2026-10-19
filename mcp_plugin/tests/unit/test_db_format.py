@@ -338,3 +338,30 @@ def test_every_statement_of_a_script_comes_back_as_a_grid(tools):
 
     assert [entry["result_sets"][0]["row_count"] for entry in results] == [3, 3]
     assert all("rows" not in entry["result_sets"][0] for entry in results)
+
+
+def test_fixed_decimals_and_zerofill_are_written_as_the_server_writes_them():
+    """DOUBLE(10,2) with its two digits, an INT ZEROFILL padded to its width."""
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn("d2", "DOUBLE", "NUM", fractional_digits=2),
+            helpers.MetadataColumn("d", "DOUBLE", "NUM", fractional_digits=31),
+            helpers.MetadataColumn(
+                "z", "INT", "UNSIGNED ZEROFILL NUM", length=5
+            ),
+        ],
+        [[1.5, 1.5, 42]],
+    )])
+
+    [result_set] = _table(result)["result_sets"]
+
+    assert result_set["table"].splitlines()[3] == "| 1.50 | 1.5 | 00042 |"
+
+
+def test_a_datetime_keeps_its_fraction_when_the_precision_is_unknown():
+    value = datetime.datetime(2026, 1, 1, 0, 0, 0, 125000)
+
+    assert db_functions._time_text(value, 31) == "2026-01-01 00:00:00.125000"
+    assert db_functions._time_text(value.replace(microsecond=0), 31) == (
+        "2026-01-01 00:00:00"
+    )
