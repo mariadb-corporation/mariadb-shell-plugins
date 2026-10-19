@@ -73,6 +73,7 @@ ACTION_OPTIONS = (
     "purge_orphan_groups",
     "set_default_role",
     "tool_name_separator",
+    "lsp_path",
 )
 
 # Where the password for --add-connection may come from. Exactly one.
@@ -108,7 +109,7 @@ USER_TARGETED_OPTIONS = (
 JSON_ACTION_OPTIONS = ("add_user", "rotate_api_key", "show_api_key")
 
 # The actions that are actions whenever they are given, false or empty too.
-PRESENCE_OPTIONS = ("multi_tenant", "set_default_role")
+PRESENCE_OPTIONS = ("multi_tenant", "set_default_role", "lsp_path")
 
 
 def _cli_name(option: str) -> str:
@@ -570,6 +571,18 @@ def _delete_paths(options: dict, mcp_user_id=None) -> None:
 # --- Users (multi-tenant mode) --------------------------------------------------
 
 
+def _set_lsp_path(options: dict) -> None:
+    """Sets where the sql group's mariadb-lsp binary is, as --lspPath says."""
+    config.set_lsp_path(str(options["lsp_path"] or ""))
+    path = config.get_lsp_path()
+    print(
+        f"The sql tools use mariadb-lsp at '{path}'."
+        if path
+        else "The sql tools look for mariadb-lsp on the PATH, then in ~/.local/bin."
+    )
+    print("A running server keeps the one it found until it is restarted.")
+
+
 def _set_tool_name_separator(options: dict) -> None:
     """Sets what separates a tool's group from its name, as --toolNameSeparator says."""
     separator = str(options["tool_name_separator"])
@@ -773,6 +786,7 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
         "config_path": general.get_plugin_data_path(),
         "multi_tenant": tenants.is_multi_tenant(),
         "tool_name_separator": config.get_tool_name_separator(),
+        "lsp_path": config.get_lsp_path(),
         "connections": config.list_connection_uris(),
         "allowed_paths": config.get_allowed_paths(),
         "migrator": {
@@ -822,6 +836,7 @@ def _show(options: dict) -> None:
     print(f"Configuration is stored in: {current['config_path']}")
     print(f"Multi-tenant mode: {'on' if current['multi_tenant'] else 'off'}")
     print(f"Tool names:        db{current['tool_name_separator']}list_connections")
+    print(f"mariadb-lsp:       {current['lsp_path'] or '(searched: PATH, ~/.local/bin)'}")
     if current["multi_tenant"]:
         print(f"Public URL:        {current['public_url'] or '(none)'}")
         print(f"OAuth mode:        {current['oauth_mode']} (mcp setup-oauth --show)")
@@ -909,6 +924,8 @@ def apply(options: dict) -> None:
         _set_multi_tenant(options)
     if options.get("tool_name_separator"):
         _set_tool_name_separator(options)
+    if "lsp_path" in options:
+        _set_lsp_path(options)
     if options.get("remove_user"):
         _remove_users(options)
     if options.get("add_user"):

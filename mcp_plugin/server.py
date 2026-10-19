@@ -53,13 +53,16 @@ def start_server(**options) -> None:
             "stdio". Defaults to streamable-http.
         function_groups (list): The function groups to expose, allowing them to
             be loaded independently. Supported groups are "db", "msm",
-            "rest", "sandbox", "migrator", "util" and "restd". Defaults to all
+            "rest", "sandbox", "migrator", "util", "restd" and "sql". Defaults to all
             groups, or to "db" in multi-tenant mode, which serves no other.
             The "migrator" group registers its tools only where the
             MySQL-to-MariaDB migration tooling is installed (see mcp.setup),
             the "util" group only alongside "db", whose connections it works
             on, the "rest" group works on REST services only alongside "db",
             and the "restd" group sets a REST Daemon up only alongside "db".
+            The "sql" group registers its tools only where the mariadb-lsp
+            binary is found (mcp.setup's lspPath, else the PATH, else
+            ~/.local/bin).
         gui (bool): Serve for the MariaDB VS Code extension. The extension is
             a user interface the user drives directly on this machine, not an
             autonomous client, so two things the allow-lists exist to ask such

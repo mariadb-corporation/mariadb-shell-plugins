@@ -204,6 +204,26 @@ def contains_source_directive(text: str) -> bool:
     return re.search(MSM_SECTION_SOURCE_REGEX, text, _SOURCE_FLAGS) is not None
 
 
+def directives(script: str) -> list[tuple[int, str]]:
+    """Lists the SOURCE directives of a script, without reading anything.
+
+    Args:
+        script: The script.
+
+    Returns:
+        One (line, path as written) per directive, in order; lines from 1.
+    """
+    found = []
+    line = 1
+    position = 0
+    for match in re.finditer(MSM_SECTION_SOURCE_REGEX, script, _SOURCE_FLAGS):
+        line += script.count("\n", position, match.start())
+        position = match.start()
+        found.append((line, match.group(3)))
+
+    return found
+
+
 def expand_source_directives(
     script: str,
     base_dir: Optional[str],
