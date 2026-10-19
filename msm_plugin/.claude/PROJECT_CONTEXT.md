@@ -86,22 +86,22 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-19), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current
-wip/vscode_syntax_highlighter
+wip/sql-format-grid
 
 $ git -C msm_plugin status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M rest_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+ M mcp_plugin/.claude/context/db-tools.md
+ M mcp_plugin/lib/db_functions.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_db_format.py
+ M mcp_plugin/tests/unit/test_db_script.py
+ M mcp_plugin/tests/unit/test_db_sql.py
+(plus this checkpoint's own context edits)
 ```
 
-- No msm_plugin change since the 2026-10-11 checkpoint; the branch checked
-  out is the VS Code extension's `wip/vscode_syntax_highlighter`.
-- msm_plugin's open work: `ba426f4d` (deployment backup through `lib.core.run_util`) is on `wip/mcp_dump_load`, **PR #43**, and with it on PR #44. PR #41 (`wip/mrs_schema_improvements`) carries msm_plugin changes of its own (metadata 5.0.0 side).
-- The msm suite passes in the plugins CI (22); those PRs fail CI on the mcp_plugin / rest_plugin suites only, for want of mariadb-shell #71 / #73 on the runner.
-- `wip/msm_mrs_fixes` (merged as #36) is gone locally and on origin (checked 2026-10-11).
+- No msm_plugin change since the 2026-10-12 checkpoint. PRs #41 and #43
+  are merged; the branch checked out is mcp_plugin's `wip/sql-format-grid`
+  (PR #59), which touches only mcp_plugin.

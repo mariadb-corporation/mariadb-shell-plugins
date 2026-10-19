@@ -23,8 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **616 pass, 3 skipped (~95s)** on PR #44's tree at the 2026-10-11
-checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
+Standard suite: **865 pass, 6 skipped (~120s)** on PR #59's working tree at the
+2026-10-19 checkpoint (the 6 are opt-in: 5 `--e2e`, 1 `--keycloak`); 616 / 3 on PR #44's
+tree at the 2026-10-11 checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
 on `wip/mcp-multi-tenant` at the 2026-10-07 checkpoint, with Rene's review fixes in the
 working tree (584 / 4 after the simplification pass; 585 / 3 at the 2026-10-06 evening
 checkpoint; 577 and 93%, 5200 statements, at the one before),
@@ -85,49 +86,36 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-12):
+Checked at this checkpoint (2026-10-19):
 
 ```text
 $ git -C mcp_plugin branch --show-current
-wip/vscode_syntax_highlighter
+wip/sql-format-grid
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
- M code_ext/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M rest_plugin/.claude/PROJECT_CONTEXT.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
-(this checkpoint's own edits, committed with it)
+ M mcp_plugin/.claude/context/db-tools.md
+ M mcp_plugin/lib/db_functions.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_db_format.py
+ M mcp_plugin/tests/unit/test_db_script.py
+ M mcp_plugin/tests/unit/test_db_sql.py
+(plus this checkpoint's own context edits)
 ```
 
-- **`wip/vscode_syntax_highlighter`** (pushed, **PR #45** into #44, branched from
-  #44's `wip/mrs_code_ext`): `13b7e192` `db.execute_sql_script` gains
-  opt-in `ansi_quotes` and `report_sql_mode` (see
-  [`context/db-tools.md`](context/db-tools.md)), for the VS Code
-  extension's grammar work.
-- **Open PRs with mcp_plugin work, all pushed:**
-  - **#43** `wip/mcp_dump_load`: the `util` function group (see
-    [`context/util.md`](context/util.md)), and msm's `run_util` (see
-    [`context/siblings.md`](context/siblings.md)).
-  - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the `mrs` function group
-    wrapping rest_plugin, plus the extension. It has #41 and #43 merged in.
-  - #41 `wip/mrs_schema_improvements`: rest_plugin / msm_plugin.
-- **#41 and #43 are merged (2026-10-13), squash-merged after review
-  fixes, and so is mariadb-shell #71.** `main` was merged into #44 with a
-  base of the #41 and #43 heads it had merged in, so only #44's own changes
-  were applied and main's fixes kept. #44's plugins CI passes since.
-- Suite: **616 passed, 3 skipped** on #44's tree against a local build of
-  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only,
-  deleted on 2026-10-13: #71 is on mariadb-shell `main`); on
-  `wip/vscode_syntax_highlighter` only the script / paging / session / sql
-  tests were run (133 passed, 1 skipped).
-- **mariadb-shell PRs:** #71 (MRS module) is merged; #74 (`[bypass-ci]`
-  docs for the util tools) is open and up to date with `main`. #73 (util
-  session / progressCallback) was closed on 2026-10-12, when the tasks
-  moved to a shell process of their own; #75 and #77 (flaky tests) are
-  merged. `split_script`'s options argument, which `ansi_quotes` needs, is
-  in every release since 26.8.0.
-- `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
-  rest_plugin's project dump/load got msm's `run_util` on #41's branch
-  (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
+- **`wip/sql-format-grid`, PR #59** (from `main` at `b7b2d8fb`, pushed up
+  to `3eef3b6f`): `output_format: "json" | "table"` on `db.execute_sql`
+  and `db.execute_sql_script`, the text grid the mariadb client prints
+  (see [`context/db-tools.md`](context/db-tools.md), "Text grid output"),
+  shared test stubs and fixture in `tests/unit/helpers.py`, and the
+  `test_migration_e2e` URI fix (see [`context/testing.md`](context/testing.md)).
+- **Uncommitted** (the fixes of the second `/code-review`, all verified on a
+  sandbox against `mariadb --table --binary-as-hex`; the user has not yet
+  said to commit them): cells made from the raw values in
+  `_read_result_set(grid=True)`, `_double_text` (port of `my_gcvt`), BIT
+  padded hex, fractional seconds, original labels, all control characters
+  escaped, zero-width categories, the restart flag on a failed first
+  statement; tests for each. Suite 865 passed, 6 skipped.
+- Earlier PRs #41, #43, #44, #45 and mariadb-shell #71 are merged; `main`
+  is at #58 (version 26.10.3). `code_ext` moved to its own repository.
 - [`context/history.md`](context/history.md) is deliberately NOT updated,
   as by every session since `wip/sandbox-binaries`.
