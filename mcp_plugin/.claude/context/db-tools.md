@@ -56,7 +56,10 @@ handling are in [connections.md](connections.md).
   `_shape_result` (serialize, cut the page, draw), so the order lives in one
   place. An unknown value is refused by the SDK's argument model, from the
   Literal; a direct call (the stub tests) gets json. The result stubs the
-  tests share are `helpers.MultiSetResult` / `MetadataColumn`.
+  tests share are `helpers.MultiSetResult` / `MetadataColumn`; the db
+  tools over a stub session are `helpers.stub_db_tools(monkeypatch,
+  make_session)` (yields `sql`, `script`, `opened`), the tool recorder
+  `helpers.ToolRecorder`.
   Tests: `test_db_format.py`, plus a grid of a real UNION in `_db_flow`.
 
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,

@@ -30,7 +30,7 @@ import shutil
 import socket
 import subprocess
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from types import SimpleNamespace
 
 from mcp_plugin.lib import config
@@ -646,3 +646,89 @@ class MultiSetResult:
 
     def get_warnings(self):
         return []
+
+
+# --- the db tools over a stub session, without a server -----------------------
+
+
+class ToolRecorder:
+    """Stands in for the MCPServer, collecting the registered tools by name."""
+
+    def __init__(self):
+        self.tools = {}
+
+    def tool(self, name):
+        def decorator(fn):
+            self.tools[name] = fn
+            return fn
+
+        return decorator
+
+
+@contextmanager
+def stub_db_tools(monkeypatch, make_session):
+    """Registers the db tools over stub sessions and connects one.
+
+    The tools are called as an HTTP client would call them, from one address
+    on one MCP session, on a connection to a stored URI whose sessions
+    ``make_session`` builds.
+
+    Args:
+        monkeypatch: The pytest monkeypatch fixture.
+        make_session: Builds a session; called once per session opened.
+
+    Yields:
+        A namespace with ``sql`` and ``script`` - db.execute_sql and
+        db.execute_sql_script on that connection, taking the statement or
+        script and keyword arguments - and ``opened``, the sessions opened,
+        so a test can see what reached the server.
+    """
+    # Imported here: the db tools need the MCP SDK, which the tests that use
+    # only the other helpers do not.
+    from mcp_plugin.lib import db_functions, general
+
+    uri = "root@127.0.0.1:3306"
+    opened = []
+
+    def _fake_open_session(_uri, kind=None, mcp_user_id=None):
+        session = make_session()
+        opened.append(session)
+
+        return session
+
+    monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
+    monkeypatch.setattr(
+        db_functions.config,
+        "list_stored_connection_uris",
+        lambda kind=None, mcp_user_id=None: [uri],
+    )
+
+    recorder = ToolRecorder()
+    db_functions.register_db_tools(recorder)
+
+    db_functions._sessions.clear()
+    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
+    context = SimpleNamespace(
+        request_context=SimpleNamespace(
+            request=SimpleNamespace(
+                client=SimpleNamespace(host="192.0.2.10", port=54321),
+                headers={
+                    general.MCP_SESSION_ID_HEADER: "0123456789abcdef0123456789abcdef"
+                },
+            )
+        )
+    )
+    try:
+        connection_id = recorder.tools["db.connect"](context, uri)
+        yield SimpleNamespace(
+            sql=lambda sql, **kwargs: recorder.tools["db.execute_sql"](
+                context, connection_id, sql, **kwargs
+            ),
+            script=lambda script, **kwargs: recorder.tools[
+                "db.execute_sql_script"
+            ](context, connection_id, script, **kwargs),
+            opened=opened,
+        )
+    finally:
+        general.set_active_transport(None)
+        db_functions._sessions.clear()

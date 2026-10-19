@@ -66,20 +66,6 @@ class _StubSession:
         self.closed = True
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 def _registered_tools(monkeypatch, opened=None):
     """Registers the db tools with the session factory stubbed out.
 
@@ -99,7 +85,7 @@ def _registered_tools(monkeypatch, opened=None):
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
 
-    tools = _ToolRecorder()
+    tools = helpers.ToolRecorder()
     db_functions.register_db_tools(tools)
 
     return tools.tools

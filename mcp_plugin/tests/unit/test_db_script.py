@@ -46,9 +46,6 @@ pytest.importorskip("mcp")
 from mcp_plugin.lib import db_functions, general
 import mcp_plugin.tests.unit.helpers as helpers
 
-CLIENT_ADDRESS = "192.0.2.10"
-SESSION_ID = "0123456789abcdef0123456789abcdef"
-
 # The header the extension's New SQL Editor button writes at the top of every
 # file it generates, followed by a query - the script that first showed this.
 GENERATED_FILE = "-- MariaDB connection: dba@localhost:3310\n\nSELECT 1;\n"
@@ -105,59 +102,9 @@ class _RecordingSession:
 
 @pytest.fixture
 def tools(monkeypatch):
-    """Registers the db tools over a stub session factory.
-
-    Yields the tools by name, the context to call them with and the list the
-    opened sessions land in, so a test can see what reached the server.
-    """
-    uri = "root@127.0.0.1:3306"
-    opened = []
-
-    def _fake_open_session(_uri, kind=None, mcp_user_id=None):
-        session = _RecordingSession()
-        opened.append(session)
-
-        return session
-
-    monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
-    monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
-    )
-
-    recorder = SimpleNamespace(tools={})
-
-    def _tool(name):
-        def decorator(fn):
-            recorder.tools[name] = fn
-
-            return fn
-
-        return decorator
-
-    recorder.tool = _tool
-    db_functions.register_db_tools(recorder)
-
-    db_functions._sessions.clear()
-    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
-    context = SimpleNamespace(
-        request_context=SimpleNamespace(
-            request=SimpleNamespace(
-                client=SimpleNamespace(host=CLIENT_ADDRESS, port=54321),
-                headers={general.MCP_SESSION_ID_HEADER: SESSION_ID},
-            )
-        )
-    )
-    try:
-        connection_id = recorder.tools["db.connect"](context, uri)
-        yield SimpleNamespace(
-            run=lambda script, **kwargs: recorder.tools[
-                "db.execute_sql_script"
-            ](context, connection_id, script, **kwargs),
-            opened=opened,
-        )
-    finally:
-        general.set_active_transport(None)
-        db_functions._sessions.clear()
+    """Registers the db tools over sessions recording what they run."""
+    with helpers.stub_db_tools(monkeypatch, _RecordingSession) as stubbed:
+        yield stubbed
 
 
 def _ran(tools):
@@ -176,7 +123,7 @@ def test_a_leading_line_comment_is_not_run(tools):
     Without this the header ran on every execution and reported a result of
     its own, so a one-statement file looked like a two-statement one.
     """
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert _ran(tools) == ["SELECT 1"]
     assert len(results) == 1
@@ -189,14 +136,14 @@ def test_a_comment_keeps_its_place_in_the_numbering(tools):
     split by this number. Numbering the query 0 here would hand its result to
     the caller's statement 0 - the comment.
     """
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert results[0]["statement_index"] == 1
 
 
 def test_a_hash_comment_is_left_out_too(tools):
     """The splitter treats `# ...` the same way, and so does this."""
-    results = tools.run("# a note\nSELECT 1;\n")
+    results = tools.script("# a note\nSELECT 1;\n")
 
     assert _ran(tools) == ["SELECT 1"]
     assert [result["statement_index"] for result in results] == [1]
@@ -204,7 +151,7 @@ def test_a_hash_comment_is_left_out_too(tools):
 
 def test_a_comment_between_two_statements_is_left_out(tools):
     """A comment anywhere in the script, not only at the top of it."""
-    results = tools.run("SELECT 1;\n-- mid\nSELECT 2;\n")
+    results = tools.script("SELECT 1;\n-- mid\nSELECT 2;\n")
 
     assert _ran(tools) == ["SELECT 1", "SELECT 2"]
     # Zero, the comment, two: the numbering counts what was split, not what
@@ -214,7 +161,7 @@ def test_a_comment_between_two_statements_is_left_out(tools):
 
 def test_a_script_of_nothing_but_comments_runs_nothing(tools):
     """Nothing reaches the server, and there is nothing to report."""
-    assert tools.run("-- one\n-- two\n") == []
+    assert tools.script("-- one\n-- two\n") == []
     assert _ran(tools) == []
 
 
@@ -227,21 +174,21 @@ def test_a_comment_inside_a_statement_stays_with_it(tools):
     Only a comment that OPENS a statement is split out, which is what makes
     "begins with a line comment" enough to recognize one.
     """
-    tools.run("SELECT 1 -- a note\nAS a;\n")
+    tools.script("SELECT 1 -- a note\nAS a;\n")
 
     assert _ran(tools) == ["SELECT 1 -- a note\nAS a"]
 
 
 def test_a_version_comment_is_a_statement_and_runs(tools):
     """`/*!...*/` carries SQL, however much it looks like a comment."""
-    tools.run("/*!40101 SET NAMES utf8 */;\n")
+    tools.script("/*!40101 SET NAMES utf8 */;\n")
 
     assert _ran(tools) == ["/*!40101 SET NAMES utf8 */"]
 
 
 def test_an_optimizer_hint_is_not_mistaken_for_a_comment(tools):
     """`/*+...*/` belongs to the statement it leads, and goes with it."""
-    tools.run("/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1;\n")
+    tools.script("/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1;\n")
 
     assert _ran(tools) == ["/*+ MAX_EXECUTION_TIME(1000) */ SELECT 1"]
 
@@ -273,7 +220,7 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
     assert db_functions._close_idle_sessions() == 1
 
-    results = tools.run(GENERATED_FILE)
+    results = tools.script(GENERATED_FILE)
 
     assert results[0]["session_restarted"] is True
 
@@ -379,21 +326,21 @@ def test_double_quotes_are_split_as_a_string_by_default(tools):
     So the string never closes, and the rest of the script - its last
     semicolon included - is one unfinished statement.
     """
-    tools.run(ENDS_IN_BACKSLASH)
+    tools.script(ENDS_IN_BACKSLASH)
 
     assert _ran(tools) == [ENDS_IN_BACKSLASH]
 
 
 def test_double_quotes_are_split_as_an_identifier_with_ansi_quotes(tools):
     """The server's reading under ANSI_QUOTES: two statements."""
-    tools.run(ENDS_IN_BACKSLASH, ansi_quotes=True)
+    tools.script(ENDS_IN_BACKSLASH, ansi_quotes=True)
 
     assert _ran(tools) == ['SELECT "a\\"', "SELECT 1"]
 
 
 def test_the_sql_mode_is_not_reported_unless_asked_for(tools):
     """Nothing extra reaches the server, and nothing extra comes back."""
-    results = tools.run("SELECT 1; SELECT 2;", ansi_quotes=True)
+    results = tools.script("SELECT 1; SELECT 2;", ansi_quotes=True)
 
     assert _ran(tools) == ["SELECT 1", "SELECT 2"]
     assert all(
@@ -404,7 +351,7 @@ def test_the_sql_mode_is_not_reported_unless_asked_for(tools):
 
 def test_the_last_entry_reports_the_split_and_the_sql_mode(tools):
     """Read after the script, so a script that changed it says so."""
-    results = tools.run(
+    results = tools.script(
         "SELECT 1; SELECT 2;", ansi_quotes=True, report_sql_mode=True
     )
 
@@ -416,10 +363,10 @@ def test_the_last_entry_reports_the_split_and_the_sql_mode(tools):
 
 def test_a_failed_statement_still_carries_the_report(tools):
     """The entry of the statement a script stopped at is the last one."""
-    tools.run("SELECT 0;")
+    tools.script("SELECT 0;")
     tools.opened[0].fail_on = {"SELECT 2"}
 
-    results = tools.run("SELECT 1; SELECT 2; SELECT 3;", report_sql_mode=True)
+    results = tools.script("SELECT 1; SELECT 2; SELECT 3;", report_sql_mode=True)
 
     assert results[-1]["error"] == "no"
     assert results[-1]["ansi_quotes"] is False
@@ -428,10 +375,10 @@ def test_a_failed_statement_still_carries_the_report(tools):
 
 def test_a_mode_that_cannot_be_read_leaves_only_the_split(tools):
     """The script's results still come back; sql_mode is left out."""
-    tools.run("SELECT 0;")
+    tools.script("SELECT 0;")
     tools.opened[0].sql_mode = RuntimeError("gone")
 
-    results = tools.run("SELECT 1;", report_sql_mode=True)
+    results = tools.script("SELECT 1;", report_sql_mode=True)
 
     assert results[-1]["ansi_quotes"] is False
     assert "sql_mode" not in results[-1]
@@ -439,5 +386,5 @@ def test_a_mode_that_cannot_be_read_leaves_only_the_split(tools):
 
 def test_a_script_of_comments_reports_nothing_and_asks_nothing(tools):
     """There is no entry to carry the report."""
-    assert tools.run("-- only a note\n", report_sql_mode=True) == []
+    assert tools.script("-- only a note\n", report_sql_mode=True) == []
     assert _ran(tools) == []

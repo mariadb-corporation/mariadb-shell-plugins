@@ -24,18 +24,13 @@ checked in test_db_sql.py.
 
 # cSpell:ignore mysqlsh MariaDB
 
-from types import SimpleNamespace
-
 import pytest
 
 # The Context annotation of the db tools comes from the MCP SDK.
 pytest.importorskip("mcp")
 
-from mcp_plugin.lib import db_functions, general
+from mcp_plugin.lib import db_functions
 import mcp_plugin.tests.unit.helpers as helpers
-
-CLIENT_ADDRESS = "192.0.2.10"
-SESSION_ID = "0123456789abcdef0123456789abcdef"
 
 
 def _table(result, column_metadata=False):
@@ -164,55 +159,8 @@ class _Session:
 @pytest.fixture
 def tools(monkeypatch):
     """Registers the db tools over a session answering three rows."""
-    uri = "root@127.0.0.1:3306"
-
-    monkeypatch.setattr(
-        db_functions,
-        "_open_session",
-        lambda _uri, kind=None, mcp_user_id=None: _Session(),
-    )
-    monkeypatch.setattr(
-        db_functions.config,
-        "list_stored_connection_uris",
-        lambda kind=None, mcp_user_id=None: [uri],
-    )
-
-    recorder = SimpleNamespace(tools={})
-
-    def _tool(name):
-        def decorator(fn):
-            recorder.tools[name] = fn
-
-            return fn
-
-        return decorator
-
-    recorder.tool = _tool
-    db_functions.register_db_tools(recorder)
-
-    db_functions._sessions.clear()
-    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
-    context = SimpleNamespace(
-        request_context=SimpleNamespace(
-            request=SimpleNamespace(
-                client=SimpleNamespace(host=CLIENT_ADDRESS, port=54321),
-                headers={general.MCP_SESSION_ID_HEADER: SESSION_ID},
-            )
-        )
-    )
-    try:
-        connection_id = recorder.tools["db.connect"](context, uri)
-        yield SimpleNamespace(
-            script=lambda script, **kwargs: recorder.tools[
-                "db.execute_sql_script"
-            ](context, connection_id, script, **kwargs),
-            sql=lambda sql, **kwargs: recorder.tools["db.execute_sql"](
-                context, connection_id, sql, **kwargs
-            ),
-        )
-    finally:
-        general.set_active_transport(None)
-        db_functions._sessions.clear()
+    with helpers.stub_db_tools(monkeypatch, _Session) as stubbed:
+        yield stubbed
 
 
 def test_a_statement_comes_back_as_a_grid(tools):

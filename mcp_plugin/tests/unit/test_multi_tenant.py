@@ -54,20 +54,6 @@ URI = "mariadb://app@db.example.com:3306"
 PASSWORD = "tenant_pytest_password"
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 class _StubSession:
     """An open session that accepts anything and records being closed."""
 
@@ -135,7 +121,7 @@ def _db_tools(monkeypatch, opened=None):
         return _StubSession()
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
-    recorder = _ToolRecorder()
+    recorder = helpers.ToolRecorder()
     db_functions.register_db_tools(recorder)
 
     return recorder.tools

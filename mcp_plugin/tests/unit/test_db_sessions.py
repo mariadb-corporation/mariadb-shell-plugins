@@ -78,6 +78,7 @@ import mysqlsh
 pytest.importorskip("mcp")
 
 from mcp_plugin.lib import db_functions, general, tenants
+import mcp_plugin.tests.unit.helpers as helpers
 
 # Deliberately NOT loopback: every loopback form normalizes to one token, so
 # loopback addresses could not stand in for two different clients here.
@@ -150,20 +151,6 @@ class _UnclosableSession(_StubSession):
 
     def close(self):
         raise RuntimeError("the server went away")
-
-
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
 
 
 def _identity(client_address, session_id=SESSION_ID):
@@ -491,7 +478,7 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
         db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
-    tools = _ToolRecorder()
+    tools = helpers.ToolRecorder()
     db_functions.register_db_tools(tools)
 
     connection_id = tools.tools["db.connect"](_context(CLIENT_ADDRESS), uri)
@@ -629,7 +616,7 @@ def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
 
     monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
 
-    tools = _ToolRecorder()
+    tools = helpers.ToolRecorder()
     db_functions.register_db_tools(tools)
     tools.tools["db.close"](_context(CLIENT_ADDRESS), connection_id)
 
@@ -657,7 +644,7 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
         db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
-    tools = _ToolRecorder()
+    tools = helpers.ToolRecorder()
     db_functions.register_db_tools(tools)
     connection_id = tools.tools["db.connect"](_context(CLIENT_ADDRESS), uri)
 
@@ -1048,7 +1035,7 @@ def _registered_tools(monkeypatch, opened):
         db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
-    tools = _ToolRecorder()
+    tools = helpers.ToolRecorder()
     db_functions.register_db_tools(tools)
 
     return tools.tools, uri
