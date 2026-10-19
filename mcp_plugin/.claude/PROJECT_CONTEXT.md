@@ -70,7 +70,7 @@ this table with it.
 | [`context/migrator.md`](context/migrator.md) | The migration tooling: the naming rule, the four `migrator.*` tools, the install, the Windows gate and the opt-in end-to-end test. |
 | [`context/setup.md`](context/setup.md) | `mcp.setup`: the three interactive modules, the shell's own prompt types, and the command-line option surface. |
 | [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, the shell process each task runs in, how a crashed load is resumed, and what the extension does with the tasks. |
-| [`context/rest.md`](context/rest.md) | The `rest` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it. |
+| [`context/restd.md`](context/restd.md) | The `restd` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
 | [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `mrs_plugin`: what was changed there, how to run their suites, and their own failures. |

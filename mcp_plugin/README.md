@@ -219,8 +219,8 @@ primitives in `lib/setup_prompts.py`).
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `mrs`, `sandbox`, `migrator`,
-`util`, `rest`; defaults to all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `rest`, `sandbox`, `migrator`,
+`util`, `restd`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -301,38 +301,38 @@ prompting for input.
 registered when the `db` function group is served as well. All other `msm` tools work
 on a schema project on disk and are always available.
 
-### REST service tools (`mrs`)
+### REST service tools (`rest`)
 
 The MariaDB REST Service itself is managed with REST SQL (`CREATE REST SERVICE ...`,
 `SHOW REST SERVICES`, `SHOW CREATE REST SERVICE ... FORMAT=JSON`), which the shell's
 built-in `mrs` module handles: send it through `db.execute_sql` like any other
-statement. The `mrs` tools wrap the functions of the `mrs` plugin that work with the
+statement. The `rest` tools wrap the functions of the `mrs` plugin that work with the
 client's files, which REST SQL cannot:
 
 | MCP tool | Wraps (`mrs_plugin`) |
 | --- | --- |
-| `mrs.version` | `mrs.version` |
-| `mrs.get_sdk_base_classes` | `mrs.get.sdkBaseClasses` |
-| `mrs.get_sdk_options` | `mrs.get.sdkOptions` |
-| `mrs.get_folder_mrs_script_language` | `mrs.get.folderMrsScriptLanguage` |
-| `mrs.get_folder_mrs_script_definitions` | `mrs.get.folderMrsScriptDefinitions` |
-| `mrs.get_file_mrs_script_definitions` | `mrs.get.fileMrsScriptDefinitions` |
-| `mrs.get_sdk_service_classes` | `mrs.get.sdkServiceClasses` |
-| `mrs.dump_sdk_service_files` | `mrs.dump.sdkServiceFiles` |
-| `mrs.get_runtime_management_code` | `mrs.get.runtimeManagementCode` |
-| `mrs.dump_service` | `mrs.dump.service` |
-| `mrs.load_service` | `mrs.load.service` |
-| `mrs.dump_service_project` | `mrs.dump.serviceProject` |
-| `mrs.load_service_project` | `mrs.load.serviceProject` |
-| `mrs.load_content_set` | `mrs.load.contentSet` |
-| `mrs.dump_audit_log` | `mrs.dump.auditLog` |
+| `rest.version` | `mrs.version` |
+| `rest.get_sdk_base_classes` | `mrs.get.sdkBaseClasses` |
+| `rest.get_sdk_options` | `mrs.get.sdkOptions` |
+| `rest.get_folder_mrs_script_language` | `mrs.get.folderMrsScriptLanguage` |
+| `rest.get_folder_mrs_script_definitions` | `mrs.get.folderMrsScriptDefinitions` |
+| `rest.get_file_mrs_script_definitions` | `mrs.get.fileMrsScriptDefinitions` |
+| `rest.get_sdk_service_classes` | `mrs.get.sdkServiceClasses` |
+| `rest.dump_sdk_service_files` | `mrs.dump.sdkServiceFiles` |
+| `rest.get_runtime_management_code` | `mrs.get.runtimeManagementCode` |
+| `rest.dump_service` | `mrs.dump.service` |
+| `rest.load_service` | `mrs.load.service` |
+| `rest.dump_service_project` | `mrs.dump.serviceProject` |
+| `rest.load_service_project` | `mrs.load.serviceProject` |
+| `rest.load_content_set` | `mrs.load.contentSet` |
+| `rest.dump_audit_log` | `mrs.dump.auditLog` |
 
-The tools from `mrs.get_sdk_service_classes` on work on a REST service through a
+The tools from `rest.get_sdk_service_classes` on work on a REST service through a
 connection opened with `db.connect`, so they are only registered when the `db` group
 is served as well. Every file and directory they take is checked against the allowed
-paths. A multi-tenant server does not serve the `mrs` group.
+paths. A multi-tenant server does not serve the `rest` group.
 
-`mrs.load_content_set` with `open_api_ui` uploads the REST service's OpenAPI UI
+`rest.load_content_set` with `open_api_ui` uploads the REST service's OpenAPI UI
 instead of a directory: Swagger UI, which `mrs_plugin` downloads from github.com
 (pinned, checked by SHA-256) and patches to show the service's
 `/open-api-catalog/` and to sign in with the REST Daemon. It takes no directory, nor
@@ -509,32 +509,32 @@ its `task_id` at once; the client follows the task with `util.get_task`.
 - The tools are registered only when the `db` group is served as well, and never in
   multi-tenant mode.
 
-### REST Daemon tools (`rest`)
+### REST Daemon tools (`restd`)
 
 Tools for the MariaDB REST Daemon, `mariadb-restd`, which serves the REST services
-defined in a server's REST metadata. `rest.configure_restd` sets one up for a server and
+defined in a server's REST metadata. `restd.configure_restd` sets one up for a server and
 starts it; it keeps running when the MCP server ends.
 
 | MCP tool | Does |
 | --- | --- |
-| `rest.configure_restd` | Sets up and starts a daemon for a connection opened with `db.connect` |
-| `rest.start_restd` | Starts a deployment's daemon |
-| `rest.stop_restd` | Stops a deployment's daemon |
-| `rest.delete_restd_config` | Stops a daemon, drops the server account it was given and deletes its deployment |
-| `rest.get_restd_status` | Lists the deployments, running and stopped |
-| `rest.get_certificate_status` | Says whether the system trusts the daemons' HTTPS certificate |
-| `rest.trust_certificate` | Has the system trust that certificate, once for every daemon |
+| `restd.configure_restd` | Sets up and starts a daemon for a connection opened with `db.connect` |
+| `restd.start_restd` | Starts a deployment's daemon |
+| `restd.stop_restd` | Stops a deployment's daemon |
+| `restd.delete_restd_config` | Stops a daemon, drops the server account it was given and deletes its deployment |
+| `restd.get_restd_status` | Lists the deployments, running and stopped |
+| `restd.get_certificate_status` | Says whether the system trusts the daemons' HTTPS certificate |
+| `restd.trust_certificate` | Has the system trust that certificate, once for every daemon |
 
 Every REST Daemon on the machine serves one HTTPS certificate for `localhost`
 (`127.0.0.1` and `::1` too), signed by a local certificate authority. The first
-`rest.configure_restd` makes both, in `~/.mariadb-restd/web-certs`
+`restd.configure_restd` makes both, in `~/.mariadb-restd/web-certs`
 (`%APPDATA%\MariaDB\mariadb-restd\web-certs` on Windows), and every setup after it
-uses them. `rest.trust_certificate` adds the authority to the user's own store: the
+uses them. `restd.trust_certificate` adds the authority to the user's own store: the
 login keychain on macOS and the user's Root store on Windows, where the system asks
 the user to confirm, and the NSS database Chromium-based browsers read on Linux. An
 agent is asked first, through MCP elicitation.
 
-`rest.configure_restd`, in this order:
+`restd.configure_restd`, in this order:
 
 1. Connects with the password given, or the connection's stored one.
 2. Picks the REST metadata schema: the one named, else the one the server has. A server
@@ -563,7 +563,7 @@ daemon of its own.
 Either daemon listens on the first free port from 8443 up, a stopped deployment's port
 counting as taken. The daemon logs to `log/mariadb-restd.log` in its deployment.
 
-`rest.configure_restd` is registered only when the `db` group is served as well. The
+`restd.configure_restd` is registered only when the `db` group is served as well. The
 group is never served in multi-tenant mode.
 
 ### Migrator tools (`migrator`)
@@ -1157,10 +1157,10 @@ row on the target. It skips itself when the machine cannot run a migration - no
 MySQL server to deploy the source from being the usual reason; see the module
 docstring for the rest.
 
-`test_a_sandbox_really_gets_a_rest_daemon` in `tests/unit/test_rest.py` deploys a sandbox,
+`test_a_sandbox_really_gets_a_rest_daemon` in `tests/unit/test_restd.py` deploys a sandbox,
 sets a REST Daemon up for it with the real `mariadb-restd`, checks that it serves HTTPS,
 and that it stops, starts and goes with the sandbox. It skips itself when there is no
-`mariadb-restd` where `rest.configure_restd` looks for one.
+`mariadb-restd` where `restd.configure_restd` looks for one.
 
 ## License
 

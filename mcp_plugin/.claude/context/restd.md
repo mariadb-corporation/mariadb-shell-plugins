@@ -1,7 +1,7 @@
-# The rest group: MariaDB REST Daemon deployments
+# The restd group: MariaDB REST Daemon deployments
 
-`rest.configure_restd`, `rest.start_restd`, `rest.stop_restd`,
-`rest.delete_restd_config`, `rest.get_restd_status`, and the hooks that make a
+`restd.configure_restd`, `restd.start_restd`, `restd.stop_restd`,
+`restd.delete_restd_config`, `restd.get_restd_status`, and the hooks that make a
 sandbox's daemon follow the sandbox. Built on `wip/restd_support` (2026-10-14)
 for the VS Code extension's "Configure MariaDB REST Service" sandbox option.
 
@@ -37,7 +37,7 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - **Password.** The given one, else the connection's stored one
   (`db_functions.connection_credentials`). It is tested by opening a session of
   its own with it, then the privileges `--setup` needs are checked from
-  `SHOW GRANTS` (`rest_functions._missing_privileges`).
+  `SHOW GRANTS` (`restd_functions._missing_privileges`).
 - **Install.** `restd.find_restd`: PATH, `~/.local/bin`, then the newest
   version folder under `~/.local/share/mariadb-restd` (Windows
   `%LOCALAPPDATA%\Programs\mariadb-restd`), the shell's install layout. If
@@ -46,7 +46,7 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   `--gui`: without asking. Agent mode: MCP elicitation first.
 - **Sandbox hooks live in the `sandbox.*` tools**, not only in the extension,
   so an agent deleting a sandbox never leaves a daemon serving from a deleted
-  folder. They work whether or not `rest` is served. `sandbox.start` starts
+  folder. They work whether or not `restd` is served. `sandbox.start` starts
   the daemon after the server; stop/kill stop it first; delete stops it (only
   if the server is not running, else the delete is refused and nothing is
   touched) and the sandbox's rmtree removes the folder. A daemon that fails
@@ -93,11 +93,11 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - `lib/restd.py`: folders, finding the executable, ports, `setup`, `start`,
   `stop`, `status`, `delete_directory`, `deployment_dirs`.
 - `lib/restd_install.py`: the install script download and run.
-- `lib/rest_functions.py`: the tools; `configure_restd` registers only with
+- `lib/restd_functions.py`: the tools; `configure_restd` registers only with
   `db`. `_parse_uri` / `_open_session` are the test seams.
 - `lib/sandbox_functions.py`: `_restd_dirs` (one per metadata schema, from
   `restd.sandbox_deployment_dirs`) and the hooks, which follow every one.
-- `tests/unit/test_rest.py`: a fake `mariadb-restd` (a Python script behind a
+- `tests/unit/test_restd.py`: a fake `mariadb-restd` (a Python script behind a
   `/bin/sh` wrapper, like test_util's fake shell) that writes a config and
   listens on its port; and `test_a_sandbox_really_gets_a_rest_daemon`
   (`--e2e`), which uses the real binary.
@@ -117,7 +117,7 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   `MySQL_Router_Auto_Generated_CA_Certificate` in every deployment. Its
   server certificate has no subject alternative names, which browsers
   require for `localhost`.
-- **Registering it:** `rest.trust_certificate` does what the MySQL Shell
+- **Registering it:** `restd.trust_certificate` does what the MySQL Shell
   for VS Code's welcome wizard did.
   - macOS: `security add-trusted-cert -r trustRoot -k <login keychain>`,
     with the system's authorization dialog.
@@ -129,7 +129,7 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
     success. A dialog may wait 600 s.
   - An agent is asked first, through elicitation; in `--gui` mode the user's
     ticked box is the consent.
-- **`rest.get_certificate_status`** makes nothing. The dialogs ask it so
+- **`restd.get_certificate_status`** makes nothing. The dialogs ask it so
   that they offer the box only while the CA is not trusted.
 - **Trust is checked with the system itself:**
   - macOS: `security verify-cert -c server.crt -p ssl -s localhost`. A
@@ -147,7 +147,7 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   value, got nothing"). Only the real binary showed it; the secret is now hex
   and attached with `=`.
 - **`helpers.tool_payload` turns a one-element list into the element.** A test
-  reading `rest.get_restd_status` has to wrap a dict back into a list.
+  reading `restd.get_restd_status` has to wrap a dict back into a list.
 - **A daemon this server started is its child**: once it exits it is a zombie
   that still answers `kill(pid, 0)`. `restd._is_alive` reaps it with
   `waitpid(WNOHANG)` first.

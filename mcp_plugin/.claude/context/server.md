@@ -109,7 +109,7 @@ session machinery the db tools sit on is in
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
   `mcp_server._lowlevel_server.run(...)`.
 
-- **Function groups** (`function_groups`): `db`, `msm`, `mrs`, `sandbox`, `migrator`, `util`, `rest` (the REST Daemon, see [rest.md](rest.md)); `_FUNCTION_GROUP_REGISTRARS`. `mrs` (`lib/mrs_functions.py`, 2026-10-09) wraps the 15 file-based mrs_plugin functions (SDK, service and project dump/load, content set upload, MRS script analysis, audit log); REST SQL itself goes through `db.execute_sql`. Its session tools need the `db` group, like `msm.deploy_schema`.
+- **Function groups** (`function_groups`): `db`, `msm`, `rest`, `sandbox`, `migrator`, `util`, `restd` (the REST Daemon, see [restd.md](restd.md)); `_FUNCTION_GROUP_REGISTRARS`. **Renamed 2026-10-19**: the REST Service group was `mrs` (tools `mrs.*`, `lib/mrs_functions.py`) and the REST Daemon group was `rest` (tools `rest.*`); now `rest` and `restd`, with no aliases, before the daemon group's first release. `rest` (`lib/rest_functions.py`, 2026-10-09) wraps the 15 file-based mrs_plugin functions (SDK, service and project dump/load, content set upload, MRS script analysis, audit log); REST SQL itself goes through `db.execute_sql`. Its session tools need the `db` group, like `msm.deploy_schema`.
   Accepted as a LIST or as a comma-separated STRING (split+stripped in `server.py`);
   omitting it loads them all (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
 
