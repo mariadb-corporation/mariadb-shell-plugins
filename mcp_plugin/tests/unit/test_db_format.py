@@ -42,7 +42,7 @@ def _table(result, column_metadata=False):
 
 def test_numbers_go_right_and_the_rest_left():
     result = helpers.MultiSetResult([(
-        [helpers.MetadataColumn("id", "INT", "NOT_NULL NUM"), helpers.MetadataColumn("name")],
+        [helpers.MetadataColumn("id", "INT", "NOT_NULL NUM"), "name"],
         [[1, "a"], [100, "longer"]],
     )])
 
@@ -63,7 +63,7 @@ def test_numbers_go_right_and_the_rest_left():
 
 def test_null_binary_and_line_breaks_are_written_as_the_client_writes_them():
     result = helpers.MultiSetResult([(
-        [helpers.MetadataColumn("h", "BYTES", "BINARY"), helpers.MetadataColumn("t")],
+        [helpers.MetadataColumn("h", "BYTES", "BINARY"), "t"],
         [[b"\x00\xff", "a\nb\tc"], [None, None]],
     )])
 
@@ -77,7 +77,7 @@ def test_null_binary_and_line_breaks_are_written_as_the_client_writes_them():
 
 def test_a_backslash_and_a_label_line_break_are_escaped():
     result = helpers.MultiSetResult([(
-        [helpers.MetadataColumn("a\nb")],
+        ["a\nb"],
         [["c:\\new"], ["x\ny"]],
     )])
 
@@ -94,7 +94,7 @@ def test_a_backslash_and_a_label_line_break_are_escaped():
 
 
 def test_wide_characters_take_two_cells():
-    result = helpers.MultiSetResult([([helpers.MetadataColumn("w")], [["日本"], ["abc"]])])
+    result = helpers.MultiSetResult([(["w"], [["日本"], ["abc"]])])
 
     [result_set] = _table(result)["result_sets"]
 
@@ -109,7 +109,7 @@ def test_wide_characters_take_two_cells():
 
 
 def test_a_set_without_rows_still_shows_its_header():
-    result = helpers.MultiSetResult([([helpers.MetadataColumn("a"), helpers.MetadataColumn("b")], [])])
+    result = helpers.MultiSetResult([(["a", "b"], [])])
 
     [result_set] = _table(result)["result_sets"]
 
@@ -122,7 +122,7 @@ def test_a_set_without_rows_still_shows_its_header():
 def test_every_result_set_of_a_call_gets_its_own_grid():
     result = helpers.MultiSetResult([
         ([helpers.MetadataColumn("a", "INT", "NUM")], [[1]]),
-        ([helpers.MetadataColumn("b")], [["x"], ["y"]]),
+        (["b"], [["x"], ["y"]]),
         None,
     ])
 
@@ -143,7 +143,7 @@ def test_column_metadata_is_kept_only_when_asked_for():
 
 
 def test_json_is_left_as_it_was():
-    result = helpers.MultiSetResult([([helpers.MetadataColumn("a")], [["x"]])])
+    result = helpers.MultiSetResult([(["a"], [["x"]])])
 
     assert db_functions._shape_result(result, False, None, "json", False)[
         "result_sets"
@@ -153,31 +153,15 @@ def test_json_is_left_as_it_was():
 # --- through the tools --------------------------------------------------------
 
 
-class _Session:
-    """Answers every statement with rows of one numeric column n."""
-
-    def __init__(self):
-        self.statements = []
-
-    def run_sql(self, sql, _params=None):
-        self.statements.append(sql)
-        count = 3
-        if "\nLIMIT " in sql:
-            count = int(sql.rsplit("\nLIMIT ", 1)[1])
-
-        return helpers.MultiSetResult([(
-            [helpers.MetadataColumn("n", "BIGINT", "NOT_NULL NUM")],
-            [[value] for value in range(1, count + 1)],
-        )])
-
-    def close(self):
-        pass
-
-
 @pytest.fixture
 def tools(monkeypatch):
     """Registers the db tools over a session answering three rows."""
-    with helpers.stub_db_tools(monkeypatch, _Session) as stubbed:
+    with helpers.stub_db_tools(
+        monkeypatch,
+        lambda: helpers.TableSession(
+            range(1, 4), helpers.MetadataColumn("n", "BIGINT", "NOT_NULL NUM")
+        ),
+    ) as stubbed:
         yield stubbed
 
 

@@ -615,8 +615,8 @@ class MultiSetResult:
     """A result over several result sets, walked as the shell walks them.
 
     Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
-    None for one without - the status a CALL ends on. A column is a label,
-    for a test that needs nothing else of it, or a ``MetadataColumn``.
+    None for one without - the status a CALL ends on. A column is a
+    ``MetadataColumn``, or just its label for a plain STRING column.
     """
 
     affected_items_count = 0
@@ -631,9 +631,7 @@ class MultiSetResult:
 
     def get_columns(self):
         return [
-            SimpleNamespace(get_column_label=lambda label=column: label)
-            if isinstance(column, str)
-            else column
+            MetadataColumn(column) if isinstance(column, str) else column
             for column in self._sets[self._at][0]
         ]
 
@@ -647,6 +645,32 @@ class MultiSetResult:
     def get_warnings(self):
         return []
 
+
+
+class TableSession:
+    """Answers every statement from a table of rows of one column.
+
+    It honours the LIMIT and OFFSET the paging adds, on a line of their own,
+    and records every statement it is asked to run.
+    """
+
+    def __init__(self, rows, column="n"):
+        self.rows = list(rows)
+        self.column = column
+        self.statements = []
+
+    def run_sql(self, sql, _params=None):
+        self.statements.append(sql)
+        rows = self.rows
+        if "\nLIMIT " in sql:
+            parts = sql.rsplit("\nLIMIT ", 1)[1].split(" OFFSET ")
+            offset = int(parts[1]) if len(parts) > 1 else 0
+            rows = rows[offset:offset + int(parts[0])]
+
+        return MultiSetResult([([self.column], [[value] for value in rows])])
+
+    def close(self):
+        pass
 
 # --- the db tools over a stub session, without a server -----------------------
 

@@ -30,8 +30,6 @@ is in test_db_sql.py.
 
 # cSpell:ignore mysqlsh MariaDB NOWAIT
 
-from types import SimpleNamespace
-
 import pytest
 
 # The Context annotation of the db tools comes from the MCP SDK.
@@ -220,59 +218,10 @@ def test_any_other_failure_is_not_retried():
 # --- through the tools --------------------------------------------------------
 
 
-class _RowsResult:
-    """A result with one column, holding the rows it is given."""
-
-    affected_items_count = 0
-    warnings_count = 0
-
-    def __init__(self, rows):
-        self._rows = rows
-        self._read = False
-
-    def has_data(self):
-        return not self._read
-
-    def get_columns(self):
-        return [SimpleNamespace(get_column_label=lambda: "n")]
-
-    def fetch_all(self):
-        return [[value] for value in self._rows]
-
-    def next_result(self):
-        self._read = True
-
-        return False
-
-    def get_warnings(self):
-        return []
-
-
-class _TableSession:
-    """Answers every SELECT from a table of rows, honouring its LIMIT."""
-
-    def __init__(self, rows):
-        self.rows = rows
-        self.statements = []
-
-    def run_sql(self, sql, _params=None):
-        self.statements.append(sql)
-        rows = self.rows
-        if "\nLIMIT " in sql:
-            parts = sql.rsplit("\nLIMIT ", 1)[1].split(" OFFSET ")
-            offset = int(parts[1]) if len(parts) > 1 else 0
-            rows = rows[offset:offset + int(parts[0])]
-
-        return _RowsResult(rows)
-
-    def close(self):
-        pass
-
-
 @pytest.fixture
 def tools(monkeypatch):
     """Registers the db tools over a session answering from 25 rows."""
-    with helpers.stub_db_tools(monkeypatch, lambda: _TableSession(list(range(25)))) as stubbed:
+    with helpers.stub_db_tools(monkeypatch, lambda: helpers.TableSession(range(25))) as stubbed:
         yield stubbed
 
 

@@ -441,22 +441,8 @@ def test_the_roles_carry_the_metadata_schemas_prefix_and_postfix():
 # --- the tools -----------------------------------------------------------------
 
 
-class _ToolRecorder:
-    """Stands in for the MCPServer, collecting the registered tools by name."""
-
-    def __init__(self):
-        self.tools = {}
-
-    def tool(self, name):
-        def decorator(fn):
-            self.tools[name] = fn
-            return fn
-
-        return decorator
-
-
 def _tools(function_groups=("db", "restd")):
-    recorder = _ToolRecorder()
+    recorder = helpers.ToolRecorder()
     restd_functions.register_restd_tools(recorder, list(function_groups))
     return recorder.tools
 
@@ -704,7 +690,7 @@ def _sandbox_tools(monkeypatch, calls):
     monkeypatch.setattr(
         sandbox_functions.config, "resolve_connection_uri", lambda uri, kind=None: None
     )
-    recorder_server = _ToolRecorder()
+    recorder_server = helpers.ToolRecorder()
     sandbox_functions.register_sandbox_tools(recorder_server)
     return recorder_server.tools
 

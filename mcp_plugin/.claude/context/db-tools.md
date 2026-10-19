@@ -56,7 +56,9 @@ handling are in [connections.md](connections.md).
   `_shape_result` (serialize, cut the page, draw), so the order lives in one
   place. An unknown value is refused by the SDK's argument model, from the
   Literal; a direct call (the stub tests) gets json. The result stubs the
-  tests share are `helpers.MultiSetResult` / `MetadataColumn`; the db
+  tests share are `helpers.MultiSetResult` (a column is a `MetadataColumn`
+  or a plain label) / `MetadataColumn`, and `helpers.TableSession` (one
+  column, honours the paging LIMIT/OFFSET); the db
   tools over a stub session are `helpers.stub_db_tools(monkeypatch,
   make_session)` (yields `sql`, `script`, `opened`), the tool recorder
   `helpers.ToolRecorder`.

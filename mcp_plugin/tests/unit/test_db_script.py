@@ -51,16 +51,6 @@ import mcp_plugin.tests.unit.helpers as helpers
 GENERATED_FILE = "-- MariaDB connection: dba@localhost:3310\n\nSELECT 1;\n"
 
 
-class _StubResult:
-    """The least a shell SQL result has to be for _serialize_result."""
-
-    affected_items_count = 0
-    warnings_count = 0
-
-    def has_data(self):
-        return False
-
-
 class _ModeResult:
     """What SELECT @@sql_mode answers: one row of one value."""
 
@@ -94,7 +84,7 @@ class _RecordingSession:
         if sql == "SELECT @@sql_mode":
             return _ModeResult(self.sql_mode)
 
-        return _StubResult()
+        return helpers.MultiSetResult([None])
 
     def close(self):
         self.closed = True
@@ -243,12 +233,14 @@ def test_every_result_set_of_a_call_is_read():
 
 def test_column_metadata_is_what_the_shell_reports():
     """Nothing is worked out: a BLOB is BYTES with its flags alongside."""
-    result = helpers.MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
-    result.get_columns = lambda: [
-        helpers.MetadataColumn("i", "INT", "NOT_NULL NUM"),
-        helpers.MetadataColumn("vb", "BYTES", "BINARY "),
-        helpers.MetadataColumn("b", "BYTES", "BLOB BINARY "),
-    ]
+    result = helpers.MultiSetResult([(
+        [
+            helpers.MetadataColumn("i", "INT", "NOT_NULL NUM"),
+            helpers.MetadataColumn("vb", "BYTES", "BINARY "),
+            helpers.MetadataColumn("b", "BYTES", "BLOB BINARY "),
+        ],
+        [[1, b"\x00\xff", b"x"]],
+    )])
 
     output = db_functions._serialize_result(result, column_metadata=True)
 
@@ -267,8 +259,7 @@ def test_column_metadata_is_what_the_shell_reports():
 
 
 def test_column_metadata_is_left_out_unless_asked_for():
-    result = helpers.MultiSetResult([(["a"], [[1]])])
-    result.get_columns = lambda: [helpers.MetadataColumn("a", "INT")]
+    result = helpers.MultiSetResult([([helpers.MetadataColumn("a", "INT")], [[1]])])
 
     output = db_functions._serialize_result(result)
 
@@ -276,10 +267,11 @@ def test_column_metadata_is_left_out_unless_asked_for():
 
 
 def test_every_result_set_of_a_call_has_its_own_metadata():
-    result = helpers.MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
-    kinds = iter([[helpers.MetadataColumn("a", "INT")],
-                  [helpers.MetadataColumn("b", "BYTES", "BLOB BINARY")]])
-    result.get_columns = lambda: next(kinds)
+    result = helpers.MultiSetResult([
+        ([helpers.MetadataColumn("a", "INT")], [[1]]),
+        ([helpers.MetadataColumn("b", "BYTES", "BLOB BINARY")], [[b"x"]]),
+        None,
+    ])
 
     output = db_functions._serialize_result(result, column_metadata=True)
 
