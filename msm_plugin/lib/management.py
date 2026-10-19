@@ -110,9 +110,11 @@ MSM_SCHEMA_VERSION_VIEW_VALUES = (
 # SOURCE '<path>'[<start>:<end>]; -- comment
 # The slice is optional (the whole file without it). A bound is empty, a
 # character offset (Python slice semantics) or a line number lnN (1-based, the
-# end line included, ln-1 is the last line).
+# end line included, ln-1 is the last line). The path ends at a matching quote
+# on the directive's line. Matched with re.ASCII, so \s and \d are ASCII only,
+# as the language server's scan (mariadb-lsp src/source_include.cc) takes them.
 MSM_SECTION_SOURCE_REGEX = (
-    r'^([ \t]*)SOURCE\s+([\'"])(.*?)\2'
+    r'^([ \t]*)SOURCE\s+([\'"])([^\n]*?)\2'
     r"\s*(?:\[\s*((?:ln)?-?\d*)\s*:\s*((?:ln)?-?\d*)\s*\])?\s*;[^\n]*(?:\n|\Z)"
 )
 
@@ -1684,7 +1686,7 @@ def substitute_source_statements_with_content(
         The script with substituted source statements
     """
 
-    matches = re.finditer(MSM_SECTION_SOURCE_REGEX, script, re.MULTILINE | re.DOTALL)
+    matches = re.finditer(MSM_SECTION_SOURCE_REGEX, script, re.MULTILINE | re.ASCII)
     # for match_id, match in enumerate(matches, start=1):
     #     print("Match {match_id} was found at {start}-{end}: {match}".format(
     #         match_id=match_id, start=match.start(), end=match.end(), match=match.group()))

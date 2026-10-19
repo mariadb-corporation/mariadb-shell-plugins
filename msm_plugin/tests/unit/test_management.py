@@ -1010,6 +1010,13 @@ def test_source_statements(temp_dir):
     assert expand("SOURCE './sections/form_feed.sql'[:ln-2];") == (
         "USE s;\nSELECT 1;\f-- page\nSELECT 3;\n"
     )
+    # The path ends on the directive's line, and only ASCII white space counts
+    assert expand("SOURCE './sections/\npart.sql';") == (
+        "USE s;\nSOURCE './sections/\npart.sql';\nSELECT 3;\n"
+    )
+    assert expand("SOURCE\u00a0'./sections/part.sql';") == (
+        "USE s;\nSOURCE\u00a0'./sections/part.sql';\nSELECT 3;\n"
+    )
     for slicing in ("[ln0:]", "[ln:]", "[-:]"):
         with pytest.raises(ValueError, match="neither a character offset"):
             expand(f"SOURCE './sections/part.sql'{slicing};")
