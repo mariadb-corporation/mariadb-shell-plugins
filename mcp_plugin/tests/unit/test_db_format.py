@@ -32,65 +32,22 @@ import pytest
 pytest.importorskip("mcp")
 
 from mcp_plugin.lib import db_functions, general
+import mcp_plugin.tests.unit.helpers as helpers
 
 CLIENT_ADDRESS = "192.0.2.10"
 SESSION_ID = "0123456789abcdef0123456789abcdef"
 
 
-class _Type:
-    """A mysql.Type constant: its name is its data."""
-
-    def __init__(self, data):
-        self.data = data
-
-
-def _column(label, kind="STRING", flags=""):
-    """A column with the shell's Column getters the tools read."""
-    return SimpleNamespace(
-        get_column_label=lambda: label,
-        get_type=lambda: _Type(kind),
-        get_flags=lambda: flags,
-    )
-
-
-class _SetsResult:
-    """A result over result sets of (columns, rows), None for a status."""
-
-    affected_items_count = 0
-    warnings_count = 0
-
-    def __init__(self, sets):
-        self._sets = sets
-        self._at = 0
-
-    def has_data(self):
-        return self._sets[self._at] is not None
-
-    def get_columns(self):
-        return self._sets[self._at][0]
-
-    def fetch_all(self):
-        return self._sets[self._at][1]
-
-    def next_result(self):
-        self._at += 1
-        return self._at < len(self._sets)
-
-    def get_warnings(self):
-        return []
-
-
 def _table(result, column_metadata=False):
-    serialized = db_functions._serialize_result(result, column_metadata=True)
-    return db_functions._format_result_sets(serialized, "table", column_metadata)
+    return db_functions._shape_result(result, False, None, "table", column_metadata)
 
 
 # --- the grid -----------------------------------------------------------------
 
 
 def test_numbers_go_right_and_the_rest_left():
-    result = _SetsResult([(
-        [_column("id", "INT", "NOT_NULL NUM"), _column("name")],
+    result = helpers.MultiSetResult([(
+        [helpers.MetadataColumn("id", "INT", "NOT_NULL NUM"), helpers.MetadataColumn("name")],
         [[1, "a"], [100, "longer"]],
     )])
 
@@ -110,8 +67,8 @@ def test_numbers_go_right_and_the_rest_left():
 
 
 def test_null_binary_and_line_breaks_are_written_as_the_client_writes_them():
-    result = _SetsResult([(
-        [_column("h", "BYTES", "BINARY"), _column("t")],
+    result = helpers.MultiSetResult([(
+        [helpers.MetadataColumn("h", "BYTES", "BINARY"), helpers.MetadataColumn("t")],
         [[b"\x00\xff", "a\nb\tc"], [None, None]],
     )])
 
@@ -124,7 +81,7 @@ def test_null_binary_and_line_breaks_are_written_as_the_client_writes_them():
 
 
 def test_wide_characters_take_two_cells():
-    result = _SetsResult([([_column("w")], [["日本"], ["abc"]])])
+    result = helpers.MultiSetResult([([helpers.MetadataColumn("w")], [["日本"], ["abc"]])])
 
     [result_set] = _table(result)["result_sets"]
 
@@ -139,7 +96,7 @@ def test_wide_characters_take_two_cells():
 
 
 def test_a_set_without_rows_still_shows_its_header():
-    result = _SetsResult([([_column("a"), _column("b")], [])])
+    result = helpers.MultiSetResult([([helpers.MetadataColumn("a"), helpers.MetadataColumn("b")], [])])
 
     [result_set] = _table(result)["result_sets"]
 
@@ -150,9 +107,9 @@ def test_a_set_without_rows_still_shows_its_header():
 
 
 def test_every_result_set_of_a_call_gets_its_own_grid():
-    result = _SetsResult([
-        ([_column("a", "INT", "NUM")], [[1]]),
-        ([_column("b")], [["x"], ["y"]]),
+    result = helpers.MultiSetResult([
+        ([helpers.MetadataColumn("a", "INT", "NUM")], [[1]]),
+        ([helpers.MetadataColumn("b")], [["x"], ["y"]]),
         None,
     ])
 
@@ -164,7 +121,7 @@ def test_every_result_set_of_a_call_gets_its_own_grid():
 
 def test_column_metadata_is_kept_only_when_asked_for():
     def result():
-        return _SetsResult([([_column("a", "INT", "NUM")], [[1]])])
+        return helpers.MultiSetResult([([helpers.MetadataColumn("a", "INT", "NUM")], [[1]])])
 
     assert "column_metadata" not in _table(result())["result_sets"][0]
     assert _table(result(), column_metadata=True)["result_sets"][0][
@@ -173,11 +130,9 @@ def test_column_metadata_is_kept_only_when_asked_for():
 
 
 def test_json_is_left_as_it_was():
-    serialized = db_functions._serialize_result(
-        _SetsResult([([_column("a")], [["x"]])])
-    )
+    result = helpers.MultiSetResult([([helpers.MetadataColumn("a")], [["x"]])])
 
-    assert db_functions._format_result_sets(serialized, "json", False)[
+    assert db_functions._shape_result(result, False, None, "json", False)[
         "result_sets"
     ] == [{"columns": ["a"], "rows": [{"a": "x"}]}]
 
@@ -197,8 +152,8 @@ class _Session:
         if "\nLIMIT " in sql:
             count = int(sql.rsplit("\nLIMIT ", 1)[1])
 
-        return _SetsResult([(
-            [_column("n", "BIGINT", "NOT_NULL NUM")],
+        return helpers.MultiSetResult([(
+            [helpers.MetadataColumn("n", "BIGINT", "NOT_NULL NUM")],
             [[value] for value in range(1, count + 1)],
         )])
 
@@ -285,10 +240,3 @@ def test_every_statement_of_a_script_comes_back_as_a_grid(tools):
 
     assert [entry["result_sets"][0]["row_count"] for entry in results] == [3, 3]
     assert all("rows" not in entry["result_sets"][0] for entry in results)
-
-
-def test_an_unknown_format_is_refused(tools):
-    with pytest.raises(Exception, match="'output_format' must be"):
-        tools.sql("SELECT n FROM t", output_format="csv")
-    with pytest.raises(Exception, match="'output_format' must be"):
-        tools.script("SELECT n FROM t;", output_format="vertical")

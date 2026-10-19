@@ -44,6 +44,7 @@ import pytest
 pytest.importorskip("mcp")
 
 from mcp_plugin.lib import db_functions, general
+import mcp_plugin.tests.unit.helpers as helpers
 
 CLIENT_ADDRESS = "192.0.2.10"
 SESSION_ID = "0123456789abcdef0123456789abcdef"
@@ -277,43 +278,9 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     assert results[0]["session_restarted"] is True
 
 
-class _MultiSetResult:
-    """A result over several result sets, walked as the shell walks them.
-
-    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
-    None for one without - the status a CALL ends on.
-    """
-
-    affected_items_count = 0
-    warnings_count = 0
-
-    def __init__(self, sets):
-        self._sets = sets
-        self._at = 0
-
-    def has_data(self):
-        return self._sets[self._at] is not None
-
-    def get_columns(self):
-        return [
-            SimpleNamespace(get_column_label=lambda label=label: label)
-            for label in self._sets[self._at][0]
-        ]
-
-    def fetch_all(self):
-        return self._sets[self._at][1]
-
-    def next_result(self):
-        self._at += 1
-        return self._at < len(self._sets)
-
-    def get_warnings(self):
-        return []
-
-
 def test_every_result_set_of_a_call_is_read():
     """Every set is in result_sets, in order; the one without data is not."""
-    result = _MultiSetResult([
+    result = helpers.MultiSetResult([
         (["a"], [[1]]),
         (["b", "c"], [[2, 3], [4, 5]]),
         None,
@@ -327,38 +294,13 @@ def test_every_result_set_of_a_call_is_read():
     ]
 
 
-class _Type:
-    """A mysql.Type constant: its name is its data."""
-
-    def __init__(self, data):
-        self.data = data
-
-
-class _MetadataColumn:
-    """A column with the shell's Column getters the metadata reads."""
-
-    def __init__(self, label, kind, flags=""):
-        self.label = label
-        self.kind = kind
-        self.flags = flags
-
-    def get_column_label(self):
-        return self.label
-
-    def get_type(self):
-        return _Type(self.kind)
-
-    def get_flags(self):
-        return self.flags
-
-
 def test_column_metadata_is_what_the_shell_reports():
     """Nothing is worked out: a BLOB is BYTES with its flags alongside."""
-    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
+    result = helpers.MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
     result.get_columns = lambda: [
-        _MetadataColumn("i", "INT", "NOT_NULL NUM"),
-        _MetadataColumn("vb", "BYTES", "BINARY "),
-        _MetadataColumn("b", "BYTES", "BLOB BINARY "),
+        helpers.MetadataColumn("i", "INT", "NOT_NULL NUM"),
+        helpers.MetadataColumn("vb", "BYTES", "BINARY "),
+        helpers.MetadataColumn("b", "BYTES", "BLOB BINARY "),
     ]
 
     output = db_functions._serialize_result(result, column_metadata=True)
@@ -378,8 +320,8 @@ def test_column_metadata_is_what_the_shell_reports():
 
 
 def test_column_metadata_is_left_out_unless_asked_for():
-    result = _MultiSetResult([(["a"], [[1]])])
-    result.get_columns = lambda: [_MetadataColumn("a", "INT")]
+    result = helpers.MultiSetResult([(["a"], [[1]])])
+    result.get_columns = lambda: [helpers.MetadataColumn("a", "INT")]
 
     output = db_functions._serialize_result(result)
 
@@ -387,9 +329,9 @@ def test_column_metadata_is_left_out_unless_asked_for():
 
 
 def test_every_result_set_of_a_call_has_its_own_metadata():
-    result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
-    kinds = iter([[_MetadataColumn("a", "INT")],
-                  [_MetadataColumn("b", "BYTES", "BLOB BINARY")]])
+    result = helpers.MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
+    kinds = iter([[helpers.MetadataColumn("a", "INT")],
+                  [helpers.MetadataColumn("b", "BYTES", "BLOB BINARY")]])
     result.get_columns = lambda: next(kinds)
 
     output = db_functions._serialize_result(result, column_metadata=True)
@@ -400,7 +342,7 @@ def test_every_result_set_of_a_call_has_its_own_metadata():
 
 def test_a_result_with_no_data_has_no_result_sets():
     """A statement with no result set reports an empty list of them."""
-    output = db_functions._serialize_result(_MultiSetResult([None]))
+    output = db_functions._serialize_result(helpers.MultiSetResult([None]))
 
     assert output["result_sets"] == []
     assert "columns" not in output
@@ -408,7 +350,7 @@ def test_a_result_with_no_data_has_no_result_sets():
 
 def test_a_result_that_cannot_walk_on_reads_its_one_set():
     """A result without next_result is read as the one set it has."""
-    result = _MultiSetResult([(["a"], [[1]])])
+    result = helpers.MultiSetResult([(["a"], [[1]])])
     del_next = SimpleNamespace(
         has_data=result.has_data,
         get_columns=result.get_columns,

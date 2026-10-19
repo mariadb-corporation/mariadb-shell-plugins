@@ -45,16 +45,18 @@ handling are in [connections.md](connections.md).
   `columns`/`rows` with `table` (the grid) and `row_count`;
   `has_more_pages` stays, and `column_metadata` stays only if asked for.
   The grid is drawn AFTER `_page_result`, so the extra paging row is never
-  in it, by `_format_result_sets` / `_text_grid`. Alignment uses the `NUM`
+  in it, by `_text_grid`. Alignment uses the `NUM`
   flag, which the server sets on every numeric type (measured on 12.3:
   INT, DECIMAL, DOUBLE, FLOAT, YEAR (as TINYINT), NULL; not BIT). So
   table mode always reads the column metadata. The grid writes `NULL`,
   `0x` + hex for BYTES/GEOMETRY (as `--binary-as-hex` does) and `\n` `\r`
   `\t` `\0` escaped. A wide (East Asian W/F) character counts as two
   cells, a combining mark as none. A set without rows still shows its
-  header (the client would print "Empty set"). `_check_output_format` also
-  refuses an unknown value, because the Literal is only enforced by the
-  SDK's argument model and the stub tests call the functions directly.
+  header (the client would print "Empty set"). Both tools go through
+  `_shape_result` (serialize, cut the page, draw), so the order lives in one
+  place. An unknown value is refused by the SDK's argument model, from the
+  Literal; a direct call (the stub tests) gets json. The result stubs the
+  tests share are `helpers.MultiSetResult` / `MetadataColumn`.
   Tests: `test_db_format.py`, plus a grid of a real UNION in `_db_flow`.
 
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,

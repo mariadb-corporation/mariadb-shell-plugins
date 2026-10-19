@@ -139,7 +139,7 @@ import time
 import unicodedata
 import uuid
 from contextlib import contextmanager
-from typing import Literal, Optional, get_args
+from typing import Literal, Optional
 
 import mysqlsh
 
@@ -1987,13 +1987,17 @@ def _display_width(text: str) -> int:
     Returns:
         The number of cells.
     """
-    width = 0
-    for character in text:
-        if unicodedata.combining(character):
-            continue
-        width += 2 if unicodedata.east_asian_width(character) in "WF" else 1
+    # Most cells are ASCII - numbers, dates, hex - and isascii() is a flag
+    # check, which spares a large grid two lookups per character.
+    if text.isascii():
+        return len(text)
 
-    return width
+    return sum(
+        0 if unicodedata.combining(character)
+        else 2 if unicodedata.east_asian_width(character) in "WF"
+        else 1
+        for character in text
+    )
 
 
 def _grid_cell(value, column: dict) -> str:
@@ -2029,26 +2033,32 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
     Returns:
         The grid, its lines joined by newlines.
     """
-    cells = [
-        [_grid_cell(row[label], column) for label, column in zip(columns, metadata)]
-        for row in rows
-    ]
+    # Each cell with its width, measured once for the column widths and the
+    # padding both.
+    header = [(label, _display_width(label)) for label in columns]
+    cells = []
+    for row in rows:
+        texts = [
+            _grid_cell(row[label], column)
+            for label, column in zip(columns, metadata)
+        ]
+        cells.append([(text, _display_width(text)) for text in texts])
     widths = [
-        max(_display_width(text) for text in [label] + [row[index] for row in cells])
-        for index, label in enumerate(columns)
+        max(cell[index][1] for cell in [header] + cells)
+        for index in range(len(columns))
     ]
     numeric = ["NUM" in column["flags"] for column in metadata]
 
     def line(texts, align_right):
         padded = []
-        for text, width, right in zip(texts, widths, align_right):
-            padding = " " * (width - _display_width(text))
+        for (text, text_width), width, right in zip(texts, widths, align_right):
+            padding = " " * (width - text_width)
             padded.append(padding + text if right else text + padding)
 
         return "| " + " | ".join(padded) + " |"
 
     border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
-    lines = [border, line(columns, [False] * len(columns)), border]
+    lines = [border, line(header, [False] * len(columns)), border]
     lines.extend(line(row, numeric) for row in cells)
     if cells:
         lines.append(border)
@@ -2056,57 +2066,51 @@ def _text_grid(columns: list, rows: list, metadata: list) -> str:
     return "\n".join(lines)
 
 
-def _check_output_format(output_format: str) -> None:
-    """Refuses an output format the tools do not know.
-
-    Args:
-        output_format (str): The format asked for.
-
-    Raises:
-        ToolError: If it is neither json nor table.
-    """
-    if output_format not in get_args(OutputFormat):
-        raise tool_error(
-            f"'output_format' must be 'json' or 'table', not {output_format!r}."
-        )
-
-
-def _format_result_sets(
-    serialized: dict, output_format: str, column_metadata: bool
+def _shape_result(
+    result,
+    limited: bool,
+    limit: Optional[int],
+    output_format: str,
+    column_metadata: bool,
+    **serialize_args,
 ) -> dict:
-    """Puts a result's result sets into the output format asked for.
+    """Serializes a statement's result, cut to its page, in the format asked for.
 
-    For table, each set's columns and rows are replaced by the grid (table)
-    and the number of rows in it (row_count). Its column metadata, which the
-    grid needs and was read for it, stays only where it was asked for.
+    For table, each result set's columns and rows are replaced by the grid
+    (table) and the number of rows in it (row_count). The grid aligns its
+    columns by their metadata, so that is read for it, and stays only where
+    it was asked for. The grid is drawn after the page is cut, so the row
+    fetched to tell whether there is more is never in it.
 
     Args:
-        serialized (dict): The result, as ``_serialize_result`` made it - with
-            column metadata for table - and cut to its page.
+        result: The result object returned by ``session.run_sql``.
+        limited (bool): Whether the statement ran with the paging limit.
+        limit (int): The rows asked for, when limited.
         output_format (str): json or table.
         column_metadata (bool): Whether the caller asked for column metadata.
+        **serialize_args: The rest of ``_serialize_result``'s arguments.
 
     Returns:
-        The same dict, its result sets in the format asked for.
+        The serialized result.
     """
-    if output_format != "table":
-        return serialized
-
-    formatted = []
-    for result_set in serialized.get("result_sets", []):
-        metadata = result_set["column_metadata"]
-        output = {
-            "table": _text_grid(
-                result_set["columns"], result_set["rows"], metadata
-            ),
-            "row_count": len(result_set["rows"]),
-        }
-        if "has_more_pages" in result_set:
-            output["has_more_pages"] = result_set["has_more_pages"]
-        if column_metadata:
-            output["column_metadata"] = metadata
-        formatted.append(output)
-    serialized["result_sets"] = formatted
+    table = output_format == "table"
+    serialized = _serialize_result(
+        result, column_metadata=column_metadata or table, **serialize_args
+    )
+    if limited:
+        serialized = _page_result(serialized, limit)
+    if table:
+        for result_set in serialized["result_sets"]:
+            rows = result_set.pop("rows")
+            metadata = (
+                result_set["column_metadata"]
+                if column_metadata
+                else result_set.pop("column_metadata")
+            )
+            result_set["table"] = _text_grid(
+                result_set.pop("columns"), rows, metadata
+            )
+            result_set["row_count"] = len(rows)
 
     return serialized
 
@@ -3174,23 +3178,20 @@ def register_db_tools(server, function_groups=()) -> None:
             as written, whose rows are then all of them.
         """
         _check_paging(limit, offset)
-        _check_output_format(output_format)
 
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             result, limited = _run_limited(
                 session, sql, params if params is not None else [], limit, offset
             )
 
-            serialized = _serialize_result(
+            return _shape_result(
                 result,
-                _session_was_restarted(connection_id),
-                # The grid aligns its columns by their metadata.
-                column_metadata=column_metadata or output_format == "table",
+                limited,
+                limit,
+                output_format,
+                column_metadata,
+                session_restarted=_session_was_restarted(connection_id),
             )
-            if limited:
-                serialized = _page_result(serialized, limit)
-
-            return _format_result_sets(serialized, output_format, column_metadata)
 
     @tool(name="db.execute_sql_script")
     def execute_sql_script(
@@ -3311,7 +3312,6 @@ def register_db_tools(server, function_groups=()) -> None:
             but comments has no entries to carry them.
         """
         _check_paging(limit)
-        _check_output_format(output_format)
         if (sql_script is None) == (file_path is None):
             raise tool_error(
                 "Provide exactly one of 'sql_script' or 'file_path'."
@@ -3376,19 +3376,19 @@ def register_db_tools(server, function_groups=()) -> None:
 
                     continue
 
-                serialized = _serialize_result(
-                    result,
-                    # On the first result only: one session was opened, once,
-                    # before any of these statements ran.
-                    session_restarted=restarted and not results,
-                    statement_index=index,
-                    execution_time=time.perf_counter() - started,
-                    column_metadata=column_metadata or output_format == "table",
-                )
-                if limited:
-                    serialized = _page_result(serialized, limit)
                 results.append(
-                    _format_result_sets(serialized, output_format, column_metadata)
+                    _shape_result(
+                        result,
+                        limited,
+                        limit,
+                        output_format,
+                        column_metadata,
+                        # On the first result only: one session was opened,
+                        # once, before any of these statements ran.
+                        session_restarted=restarted and not results,
+                        statement_index=index,
+                        execution_time=time.perf_counter() - started,
+                    )
                 )
 
             if report_sql_mode and results:

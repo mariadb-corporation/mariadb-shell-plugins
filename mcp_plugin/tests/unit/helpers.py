@@ -31,6 +31,7 @@ import socket
 import subprocess
 import time
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 from mcp_plugin.lib import config
 
@@ -580,3 +581,68 @@ def restore_connections(connections: dict) -> None:
             config.store_connection(uri, password, kind, **details)
         except Exception:  # noqa: BLE001 - best-effort restore
             pass
+
+
+# --- stubs of shell results, for the tests of the db tools' serialization -----
+
+
+class StubType:
+    """A mysql.Type constant: its name is its data."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class MetadataColumn:
+    """A column with the shell's Column getters the db tools read."""
+
+    def __init__(self, label, kind="STRING", flags=""):
+        self.label = label
+        self.kind = kind
+        self.flags = flags
+
+    def get_column_label(self):
+        return self.label
+
+    def get_type(self):
+        return StubType(self.kind)
+
+    def get_flags(self):
+        return self.flags
+
+
+class MultiSetResult:
+    """A result over several result sets, walked as the shell walks them.
+
+    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
+    None for one without - the status a CALL ends on. A column is a label,
+    for a test that needs nothing else of it, or a ``MetadataColumn``.
+    """
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def __init__(self, sets):
+        self._sets = sets
+        self._at = 0
+
+    def has_data(self):
+        return self._sets[self._at] is not None
+
+    def get_columns(self):
+        return [
+            SimpleNamespace(get_column_label=lambda label=column: label)
+            if isinstance(column, str)
+            else column
+            for column in self._sets[self._at][0]
+        ]
+
+    def fetch_all(self):
+        return self._sets[self._at][1]
+
+    def next_result(self):
+        self._at += 1
+        return self._at < len(self._sets)
+
+    def get_warnings(self):
+        return []
