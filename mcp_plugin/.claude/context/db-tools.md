@@ -38,6 +38,25 @@ handling are in [connections.md](connections.md).
   nothing tells a VECTOR from a VARBINARY. Values are unchanged: binary
   still comes as hex.
 
+- **Text grid output** (2026-10-19, branch `wip/sql-format-grid`):
+  `output_format: Literal["json", "table"] = "json"` on `db.execute_sql`
+  and `db.execute_sql_script`, so an agent can show a result to the user
+  as the mariadb client prints it. `table` replaces each result set's
+  `columns`/`rows` with `table` (the grid) and `row_count`;
+  `has_more_pages` stays, and `column_metadata` stays only if asked for.
+  The grid is drawn AFTER `_page_result`, so the extra paging row is never
+  in it, by `_format_result_sets` / `_text_grid`. Alignment uses the `NUM`
+  flag, which the server sets on every numeric type (measured on 12.3:
+  INT, DECIMAL, DOUBLE, FLOAT, YEAR (as TINYINT), NULL; not BIT). So
+  table mode always reads the column metadata. The grid writes `NULL`,
+  `0x` + hex for BYTES/GEOMETRY (as `--binary-as-hex` does) and `\n` `\r`
+  `\t` `\0` escaped. A wide (East Asian W/F) character counts as two
+  cells, a combining mark as none. A set without rows still shows its
+  header (the client would print "Empty set"). `_check_output_format` also
+  refuses an unknown value, because the Literal is only enforced by the
+  SDK's argument model and the stub tests call the functions directly.
+  Tests: `test_db_format.py`, plus a grid of a real UNION in `_db_flow`.
+
 - **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
   for the VS Code extension, branch `wip/vscode_syntax_highlighter`).
   `db.execute_sql_script(ansi_quotes=False, report_sql_mode=False)`.

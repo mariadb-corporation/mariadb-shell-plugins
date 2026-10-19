@@ -136,9 +136,10 @@ import asyncio
 import json
 import threading
 import time
+import unicodedata
 import uuid
 from contextlib import contextmanager
-from typing import Optional
+from typing import Literal, Optional, get_args
 
 import mysqlsh
 
@@ -1958,6 +1959,158 @@ def _page_result(serialized: dict, limit: int) -> dict:
     return serialized
 
 
+# The values of the output_format argument of db.execute_sql and
+# db.execute_sql_script: the rows as JSON, or as the text grid the mariadb
+# client prints.
+OutputFormat = Literal["json", "table"]
+
+# The column types whose values come as hex text, which the grid marks with
+# 0x as the mariadb client does with --binary-as-hex.
+_HEX_TYPES = ("BYTES", "GEOMETRY")
+
+# Characters that would break a grid line, written the way the mariadb client
+# writes them in its batch output.
+_GRID_ESCAPES = str.maketrans(
+    {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\0": "\\0"}
+)
+
+
+def _display_width(text: str) -> int:
+    """Returns how many terminal cells a text takes up.
+
+    A wide character - most of Chinese, Japanese and Korean - takes two, and
+    a combining mark none, so that a grid holding them still lines up.
+
+    Args:
+        text (str): The text to measure.
+
+    Returns:
+        The number of cells.
+    """
+    width = 0
+    for character in text:
+        if unicodedata.combining(character):
+            continue
+        width += 2 if unicodedata.east_asian_width(character) in "WF" else 1
+
+    return width
+
+
+def _grid_cell(value, column: dict) -> str:
+    """Returns a value as the mariadb client shows it in a grid.
+
+    Args:
+        value: The value as the JSON result carries it.
+        column (dict): The column's metadata, from ``_column_metadata``.
+
+    Returns:
+        The cell's text.
+    """
+    if value is None:
+        return "NULL"
+    if column["type"] in _HEX_TYPES:
+        return f"0x{value}"
+
+    return str(value).translate(_GRID_ESCAPES)
+
+
+def _text_grid(columns: list, rows: list, metadata: list) -> str:
+    """Draws a result set as the grid the mariadb client prints.
+
+    Numeric columns are right aligned and every other one left aligned, as
+    the client does, by the NUM flag the server sets on a numeric column.
+    A result set without rows still shows its header.
+
+    Args:
+        columns (list): The column labels.
+        rows (list): The rows, each a dict keyed by those labels.
+        metadata (list): Each column's metadata, from ``_column_metadata``.
+
+    Returns:
+        The grid, its lines joined by newlines.
+    """
+    cells = [
+        [_grid_cell(row[label], column) for label, column in zip(columns, metadata)]
+        for row in rows
+    ]
+    widths = [
+        max(_display_width(text) for text in [label] + [row[index] for row in cells])
+        for index, label in enumerate(columns)
+    ]
+    numeric = ["NUM" in column["flags"] for column in metadata]
+
+    def line(texts, align_right):
+        padded = []
+        for text, width, right in zip(texts, widths, align_right):
+            padding = " " * (width - _display_width(text))
+            padded.append(padding + text if right else text + padding)
+
+        return "| " + " | ".join(padded) + " |"
+
+    border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+    lines = [border, line(columns, [False] * len(columns)), border]
+    lines.extend(line(row, numeric) for row in cells)
+    if cells:
+        lines.append(border)
+
+    return "\n".join(lines)
+
+
+def _check_output_format(output_format: str) -> None:
+    """Refuses an output format the tools do not know.
+
+    Args:
+        output_format (str): The format asked for.
+
+    Raises:
+        ToolError: If it is neither json nor table.
+    """
+    if output_format not in get_args(OutputFormat):
+        raise tool_error(
+            f"'output_format' must be 'json' or 'table', not {output_format!r}."
+        )
+
+
+def _format_result_sets(
+    serialized: dict, output_format: str, column_metadata: bool
+) -> dict:
+    """Puts a result's result sets into the output format asked for.
+
+    For table, each set's columns and rows are replaced by the grid (table)
+    and the number of rows in it (row_count). Its column metadata, which the
+    grid needs and was read for it, stays only where it was asked for.
+
+    Args:
+        serialized (dict): The result, as ``_serialize_result`` made it - with
+            column metadata for table - and cut to its page.
+        output_format (str): json or table.
+        column_metadata (bool): Whether the caller asked for column metadata.
+
+    Returns:
+        The same dict, its result sets in the format asked for.
+    """
+    if output_format != "table":
+        return serialized
+
+    formatted = []
+    for result_set in serialized.get("result_sets", []):
+        metadata = result_set["column_metadata"]
+        output = {
+            "table": _text_grid(
+                result_set["columns"], result_set["rows"], metadata
+            ),
+            "row_count": len(result_set["rows"]),
+        }
+        if "has_more_pages" in result_set:
+            output["has_more_pages"] = result_set["has_more_pages"]
+        if column_metadata:
+            output["column_metadata"] = metadata
+        formatted.append(output)
+    serialized["result_sets"] = formatted
+
+    return serialized
+
+
 def _check_paging(limit: Optional[int], offset: Optional[int] = None) -> None:
     """Refuses a limit or offset that is not a whole number of rows.
 
@@ -2947,6 +3100,7 @@ def register_db_tools(server, function_groups=()) -> None:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         column_metadata: bool = False,
+        output_format: OutputFormat = "json",
     ) -> dict:
         """Executes a SQL statement on an open connection.
 
@@ -2968,6 +3122,11 @@ def register_db_tools(server, function_groups=()) -> None:
             column_metadata: Whether each result set also reports its
                 columns' metadata. Off by default, as most callers only need
                 the rows.
+            output_format: How each result set's rows come back. json (the
+                default) gives columns and rows to work with. table gives
+                instead the text grid the mariadb client prints (table) and
+                the number of rows in it (row_count): use it to show a
+                result to the user as it is, without redrawing it.
 
         Returns:
             A dict with the statement's result sets and execution metadata.
@@ -2979,6 +3138,13 @@ def register_db_tools(server, function_groups=()) -> None:
             label - joining two tables that both have an id, say - the later
             one is listed and keyed as label_2 (then _3, and so on), so that
             no column is lost. Binary values come as hex text.
+
+            With output_format table, each result set has table and
+            row_count in place of columns and rows. The grid puts NULL for
+            a NULL, 0x before binary values in hex, and writes a newline,
+            carriage return, tab or NUL inside a value as \\n, \\r, \\t or
+            \\0, so that every row stays on one line. A result set without
+            rows still shows its header.
 
             With column_metadata true, each result set also has
             column_metadata: one dict per column, in the order of columns,
@@ -3008,6 +3174,7 @@ def register_db_tools(server, function_groups=()) -> None:
             as written, whose rows are then all of them.
         """
         _check_paging(limit, offset)
+        _check_output_format(output_format)
 
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             result, limited = _run_limited(
@@ -3017,10 +3184,13 @@ def register_db_tools(server, function_groups=()) -> None:
             serialized = _serialize_result(
                 result,
                 _session_was_restarted(connection_id),
-                column_metadata=column_metadata,
+                # The grid aligns its columns by their metadata.
+                column_metadata=column_metadata or output_format == "table",
             )
+            if limited:
+                serialized = _page_result(serialized, limit)
 
-            return _page_result(serialized, limit) if limited else serialized
+            return _format_result_sets(serialized, output_format, column_metadata)
 
     @tool(name="db.execute_sql_script")
     def execute_sql_script(
@@ -3033,6 +3203,7 @@ def register_db_tools(server, function_groups=()) -> None:
         column_metadata: bool = False,
         ansi_quotes: bool = False,
         report_sql_mode: bool = False,
+        output_format: OutputFormat = "json",
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -3081,6 +3252,10 @@ def register_db_tools(server, function_groups=()) -> None:
                 once the script is over (sql_mode), read after the last
                 statement - so a script that changed it reports the new
                 one. Off by default, as it costs a query.
+            output_format: How each result set's rows come back, as for
+                db.execute_sql: json (the default) for columns and rows,
+                table for the text grid the mariadb client prints (table)
+                and its row_count, to show a result to the user as it is.
 
         Returns:
             A list with one entry per statement that ran, each a dict with its
@@ -3089,7 +3264,8 @@ def register_db_tools(server, function_groups=()) -> None:
             how long it took (execution_time, in seconds). result_sets is a
             list with one dict of columns and rows per result set the
             statement returned - none, one, or one per SELECT of a called
-            procedure - as for db.execute_sql, and so is column_metadata.
+            procedure - as for db.execute_sql, and so are column_metadata
+            and output_format.
             Each entry also carries warnings_count, and warnings - the level,
             code and message of each - where the statement produced any.
 
@@ -3135,6 +3311,7 @@ def register_db_tools(server, function_groups=()) -> None:
             but comments has no entries to carry them.
         """
         _check_paging(limit)
+        _check_output_format(output_format)
         if (sql_script is None) == (file_path is None):
             raise tool_error(
                 "Provide exactly one of 'sql_script' or 'file_path'."
@@ -3206,10 +3383,12 @@ def register_db_tools(server, function_groups=()) -> None:
                     session_restarted=restarted and not results,
                     statement_index=index,
                     execution_time=time.perf_counter() - started,
-                    column_metadata=column_metadata,
+                    column_metadata=column_metadata or output_format == "table",
                 )
+                if limited:
+                    serialized = _page_result(serialized, limit)
                 results.append(
-                    _page_result(serialized, limit) if limited else serialized
+                    _format_result_sets(serialized, output_format, column_metadata)
                 )
 
             if report_sql_mode and results:
