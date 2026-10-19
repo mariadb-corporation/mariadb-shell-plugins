@@ -325,23 +325,16 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
+Checked at this checkpoint (2026-10-19, evening), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
 
 ```text
 $ git -C rest_plugin branch --show-current
-wip/sql-format-grid
+main
 
 $ git -C rest_plugin status --short   (one repository: every project's lines)
- M mcp_plugin/.claude/context/db-tools.md
- M mcp_plugin/lib/db_functions.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_db_format.py
- M mcp_plugin/tests/unit/test_db_script.py
- M mcp_plugin/tests/unit/test_db_sql.py
-(plus this checkpoint's own context edits)
+(clean)
 ```
 
-- No rest_plugin change since the 2026-10-12 checkpoint. PR #41 is merged;
-  the branch checked out is mcp_plugin's `wip/sql-format-grid` (PR #59),
-  which touches only mcp_plugin. Since then `main` got #57 (REST naming:
-  `rest_plugin` and its `rest` global) and #58 (version 26.10.3).
+- No rest_plugin change since the 2026-10-12 checkpoint, apart from the
+  REST naming of #57 (`rest_plugin`, its `rest` global), merged; its branch
+  `wip/rest-restd-groups` is deleted. No open rest_plugin branch.
