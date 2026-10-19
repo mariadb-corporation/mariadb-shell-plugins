@@ -87,12 +87,18 @@ class Segment:
             of the directive that included it.
         first_line (int): For an included file, the file's line the segment
             starts on, from 1; 0 for the script.
+        first_column (int): For an included file, where on that line the
+            selected part starts, in characters from 0.
+        indent (int): The directive's indentation, which every included
+            line that is not blank was given.
     """
 
     start: int
     file: Optional[str]
     origin: int
     first_line: int = 0
+    first_column: int = 0
+    indent: int = 0
 
 
 def get_source_slice_offset(content: str, bound: str, is_end: bool) -> int | None:
@@ -204,6 +210,28 @@ def contains_source_directive(text: str) -> bool:
     return re.search(MSM_SECTION_SOURCE_REGEX, text, _SOURCE_FLAGS) is not None
 
 
+def _directive_matches(script: str):
+    """Yields each SOURCE directive of a script with the line it is on."""
+    line = 1
+    position = 0
+    for match in re.finditer(MSM_SECTION_SOURCE_REGEX, script, _SOURCE_FLAGS):
+        line += script.count("\n", position, match.start())
+        position = match.start()
+        yield line, match
+
+
+def directives(script: str) -> list[tuple[int, str]]:
+    """Lists the SOURCE directives of a script, without reading anything.
+
+    Args:
+        script: The script.
+
+    Returns:
+        One (line, path as written) per directive, in order; lines from 1.
+    """
+    return [(line, match.group(3)) for line, match in _directive_matches(script)]
+
+
 def expand_source_directives(
     script: str,
     base_dir: Optional[str],
@@ -240,18 +268,20 @@ def expand_source_directives(
     segments = []
     expanded_length = 0
     position = 0
-    line = 1
 
-    def add(text, file, origin, first_line=0):
+    def add(text, file, origin, first_line=0, first_column=0, indented=0):
         nonlocal expanded_length
         if text:
             parts.append(text)
-            segments.append(Segment(expanded_length, file, origin, first_line))
+            segments.append(
+                Segment(
+                    expanded_length, file, origin, first_line, first_column, indented
+                )
+            )
             expanded_length += len(text)
 
-    for match in re.finditer(MSM_SECTION_SOURCE_REGEX, script, _SOURCE_FLAGS):
+    for line, match in _directive_matches(script):
         add(script[position : match.start()], None, position)
-        line += script.count("\n", position, match.start())
 
         source_indention = len(match.group(1))
         path = match.group(3)
@@ -278,14 +308,16 @@ def expand_source_directives(
         if source_indention > 0:
             selected = indent(selected, source_indention * " ")
         # Placed at the SOURCE keyword, where a splitter's piece starts, and
-        # at the file's line the selected part starts on.
+        # at the file's line and column the selected part starts on.
+        begin = slice(start, None).indices(len(content))[0]
         add(
             selected,
             read_path,
             match.end(1),
-            content.count("\n", 0, start or 0) + 1,
+            content.count("\n", 0, begin) + 1,
+            begin - (content.rfind("\n", 0, begin) + 1),
+            source_indention,
         )
-        line += script.count("\n", match.start(), match.end())
         position = match.end()
 
     add(script[position:], None, position)
@@ -295,7 +327,7 @@ def expand_source_directives(
 
 def locate(
     expanded: str, segments: list[Segment], offset: int
-) -> tuple[int, Optional[str], int]:
+) -> tuple[int, Optional[str], int, int]:
     """Says where a place in an expanded script was written.
 
     Args:
@@ -306,13 +338,23 @@ def locate(
     Returns:
         The offset in the script as given - for a place in an included part,
         the one of the directive's SOURCE keyword - then the included file
-        and its line (from 1), or None and 0 for a place in the script.
+        and its line and column (both from 1, the column in characters), or
+        None, 0 and 0 for a place in the script.
     """
     index = bisect.bisect_right([segment.start for segment in segments], offset)
     segment = segments[max(0, index - 1)]
     if segment.file is None:
-        return segment.origin + (offset - segment.start), None, 0
+        return segment.origin + (offset - segment.start), None, 0, 0
 
     # Indenting the part added no line breaks, so they count as in the file.
     line = segment.first_line + expanded.count("\n", segment.start, offset)
-    return segment.origin, segment.file, line
+    line_start = expanded.rfind("\n", 0, offset) + 1
+    line_end = expanded.find("\n", offset)
+    text = expanded[line_start : len(expanded) if line_end < 0 else line_end]
+    # The indentation the expansion added, on a line that is not blank.
+    added = segment.indent if text.strip() else 0
+    if line_start <= segment.start:
+        column = segment.first_column + max(0, offset - segment.start - added)
+    else:
+        column = max(0, offset - line_start - added)
+    return segment.origin, segment.file, line, column + 1

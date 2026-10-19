@@ -152,6 +152,9 @@ def setup(**options) -> None:
         tool_name_separator (str): What separates a tool's group from its name
             in the published tool names, one of . _ - (default .). Use _ for
             gateways that refuse dots, such as Arcade: db_list_connections.
+        lsp_path (str): The mariadb-lsp binary the sql tools run, or the
+            folder it is in. Empty searches the PATH, then ~/.local/bin; the
+            sql group is offered only where one is found.
 
     Returns:
         None

@@ -220,7 +220,7 @@ primitives in `lib/setup_prompts.py`).
 
 The tools are grouped into function groups that can be loaded independently via the
 `function_groups` option of `mcp.start_server` (`db`, `msm`, `rest`, `sandbox`, `migrator`,
-`util`, `restd`; defaults to all):
+`util`, `restd`, `sql`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -612,6 +612,34 @@ A migration can outlast any client's patience. `timeout` defaults to an hour, an
 because the artifacts directory comes back either way, a run that outlives its timeout
 can still be followed from its own files and picked up with `migrator.resume`.
 
+### SQL tools (`sql`)
+
+| MCP tool | Purpose |
+| -------- | ------- |
+| `sql.check` | Checks the syntax of SQL with MariaDB's grammar: whether it is valid, and each error with its line, column, message and what the grammar expected there. |
+| `sql.outline` | Lists the schema objects SQL defines (schemas, tables with their columns, indexes, keys and checks, views, routines, triggers, events, sequences, REST Service objects), folding its CREATE, ALTER, DROP, RENAME and USE statements in order. |
+| `sql.format` | Lays SQL out readably: clauses on lines of their own, keywords in one case, lines kept within a width. |
+
+They work on SQL text alone - nothing is executed and no connection is needed - by running
+`mariadb-lsp`, the binary of the MariaDB SQL language server
+([mariadb-corporation/lsp-server](https://github.com/mariadb-corporation/lsp-server)), on
+SQL passed inline (`sql`) or named by `file_path`. Positions are counted from 1, in
+characters, as an editor shows them.
+
+They are registered **only where `mariadb-lsp` is found**: the one
+`mariadb-shell -- mcp setup --lspPath=PATH` names (the binary or its folder; `--lspPath=""`
+clears it), else the first on the `PATH`, else `~/.local/bin/mariadb-lsp` - the places the
+VS Code extension looks. A binary of that name has to answer `--version` with
+`mariadb-lsp <version>`. Installing one takes effect on the next server start.
+
+MSM `SOURCE '<path>'[<start>:<end>];` directives are followed, as schema management
+expands them: a relative path is taken from the file's folder, or from `source_dir` for
+inline SQL. They are expanded by the MCP server, with the same code and the same checks
+as `db.execute_sql_script` - every included file must be within the caller's allowed
+paths - and the binary is given the expanded text and reads no file itself
+(`--no-source`). A position in an included part names that file, with its line and
+column in it, so `sql.check` reports an error in a section where it is.
+
 ## Installation
 
 The MCP server plugin ships with the MariaDB Shell 26.8.1 and later. No manual
@@ -691,8 +719,8 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   under an OS account of its own**, and on Linux note that the default
   `login-path` helper only obfuscates `~/.mylogin.cnf`.
 - **Only the `db` group** is served. The `sandbox`, `migrator` and `util` tools run
-  local servers and long jobs on the machine, and the `msm` tools work on
-  schema project folders, which belong on the developer's own machine, not on
+  local servers and long jobs on the machine, and the `msm` and `sql` tools work on
+  schema project folders and SQL files, which belong on the developer's own machine, not on
   a remote server; none of them are offered to tenants. Neither is `--gui`,
   and neither is stdio, which has no request to carry a key. A user's token
   has to grant the scope of a tool's group (`mcp:db`; set with `--setScopes`).

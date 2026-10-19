@@ -196,6 +196,9 @@ SETTINGS_FILE_NAME = "settings.json"
 TOOL_NAME_SEPARATORS = (".", "_", "-")
 _TOOL_NAME_SEPARATOR_SETTING = "toolNameSeparator"
 
+# Where the mariadb-lsp binary of the sql group is (see get_lsp_path).
+_LSP_PATH_SETTING = "lspPath"
+
 # Name of the file inside the plugin data directory that holds the details of
 # the stored connections (see get_connection_details).
 CONNECTIONS_FILE_NAME = "connections.json"
@@ -1452,6 +1455,30 @@ def set_tool_name_separator(separator: str) -> None:
         settings.pop(_TOOL_NAME_SEPARATOR_SETTING, None)
     else:
         settings[_TOOL_NAME_SEPARATOR_SETTING] = separator
+    save_settings(settings)
+
+
+def get_lsp_path() -> str:
+    """Returns where the sql group's mariadb-lsp binary is, as configured.
+
+    ``mcp setup --lspPath=PATH`` names the binary, or the folder it is in.
+    Empty (the default) leaves it to the search: the PATH, then
+    ``~/.local/bin``. A server reads it once, when it starts.
+    """
+    return get_settings().get(_LSP_PATH_SETTING, "")
+
+
+def set_lsp_path(path: str) -> None:
+    """Persists where the sql group's mariadb-lsp binary is; empty clears it.
+
+    Args:
+        path (str): The binary, or the folder it is in.
+    """
+    settings = get_settings()
+    if path:
+        settings[_LSP_PATH_SETTING] = os.path.abspath(os.path.expanduser(path))
+    else:
+        settings.pop(_LSP_PATH_SETTING, None)
     save_settings(settings)
 
 

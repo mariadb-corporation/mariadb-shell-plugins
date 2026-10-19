@@ -103,6 +103,7 @@ _FUNCTION_GROUP_REGISTRARS = {
     general.FUNCTION_GROUP_MIGRATOR: ("migrator_functions", "register_migrator_tools"),
     general.FUNCTION_GROUP_UTIL: ("util_functions", "register_util_tools"),
     general.FUNCTION_GROUP_RESTD: ("restd_functions", "register_restd_tools"),
+    general.FUNCTION_GROUP_SQL: ("sql_functions", "register_sql_tools"),
 }
 
 

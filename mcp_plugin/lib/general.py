@@ -122,6 +122,10 @@ FUNCTION_GROUP_UTIL = "util"
 # The MariaDB REST Daemon: setting one up for a server, and starting, stopping
 # and deleting it. Setting up needs a connection, the rest does not.
 FUNCTION_GROUP_RESTD = "restd"
+# SQL text: checking, outlining and formatting it with the MariaDB SQL
+# language server's binary, mariadb-lsp. Its tools register only where that
+# binary is found - see mcp_plugin.lib.sql_functions.register_sql_tools.
+FUNCTION_GROUP_SQL = "sql"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
@@ -130,6 +134,7 @@ SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_MIGRATOR,
     FUNCTION_GROUP_UTIL,
     FUNCTION_GROUP_RESTD,
+    FUNCTION_GROUP_SQL,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
