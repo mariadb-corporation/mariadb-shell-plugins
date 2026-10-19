@@ -363,8 +363,9 @@ def migration_instances(clean_config):
         password=SANDBOX_PASSWORD,
         source_port=source_port,
         target_port=target_port,
-        source_uri=f"root@127.0.0.1:{source_port}",
-        target_uri=f"root@127.0.0.1:{target_port}",
+        # Spelled with the scheme, as connections are stored and reported.
+        source_uri=f"mariadb://root@127.0.0.1:{source_port}",
+        target_uri=f"mariadb://root@127.0.0.1:{target_port}",
     )
 
     try:
