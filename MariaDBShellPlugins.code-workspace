@@ -7,15 +7,15 @@
         },
         {
             "name": "MariaDB REST Service Plugin",
-            "path": "mrs_plugin"
+            "path": "rest_plugin"
         },
         {
             "name": "MRS Notes Example",
-            "path": "mrs_plugin/examples/mrs_notes"
+            "path": "rest_plugin/examples/mrs_notes"
         },
         {
             "name": "MRS Scripts Example",
-            "path": "mrs_plugin/examples/mrs_scripts"
+            "path": "rest_plugin/examples/mrs_scripts"
         },
         {
             "name": "MariaDB Schema Management Plugin",
@@ -53,7 +53,7 @@
             "visitors": false,
         },
         "files.exclude": {
-            "mrs_plugin": true,
+            "rest_plugin": true,
             "msm_plugin": true,
             "mcp_plugin": true,
             "MariaDBShellPlugins.code-workspace": true,
@@ -205,16 +205,16 @@
                     "--pym",
                     "pytest",
                     "-c",
-                    "${workspaceFolder}/mrs_plugin/pytest.ini",
+                    "${workspaceFolder}/rest_plugin/pytest.ini",
                     "-sv",
-                    "${workspaceFolder}/mrs_plugin",
+                    "${workspaceFolder}/rest_plugin",
                     "-k",
                     "${input:test-filter}",
                     "-vvv",
                     "-s"
                 ],
                 "options": {
-                    "cwd": "${workspaceFolder}/mrs_plugin"
+                    "cwd": "${workspaceFolder}/rest_plugin"
                 },
                 "isBackground": true,
                 "dependsOn": "Enable python debugging",

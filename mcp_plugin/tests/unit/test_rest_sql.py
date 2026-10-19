@@ -66,7 +66,7 @@ async def _rest_sql_flow(uri):
             # The REST metadata schema does not exist on the fresh sandbox yet.
             assert await _metadata_schema_rows() == []
 
-            # Run the REST SQL command. It is handled by the mrs_plugin SQL
+            # Run the REST SQL command. It is handled by the rest_plugin SQL
             # handler rather than sent verbatim to the server.
             configure_result = await call(
                 "db.execute_sql",

@@ -43,7 +43,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - MCP server built with **MCPServer** (`mcp.server.mcpserver`, the MCP Python SDK 2.x
   successor of 1.x's `mcp.server.fastmcp.FastMCP` — NOT the standalone `fastmcp` v2).
   `requirements.txt` pins `mcp >= 2.0.0, < 3.0.0`; on the 1.x API every server-side import
-  here fails. `mcp`, `msm_plugin`, `mrs_plugin`, and the `sandbox` global are imported
+  here fails. `mcp`, `msm_plugin`, `rest_plugin`, and the `sandbox` global are imported
   lazily so plugin load never hard-fails.
 
 - **SDK 2.x API notes**: `MCPServer(name)` takes NO `host`/`port` — they are transport

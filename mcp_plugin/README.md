@@ -306,26 +306,26 @@ on a schema project on disk and are always available.
 The MariaDB REST Service itself is managed with REST SQL (`CREATE REST SERVICE ...`,
 `SHOW REST SERVICES`, `SHOW CREATE REST SERVICE ... FORMAT=JSON`), which the shell's
 built-in `mrs` module handles: send it through `db.execute_sql` like any other
-statement. The `rest` tools wrap the functions of the `mrs` plugin that work with the
+statement. The `rest` tools wrap the functions of the `rest` plugin that work with the
 client's files, which REST SQL cannot:
 
-| MCP tool | Wraps (`mrs_plugin`) |
+| MCP tool | Wraps (`rest_plugin`) |
 | --- | --- |
-| `rest.version` | `mrs.version` |
-| `rest.get_sdk_base_classes` | `mrs.get.sdkBaseClasses` |
-| `rest.get_sdk_options` | `mrs.get.sdkOptions` |
-| `rest.get_folder_mrs_script_language` | `mrs.get.folderMrsScriptLanguage` |
-| `rest.get_folder_mrs_script_definitions` | `mrs.get.folderMrsScriptDefinitions` |
-| `rest.get_file_mrs_script_definitions` | `mrs.get.fileMrsScriptDefinitions` |
-| `rest.get_sdk_service_classes` | `mrs.get.sdkServiceClasses` |
-| `rest.dump_sdk_service_files` | `mrs.dump.sdkServiceFiles` |
-| `rest.get_runtime_management_code` | `mrs.get.runtimeManagementCode` |
-| `rest.dump_service` | `mrs.dump.service` |
-| `rest.load_service` | `mrs.load.service` |
-| `rest.dump_service_project` | `mrs.dump.serviceProject` |
-| `rest.load_service_project` | `mrs.load.serviceProject` |
-| `rest.load_content_set` | `mrs.load.contentSet` |
-| `rest.dump_audit_log` | `mrs.dump.auditLog` |
+| `rest.version` | `rest.version` |
+| `rest.get_sdk_base_classes` | `rest.get.sdkBaseClasses` |
+| `rest.get_sdk_options` | `rest.get.sdkOptions` |
+| `rest.get_folder_mrs_script_language` | `rest.get.folderMrsScriptLanguage` |
+| `rest.get_folder_mrs_script_definitions` | `rest.get.folderMrsScriptDefinitions` |
+| `rest.get_file_mrs_script_definitions` | `rest.get.fileMrsScriptDefinitions` |
+| `rest.get_sdk_service_classes` | `rest.get.sdkServiceClasses` |
+| `rest.dump_sdk_service_files` | `rest.dump.sdkServiceFiles` |
+| `rest.get_runtime_management_code` | `rest.get.runtimeManagementCode` |
+| `rest.dump_service` | `rest.dump.service` |
+| `rest.load_service` | `rest.load.service` |
+| `rest.dump_service_project` | `rest.dump.serviceProject` |
+| `rest.load_service_project` | `rest.load.serviceProject` |
+| `rest.load_content_set` | `rest.load.contentSet` |
+| `rest.dump_audit_log` | `rest.dump.auditLog` |
 
 The tools from `rest.get_sdk_service_classes` on work on a REST service through a
 connection opened with `db.connect`, so they are only registered when the `db` group
@@ -333,7 +333,7 @@ is served as well. Every file and directory they take is checked against the all
 paths. A multi-tenant server does not serve the `rest` group.
 
 `rest.load_content_set` with `open_api_ui` uploads the REST service's OpenAPI UI
-instead of a directory: Swagger UI, which `mrs_plugin` downloads from github.com
+instead of a directory: Swagger UI, which `rest_plugin` downloads from github.com
 (pinned, checked by SHA-256) and patches to show the service's
 `/open-api-catalog/` and to sign in with the REST Daemon. It takes no directory, nor
 `ignore_list` or `load_scripts`, and the content set's path defaults to `/openApiUi`.

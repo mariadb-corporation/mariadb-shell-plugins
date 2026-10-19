@@ -25,7 +25,7 @@ jobs:
     needs: ensure-runner
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     outputs:
-      mrs_plugin: ${{ steps.changes.outputs.mrs_plugin }}
+      rest_plugin: ${{ steps.changes.outputs.rest_plugin }}
       msm_plugin: ${{ steps.changes.outputs.msm_plugin }}
       mcp_plugin: ${{ steps.changes.outputs.mcp_plugin }}
 
@@ -72,7 +72,7 @@ jobs:
             fi
           fi
 
-          for part in mrs_plugin msm_plugin mcp_plugin; do
+          for part in rest_plugin msm_plugin mcp_plugin; do
             if [ "$run_all" = true ] || printf '%s\n' "$changed" | grep -q "^${part}/"; then
               echo "${part}: running tests"
               echo "${part}=true" >> "$GITHUB_OUTPUT"
@@ -94,7 +94,7 @@ jobs:
     # Nothing to verify when no plugin was touched; the server and shell setup
     # below is pure cost then.
     if: >-
-      needs.changes.outputs.mrs_plugin == 'true'
+      needs.changes.outputs.rest_plugin == 'true'
       || needs.changes.outputs.msm_plugin == 'true'
       || needs.changes.outputs.mcp_plugin == 'true'
 
@@ -123,10 +123,10 @@ jobs:
           echo "MariaDB Shell Version: $MARIADB_SHELL_VERSION"
           echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
-      - name: Run mrs_plugin tests
-        if: needs.changes.outputs.mrs_plugin == 'true'
+      - name: Run rest_plugin tests
+        if: needs.changes.outputs.rest_plugin == 'true'
         run: |
-          cd mrs_plugin && msh --py -f run_tests.py
+          cd rest_plugin && msh --py -f run_tests.py
         shell: bash
 
       - name: Run msm_plugin tests

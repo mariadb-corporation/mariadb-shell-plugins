@@ -806,7 +806,7 @@ def get_uuid_string():
 # --- running a shell utility on a given session ----------------------------
 
 # The name under which every plugin of this repository finds the one lock that
-# guards the shell's global session. mrs_plugin uses the same name (its
+# guards the shell's global session. rest_plugin uses the same name (its
 # lib/core.py); the plugins do not import each other.
 _GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
 

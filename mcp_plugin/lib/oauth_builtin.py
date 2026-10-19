@@ -1525,7 +1525,7 @@ _SCOPE_DESCRIPTIONS = {
 }
 
 # The page's style (lib/assets/sign-in-page.css) follows the MySQL REST
-# Service's sign-in page (mrs_plugin's default_static_content/index.html),
+# Service's sign-in page (rest_plugin's default_static_content/index.html),
 # without its script: same colours, same welcome header, same joined fields
 # with the round "next" button.
 @functools.lru_cache(maxsize=None)

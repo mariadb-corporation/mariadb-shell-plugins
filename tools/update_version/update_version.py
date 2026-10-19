@@ -119,7 +119,7 @@ PLUGIN_TARGETS = [
         "replacement": '"version": "{v}"',
     },
     {
-        "file": "mrs_plugin/lib/general.py",
+        "file": "rest_plugin/lib/general.py",
         "pattern": re.compile(r'^VERSION = "[^"]+"$', re.MULTILINE),
         "replacement": 'VERSION = "{v}"',
     },

@@ -309,8 +309,8 @@ def content_set_tool(monkeypatch):
     """rest.load_content_set in-process, its plugin call and paths recorded."""
     import contextlib
 
-    import mrs_plugin.content_sets
-    import mrs_plugin.lib.open_api_ui
+    import rest_plugin.content_sets
+    import rest_plugin.lib.open_api_ui
     from mcp_plugin.lib import db_functions, general, rest_functions
 
     calls, checked = [], []
@@ -328,9 +328,9 @@ def content_set_tool(monkeypatch):
         calls.append("session")
         yield object()
 
-    monkeypatch.setattr(mrs_plugin.content_sets, "load_content_set", load)
+    monkeypatch.setattr(rest_plugin.content_sets, "load_content_set", load)
     monkeypatch.setattr(
-        mrs_plugin.lib.open_api_ui, "download_assets",
+        rest_plugin.lib.open_api_ui, "download_assets",
         lambda: calls.append("download"),
     )
     monkeypatch.setattr(general, "require_allowed_path", require)
@@ -404,7 +404,7 @@ def test_the_open_api_ui_is_downloaded_and_uploaded_for_real(sandbox):
                 assert result.is_error is False, result.content[0].text
                 loaded = helpers.tool_payload(result)
                 assert "/swagger-initializer.js" in loaded["files"]
-                # What is patched is checked by mrs_plugin's own tests;
+                # What is patched is checked by rest_plugin's own tests;
                 # here, that it is all on the server.
                 rows = helpers.tool_rows(await sql(
                     "SHOW REST CONTENT FILES ON SERVICE /apiTest "

@@ -13,7 +13,7 @@ PR #21). `sandbox.list_instances` lists the sandboxes in the default
 sandbox path (all, or one by `port`), and a `--gui` server's `sandbox.deploy`
 takes `mcp_access` - both for the VS Code extension's Sandboxes view. GPLv2,
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
-(sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
+(sibling to `msm_plugin`, `rest_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.4** at the 2026-09-25
 checkpoint — checked with `--version`; 26.9.3, 26.9.1 and 26.9.0 in earlier sessions. 26.9.3 is what the connection
 URI now REQUIRES: it is the first shell whose parser accepts `mariadb://`, and
@@ -73,7 +73,7 @@ this table with it.
 | [`context/restd.md`](context/restd.md) | The `restd` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
-| [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `mrs_plugin`: what was changed there, how to run their suites, and their own failures. |
+| [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `rest_plugin`: what was changed there, how to run their suites, and their own failures. |
 | [`context/working-practices.md`](context/working-practices.md) | Keeping this context current, what auto mode may not do, and the Windows VM / codex quirks that look like plugin bugs. |
 | [`context/multi-tenant.md`](context/multi-tenant.md) | Multi-tenant mode (BUILT, PR #37): the decisions, users in `users.json` keyed by UUID, one shell secret group per user, plain-text API keys, tenant isolation (phases 0 and 1, as built), Rene's review round, and the open next steps. |
 | [`context/multi-tenant-phase1-plan.md`](context/multi-tenant-phase1-plan.md) | The phase 1 plan as written before building, sections 1a-1e (config layer, `mcp.setup`, server auth, tenant isolation, tests and docs). Background; the as-built notes in multi-tenant.md win. Split out of multi-tenant.md on 2026-10-07. |
@@ -94,7 +94,7 @@ wip/vscode_syntax_highlighter
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
  M code_ext/.claude/PROJECT_CONTEXT.md
  M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M rest_plugin/.claude/PROJECT_CONTEXT.md
  M msm_plugin/.claude/PROJECT_CONTEXT.md
 (this checkpoint's own edits, committed with it)
 ```
@@ -109,8 +109,8 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
     [`context/util.md`](context/util.md)), and msm's `run_util` (see
     [`context/siblings.md`](context/siblings.md)).
   - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the `mrs` function group
-    wrapping mrs_plugin, plus the extension. It has #41 and #43 merged in.
-  - #41 `wip/mrs_schema_improvements`: mrs_plugin / msm_plugin.
+    wrapping rest_plugin, plus the extension. It has #41 and #43 merged in.
+  - #41 `wip/mrs_schema_improvements`: rest_plugin / msm_plugin.
 - **#41 and #43 are merged (2026-10-13), squash-merged after review
   fixes, and so is mariadb-shell #71.** `main` was merged into #44 with a
   base of the #41 and #43 heads it had merged in, so only #44's own changes
@@ -127,7 +127,7 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   merged. `split_script`'s options argument, which `ansi_quotes` needs, is
   in every release since 26.8.0.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
-  mrs_plugin's project dump/load got msm's `run_util` on #41's branch
+  rest_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
 - [`context/history.md`](context/history.md) is deliberately NOT updated,
   as by every session since `wip/sandbox-binaries`.

@@ -13,13 +13,13 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""MCP tools wrapping the MariaDB REST Service (``mrs``) plugin.
+"""MCP tools wrapping the MariaDB REST Service (``rest``) plugin.
 
 The REST services themselves are managed with REST SQL (``CREATE REST
 SERVICE ...``, ``SHOW REST SERVICES FORMAT=JSON``), which the shell's
 built-in ``mrs`` module handles, so a client sends it through
 ``db.execute_sql`` like any other statement. What REST SQL cannot do is work
-with the client's files, and that is what the ``mrs_plugin`` functions
+with the client's files, and that is what the ``rest_plugin`` functions
 wrapped here are for: client SDK generation, dumping and loading services and
 projects, uploading a directory as a content set, MRS script analysis and the
 audit log export.
@@ -55,10 +55,10 @@ def register_rest_tools(server, function_groups=()) -> None:
     """
     import anyio.to_thread
     from mcp.server.mcpserver import Context
-    from mrs_plugin import content_sets, dump, general as mrs_general
-    from mrs_plugin import services as mrs_services
-    from mrs_plugin.lib import content_sets as content_set_files
-    from mrs_plugin.lib import open_api_ui as open_api_ui_files
+    from rest_plugin import content_sets, dump, general as rest_general
+    from rest_plugin import services as rest_services
+    from rest_plugin.lib import content_sets as content_set_files
+    from rest_plugin.lib import open_api_ui as open_api_ui_files
 
     tool = tool_registrar(server)
 
@@ -90,7 +90,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The plugin version.
         """
-        return mrs_general.version()
+        return rest_general.version()
 
     @tool(name="rest.get_sdk_base_classes")
     def get_sdk_base_classes(
@@ -107,7 +107,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         Returns:
             The source of the base classes.
         """
-        return mrs_services.get_sdk_base_classes(
+        return rest_services.get_sdk_base_classes(
             sdk_language=sdk_language, prepare_for_runtime=prepare_for_runtime
         )
 
@@ -122,7 +122,7 @@ def register_rest_tools(server, function_groups=()) -> None:
             The stored SDK options, or an empty dict if there are none.
         """
         await general.require_allowed_path(ctx, directory)
-        return mrs_services.get_stored_sdk_options(directory)
+        return rest_services.get_stored_sdk_options(directory)
 
     @tool(name="rest.get_folder_mrs_script_language")
     async def get_folder_mrs_script_language(
@@ -222,7 +222,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.get_sdk_service_classes(
+            lambda session: rest_services.get_sdk_service_classes(
                 session=session,
                 sdk_language=sdk_language,
                 prepare_for_runtime=prepare_for_runtime,
@@ -254,7 +254,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.dump_sdk_service_files(
+            lambda session: rest_services.dump_sdk_service_files(
                 session=session, directory=directory, **_kwargs(options=options)
             ),
         )
@@ -272,7 +272,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.get_runtime_management_code(session=session),
+            lambda session: rest_services.get_runtime_management_code(session=session),
         )
 
     @tool(name="rest.dump_service")
@@ -302,7 +302,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.dump_service(
+            lambda session: rest_services.dump_service(
                 service_path,
                 file_path,
                 session=session,
@@ -333,7 +333,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.load_service(
+            lambda session: rest_services.load_service(
                 file_path, session=session, **_kwargs(as_path=as_path)
             ),
         )
@@ -375,7 +375,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.dump_service_as_project(
+            lambda session: rest_services.dump_service_as_project(
                 session=session,
                 destination=destination,
                 services=services,
@@ -405,7 +405,7 @@ def register_rest_tools(server, function_groups=()) -> None:
         return await _on_session(
             ctx,
             connection_id,
-            lambda session: mrs_services.load_service_project(
+            lambda session: rest_services.load_service_project(
                 session=session, source=source
             ),
         )
