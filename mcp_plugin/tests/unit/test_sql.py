@@ -23,9 +23,9 @@ rest run the real binary, where one is found, and skip where it is not.
 
 # cSpell:ignore mcpserver SELEC
 
+import functools
 import json
 import os
-import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -67,7 +67,9 @@ def lsp_settings(tmp_path, monkeypatch):
     )
 
 
-def _fake_lsp(folder, answer, exit_code=0, version="mariadb-lsp 26.9.4"):
+def _fake_lsp(
+    folder, answer, exit_code=0, version="mariadb-lsp 26.9.4", stderr="", sleep=0
+):
     """Writes a mariadb-lsp that records its arguments and prints answer."""
     path = os.path.join(folder, "mariadb-lsp")
     record = os.path.join(folder, "calls.jsonl")
@@ -81,6 +83,8 @@ def _fake_lsp(folder, answer, exit_code=0, version="mariadb-lsp 26.9.4"):
             "    calls.write(json.dumps({'argv': sys.argv[1:], 'stdin':"
             " sys.stdin.read() if sys.argv[-1] == '-' else None}) + '\\n')\n"
             f"sys.stdout.write({answer!r})\n"
+            f"sys.stderr.write({stderr!r})\n"
+            f"import time; time.sleep({sleep})\n"
             f"sys.exit({exit_code})\n"
         )
     os.chmod(path, 0o755)
@@ -88,11 +92,15 @@ def _fake_lsp(folder, answer, exit_code=0, version="mariadb-lsp 26.9.4"):
 
 
 def _calls(folder):
-    with open(os.path.join(folder, "calls.jsonl"), encoding="utf-8") as calls:
-        return [json.loads(line) for line in calls]
+    """The calls the stand-in recorded; none before it was first run."""
+    try:
+        with open(os.path.join(folder, "calls.jsonl"), encoding="utf-8") as calls:
+            return [json.loads(line) for line in calls]
+    except FileNotFoundError:
+        return []
 
 
-def _tools(monkeypatch):
+def _tools():
     """Registers the sql tools and returns them, called as a stdio client."""
     recorder = helpers.ToolRecorder()
     sql_functions.register_sql_tools(recorder)
@@ -107,12 +115,12 @@ def _tools(monkeypatch):
 
 
 @pytest.fixture
-def fake(tmp_path, monkeypatch, lsp_settings, allowed_temp_dir):
+def fake(tmp_path, lsp_settings, allowed_temp_dir):
     """The sql tools over a stand-in mariadb-lsp answering CHECK_ANSWER."""
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
     config.set_lsp_path(_fake_lsp(str(binary_dir), json.dumps(CHECK_ANSWER), 1))
-    tools = _tools(monkeypatch)
+    tools = _tools()
     tools.folder = str(binary_dir)
     tools.allowed = allowed_temp_dir
     tools.calls = lambda: _calls(str(binary_dir))
@@ -154,7 +162,6 @@ def test_then_the_path_then_local_bin(tmp_path, monkeypatch, lsp_settings):
     monkeypatch.setenv("PATH", str(on_path))
 
     assert sql_functions.find_lsp() == in_local_bin
-    assert sql_functions.find_lsp() == in_local_bin
     found_on_path = _fake_lsp(str(on_path), "")
     assert sql_functions.find_lsp() == found_on_path
 
@@ -178,44 +185,45 @@ def test_with_a_binary_the_three_tools_are_offered(fake):
 
 def test_positions_count_from_one_in_characters():
     """LSP's 0-based UTF-16 columns become an editor's 1-based characters."""
-    lines = ["SELECT '😀' + x"]
+    text = "SELECT '😀' + x"
+    convert = sql_functions._position_converter(text, text, None)
 
     # The emoji is two UTF-16 units and one character: x is unit 13, char 12.
-    assert sql_functions._lsp_position(lines, {"line": 0, "character": 13}) == {
-        "line": 1,
-        "column": 13,
-    }
-    assert sql_functions._lsp_position(lines, {"line": 0, "character": 0}) == {
-        "line": 1,
-        "column": 1,
-    }
+    assert convert({"line": 0, "character": 13}) == {"line": 1, "column": 13}
+    assert convert({"line": 0, "character": 0}) == {"line": 1, "column": 1}
+    # Past the end of a line is its end, an ASCII line like any other.
+    for line, end in (("SELECT 1", 9), ("SELECT '😀'", 11)):
+        assert sql_functions._position_converter(line, line, None)(
+            {"line": 0, "character": 40}
+        ) == {"line": 1, "column": end}
 
 
-def test_positions_of_an_included_object_are_in_its_file():
-    converted = sql_functions._with_positions(
-        {"tables": [{"name": "t", "source": 0,
-                     "range": {"start": {"line": 0, "character": 2}, "end": {"line": 0, "character": 4}}}],
-         "includes": [{"file": "/p/a.sql", "range": {"start": {"line": 1, "character": 0},
-                                                     "end": {"line": 1, "character": 5}}}]},
-        ["x", "SOURCE 'a.sql';"],
-        (("/p/a.sql", ["😀😀 t"]),),
-    )
+def test_positions_in_an_included_part_are_in_its_file(tmp_path):
+    """Its line and column, the directive's indentation taken off again."""
+    from msm_plugin.lib import source
 
-    assert converted["tables"][0] == {
-        "name": "t",
-        "source": "/p/a.sql",
-        # Each emoji is two UTF-16 units and one character.
-        "range": {"start": {"line": 1, "column": 2}, "end": {"line": 1, "column": 3}},
+    section = helpers.write_file(str(tmp_path), "a.sql", "-- one\n😀 x;\nSELECT 2;\n")
+    script = "SELECT 1;\n    SOURCE 'a.sql'[ln2:];\nSELECT 3;\n"
+    sent, segments = source.expand_source_directives(script, str(tmp_path))
+    convert = sql_functions._position_converter(sent, script, segments)
+
+    # Expanded: "SELECT 1;\n    😀 x;\n    SELECT 2;\nSELECT 3;\n"
+    assert convert({"line": 1, "character": 7}) == {
+        "file": section, "line": 2, "column": 3,
     }
-    # The directive itself is in the script.
-    assert converted["includes"][0]["range"]["start"] == {"line": 2, "column": 1}
+    assert convert({"line": 2, "character": 4}) == {
+        "file": section, "line": 3, "column": 1,
+    }
+    # Before and after it, the script's own lines.
+    assert convert({"line": 0, "character": 7}) == {"line": 1, "column": 8}
+    assert convert({"line": 3, "character": 0}) == {"line": 3, "column": 1}
 
 
 def test_every_position_of_an_answer_is_converted():
     converted = sql_functions._with_positions(
         {"range": {"start": {"line": 0, "character": 1}, "end": {"line": 2, "character": 0}},
          "name": "t"},
-        ["ab", "", "c"],
+        sql_functions._position_converter("ab\n\nc", "ab\n\nc", None),
     )
 
     assert converted == {
@@ -244,7 +252,8 @@ def test_check_reports_the_errors_with_editor_positions(fake):
         "notes": [],
     }
     [call] = fake.calls()
-    assert call["argv"] == ["check", "--format", "json", "-"]
+    # The binary reads no file of its own.
+    assert call["argv"] == ["check", "--format", "json", "--no-source", "-"]
     assert call["stdin"] == "SELECT 1;\n   SELEC 2;\n"
 
 
@@ -256,20 +265,23 @@ def test_the_options_are_passed_on(fake):
 
     [call] = fake.calls()
     assert call["argv"] == [
-        "check", "--format", "json", "--sql-mode", "ANSI_QUOTES", "--delimiter",
+        "check", "--format", "json", "--no-source", "--sql-mode", "ANSI_QUOTES", "--delimiter",
         "$$", "--version-id", "110402", "--max-errors", "5", "-",
     ]
 
 
-def test_a_file_is_read_by_the_binary_from_its_own_folder(fake):
-    """So its SOURCE paths are relative to it - no --source-dir needed."""
-    script = helpers.write_file(fake.allowed, "dev.sql", "SELECT 1;\n   SELEC 2;\n")
+def test_a_file_is_sent_with_its_sections_from_its_own_folder(fake):
+    """Expanded here, relative to the file's folder; the binary reads nothing."""
+    helpers.write_file(fake.allowed, "sections/a.sql", "SELECT 2;\n")
+    script = helpers.write_file(
+        fake.allowed, "dev.sql", "SELECT 1;\nSOURCE 'sections/a.sql';\n"
+    )
 
     fake.check(file_path=script)
 
     [call] = fake.calls()
-    assert call["argv"] == ["check", "--format", "json", script]
-    assert call["stdin"] is None
+    assert call["argv"] == ["check", "--format", "json", "--no-source", "-"]
+    assert call["stdin"] == "SELECT 1;\nSELECT 2;\n"
 
 
 def test_inline_sql_takes_its_source_paths_from_source_dir(fake):
@@ -278,9 +290,7 @@ def test_inline_sql_takes_its_source_paths_from_source_dir(fake):
     fake.check(sql="SOURCE 'sections/a.sql';\n", source_dir=fake.allowed)
 
     [call] = fake.calls()
-    assert call["argv"] == [
-        "check", "--format", "json", "--source-dir", fake.allowed, "-",
-    ]
+    assert call["stdin"] == "SELECT 2;\n"
 
 
 def test_an_include_outside_the_allowed_paths_is_refused_before_the_binary_runs(
@@ -288,29 +298,57 @@ def test_an_include_outside_the_allowed_paths_is_refused_before_the_binary_runs(
 ):
     outside = helpers.write_file(str(tmp_path / "outside"), "a.sql", "SELECT 2;\n")
 
-    with pytest.raises(Exception, match="SOURCE '.*a.sql' on line 2 of the SQL: Access"):
+    with pytest.raises(
+        Exception, match="SOURCE '.*a.sql' on line 2 of the SQL: Access.*Nothing was checked"
+    ):
         fake.check(sql=f"SELECT 1;\nSOURCE '{outside}';\n")
     with pytest.raises(Exception, match="not allowed"):
         fake.outline(sql="SOURCE '../outside/a.sql';", source_dir=fake.allowed)
 
-    assert not os.path.exists(os.path.join(fake.folder, "calls.jsonl"))
+    assert fake.calls() == []
 
 
-def test_a_missing_include_is_left_to_the_binary_to_report(fake):
-    fake.check(sql="SOURCE 'gone.sql';", source_dir=fake.allowed)
+def test_a_directive_after_a_lone_carriage_return_is_checked_too(fake, tmp_path):
+    """A lone \\r breaks a line for the binary: the regression this guards."""
+    secret = helpers.write_file(str(tmp_path / "outside"), "id_rsa", "TOP-SECRET\n")
 
-    assert len(fake.calls()) == 1
+    with pytest.raises(Exception, match="on line 2 of the SQL: Access"):
+        fake.outline(
+            sql=f"CREATE TABLE t (c INT COMMENT '\rSOURCE '{secret}'[0:2000];\r');"
+        )
+    assert fake.calls() == []
+
+    # Allowed, it is expanded like any other, and the line breaks made \\n.
+    section = helpers.write_file(fake.allowed, "a.sql", "SELECT 2;\n")
+    fake.check(sql=f"SELECT 1;\r\nSOURCE '{section}';\rSELECT 3;")
+    [call] = fake.calls()
+    assert call["stdin"] == "SELECT 1;\nSELECT 2;\nSELECT 3;"
+    assert "--no-source" in call["argv"]
 
 
-def test_without_msm_the_binary_reads_no_include(fake, monkeypatch):
+@pytest.mark.parametrize(
+    "script, message",
+    [
+        ("SOURCE 'gone.sql';", "is not a file that exists"),
+        ("SELECT 1;\nSOURCE 'a.sql'[ln0:];", "neither a character offset"),
+    ],
+)
+def test_a_directive_that_cannot_be_expanded_is_refused(fake, script, message):
+    helpers.write_file(fake.allowed, "a.sql", "SELECT 2;\n")
+
+    with pytest.raises(Exception, match=message):
+        fake.check(sql=script, source_dir=fake.allowed)
+    assert fake.calls() == []
+
+
+def test_without_msm_a_directive_is_refused(fake, monkeypatch):
     monkeypatch.setitem(sys.modules, "msm_plugin.lib.source", None)
     if "msm_plugin.lib" in sys.modules:
         monkeypatch.delattr(sys.modules["msm_plugin.lib"], "source", raising=False)
 
-    fake.check(sql="SOURCE '/etc/passwd';")
-
-    [call] = fake.calls()
-    assert "--no-source" in call["argv"]
+    with pytest.raises(Exception, match="needs msm_plugin"):
+        fake.check(sql="SOURCE '/etc/passwd';")
+    assert fake.calls() == []
 
 
 @pytest.mark.parametrize(
@@ -326,7 +364,7 @@ def test_bad_input_is_refused_before_the_binary_runs(fake, arguments, message):
     with pytest.raises(Exception, match=message):
         fake.check(**arguments)
 
-    assert not os.path.exists(os.path.join(fake.folder, "calls.jsonl"))
+    assert fake.calls() == []
 
 
 def test_source_dir_does_not_go_with_file_path(fake):
@@ -336,25 +374,19 @@ def test_source_dir_does_not_go_with_file_path(fake):
         fake.check(file_path=script, source_dir=fake.allowed)
 
 
-def test_a_failing_binary_is_reported_with_what_it_said(tmp_path, monkeypatch, lsp_settings):
-    script = os.path.join(tmp_path, "mariadb-lsp")
-    with open(script, "w", encoding="utf-8") as fake_binary:
-        fake_binary.write(
-            "#!/bin/sh\n"
-            'if [ "$1" = --version ]; then echo "mariadb-lsp 26.9.4"; exit 0; fi\n'
-            'echo "unknown option --frobnicate" >&2; exit 2\n'
-        )
-    os.chmod(script, 0o755)
-    config.set_lsp_path(script)
+def test_a_failing_binary_is_reported_with_what_it_said(tmp_path, lsp_settings):
+    config.set_lsp_path(
+        _fake_lsp(str(tmp_path), "", exit_code=2, stderr="unknown option --frobnicate")
+    )
 
     with pytest.raises(Exception, match="mariadb-lsp format failed: unknown option"):
-        _tools(monkeypatch).format(sql="SELECT 1")
+        _tools().format(sql="SELECT 1")
 
 
 def test_format_returns_the_text(tmp_path, monkeypatch, lsp_settings):
     config.set_lsp_path(_fake_lsp(str(tmp_path), "SELECT\n  1;\n"))
 
-    tools = _tools(monkeypatch)
+    tools = _tools()
     result = tools.format(sql="select 1;", line_width=40, keyword_case="lower", indent="4")
 
     assert result == {"sql": "SELECT\n  1;\n"}
@@ -366,29 +398,22 @@ def test_format_returns_the_text(tmp_path, monkeypatch, lsp_settings):
 
 # --- the real binary ------------------------------------------------------------
 
-REAL_LSP = sql_functions.find_lsp()
-real = pytest.mark.skipif(REAL_LSP is None, reason="no mariadb-lsp found")
-
-
-def _has_source_dir() -> bool:
-    if REAL_LSP is None:
-        return False
-    usage = subprocess.run(
-        [REAL_LSP, "--help"], capture_output=True, text=True, check=False
-    ).stdout
-
-    return "--source-dir" in usage
+@functools.cache
+def _real_lsp():
+    return sql_functions.find_lsp()
 
 
 @pytest.fixture
-def lsp(monkeypatch, allowed_temp_dir):
-    tools = _tools(monkeypatch)
+def lsp(allowed_temp_dir):
+    """The sql tools over the real mariadb-lsp, or a skip where there is none."""
+    if _real_lsp() is None:
+        pytest.skip("no mariadb-lsp found")
+    tools = _tools()
     tools.allowed = allowed_temp_dir
 
     return tools
 
 
-@real
 def test_the_real_check(lsp):
     assert lsp.check(sql="SELECT 1;\nCREATE TABLE t (id INT);\n") == {
         "valid": True,
@@ -402,7 +427,6 @@ def test_the_real_check(lsp):
     assert "SELECT" in result["errors"][0]["expected"]
 
 
-@real
 def test_the_real_outline_of_a_file_with_a_section(lsp):
     helpers.write_file(
         lsp.allowed,
@@ -420,34 +444,30 @@ def test_the_real_outline_of_a_file_with_a_section(lsp):
     assert table["name"] == "t"
     assert [column["name"] for column in table["columns"]] == ["id", "n"]
     assert result["file"] == script
-    # Defined in the section: its path, and positions in it.
-    # As the binary resolves it: absolute and normalized, links not followed.
-    assert table["source"] == os.path.normpath(
-        os.path.join(lsp.allowed, "sections", "tables.sql")
-    )
-    assert table["range"]["start"] == {"line": 1, "column": 1}
-    assert table["columns"][1]["selection_range"]["start"] == {"line": 1, "column": 37}
+    # Defined in the section: positions in it, which name it.
+    section = os.path.realpath(os.path.join(lsp.allowed, "sections", "tables.sql"))
+    assert table["range"]["start"] == {"file": section, "line": 1, "column": 1}
+    assert table["columns"][1]["selection_range"]["start"] == {
+        "file": section, "line": 1, "column": 37,
+    }
+    assert result["includes"] == [{"file": section, "line": 3}]
 
 
-@real
-@pytest.mark.skipif(not _has_source_dir(), reason="mariadb-lsp has no --source-dir yet")
 def test_the_real_check_of_inline_sql_with_a_section(lsp):
-    """The include is read from source_dir; one that is not there is an error."""
-    helpers.write_file(lsp.allowed, "sections/a.sql", "SELECT 2;\n")
+    """An included statement is checked, and its error placed in its file."""
+    section = helpers.write_file(lsp.allowed, "sections/a.sql", "SELECT 2;\n  SELEC 3;\n")
 
-    assert lsp.check(
-        sql="SELECT 1;\nSOURCE 'sections/a.sql';\n", source_dir=lsp.allowed
-    )["valid"] is True
     result = lsp.check(
-        sql="SELECT 1;\nSOURCE 'sections/gone.sql';\n", source_dir=lsp.allowed
+        sql="SELECT 1;\nSOURCE 'sections/a.sql';\nSELECT 4;\n", source_dir=lsp.allowed
     )
+
     assert result["valid"] is False
     [error] = result["errors"]
-    assert error["start"] == {"line": 2, "column": 9}
-    assert "cannot read" in error["message"] and "gone.sql" in error["message"]
+    assert error["start"] == {
+        "file": os.path.realpath(section), "line": 2, "column": 3,
+    }
 
 
-@real
 def test_the_real_format(lsp):
     result = lsp.format(sql="select a,b from t where a=1;", keyword_case="upper")
 
@@ -455,8 +475,7 @@ def test_the_real_format(lsp):
     assert "FROM t" in result["sql"]
 
 
-@real
-def test_the_server_offers_the_sql_tools():
+def test_the_server_offers_the_sql_tools(lsp):
     assert {"sql.check", "sql.outline", "sql.format"} <= set(
         helpers.list_tool_names(["sql"])
     )
@@ -483,25 +502,16 @@ def test_a_source_dir_that_is_no_folder_is_refused(fake):
         fake.check(sql="SELECT 1;", source_dir=not_a_folder)
 
 
-def test_a_relative_include_without_a_folder_is_left_to_the_binary(fake):
-    """It has no file to check, and the binary says so itself."""
-    fake.check(sql="SOURCE 'a.sql';")
-
-    [call] = fake.calls()
-    assert "--source-dir" not in call["argv"]
+def test_a_relative_include_needs_a_folder(fake):
+    """Inline SQL without source_dir can only include by absolute path."""
+    with pytest.raises(Exception, match="a relative path, and no folder"):
+        fake.check(sql="SOURCE 'a.sql';")
+    assert fake.calls() == []
 
 
 def test_a_binary_that_takes_too_long_is_stopped(tmp_path, monkeypatch, lsp_settings):
-    slow = os.path.join(tmp_path, "mariadb-lsp")
-    with open(slow, "w", encoding="utf-8") as script:
-        script.write(
-            "#!/bin/sh\n"
-            'if [ "$1" = --version ]; then echo "mariadb-lsp 26.9.4"; exit 0; fi\n'
-            "sleep 5\n"
-        )
-    os.chmod(slow, 0o755)
-    config.set_lsp_path(slow)
-    tools = _tools(monkeypatch)
+    config.set_lsp_path(_fake_lsp(str(tmp_path), "", sleep=5))
+    tools = _tools()
     monkeypatch.setattr(sql_functions, "LSP_TIMEOUT", 0.2)
 
     with pytest.raises(Exception, match="took longer than"):
@@ -510,7 +520,7 @@ def test_a_binary_that_takes_too_long_is_stopped(tmp_path, monkeypatch, lsp_sett
 
 def test_a_binary_that_went_away_is_reported(tmp_path, monkeypatch, lsp_settings):
     config.set_lsp_path(_fake_lsp(str(tmp_path), ""))
-    tools = _tools(monkeypatch)
+    tools = _tools()
     os.remove(os.path.join(tmp_path, "mariadb-lsp"))
 
     with pytest.raises(Exception, match="mariadb-lsp could not be run"):
@@ -529,7 +539,7 @@ def test_mcp_setup_sets_and_clears_the_binary(tmp_path, lsp_settings, capsys):
     setup_cli.apply({"lsp_path": ""})
     assert config.get_lsp_path() == ""
     assert "lspPath" not in config.get_settings()
-    assert "on the PATH" in capsys.readouterr().out
+    assert "the PATH" in capsys.readouterr().out
 
 
 def test_the_group_is_a_default_one_and_not_multi_tenant():

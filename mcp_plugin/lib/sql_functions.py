@@ -24,19 +24,23 @@ The group is offered only where the binary is found: the one
 ``mcp setup --lspPath`` names, else the first on the PATH, else
 ``~/.local/bin/mariadb-lsp`` - the places the VS Code extension looks.
 
-The binary expands MSM SOURCE directives itself, reading the files they
-include. So before it runs, every include is resolved and must be within the
-caller's allowed paths, as file_path must; without msm_plugin, which defines
-SOURCE, it is told not to read them at all.
+The binary reads no file of its own: it is given the SQL on stdin and told
+not to follow SOURCE directives (--no-source). MSM SOURCE directives are
+expanded here instead, by msm_plugin's own code and with the reader
+db.execute_sql_script uses, so every included file is resolved and checked
+against the caller's allowed paths - as file_path is - before it is read,
+and one parser decides what a directive is. The binary's positions, in the
+expanded text, are mapped back to the script and the included files.
 """
 
+import bisect
 import json
 import os
 import shutil
 import subprocess
 from typing import Literal, Optional
 
-from mcp_plugin.lib import config, general
+from mcp_plugin.lib import config, db_functions, general
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 LSP_BINARY_NAME = "mariadb-lsp"
@@ -104,70 +108,73 @@ def find_lsp() -> Optional[str]:
     return None
 
 
-def _lsp_position(lines: list, position: dict) -> dict:
-    """Turns an LSP position into a 1-based line and column.
+def _line_starts(text: str) -> list:
+    """Where each line of a text starts; lines end at "\\n" only."""
+    return [0] + [index + 1 for index, character in enumerate(text) if character == "\n"]
 
-    The binary's json counts lines from 0 and columns in UTF-16 code units,
-    as LSP does; an agent, like an editor, counts both from 1, and columns in
-    characters.
-    """
-    line = position.get("line", 0)
-    units = position.get("character", 0)
-    text = lines[line] if 0 <= line < len(lines) else ""
-    column = 0
+
+def _characters(text: str, units: int) -> int:
+    """How many characters of the text the first UTF-16 units cover."""
+    if text.isascii():
+        # One unit per character: most SQL, and no walk along the line.
+        return min(units, len(text))
     counted = 0
-    for character in text:
+    for characters, character in enumerate(text):
         if counted >= units:
-            break
+            return characters
         counted += 2 if ord(character) > 0xFFFF else 1
-        column += 1
-
-    return {"line": line + 1, "column": column + 1}
+    return len(text)
 
 
-def _with_positions(value, lines: list, includes: tuple = ()):
-    """Returns the json with every LSP position turned 1-based.
+def _position_converter(sent: str, script: str, expansion):
+    """Returns what turns the binary's positions into the caller's.
 
-    An outline object from an included file has ``source``, the index of its
-    include, and positions in that file: they are converted with its lines,
-    and ``source`` becomes the file's path.
+    The binary's json counts lines from 0 and columns in UTF-16 units, as LSP
+    does, in the text it was given - the script with its SOURCE directives
+    expanded. The caller gets lines and columns from 1, in characters, in
+    the script as written; or, for a place in an included part, in that
+    file, which ``file`` then names.
 
     Args:
-        value: The binary's json.
-        lines (list): The lines of the SQL it was given.
-        includes (tuple): One (path, lines) per SOURCE directive, in order.
+        sent (str): The text the binary was given.
+        script (str): The script as written.
+        expansion: Its segments, or None for a script without directives.
     """
+    from msm_plugin.lib import source
 
-    def walk(item, current):
-        if isinstance(item, dict):
-            if set(item) == {"line", "character"}:
-                return _lsp_position(current, item)
-            index = item.get("source")
-            here = current
-            if isinstance(index, int) and 0 <= index < len(includes):
-                here = includes[index][1]
-            return {
-                key: (
-                    includes[index][0]
-                    if key == "source" and here is not current
-                    else walk(member, here)
-                )
-                for key, member in item.items()
-            }
-        if isinstance(item, list):
-            return [walk(member, current) for member in item]
-        return item
+    sent_starts = _line_starts(sent)
+    script_starts = _line_starts(script)
 
-    return walk(value, lines)
+    def convert(position: dict) -> dict:
+        line = min(max(position.get("line", 0), 0), len(sent_starts) - 1)
+        line_start = sent_starts[line]
+        line_end = sent.find("\n", line_start)
+        text = sent[line_start : len(sent) if line_end < 0 else line_end]
+        offset = line_start + _characters(text, position.get("character", 0))
+        if expansion is None:
+            return {"line": line + 1, "column": offset - line_start + 1}
+
+        origin, file, file_line, column = source.locate(sent, expansion, offset)
+        if file is not None:
+            return {"file": file, "line": file_line, "column": column}
+        script_line = bisect.bisect_right(script_starts, origin) - 1
+        return {
+            "line": script_line + 1,
+            "column": origin - script_starts[script_line] + 1,
+        }
+
+    return convert
 
 
-def _include_lines(path) -> list:
-    """The lines of an included file, for converting positions in it."""
-    try:
-        with open(path, "r", encoding="utf-8") as included:
-            return included.read().split("\n")
-    except (OSError, TypeError, UnicodeDecodeError):
-        return []
+def _with_positions(value, convert):
+    """Returns the binary's json with every position converted."""
+    if isinstance(value, dict):
+        if len(value) == 2 and "line" in value and "character" in value:
+            return convert(value)
+        return {key: _with_positions(member, convert) for key, member in value.items()}
+    if isinstance(value, list):
+        return [_with_positions(member, convert) for member in value]
+    return value
 
 
 def register_sql_tools(server, function_groups=()) -> None:
@@ -184,7 +191,7 @@ def register_sql_tools(server, function_groups=()) -> None:
     if lsp is None:
         general.log_event(
             "sql tools not registered: no mariadb-lsp was found ("
-            + ", ".join(_candidates() or ["none configured"])
+            + ", ".join(_candidates())
             + "); set its path with 'mariadb-shell -- mcp setup --lspPath=...'"
         )
         return
@@ -193,81 +200,48 @@ def register_sql_tools(server, function_groups=()) -> None:
 
     tool = tool_registrar(server)
 
-    def _read_input(ctx, sql, file_path, source_dir) -> tuple:
-        """Returns the SQL, the folder its SOURCE paths are relative to, how
-        to name it in an error, and the user."""
-        if (sql is None) == (file_path is None):
-            raise tool_error("Provide exactly one of 'sql' or 'file_path'.")
+    def _prepare(ctx, sql, file_path, source_dir, sql_mode, delimiter,
+                 version_id, sources=True) -> tuple:
+        """Returns the script, the text to give the binary, and the options.
+
+        The binary reads no file of its own (--no-source): SOURCE directives
+        are expanded here, by msm_plugin's own code, each include resolved
+        and checked against the caller's allowed paths before it is read -
+        the reader db.execute_sql_script uses. Line breaks are made "\\n"
+        first, so that a directive after a lone "\\r" is found as one.
+        """
         user = general.get_client_identity(ctx).user
-        if file_path is not None:
-            if source_dir is not None:
-                raise tool_error(
-                    "'source_dir' goes with 'sql': the SOURCE paths of a file "
-                    "are relative to the file's own folder."
-                )
-            if not config.is_path_allowed(file_path, user):
-                raise tool_error(general.path_not_allowed(file_path))
-            with open(file_path, "r", encoding="utf-8") as sql_file:
-                sql = sql_file.read()
-            source_dir = os.path.dirname(os.path.abspath(file_path))
-        elif source_dir is not None:
-            if not config.is_path_allowed(source_dir, user):
-                raise tool_error(general.path_not_allowed(source_dir))
-            if not os.path.isdir(source_dir):
-                raise tool_error(f"'source_dir' {source_dir!r} is no folder.")
-            source_dir = os.path.abspath(source_dir)
+        sql, source_dir, where = db_functions.read_sql_input(
+            user, sql, file_path, source_dir, "sql", "the SQL"
+        )
         if len(sql.encode("utf-8")) > MAX_SQL_BYTES:
             raise tool_error(
                 f"The SQL is larger than {MAX_SQL_BYTES // (1024 * 1024)} MB."
             )
-        return sql, source_dir, file_path or "the SQL", user
-
-    def _source_options(sql, source_dir, where, user, inline) -> list:
-        """Checks every SOURCE include before the binary reads it.
-
-        Only a path that is not allowed is refused here; a file that is
-        missing, or a malformed directive, the binary reports itself, as it
-        does any other error of the script.
-        """
-        try:
-            from msm_plugin.lib import source
-        except ImportError:
-            # Nothing defines what a directive reads, so nothing is read.
-            return ["--no-source"]
-
-        for line, path in source.directives(sql):
-            try:
-                resolved = os.path.realpath(
-                    source.resolve_include_path(path, source_dir)
-                )
-            except ValueError:
-                continue
-            if not config.is_path_allowed(resolved, user):
-                raise tool_error(
-                    f"SOURCE '{path}' on line {line} of {where}: "
-                    f"{general.path_not_allowed(resolved)}"
-                )
-        # A file the binary reads itself, and takes its folder from; inline
-        # SQL comes on stdin, which has no folder of its own.
-        return ["--source-dir", source_dir] if source_dir and inline else []
-
-    def _common_options(sql_mode, delimiter, version_id) -> list:
-        options = []
+        sql = sql.replace("\r\n", "\n").replace("\r", "\n")
+        expansion = (
+            db_functions.expand_sources(
+                sql, source_dir, where, user, "Nothing was checked."
+            )
+            if sources
+            else None
+        )
+        options = ["--no-source"] if sources else []
         if sql_mode is not None:
             options += ["--sql-mode", sql_mode]
         if delimiter is not None:
             options += ["--delimiter", delimiter]
         if version_id is not None:
             options += ["--version-id", str(version_id)]
-        return options
+        sent, segments = expansion if expansion else (sql, None)
+        return sql, sent, segments, options
 
-    def _run(command: list, sql: str, file_path=None, accept=(0,)) -> str:
-        """Runs mariadb-lsp on the file, or on the SQL on stdin; returns stdout."""
+    def _run(command: list, sql: str, accept=(0,)) -> str:
+        """Runs mariadb-lsp on the SQL, given on stdin; returns stdout."""
         try:
             done = subprocess.run(
-                [lsp, *command, file_path or "-"],
-                input=None if file_path else sql,
-                stdin=subprocess.DEVNULL if file_path else None,
+                [lsp, *command, "-"],
+                input=sql,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -328,21 +302,22 @@ def register_sql_tools(server, function_groups=()) -> None:
             errors: one per error, with start (line and column, from 1),
             message, token (where it failed) and expected (what the grammar
             would have taken there). notes holds remarks that are not
-            errors. A SOURCE include is read, and one that cannot be is an
-            error at its directive, its message naming the file - but its
-            statements are not checked here: check the file itself.
+            errors. The statements of SOURCE includes are checked too: an
+            error in one has file, the included file, in its start, and its
+            line and column are in that file. An include that cannot be read
+            or may not be fails the call, naming its directive's line.
         """
-        sql, source_dir, where, user = _read_input(ctx, sql, file_path, source_dir)
-        command = ["check", "--format", "json"]
-        command += _source_options(sql, source_dir, where, user, file_path is None)
-        command += _common_options(sql_mode, delimiter, version_id)
+        script, sent, segments, options = _prepare(
+            ctx, sql, file_path, source_dir, sql_mode, delimiter, version_id
+        )
+        command = ["check", "--format", "json", *options]
         if max_errors is not None:
             command += ["--max-errors", str(max_errors)]
 
         # Exit 1 is the answer "there are errors", not a failure.
-        report = json.loads(_run(command, sql, file_path, accept=(0, 1)))
+        report = json.loads(_run(command, sent, accept=(0, 1)))
         [checked] = report["files"]
-        lines = sql.split("\n")
+        convert = _position_converter(sent, script, segments)
         errors = [
             {key: value for key, value in error.items() if key not in ("offset", "length")}
             for error in checked.get("errors", [])
@@ -350,8 +325,8 @@ def register_sql_tools(server, function_groups=()) -> None:
         return {
             "valid": not errors,
             "statements": checked.get("statements", 0),
-            "errors": _with_positions(errors, lines),
-            "notes": _with_positions(checked.get("notes", []), lines),
+            "errors": _with_positions(errors, convert),
+            "notes": _with_positions(checked.get("notes", []), convert),
         }
 
     @tool(name="sql.outline")
@@ -389,26 +364,28 @@ def register_sql_tools(server, function_groups=()) -> None:
         Returns:
             The outline (format 1 of mariadb-lsp's outline, see the
             lsp-server repository's docs/outline-format.md): schemas, rest,
-            includes (one per SOURCE directive), statements (ddl and applied
-            counts) and notes (statements that were not read, and why).
-            Every range is a start and an end, each a line and a column
-            counted from 1; names are as written, without quotes. An object
-            defined in an included file has source, that file's path, and
-            its ranges are positions in that file.
+            statements (ddl and applied counts) and notes (statements that
+            were not read, and why), and includes: the file each SOURCE
+            directive included and the directive's line. Every range is a
+            start and an end, each a line and a column counted from 1; names
+            are as written, without quotes. A position in an included file
+            has file, that file, and its line and column are in it.
         """
-        sql, source_dir, where, user = _read_input(ctx, sql, file_path, source_dir)
-        command = ["outline"]
-        command += _source_options(sql, source_dir, where, user, file_path is None)
-        command += _common_options(sql_mode, delimiter, version_id)
-
-        result = json.loads(_run(command, sql, file_path))
-        result["file"] = file_path
-        # Every include was allowed above, before the binary read it.
-        includes = tuple(
-            (include.get("file"), _include_lines(include.get("file")))
-            for include in result.get("includes", [])
+        script, sent, segments, options = _prepare(
+            ctx, sql, file_path, source_dir, sql_mode, delimiter, version_id
         )
-        return _with_positions(result, sql.split("\n"), includes)
+        command = ["outline", *options]
+
+        result = json.loads(_run(command, sent))
+        result["file"] = file_path
+        result = _with_positions(result, _position_converter(sent, script, segments))
+        if segments:
+            result["includes"] = [
+                {"file": segment.file, "line": script.count("\n", 0, segment.origin) + 1}
+                for segment in segments
+                if segment.file is not None
+            ]
+        return result
 
     @tool(name="sql.format")
     def format_sql(
@@ -448,14 +425,16 @@ def register_sql_tools(server, function_groups=()) -> None:
         Returns:
             sql: the formatted SQL.
         """
-        sql, _, _, _ = _read_input(ctx, sql, file_path, None)
-        command = ["format"]
+        _, sent, _, options = _prepare(
+            ctx, sql, file_path, None, sql_mode, delimiter, version_id,
+            sources=False,
+        )
+        command = ["format", *options]
         if line_width is not None:
             command += ["--line-width", str(line_width)]
         if keyword_case is not None:
             command += ["--keyword-case", keyword_case]
         if indent is not None:
             command += ["--indent", str(indent)]
-        command += _common_options(sql_mode, delimiter, version_id)
 
-        return {"sql": _run(command, sql, file_path)}
+        return {"sql": _run(command, sent)}

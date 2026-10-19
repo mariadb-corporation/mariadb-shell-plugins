@@ -2336,6 +2336,76 @@ def _shape_result(
     return serialized
 
 
+def read_sql_input(
+    user, text, file_path, source_dir, text_name: str, inline_name: str
+) -> tuple:
+    """Returns the SQL a tool was given, inline or by file, and its folder.
+
+    Exactly one of text and file_path; a file_path must be allowed, and its
+    own folder is where its SOURCE paths are taken from. source_dir is that
+    folder for inline text: allowed, a folder, and refused with a file.
+
+    Args:
+        user: The calling user, in multi-tenant mode.
+        text (str): The SQL given inline, or None.
+        file_path (str): The file it is in instead, or None.
+        source_dir (str): The folder of inline SQL, or None.
+        text_name (str): The tool's argument for inline SQL, for errors.
+        inline_name (str): What to call inline SQL in an error.
+
+    Returns:
+        The SQL, the folder its relative SOURCE paths are taken from (or
+        None), and what to call it in an error: the file, or inline_name.
+
+    Raises:
+        ToolError: For input that is missing, doubled or not allowed.
+    """
+    if (text is None) == (file_path is None):
+        raise tool_error(f"Provide exactly one of '{text_name}' or 'file_path'.")
+    if file_path is not None:
+        if source_dir is not None:
+            raise tool_error(
+                f"'source_dir' goes with '{text_name}': the SOURCE paths of a "
+                "file are relative to the file's own folder."
+            )
+        if not config.is_path_allowed(file_path, user):
+            raise tool_error(general.path_not_allowed(file_path))
+        with open(file_path, "r", encoding="utf-8") as script_file:
+            text = script_file.read()
+        # As msm takes them relative to development/.
+        return text, os.path.dirname(os.path.abspath(file_path)), file_path
+
+    if source_dir is not None:
+        if not config.is_path_allowed(source_dir, user):
+            raise tool_error(general.path_not_allowed(source_dir))
+        if not os.path.isdir(source_dir):
+            raise tool_error(f"'source_dir' {source_dir!r} is no folder.")
+        source_dir = os.path.abspath(source_dir)
+    return text, source_dir, inline_name
+
+
+def allowed_include(path: str, user) -> str:
+    """Resolves a file a SOURCE directive names, if the caller may read it.
+
+    Symlinks and ``..`` are resolved first, and the result checked with the
+    same rule as file_path.
+
+    Args:
+        path (str): The file, as the directive's path resolves.
+        user: The calling user, in multi-tenant mode.
+
+    Returns:
+        The resolved path - the one to read.
+
+    Raises:
+        ValueError: For a path that may not be read.
+    """
+    resolved = os.path.realpath(path)
+    if not config.is_path_allowed(resolved, user):
+        raise ValueError(general.path_not_allowed(resolved))
+    return resolved
+
+
 def _read_allowed_include(path: str, user) -> tuple:
     """Reads a file a SOURCE directive names, if the caller may read it.
 
@@ -2353,16 +2423,17 @@ def _read_allowed_include(path: str, user) -> tuple:
     Raises:
         ValueError: For a path that cannot or may not be read.
     """
-    resolved = os.path.realpath(path)
-    if not config.is_path_allowed(resolved, user):
-        raise ValueError(general.path_not_allowed(resolved))
+    resolved = allowed_include(path, user)
     if not os.path.isfile(resolved):
         raise ValueError(f"`{resolved}` is not a file that exists.")
     with open(resolved, "r", encoding="utf-8") as include_file:
         return resolved, include_file.read()
 
 
-def _expand_sources(script: str, base_dir: Optional[str], where: str, user):
+def expand_sources(
+    script: str, base_dir: Optional[str], where: str, user,
+    consequence: str = "Nothing was run.",
+):
     """Expands the MSM SOURCE directives of a script, before anything runs.
 
     msm_plugin's implementation (msm_plugin.lib.source), so a script runs
@@ -2376,6 +2447,7 @@ def _expand_sources(script: str, base_dir: Optional[str], where: str, user):
         where (str): What to call the script in an error: "the script" or
             the file it was read from.
         user: The calling user, in multi-tenant mode.
+        consequence (str): What a refusal ends on: what did not happen.
 
     Returns:
         The expanded script and its segments, or None for a script without
@@ -2391,7 +2463,7 @@ def _expand_sources(script: str, base_dir: Optional[str], where: str, user):
         if re.search(r"^[ \t]*SOURCE\s", script, re.MULTILINE):
             raise tool_error(
                 f"{where} holds a SOURCE directive, and expanding one needs "
-                "msm_plugin, which this shell does not have. Nothing was run."
+                f"msm_plugin, which this shell does not have. {consequence}"
             ) from None
         return None
 
@@ -2407,7 +2479,7 @@ def _expand_sources(script: str, base_dir: Optional[str], where: str, user):
     except source.SourceError as error:
         raise tool_error(
             f"SOURCE '{error.path}' on line {error.line} of {where}: "
-            f"{error.reason} Nothing was run."
+            f"{error.reason} {consequence}"
         ) from None
 
 
@@ -2461,7 +2533,7 @@ def _place_statements(
     written_starts = _piece_starts(script, written)
     places = []
     for start in _piece_starts(expanded, statements):
-        origin, file, line = source.locate(expanded, segments, start)
+        origin, file, line, _ = source.locate(expanded, segments, start)
         index = max(0, bisect.bisect_right(written_starts, origin) - 1)
         places.append((index, {"file": file, "line": line} if file else None))
 
@@ -3703,32 +3775,10 @@ def register_db_tools(server, function_groups=()) -> None:
             but comments has no entries to carry them.
         """
         _check_paging(limit)
-        if (sql_script is None) == (file_path is None):
-            raise tool_error(
-                "Provide exactly one of 'sql_script' or 'file_path'."
-            )
-
         client = general.get_client_identity(ctx)
-        where = "the script"
-        if file_path is not None:
-            if source_dir is not None:
-                raise tool_error(
-                    "'source_dir' goes with 'sql_script': the SOURCE paths of "
-                    "a file are relative to the file's own folder."
-                )
-            if not config.is_path_allowed(file_path, client.user):
-                raise tool_error(general.path_not_allowed(file_path))
-            with open(file_path, "r", encoding="utf-8") as script_file:
-                sql_script = script_file.read()
-            # As msm takes them relative to development/.
-            source_dir = os.path.dirname(os.path.abspath(file_path))
-            where = file_path
-        elif source_dir is not None:
-            if not config.is_path_allowed(source_dir, client.user):
-                raise tool_error(general.path_not_allowed(source_dir))
-            if not os.path.isdir(source_dir):
-                raise tool_error(f"'source_dir' {source_dir!r} is no folder.")
-            source_dir = os.path.abspath(source_dir)
+        sql_script, source_dir, where = read_sql_input(
+            client.user, sql_script, file_path, source_dir, "sql_script", "the script"
+        )
 
         def split(script):
             return [
@@ -3742,7 +3792,7 @@ def register_db_tools(server, function_groups=()) -> None:
         # Expanded before it is split, never per statement: a directive can
         # sit inside a routine body. And before the session is used, so a
         # directive that cannot be expanded is refused with nothing run.
-        expansion = _expand_sources(sql_script, source_dir, where, client.user)
+        expansion = expand_sources(sql_script, source_dir, where, client.user)
 
         with use_session(connection_id, client) as session:
             restarted = _session_was_restarted(connection_id)

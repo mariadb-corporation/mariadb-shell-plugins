@@ -29,25 +29,36 @@ All agreed with the user on 2026-10-19 (memory `sql-group-plan`):
   store by URI; multi-tenant per-user groups are unverified). A later phase
   may take a `connection_id`.
 - **Input**: `sql` XOR `file_path` (allowed-path check), `source_dir` only
-  with `sql` (allowed, a folder), 10 MB cap, 60 s timeout. A `file_path` is
+  with `sql` (allowed, a folder) - `db_functions.read_sql_input`, the SAME
+  function `db.execute_sql_script` uses - then a 10 MB cap, 60 s timeout. A `file_path` is
   handed to the binary as its FILE argument, so it takes SOURCE paths
   relative to the file's folder itself; inline SQL goes on stdin with
   `--source-dir` (lsp-server `wip/source-dir`, `8e98d91`, added for this).
-- **SOURCE (decision 3a)**: the binary expands directives itself, reading
-  the included files, so before it runs every directive
-  (`msm_plugin.lib.source.directives`) is resolved
-  (`resolve_include_path` + `realpath`) and must pass `is_path_allowed`;
-  only a not-allowed one is refused here - a missing file or a bad slice
-  the binary reports as an error of the script. Without msm_plugin the
-  binary gets `--no-source`.
+- **SOURCE: expanded HERE, the binary reads nothing** (2026-10-19, after
+  `/security-review`; replaces decision 3a, where the binary expanded them
+  after a pre-check). The pre-check found directives with msm's regex (a
+  line starts after `\n`), the binary with its own scanner (also after a
+  lone `\r`, `lsp-server .../source_include.cc` `find_source_directives`):
+  `COMMENT '\rSOURCE '/home/u/.ssh/id_rsa'[0:2000];\r'` was never checked,
+  and `sql.outline` returned the file in the comment (reproduced). Now
+  `_prepare` normalizes `\r\n`/`\r` to `\n`, expands with
+  `db_functions.expand_sources(..., consequence="Nothing was checked.")`
+  (msm's `expand_source_directives` + the checked `_read_allowed_include`,
+  as `db.execute_sql_script`), and every check/outline call passes
+  `--no-source` with the text on stdin - one parser decides what a
+  directive is. A missing include, a bad slice, a nested SOURCE, a relative
+  path without a folder, or no msm_plugin now FAIL the call (tool error),
+  like the db tool. `--source-dir` is no longer used (`file_path` too goes
+  on stdin, expanded). Bonus: check now checks included statements.
 - **Positions** become 1-based lines and character columns
-  (`_lsp_position`: the binary's json is LSP, 0-based UTF-16). An outline
-  object from an include has `source` = its index in `includes` and
-  positions IN THAT FILE (lsp-server docs/outline-format.md): `_with_positions`
-  converts them with that file's lines and replaces `source` by the path.
+  (`_position_converter`): the binary's LSP position (0-based, UTF-16) in
+  the expanded text -> its offset -> `source.locate`, which now also returns
+  the column in the included file (`Segment.first_column` for a slice
+  starting mid-line, `Segment.indent` taken off indented lines). A position
+  in an include gets `file`; outline `includes` is built from the segments
+  (`{file, line of the directive}`).
 - **check**: exit 1 = errors found, a normal answer. Returns `{valid,
   statements, errors, notes}` (`offset`/`length` dropped: byte units).
-  It does NOT check an include's statements (only that it can be read).
 
 ## Files that matter
 
@@ -55,10 +66,15 @@ All agreed with the user on 2026-10-19 (memory `sql-group-plan`):
   binary that records its argv and stdin; real-binary tests skip without
   one, the `--source-dir` one also without that option).
 - `lib/config.py` `get_lsp_path`/`set_lsp_path`; `lib/setup_cli.py`
-  `lsp_path` (a PRESENCE option, so `""` clears).
+  `lsp_path` (a PRESENCE option, so `""` clears; it reports what
+  `find_lsp()` then finds, or that none answers).
 
 ## Gotchas
 
-- The binary reports include paths absolute and normalized, links NOT
-  followed: compare with `os.path.normpath`, not `realpath` (macOS `/var`).
+- An include's `file` is the RESOLVED path (`_read_allowed_include`
+  realpaths it): on macOS `/var/...` comes back as `/private/var/...`.
 - Not in `MULTI_TENANT_FUNCTION_GROUPS` (no `mcp:sql` scope).
+- Never let the binary resolve an include again without checking what it
+  READ: two scanners disagreeing on one byte was enough for an arbitrary
+  file read. The lsp-server's scanner still takes a lone `\r` as a line
+  break, unlike msm (worth aligning there).

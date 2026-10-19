@@ -634,10 +634,11 @@ VS Code extension looks. A binary of that name has to answer `--version` with
 
 MSM `SOURCE '<path>'[<start>:<end>];` directives are followed, as schema management
 expands them: a relative path is taken from the file's folder, or from `source_dir` for
-inline SQL. The binary reads the included files itself, so each one is resolved and
-checked against the caller's allowed paths before it runs, and a call naming one outside
-them is refused. `sql.check` checks the script's own statements and reports an include
-it cannot read; check an included file by itself to check its statements.
+inline SQL. They are expanded by the MCP server, with the same code and the same checks
+as `db.execute_sql_script` - every included file must be within the caller's allowed
+paths - and the binary is given the expanded text and reads no file itself
+(`--no-source`). A position in an included part names that file, with its line and
+column in it, so `sql.check` reports an error in a section where it is.
 
 ## Installation
 

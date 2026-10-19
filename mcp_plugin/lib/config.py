@@ -1465,7 +1465,7 @@ def get_lsp_path() -> str:
     Empty (the default) leaves it to the search: the PATH, then
     ``~/.local/bin``. A server reads it once, when it starts.
     """
-    return str(get_settings().get(_LSP_PATH_SETTING, ""))
+    return get_settings().get(_LSP_PATH_SETTING, "")
 
 
 def set_lsp_path(path: str) -> None:

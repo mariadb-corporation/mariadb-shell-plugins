@@ -572,14 +572,24 @@ def _delete_paths(options: dict, mcp_user_id=None) -> None:
 
 
 def _set_lsp_path(options: dict) -> None:
-    """Sets where the sql group's mariadb-lsp binary is, as --lspPath says."""
-    config.set_lsp_path(str(options["lsp_path"] or ""))
-    path = config.get_lsp_path()
-    print(
-        f"The sql tools use mariadb-lsp at '{path}'."
-        if path
-        else "The sql tools look for mariadb-lsp on the PATH, then in ~/.local/bin."
-    )
+    """Sets where the sql group's mariadb-lsp binary is, as --lspPath says.
+
+    And says which one the tools will run - or that none answers, so the sql
+    group is not offered - rather than only what was stored.
+    """
+    # Imported here: it loads the db tools, which mcp setup otherwise does not.
+    from mcp_plugin.lib import sql_functions
+
+    config.set_lsp_path(options["lsp_path"])
+    searched = config.get_lsp_path() or "the PATH, then ~/.local/bin"
+    found = sql_functions.find_lsp()
+    if found:
+        print(f"The sql tools use mariadb-lsp at '{found}' (searched: {searched}).")
+    else:
+        print(
+            f"No mariadb-lsp answers in {searched}: the sql tools are not "
+            "offered until one does."
+        )
     print("A running server keeps the one it found until it is restarted.")
 
 
