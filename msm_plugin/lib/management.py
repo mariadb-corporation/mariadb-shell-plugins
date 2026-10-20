@@ -381,13 +381,20 @@ def check_mysql_identifier(identifier: str, must_be_usable_when_unquoted: bool =
     """Checks if the given identifier is valid
 
     Args:
-        identifier: The identifier to be checked
-        allow_special_chars: Wether
+        identifier: The identifier to be checked. One that is missing or
+            empty is left to the caller, which says it has to be given.
+        must_be_usable_when_unquoted: Whether it has to be usable without
+            quotes: basic Latin letters, digits, dollar and underscore, not
+            starting with a dollar and not digits only. False where special
+            characters are allowed, which takes any identifier.
 
     Returns:
-        The converted filename
+        None
+
+    Raises:
+        ValueError: Where it has to be usable without quotes and is not.
     """
-    if not must_be_usable_when_unquoted:
+    if must_be_usable_when_unquoted and identifier:
         if not re.match(r"^[A-Za-z0-9_]+[A-Za-z0-9_$]*$", identifier):
             raise ValueError(
                 "Only basic Latin letters, digits 0-9, dollar, underscore are allowed to be used as schema name. "
@@ -1301,6 +1308,14 @@ def prepare_release(
         section = schema_dev_expanded_sections.get(section_id, None)
         if section is not None:
             schema_version_sections[section_id] = section
+
+    # The development file's section 910 states the development version, which
+    # need not be the one released: a release under another version has to set
+    # its own, or the deployed schema reports the development version and no
+    # later update of it can be applied. A copy, so the development file's
+    # sections are left as they were read.
+    schema_version_sections["910"] = dict(schema_version_sections["910"])
+    schema_development_version(sections=schema_version_sections, new_version=version)
 
     remove_empty_sections(
         sections=schema_version_sections, keep_even_if_empty=["license", "001"]
