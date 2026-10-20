@@ -24,9 +24,11 @@
 
 import json
 import os
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
 import pytest
 from msm_plugin.management import *
 
@@ -64,6 +66,55 @@ CREATE TABLE `my_schema`.`my_3nd_table`(
     `name3` VARCHAR(255)
 );
 """
+
+
+def drop_schema(session, schema_name):
+    lib.core.MsmDbExec(
+        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema_name)}"
+    ).exec(session)
+
+
+@contextmanager
+def fresh_schema(session, schema_name):
+    # Dropped before the block, to start fresh, and after it, to leave nothing
+    # behind
+    drop_schema(session, schema_name)
+    try:
+        yield
+    finally:
+        drop_schema(session, schema_name)
+
+
+def count_tables(session, schema_name, table_type):
+    return (
+        lib.core.MsmDbExec(
+            "SELECT COUNT(*) AS n FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
+        )
+        .exec(session, [schema_name, table_type])
+        .first["n"]
+    )
+
+
+def table_exists(session, schema_name, table_name):
+    return (
+        lib.core.MsmDbExec(
+            "SELECT COUNT(*) AS n FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+        )
+        .exec(session, [schema_name, table_name])
+        .first["n"]
+        == 1
+    )
+
+
+def update_script(files):
+    # The update script among the files prepare_release returns
+    scripts = [
+        file for file in files if os.path.basename(os.path.dirname(file)) == "updates"
+    ]
+    assert len(scripts) == 1, f"prepare_release returned no single update script: {files}"
+    return scripts[0]
 
 
 def test_msm_sections():
@@ -165,52 +216,55 @@ def test_create_new_project_folder():
 def test_schema_name_has_to_be_usable_unquoted_unless_special_chars_are_allowed(
     temp_dir,
 ):
-    # The check used to run only where special characters were allowed, so
-    # without the option every name was taken, digits only among them.
-    for name in ("123", "my schema", "shop-db", "$shop", "café"):
-        with pytest.raises(ValueError, match="allow_special_chars"):
-            create_new_project_folder(
-                schema_name=name,
-                target_path=temp_dir,
-                copyright_holder=COPYRIGHT_HOLDER,
-            )
-        assert not os.path.exists(
-            os.path.join(temp_dir, f"{name.replace(' ', '_')}.msm.project")
-        )
-
-    # With the option, any of them is taken.
-    for name in ("123", "my schema", "shop-db"):
-        project_path = create_new_project_folder(
-            schema_name=name,
+    with pytest.raises(ValueError, match="allow_special_chars"):
+        create_new_project_folder(
+            schema_name="shop-db",
             target_path=temp_dir,
             copyright_holder=COPYRIGHT_HOLDER,
-            allow_special_chars=True,
         )
-        assert get_project_settings(schema_project_path=project_path)[
-            "schemaName"
-        ] == name
+    # A rejected name leaves no project folder behind
+    assert not os.path.exists(os.path.join(temp_dir, "shop-db.msm.project"))
 
-    # And a plain name is taken without it.
-    for name in ("shop", "Shop_2", "_x", "a$b", "9lives"):
-        assert os.path.exists(
-            create_new_project_folder(
-                schema_name=name,
-                target_path=temp_dir,
-                copyright_holder=COPYRIGHT_HOLDER,
-            )
-        )
+    project_path = create_new_project_folder(
+        schema_name="shop-db",
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        allow_special_chars=True,
+    )
+    assert get_project_settings(schema_project_path=project_path)[
+        "schemaName"
+    ] == "shop-db"
+
+    # The project folder is named after the schema with whitespace replaced,
+    # the project keeps the name as given
+    project_path = create_new_project_folder(
+        schema_name="my shop",
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        allow_special_chars=True,
+    )
+    assert os.path.basename(project_path) == "my_shop.msm.project"
+    assert get_project_settings(schema_project_path=project_path)[
+        "schemaName"
+    ] == "my shop"
 
 
 def test_check_mysql_identifier():
-    with pytest.raises(ValueError, match="solely of digits"):
-        lib.management.check_mysql_identifier("2024")
-    with pytest.raises(ValueError, match="basic Latin letters"):
-        lib.management.check_mysql_identifier("a-b")
-    lib.management.check_mysql_identifier("a_b$1")
-    lib.management.check_mysql_identifier("a-b", must_be_usable_when_unquoted=False)
-    # Missing or empty: the caller says it has to be given.
-    lib.management.check_mysql_identifier(None)
-    lib.management.check_mysql_identifier("")
+    for name in ("123", "2024"):
+        with pytest.raises(ValueError, match="solely of digits"):
+            lib.management.check_mysql_identifier(name)
+    for name in ("a-b", "my schema", "$shop", "café"):
+        with pytest.raises(ValueError, match="basic Latin letters"):
+            lib.management.check_mysql_identifier(name)
+    for name in (None, ""):
+        with pytest.raises(ValueError, match="has to be given"):
+            lib.management.check_mysql_identifier(name)
+    for name in ("shop", "Shop_2", "_x", "a$b", "a_b$1", "9lives"):
+        lib.management.check_mysql_identifier(name)
+    for name in ("123", "my schema", "a-b"):
+        lib.management.check_mysql_identifier(
+            name, must_be_usable_when_unquoted=False
+        )
 
 
 def test_render_copyright_notices():
@@ -416,32 +470,11 @@ def test_prepare_release(sandbox_session, project_path):
         session=sandbox_session, sql_file_path=deployment_sql_file_path
     )
 
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as schema_count FROM information_schema.SCHEMATA "
-            "WHERE SCHEMA_NAME = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME])
-        .first["schema_count"]
-    ) == 1
+    assert lib.core.db_schema_exists(sandbox_session, SCHEMA_NAME)
 
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "BASE TABLE"])
-        .first["table_count"]
-    ) == 1
+    assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 1
 
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "VIEW"])
-        .first["table_count"]
-    ) == 1
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
 
     # ----------------------------------------------------------------------
     # Add more SQL to the development/my_schema_next.sql file
@@ -509,23 +542,9 @@ def test_prepare_release(sandbox_session, project_path):
     )
 
     # Check that there are now two tables
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "BASE TABLE"])
-        .first["table_count"]
-    ) == 2
+    assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 2
 
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "VIEW"])
-        .first["table_count"]
-    ) == 1
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
 
     assert (
         lib.core.MsmDbExec(
@@ -575,30 +594,14 @@ def test_prepare_release(sandbox_session, project_path):
     )
 
     # Check that there are now two tables
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "BASE TABLE"])
-        .first["table_count"]
-    ) == 3
+    assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 3
 
-    assert (
-        lib.core.MsmDbExec(
-            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ?"
-        )
-        .exec(sandbox_session, [SCHEMA_NAME, "VIEW"])
-        .first["table_count"]
-    ) == 1
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
 
 
 def test_deployment(sandbox_session, project_path):
     # Ensure to start fresh
-    lib.core.MsmDbExec(
-        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
-    ).exec(sandbox_session)
+    drop_schema(sandbox_session, SCHEMA_NAME)
 
     # Deploy all released versions after each other to test update capability
     released_versions = get_released_versions(schema_project_path=project_path)
@@ -649,9 +652,7 @@ def test_deployment_backup_restores_failed_update(
             .first["version"]
         )
 
-    lib.core.MsmDbExec(
-        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
-    ).exec(sandbox_session)
+    drop_schema(sandbox_session, SCHEMA_NAME)
 
     released_versions = get_released_versions(schema_project_path=project_path)
     assert len(released_versions) > 1
@@ -719,9 +720,7 @@ def test_deployment_takes_the_lock_before_it_looks_at_the_schema(
     import mysqlsh
     import msm_plugin.tests.unit.helpers as helpers
 
-    lib.core.MsmDbExec(
-        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
-    ).exec(sandbox_session)
+    drop_schema(sandbox_session, SCHEMA_NAME)
     released_versions = get_released_versions(schema_project_path=project_path)
     deploy_schema(
         schema_project_path=project_path,
@@ -765,9 +764,7 @@ def test_deployment_backup_keeps_the_global_session(
     import mysqlsh
     import msm_plugin.tests.unit.helpers as helpers
 
-    lib.core.MsmDbExec(
-        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
-    ).exec(sandbox_session)
+    drop_schema(sandbox_session, SCHEMA_NAME)
     released_versions = get_released_versions(schema_project_path=project_path)
     deploy_schema(
         schema_project_path=project_path,
@@ -852,22 +849,16 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
     for version in ("1.0.0", "1.1.0"):
         generate_deployment_script(schema_project_path=project, version=version)
 
-    quoted_schema = lib.core.quote_ident(schema_name)
-    lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(sandbox_session)
-    try:
+    with fresh_schema(sandbox_session, schema_name):
         deploy_schema(schema_project_path=project, version="1.0.0")
         assert marker_tables() == ["rest_marker_1"]
 
         deploy_schema(schema_project_path=project, version="1.1.0")
         assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
 
-        lib.core.MsmDbExec(f"DROP SCHEMA {quoted_schema}").exec(sandbox_session)
+        drop_schema(sandbox_session, schema_name)
         deploy_schema(schema_project_path=project, version="1.1.0")
         assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
-    finally:
-        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
-            sandbox_session
-        )
 
 
 def test_release_states_its_own_version(temp_dir):
@@ -882,7 +873,6 @@ def test_release_states_its_own_version(temp_dir):
         copyright_holder=COPYRIGHT_HOLDER,
         overwrite_existing=True,
     )
-    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
     version_file = os.path.join(
         project, "releases", "versions", f"{schema_name}_1.0.0.sql"
     )
@@ -892,8 +882,9 @@ def test_release_states_its_own_version(temp_dir):
     released = get_sql_content_from_section(file_path=version_file, section_id="910")
     assert "SELECT 1, 0, 0;" in released
     assert "SELECT 0, 0, 1;" not in released
-    assert "SELECT 1, 0, 1;" in get_sql_content_from_section(
-        file_path=dev_file, section_id="910"
+    assert (
+        lib.management.get_schema_development_version(schema_project_path=project)
+        == "1.0.1"
     )
 
     # The deployment script of the only release is that release's script.
@@ -932,9 +923,7 @@ def test_release_under_another_version_deploys_and_updates(
             session=sandbox_session, schema_name=schema_name
         )
 
-    quoted_schema = lib.core.quote_ident(schema_name)
-    lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(sandbox_session)
-    try:
+    with fresh_schema(sandbox_session, schema_name):
         deploy_schema(schema_project_path=project, version="1.0.0")
         assert schema_version() == "1.0.0"
 
@@ -951,7 +940,7 @@ def test_release_under_another_version_deploys_and_updates(
         files = prepare_release(
             schema_project_path=project, version="1.2.0", next_version="1.3.0"
         )
-        update_file = [file for file in files if "_to_" in file][0]
+        update_file = update_script(files)
         set_section_sql_content(
             file_path=update_file,
             section_id="240",
@@ -961,18 +950,7 @@ def test_release_under_another_version_deploys_and_updates(
 
         deploy_schema(schema_project_path=project, version="1.2.0")
         assert schema_version() == "1.2.0"
-        assert (
-            lib.core.MsmDbExec(
-                "SELECT COUNT(*) AS n FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 't2'"
-            )
-            .exec(sandbox_session, [schema_name])
-            .first["n"]
-        ) == 1
-    finally:
-        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
-            sandbox_session
-        )
+        assert table_exists(sandbox_session, schema_name, "t2")
 
 
 def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
@@ -991,7 +969,6 @@ def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
         overwrite_existing=True,
     )
     dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
-    quoted_schema = lib.core.quote_ident(schema_name)
 
     def accounts_named_role():
         return (
@@ -1003,9 +980,7 @@ def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
         )
 
     def cleanup():
-        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
-            sandbox_session
-        )
+        drop_schema(sandbox_session, schema_name)
         lib.core.MsmDbExec(f"DROP ROLE IF EXISTS `{role}`").exec(sandbox_session)
         lib.core.MsmDbExec(f"DROP USER IF EXISTS `{role}`@`%`").exec(sandbox_session)
 
@@ -1054,7 +1029,7 @@ def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
         files = prepare_release(
             schema_project_path=project, version="1.1.0", next_version="1.2.0"
         )
-        update_file = [f for f in files if "_to_" in f][0]
+        update_file = update_script(files)
         set_section_sql_content(
             file_path=update_file,
             section_id="270",
@@ -1232,24 +1207,11 @@ def test_deployment_with_substitutions(sandbox_session, temp_dir):
 
     def cleanup():
         for schema in schemas:
-            lib.core.MsmDbExec(
-                f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema)}"
-            ).exec(sandbox_session)
+            drop_schema(sandbox_session, schema)
         for r in roles:
             lib.core.MsmDbExec(f"DROP ROLE IF EXISTS {lib.core.quote_ident(r)}").exec(
                 sandbox_session
             )
-
-    def table_exists(schema):
-        return (
-            lib.core.MsmDbExec(
-                "SELECT COUNT(*) AS n FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 't'"
-            )
-            .exec(sandbox_session, [schema])
-            .first["n"]
-            == 1
-        )
 
     def grants_of(r):
         return [
@@ -1265,8 +1227,8 @@ def test_deployment_with_substitutions(sandbox_session, temp_dir):
         assert deploy_schema(
             schema_project_path=project, substitutions=values
         ) == (f"Deployment of `acme_{base}_eu` version 0.0.1 completed successfully.")
-        assert table_exists(f"acme_{base}_eu")
-        assert not table_exists(base)
+        assert table_exists(sandbox_session, f"acme_{base}_eu", "t")
+        assert not table_exists(sandbox_session, base, "t")
         assert f"GRANT SELECT ON `acme_{base}_eu`.`t` TO `acme_{base}_role_eu`" in (
             grants_of(f"acme_{base}_role_eu")
         )
@@ -1280,7 +1242,7 @@ def test_deployment_with_substitutions(sandbox_session, temp_dir):
         assert deploy_schema(schema_project_path=project) == (
             f"Deployment of `{base}` version 0.0.1 completed successfully."
         )
-        assert table_exists(base)
+        assert table_exists(sandbox_session, base, "t")
         assert f"GRANT SELECT ON `{base}`.`t` TO `{base}_role`" in grants_of(
             f"{base}_role"
         )

@@ -85,13 +85,9 @@ def create_new_project_folder(
     ):
         copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
 
-    if (
-        schema_name is None
-        or schema_name == ""
-        or target_path is None
-        or target_path == ""
-    ):
-        raise ValueError("Both schema_name and schema_project_path must be provided.")
+    # The schema name was checked above, a missing one raised there
+    if not target_path:
+        raise ValueError("A target_path has to be given.")
 
     if license is None:
         license = "None"
