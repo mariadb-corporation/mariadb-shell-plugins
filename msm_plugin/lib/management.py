@@ -381,21 +381,20 @@ def check_mysql_identifier(identifier: str, must_be_usable_when_unquoted: bool =
     """Checks if the given identifier is valid
 
     Args:
-        identifier: The identifier to be checked. One that is missing or
-            empty is left to the caller, which says it has to be given.
+        identifier: The identifier to be checked.
         must_be_usable_when_unquoted: Whether it has to be usable without
             quotes: basic Latin letters, digits, dollar and underscore, not
             starting with a dollar and not digits only. False where special
             characters are allowed, which takes any identifier.
 
-    Returns:
-        None
-
     Raises:
-        ValueError: Where it has to be usable without quotes and is not.
+        ValueError: Where it is missing or empty, or has to be usable without
+            quotes and is not.
     """
-    if must_be_usable_when_unquoted and identifier:
-        if not re.match(r"^[A-Za-z0-9_]+[A-Za-z0-9_$]*$", identifier):
+    if not identifier:
+        raise ValueError("A schema name has to be given.")
+    if must_be_usable_when_unquoted:
+        if not re.match(r"^[A-Za-z0-9_][A-Za-z0-9_$]*$", identifier):
             raise ValueError(
                 "Only basic Latin letters, digits 0-9, dollar, underscore are allowed to be used as schema name. "
                 "Use the allow_special_chars option to overwrite this behavior."
@@ -1295,27 +1294,20 @@ def prepare_release(
     )
     schema_version_sections = get_script_sections(schema_version_script)
 
-    # Get the version section of the current schema development file
-    schema_dev_version_section = schema_dev_expanded_sections.get("910", None)
-    if schema_dev_version_section is None:
+    # The development file has to have a version section, set to next_version below
+    if "910" not in schema_dev_expanded_sections:
         raise ValueError(
             "The script section `MSM Section 910: Database Schema Version` could not be found in "
             f"`{schema_dev_file_path}`."
         )
 
-    # Loop over all sections of the version file and replace the sections with the ones from the development file
+    # Loop over all sections of the version file and replace the sections with the ones from the development file.
+    # Section 910 is the exception: the development file's states the development version, the template's the
+    # released one, which the deployed schema has to report for later updates to apply.
     for section_id in schema_version_sections:
         section = schema_dev_expanded_sections.get(section_id, None)
-        if section is not None:
+        if section is not None and section_id != "910":
             schema_version_sections[section_id] = section
-
-    # The development file's section 910 states the development version, which
-    # need not be the one released: a release under another version has to set
-    # its own, or the deployed schema reports the development version and no
-    # later update of it can be applied. A copy, so the development file's
-    # sections are left as they were read.
-    schema_version_sections["910"] = dict(schema_version_sections["910"])
-    schema_development_version(sections=schema_version_sections, new_version=version)
 
     remove_empty_sections(
         sections=schema_version_sections, keep_even_if_empty=["license", "001"]
