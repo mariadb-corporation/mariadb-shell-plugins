@@ -1302,6 +1302,14 @@ def prepare_release(
         if section is not None:
             schema_version_sections[section_id] = section
 
+    # The development file's section 910 states the development version, which
+    # need not be the one released: a release under another version has to set
+    # its own, or the deployed schema reports the development version and no
+    # later update of it can be applied. A copy, so the development file's
+    # sections are left as they were read.
+    schema_version_sections["910"] = dict(schema_version_sections["910"])
+    schema_development_version(sections=schema_version_sections, new_version=version)
+
     remove_empty_sections(
         sections=schema_version_sections, keep_even_if_empty=["license", "001"]
     )

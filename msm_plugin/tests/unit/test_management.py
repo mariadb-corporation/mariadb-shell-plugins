@@ -819,6 +819,111 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
         )
 
 
+def test_release_states_its_own_version(temp_dir):
+    # A new project develops 0.0.1. Released as 1.0.0, the release script's
+    # msm_schema_version view has to say 1.0.0, not the development version
+    # the development file's section 910 states; the development file goes on
+    # with the next version.
+    schema_name = "msm_release_version"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    version_file = os.path.join(
+        project, "releases", "versions", f"{schema_name}_1.0.0.sql"
+    )
+
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.0.1")
+
+    released = get_sql_content_from_section(file_path=version_file, section_id="910")
+    assert "SELECT 1, 0, 0;" in released
+    assert "SELECT 0, 0, 1;" not in released
+    assert "SELECT 1, 0, 1;" in get_sql_content_from_section(
+        file_path=dev_file, section_id="910"
+    )
+
+    # The deployment script of the only release is that release's script.
+    deployment_file = generate_deployment_script(
+        schema_project_path=project, version="1.0.0"
+    )
+    with open(deployment_file, "r") as f:
+        assert "SELECT 1, 0, 0;" in f.read()
+
+
+def test_release_under_another_version_deploys_and_updates(
+    sandbox_session, temp_dir
+):
+    # Deployed from a release made under another version than the one being
+    # developed, the schema has to report the released version, or the next
+    # update is refused ("the version 0.0.1 cannot be updated").
+    schema_name = "msm_release_update"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t1`(`id` INT PRIMARY KEY);",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+    # Generated while 1.0.0 is the only release: the release script itself.
+    generate_deployment_script(schema_project_path=project, version="1.0.0")
+
+    def schema_version():
+        return lib.management.get_schema_version(
+            session=sandbox_session, schema_name=schema_name
+        )
+
+    quoted_schema = lib.core.quote_ident(schema_name)
+    lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(sandbox_session)
+    try:
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert schema_version() == "1.0.0"
+
+        # Released as 1.2.0 while 1.1.0 is developed, with an update script
+        # that adds a table.
+        set_section_sql_content(
+            file_path=dev_file,
+            section_id="140",
+            sql_content=(
+                f"CREATE TABLE `{schema_name}`.`t1`(`id` INT PRIMARY KEY);\n"
+                f"CREATE TABLE `{schema_name}`.`t2`(`id` INT PRIMARY KEY);"
+            ),
+        )
+        files = prepare_release(
+            schema_project_path=project, version="1.2.0", next_version="1.3.0"
+        )
+        update_file = [file for file in files if "_to_" in file][0]
+        set_section_sql_content(
+            file_path=update_file,
+            section_id="240",
+            sql_content=f"CREATE TABLE `{schema_name}`.`t2`(`id` INT PRIMARY KEY);",
+        )
+        generate_deployment_script(schema_project_path=project, version="1.2.0")
+
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert schema_version() == "1.2.0"
+        assert (
+            lib.core.MsmDbExec(
+                "SELECT COUNT(*) AS n FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 't2'"
+            )
+            .exec(sandbox_session, [schema_name])
+            .first["n"]
+        ) == 1
+    finally:
+        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
+            sandbox_session
+        )
+
+
 def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
     # The scripts set their own sql_mode in section 010. Without
     # NO_AUTO_CREATE_USER, MariaDB answers a GRANT to an account that does not
