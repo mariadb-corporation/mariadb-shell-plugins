@@ -61,10 +61,15 @@ CHECK_ANSWER = {
 
 @pytest.fixture
 def lsp_settings(tmp_path, monkeypatch):
-    """A settings file of the test's own, so lspPath starts unset."""
+    """A settings file of the test's own, so lspPath starts unset, and a shell
+    folder of its own, so the mariadb-lsp of the shell running the tests is
+    not found."""
     monkeypatch.setattr(
         config, "get_settings_file_path", lambda: str(tmp_path / "settings.json")
     )
+    shell_folder = tmp_path / "shell_bin"
+    shell_folder.mkdir()
+    monkeypatch.setattr(sql_functions, "_shell_folder", lambda: str(shell_folder))
 
 
 def _fake_lsp(
@@ -164,6 +169,25 @@ def test_then_the_path_then_local_bin(tmp_path, monkeypatch, lsp_settings):
     assert sql_functions.find_lsp() == in_local_bin
     found_on_path = _fake_lsp(str(on_path), "")
     assert sql_functions.find_lsp() == found_on_path
+
+
+def test_the_one_next_to_the_shell_comes_before_the_path(tmp_path, monkeypatch, lsp_settings):
+    """The binary the shell's package installs is that shell's version."""
+    on_path = tmp_path / "on_path"
+    on_path.mkdir()
+    monkeypatch.setenv("PATH", str(on_path))
+    monkeypatch.setattr(general, "get_bin_home", lambda: str(tmp_path / "none"))
+    _fake_lsp(str(on_path), "")
+    beside_the_shell = _fake_lsp(str(tmp_path / "shell_bin"), "")
+
+    assert sql_functions.find_lsp() == beside_the_shell
+    config.set_lsp_path(str(on_path))
+    assert sql_functions.find_lsp() == os.path.join(str(on_path), "mariadb-lsp")
+
+
+def test_outside_a_shell_there_is_no_shell_folder(monkeypatch):
+    monkeypatch.delattr(sql_functions.mysqlsh, "executable", raising=False)
+    assert sql_functions._shell_folder() is None
 
 
 def test_a_binary_of_that_name_that_is_not_mariadb_lsp_is_not_used(

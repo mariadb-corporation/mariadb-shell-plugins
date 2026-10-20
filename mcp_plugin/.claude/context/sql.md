@@ -20,8 +20,11 @@ All agreed with the user on 2026-10-19 (memory `sql-group-plan`):
   (and `general.log_event`s why), like the migrator group. Found by
   `find_lsp()`: `config.get_lsp_path()` (`mcp setup --lspPath=PATH`, the
   binary or its folder, `""` clears; settings key `lspPath`), else
-  `shutil.which`, else `general.get_bin_home()` (`~/.local/bin`) - the VS
-  Code extension's order. A candidate counts only if `--version` answers
+  `_shell_folder()` (the folder of `mysqlsh.executable`, where the shell's
+  packages install `mariadb-lsp`, built as its `src/lsp-server` submodule),
+  else `shutil.which`, else `general.get_bin_home()` (`~/.local/bin`) - the
+  VS Code extension's order. Tests replace `_shell_folder` (the
+  `lsp_settings` fixture), or a shell with a bundled binary would win. A candidate counts only if `--version` answers
   `mariadb-lsp <version>`. Read once, when the server starts. No server
   instructions rule: the instructions builder does not know whether the
   binary was found, and must not name tools that were not registered.
