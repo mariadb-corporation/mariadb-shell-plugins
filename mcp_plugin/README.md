@@ -628,8 +628,9 @@ characters, as an editor shows them.
 
 They are registered **only where `mariadb-lsp` is found**: the one
 `mariadb-shell -- mcp setup --lspPath=PATH` names (the binary or its folder; `--lspPath=""`
-clears it), else the first on the `PATH`, else `~/.local/bin/mariadb-lsp` - the places the
-VS Code extension looks. A binary of that name has to answer `--version` with
+clears it), else the one next to the running `mariadb-shell`, which MariaDB Shell's packages
+install, else the first on the `PATH`, else `~/.local/bin/mariadb-lsp` - where the VS Code
+extension looks. A binary of that name has to answer `--version` with
 `mariadb-lsp <version>`. Installing one takes effect on the next server start.
 
 MSM `SOURCE '<path>'[<start>:<end>];` directives are followed, as schema management

@@ -21,7 +21,8 @@ file: its ``check``, ``outline`` and ``format`` commands. Nothing is sent to
 a database - these work on the text alone, with MariaDB's own grammar.
 
 The group is offered only where the binary is found: the one
-``mcp setup --lspPath`` names, else the first on the PATH, else
+``mcp setup --lspPath`` names, else the one MariaDB Shell's package installs
+next to the running mariadb-shell, else the first on the PATH, else
 ``~/.local/bin/mariadb-lsp`` - the places the VS Code extension looks.
 
 The binary reads no file of its own: it is given the SQL on stdin and told
@@ -39,6 +40,8 @@ import os
 import shutil
 import subprocess
 from typing import Literal, Optional
+
+import mysqlsh
 
 from mcp_plugin.lib import config, db_functions, general
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
@@ -62,6 +65,16 @@ def _is_executable(path: str) -> bool:
     return os.path.isfile(path) and os.access(path, os.X_OK)
 
 
+def _shell_folder() -> Optional[str]:
+    """The folder of the mariadb-shell this server runs in, if it runs in one.
+
+    The shell sets ``mysqlsh.executable`` to its own binary; its package
+    installs mariadb-lsp next to it, the version built with that shell.
+    """
+    own = getattr(mysqlsh, "executable", None)
+    return os.path.dirname(own) if own else None
+
+
 def _candidates() -> list:
     """The places the binary is looked for, in order."""
     configured = config.get_lsp_path()
@@ -71,6 +84,9 @@ def _candidates() -> list:
         return [configured]
 
     found = []
+    shell_folder = _shell_folder()
+    if shell_folder:
+        found.append(os.path.join(shell_folder, _binary_name()))
     on_path = shutil.which(_binary_name())
     if on_path:
         found.append(on_path)
