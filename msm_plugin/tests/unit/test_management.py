@@ -162,6 +162,57 @@ def test_create_new_project_folder():
         assert current_dev_version == "0.0.1"
 
 
+def test_schema_name_has_to_be_usable_unquoted_unless_special_chars_are_allowed(
+    temp_dir,
+):
+    # The check used to run only where special characters were allowed, so
+    # without the option every name was taken, digits only among them.
+    for name in ("123", "my schema", "shop-db", "$shop", "café"):
+        with pytest.raises(ValueError, match="allow_special_chars"):
+            create_new_project_folder(
+                schema_name=name,
+                target_path=temp_dir,
+                copyright_holder=COPYRIGHT_HOLDER,
+            )
+        assert not os.path.exists(
+            os.path.join(temp_dir, f"{name.replace(' ', '_')}.msm.project")
+        )
+
+    # With the option, any of them is taken.
+    for name in ("123", "my schema", "shop-db"):
+        project_path = create_new_project_folder(
+            schema_name=name,
+            target_path=temp_dir,
+            copyright_holder=COPYRIGHT_HOLDER,
+            allow_special_chars=True,
+        )
+        assert get_project_settings(schema_project_path=project_path)[
+            "schemaName"
+        ] == name
+
+    # And a plain name is taken without it.
+    for name in ("shop", "Shop_2", "_x", "a$b", "9lives"):
+        assert os.path.exists(
+            create_new_project_folder(
+                schema_name=name,
+                target_path=temp_dir,
+                copyright_holder=COPYRIGHT_HOLDER,
+            )
+        )
+
+
+def test_check_mysql_identifier():
+    with pytest.raises(ValueError, match="solely of digits"):
+        lib.management.check_mysql_identifier("2024")
+    with pytest.raises(ValueError, match="basic Latin letters"):
+        lib.management.check_mysql_identifier("a-b")
+    lib.management.check_mysql_identifier("a_b$1")
+    lib.management.check_mysql_identifier("a-b", must_be_usable_when_unquoted=False)
+    # Missing or empty: the caller says it has to be given.
+    lib.management.check_mysql_identifier(None)
+    lib.management.check_mysql_identifier("")
+
+
 def test_render_copyright_notices():
     # A single holder, whose year of creation is the only year shown
     single = {"copyrights": [{"holder": "ACME Corp.", "yearOfCreation": "2025"}]}

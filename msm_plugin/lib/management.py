@@ -381,13 +381,20 @@ def check_mysql_identifier(identifier: str, must_be_usable_when_unquoted: bool =
     """Checks if the given identifier is valid
 
     Args:
-        identifier: The identifier to be checked
-        allow_special_chars: Wether
+        identifier: The identifier to be checked. One that is missing or
+            empty is left to the caller, which says it has to be given.
+        must_be_usable_when_unquoted: Whether it has to be usable without
+            quotes: basic Latin letters, digits, dollar and underscore, not
+            starting with a dollar and not digits only. False where special
+            characters are allowed, which takes any identifier.
 
     Returns:
-        The converted filename
+        None
+
+    Raises:
+        ValueError: Where it has to be usable without quotes and is not.
     """
-    if not must_be_usable_when_unquoted:
+    if must_be_usable_when_unquoted and identifier:
         if not re.match(r"^[A-Za-z0-9_]+[A-Za-z0-9_$]*$", identifier):
             raise ValueError(
                 "Only basic Latin letters, digits 0-9, dollar, underscore are allowed to be used as schema name. "
