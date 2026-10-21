@@ -216,7 +216,11 @@ def server_instructions(
         rules.append(
             "- Dump, load and copy data between servers with the "
             f"{name('util', '*')} tools, not by piping mariadb-dump into "
-            "another client."
+            "another client. Load CSV, TSV, JSON and other delimited data "
+            f"files into a table with {name('util', 'import_table')}, not "
+            f"with LOAD DATA through {name('db', 'execute_sql')}, "
+            "mariadb-import or generated INSERT statements; export a table "
+            f"to such a file with {name('util', 'export_table')}."
         )
 
     if not rules:

@@ -294,17 +294,14 @@ def register_sql_tools(server, function_groups=()) -> None:
 
         Give the SQL inline (sql) or as a file (file_path); exactly one. A
         file_path must be within the allowed directories. MSM SOURCE
-        directives (SOURCE '<path>'[<start>:<end>];) are followed, as
-        MariaDB Schema Management expands them: a relative path is relative
-        to the file's folder, or to source_dir for inline SQL. Every included
-        file must be within the allowed directories too.
+        directives are expanded as db.execute_sql_script expands them, and
+        every included file must be within the allowed directories too.
 
         Args:
             sql: The SQL to check: one or more statements.
             file_path: A .sql file to check instead.
             source_dir: For inline sql, the folder relative SOURCE paths are
-                taken from - the folder the SQL belongs in. Must be within
-                the allowed directories.
+                taken from. Must be within the allowed directories.
             sql_mode: The sql_mode at the start, comma-separated (default the
                 server's default); a SET sql_mode in the SQL is followed.
             delimiter: The delimiter at the start (default ;).
@@ -313,14 +310,12 @@ def register_sql_tools(server, function_groups=()) -> None:
             max_errors: List at most this many errors (default 100).
 
         Returns:
-            valid (true when there are no errors), statements (how many), and
-            errors: one per error, with start (line and column, from 1),
-            message, token (where it failed) and expected (what the grammar
-            would have taken there). notes holds remarks that are not
-            errors. The statements of SOURCE includes are checked too: an
-            error in one has file, the included file, in its start, and its
-            line and column are in that file. An include that cannot be read
-            or may not be fails the call, naming its directive's line.
+            valid (true when there are no errors), statements (how many),
+            errors (each with start: line and column from 1, message, token
+            where it failed, and expected: what the grammar would have taken)
+            and notes (remarks that are not errors). An error in a SOURCE
+            include has file in its start, and its line and column are in
+            that file. An include that cannot be read fails the call.
         """
         script, sent, segments, options = _prepare(
             ctx, sql, file_path, source_dir, sql_mode, delimiter, version_id
@@ -360,11 +355,9 @@ def register_sql_tools(server, function_groups=()) -> None:
         in order, as a server would apply them, and reports what results:
         schemas with their tables (columns, indexes, foreign keys, checks),
         views, routines, triggers, events and sequences, and the MariaDB
-        REST Service objects. Use it to understand a schema script - a
-        project's development script, say - without running it.
-
-        The SQL is given as for sql.check, SOURCE directives and
-        source_dir included.
+        REST Service objects. Use it to understand a schema script without
+        running it. The SQL is given as for sql.check, SOURCE directives
+        and source_dir included.
 
         Args:
             sql: The SQL to outline.
@@ -377,14 +370,12 @@ def register_sql_tools(server, function_groups=()) -> None:
                 against (major*10000 + minor*100 + patch).
 
         Returns:
-            The outline (format 1 of mariadb-lsp's outline, see the
-            lsp-server repository's docs/outline-format.md): schemas, rest,
-            statements (ddl and applied counts) and notes (statements that
-            were not read, and why), and includes: the file each SOURCE
-            directive included and the directive's line. Every range is a
-            start and an end, each a line and a column counted from 1; names
-            are as written, without quotes. A position in an included file
-            has file, that file, and its line and column are in it.
+            schemas, rest, statements (ddl and applied counts), notes
+            (statements that were not read, and why) and includes (the file
+            each SOURCE directive included and the directive's line). Every
+            range is a start and an end, each a line and a column from 1;
+            names are as written, without quotes. A position in an included
+            file has file, and its line and column are in that file.
         """
         script, sent, segments, options = _prepare(
             ctx, sql, file_path, source_dir, sql_mode, delimiter, version_id
@@ -417,21 +408,18 @@ def register_sql_tools(server, function_groups=()) -> None:
         """Lays SQL out readably, with MariaDB's grammar, without a server.
 
         SELECT, WITH, INSERT ... SELECT, UPDATE, DELETE, CREATE VIEW and
-        CREATE and ALTER TABLE statements that parse are laid out - clauses
-        on lines of their own, keywords in one case, lines kept within a
-        width; any other statement, and one that does not parse, is left as
-        it is. Comments are kept. Use it on SQL before showing it to the
-        user or saving it.
+        CREATE and ALTER TABLE statements that parse are laid out, clauses
+        on lines of their own; any other statement, and one that does not
+        parse, is left as it is. Comments are kept. Use it on SQL before
+        showing it to the user or saving it.
 
         Args:
             sql: The SQL to format.
-            file_path: A .sql file to format instead; it is not changed, the
-                formatted text is returned.
+            file_path: A .sql file to format instead; it is not changed.
             line_width: The width lines are kept within (default 80, 0 for
                 no limit).
             keyword_case: upper (the default) or lower.
-            indent: One level of indentation: tab, 2 (the default) or 4
-                spaces.
+            indent: tab, 2 (the default) or 4 spaces.
             sql_mode: The sql_mode at the start, comma-separated.
             delimiter: The delimiter at the start (default ;).
             version_id: The server release versioned comments are judged

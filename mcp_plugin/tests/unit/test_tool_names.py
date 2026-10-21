@@ -60,6 +60,77 @@ def test_tools_keep_their_dotted_names_by_default(tenant_config):
     assert any("db.connect" in (tool.description or "") for tool in tools)
 
 
+def test_the_published_schemas_are_trimmed(tenant_config):
+    """Titles and the null alternative of optional parameters are dropped.
+
+    The SDK titles every parameter ("Connection Id") and every schema, and
+    publishes ``Optional[str] = None`` as ``anyOf [string, null], default
+    null``; a model reads neither, and together they were a fifth of the
+    tool listing a client sends with every request. finish_tool_names trims
+    them whatever the separator.
+    """
+    for separator in (".", "_"):
+        _, tools = _tools(separator)
+        schemas = {tool.name: tool.input_schema for tool in tools}
+        text = json.dumps(schemas)
+
+        assert "title" not in text
+        assert '{"type": "null"}' not in text
+        # What the schema is there for stays.
+        connect = schemas[f"db{separator}connect"]
+        assert connect["required"] == ["uri"]
+        assert connect["properties"]["uri"] == {"type": "string"}
+        execute = schemas[f"db{separator}execute_sql"]["properties"]
+        assert execute["limit"] == {"type": "integer"}
+        assert execute["params"] == {"items": {}, "type": "array"}
+        assert execute["column_metadata"] == {"default": False, "type": "boolean"}
+        assert execute["output_format"] == {
+            "default": "json", "enum": ["json", "table"], "type": "string"
+        }
+
+
+def test_an_explicit_null_is_still_accepted(tenant_config):
+    """The trim narrows what is advertised, not what the server takes.
+
+    A call is validated with the pydantic model the SDK built from the
+    signature, never with the published schema.
+    """
+    mcp_server, tools = _tools(".")
+    [versions] = [tool for tool in tools if tool.name == "msm.get_released_versions"]
+    assert versions.input_schema["properties"]["schema_project_path"] == {"type": "string"}
+
+    def outcome(arguments):
+        try:
+            return asyncio.run(mcp_server.call_tool("msm.get_released_versions", arguments))
+        except Exception as error:  # whatever the working directory makes of it
+            return type(error), str(error)
+
+    # An explicit null does exactly what leaving the argument out does.
+    assert outcome({"schema_project_path": None}) == outcome({})
+
+
+def test_a_nullable_enum_and_list_keep_their_shape():
+    trimmed = tool_registrar._trim_schema({
+        "title": "T",
+        "properties": {
+            "indent": {
+                "anyOf": [{"enum": ["tab", "2"], "type": "string"}, {"type": "null"}],
+                "default": None, "title": "Indent",
+            },
+            "urls": {"anyOf": [{"type": "string"}, {"items": {}, "type": "array"}]},
+            "flag": {"default": False, "type": "boolean"},
+        },
+    })
+
+    assert trimmed == {
+        "properties": {
+            "indent": {"enum": ["tab", "2"], "type": "string"},
+            "urls": {"anyOf": [{"type": "string"}, {"items": {}, "type": "array"}]},
+            "flag": {"default": False, "type": "boolean"},
+        },
+    }
+
+
 def test_tool_names_with_a_separator(tenant_config):
     """Names, descriptions and parameter descriptions all use the separator.
 

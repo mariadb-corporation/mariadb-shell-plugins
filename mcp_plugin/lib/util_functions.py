@@ -217,8 +217,7 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of the whole server, as a background task.
 
-        Runs MariaDB Shell's util.dump_instance in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
+        Runs MariaDB Shell's util.dump_instance; follow the task with
         util.get_task.
 
         Args:
@@ -228,8 +227,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 or be empty.
             options: The options of util.dump_instance, with their camelCase
                 names, e.g. {"threads": 8, "users": false,
-                "excludeSchemas": ["test"]}. session, progressCallback and
-                showProgress cannot be given here.
+                "excludeSchemas": ["test"]}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -250,8 +248,7 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of database schemas, as a background task.
 
-        Runs MariaDB Shell's util.dump_schemas in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
+        Runs MariaDB Shell's util.dump_schemas; follow the task with
         util.get_task.
 
         Args:
@@ -260,9 +257,7 @@ def register_util_tools(server, function_groups=()) -> None:
             output_url: The directory to write the dump to. It must not exist
                 or be empty.
             options: The options of util.dump_schemas, with their camelCase
-                names, e.g. {"threads": 8, "ddlOnly": true}. session,
-                progressCallback, showProgress and outputUrl cannot be given
-                here.
+                names, e.g. {"threads": 8, "ddlOnly": true}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -285,8 +280,7 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of tables and views of a schema, as a background task.
 
-        Runs MariaDB Shell's util.dump_tables in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
+        Runs MariaDB Shell's util.dump_tables; follow the task with
         util.get_task.
 
         Args:
@@ -297,9 +291,7 @@ def register_util_tools(server, function_groups=()) -> None:
             output_url: The directory to write the dump to. It must not exist
                 or be empty.
             options: The options of util.dump_tables, with their camelCase
-                names, e.g. {"where": {"shop.orders": "id > 1000"}}. session,
-                progressCallback, showProgress and outputUrl cannot be given
-                here.
+                names, e.g. {"where": {"shop.orders": "id > 1000"}}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -319,19 +311,20 @@ def register_util_tools(server, function_groups=()) -> None:
         output_url: str,
         options: Optional[dict] = None,
     ) -> dict:
-        """Starts an export of a table's rows to a file, as a background task.
+        """Starts an export of a table's rows to a CSV, TSV, JSON or other
+        delimited text file, as a background task.
 
-        Runs MariaDB Shell's util.export_table in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
-        util.get_task.
+        Runs MariaDB Shell's util.export_table; follow the task with
+        util.get_task. Use it instead of SELECT ... INTO OUTFILE or reading
+        the rows with db.execute_sql and writing the file yourself; the
+        file can be loaded again with util.import_table.
 
         Args:
             connection_id: The UUID returned by db.connect.
             table: The table, as table or schema.table.
             output_url: The file to write.
             options: The options of util.export_table, with their camelCase
-                names, e.g. {"dialect": "csv", "where": "id > 10"}. session,
-                progressCallback and showProgress cannot be given here.
+                names, e.g. {"dialect": "csv", "where": "id > 10"}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -351,20 +344,18 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts loading a dump into the server, as a background task.
 
-        Runs MariaDB Shell's util.load_dump in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
-        util.get_task.
-        The server needs local_infile switched on.
+        Runs MariaDB Shell's util.load_dump; follow the task with
+        util.get_task. The server needs local_infile switched on. Only for
+        dumps the util.dump_* tools made: for CSV, TSV, JSON or other data
+        files use util.import_table.
 
         Args:
             connection_id: The UUID returned by db.connect, for the server to
                 load into.
-            url: The directory of a dump made with util.dump_instance,
-                util.dump_schemas or util.dump_tables.
+            url: The directory of the dump.
             options: The options of util.load_dump, with their camelCase
                 names, e.g. {"schema": "copy_of_shop", "loadUsers": false,
-                "dropExistingObjects": true}. session, progressCallback and
-                showProgress cannot be given here.
+                "dropExistingObjects": true}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -382,21 +373,30 @@ def register_util_tools(server, function_groups=()) -> None:
         urls: Union[str, list],
         options: Optional[dict] = None,
     ) -> dict:
-        """Starts importing files into a table, as a background task.
+        """Starts loading CSV, TSV, JSON-lines or other delimited text
+        files into a table, as a background task.
 
-        Runs MariaDB Shell's util.import_table in a shell process of its own,
-        on the connection, and returns at once. Follow the task with
-        util.get_task.
-        The table must exist, and the server needs local_infile switched on.
+        The tool for bulk-loading data files (any format LOAD DATA reads,
+        local or in OCI, S3 and Azure object storage). Use it instead of
+        LOAD DATA through db.execute_sql, mariadb-import, the mariadb client
+        or generated INSERT statements.
+
+        Runs MariaDB Shell's util.import_table; follow the task with
+        util.get_task. The table must exist (create it with db.execute_sql
+        first), and the server needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect.
-            urls: A file, or a list of files, to import. Names may contain the
-                wildcards * and ?.
+            urls: A file, or a list of files, to import into one table. Names
+                may contain the wildcards * and ?.
             options: The options of util.import_table, with their camelCase
                 names, e.g. {"schema": "shop", "table": "orders",
-                "dialect": "csv-unix", "skipRows": 1}. session,
-                progressCallback and showProgress cannot be given here.
+                "dialect": "csv-unix", "skipRows": 1}. dialect: default
+                (tab-separated), csv, csv-unix, csv-rfc-unix, tsv or json,
+                refined by fieldsTerminatedBy, fieldsEnclosedBy and
+                linesTerminatedBy. Also skipRows (header lines), columns and
+                decodeColumns (map and transform file columns), characterSet
+                and replaceDuplicates.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -418,17 +418,15 @@ def register_util_tools(server, function_groups=()) -> None:
         """Starts copying a whole server to another one, as a background task.
 
         Runs MariaDB Shell's util.copy_instance, which dumps from the source
-        and loads into the target at the same time without writing files, and
-        returns at once. Follow the task with util.get_task. The target needs
-        local_infile switched on.
+        and loads into the target at once, without files; follow the task
+        with util.get_task. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
             target_connection_id: The UUID returned by db.connect, for the
                 target. It must be another server.
             options: The options of util.copy_instance, with their camelCase
-                names, e.g. {"users": false, "threads": 8}. session,
-                progressCallback and showProgress cannot be given here.
+                names, e.g. {"users": false, "threads": 8}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -450,10 +448,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts copying schemas to another server, as a background task.
 
-        Runs MariaDB Shell's util.copy_schemas, which dumps from the source and
-        loads into the target at the same time without writing files, and
-        returns at once. Follow the task with util.get_task. The target needs
-        local_infile switched on.
+        Runs MariaDB Shell's util.copy_schemas, which dumps from the source
+        and loads into the target at once, without files; follow the task
+        with util.get_task. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
@@ -461,8 +458,7 @@ def register_util_tools(server, function_groups=()) -> None:
             target_connection_id: The UUID returned by db.connect, for the
                 target. It must be another server.
             options: The options of util.copy_schemas, with their camelCase
-                names, e.g. {"ddlOnly": true}. session, progressCallback and
-                showProgress cannot be given here.
+                names, e.g. {"ddlOnly": true}.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -485,10 +481,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts copying tables of a schema to another server, as a background task.
 
-        Runs MariaDB Shell's util.copy_tables, which dumps from the source and
-        loads into the target at the same time without writing files, and
-        returns at once. Follow the task with util.get_task. The target needs
-        local_infile switched on.
+        Runs MariaDB Shell's util.copy_tables, which dumps from the source
+        and loads into the target at once, without files; follow the task
+        with util.get_task. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
@@ -498,8 +493,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 target. It must be another server.
             options: The options of util.copy_tables, with their camelCase
                 names, e.g. {"schema": "renamed"} to load into another
-                schema. session, progressCallback and showProgress cannot
-                be given here.
+                schema.
 
         Returns:
             A dict with the task_id to follow and the task's status.

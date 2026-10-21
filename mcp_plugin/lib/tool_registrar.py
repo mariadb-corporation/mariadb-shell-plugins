@@ -193,20 +193,67 @@ def use_tool_name_separator(server, separator: str) -> None:
     server.tool = tool
 
 
+def _is_null(schema) -> bool:
+    return schema == {"type": "null"}
+
+
+def _trim_schema(schema):
+    """Returns the published schema without what only costs tokens.
+
+    The SDK builds it from the function's signature through pydantic, and
+    only publishes it: a call is validated with the pydantic model, never
+    with this schema, so what is dropped here changes nothing the server
+    accepts. Dropped are:
+
+    - the titles: every parameter gets its own name in words ("Connection
+      Id") and every schema its function's name, which a model never uses;
+    - the null alternative of an optional parameter: ``Optional[str] =
+      None`` is published as ``anyOf [string, null], default null``, which
+      a model reads as "leave it out" just as it reads a plain type that is
+      not required - and an explicit null is still accepted, the model
+      allows it. The ``default: null`` goes with it, as a null default of
+      an omitted parameter says nothing and would not match the type left;
+      real defaults (false, "json") stay.
+
+    Together they were a fifth of the whole tool listing a client sends
+    with every request.
+    """
+    if isinstance(schema, dict):
+        if "anyOf" in schema:
+            alternatives = schema["anyOf"]
+            if len(alternatives) == 2 and any(map(_is_null, alternatives)):
+                [kept] = [choice for choice in alternatives if not _is_null(choice)]
+                rest = {
+                    key: value
+                    for key, value in schema.items()
+                    if key != "anyOf" and not (key == "default" and value is None)
+                }
+                return _trim_schema({**kept, **rest})
+        return {
+            key: _trim_schema(value)
+            for key, value in schema.items()
+            if key != "title"
+        }
+    if isinstance(schema, list):
+        return [_trim_schema(value) for value in schema]
+    return schema
+
+
 def finish_tool_names(server) -> None:
-    """Rewrites the tools the registered tools' descriptions name.
+    """Rewrites the tools the registered tools' descriptions name, and
+    trims every tool's published parameter schema (see _trim_schema).
 
     Afterwards, because a description can name a tool registered after its
     own. Reaches into the SDK's private tool manager, as the descriptions are
     only settled once a tool is registered; test_tool_names_with_a_separator
     pins it.
     """
-    if _separator == ".":
-        return
-
     import json
 
     for tool in server._tool_manager.list_tools():
+        tool.parameters = _trim_schema(tool.parameters)
+        if _separator == ".":
+            continue
         tool.description = translate_tool_names(tool.description)
         tool.parameters = json.loads(translate_tool_names(json.dumps(tool.parameters)))
 

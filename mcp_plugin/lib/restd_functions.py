@@ -478,23 +478,20 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
     ) -> dict:
         """Sets up a MariaDB REST Daemon for a server and starts it.
 
-        In this order: the account of the connection is checked; the REST
-        metadata is configured if the server has none; mariadb-restd is
-        installed if it cannot be found; `mariadb-restd --setup` creates the
-        deployment - an account of its own on the server, a keyring, a TLS
-        certificate and its configuration - and the daemon is started, to keep
-        running after the MCP server ends.
-
-        For a sandbox the deployment is in the sandbox's folder and follows
-        it: sandbox.start, sandbox.stop and sandbox.delete start, stop and
-        delete it too. Otherwise it is in ~/.mariadb-restd/<host>_<port>.
+        Configures the REST metadata if the server has none, installs
+        mariadb-restd if it cannot be found, creates the deployment with
+        `mariadb-restd --setup` (an account of its own on the server, a
+        keyring, a TLS certificate and its configuration) and starts the
+        daemon, which keeps running after the MCP server ends. A sandbox's
+        deployment is in the sandbox's folder and follows sandbox.start,
+        sandbox.stop and sandbox.delete; any other is in
+        ~/.mariadb-restd/<host>_<port>.
 
         Args:
             connection_id: A connection to the server, opened with db.connect.
                 Its account needs CREATE USER WITH GRANT OPTION, SELECT, INSERT
                 and UPDATE on the metadata schema and its roles WITH ADMIN
-                OPTION - or, when the server has no REST metadata yet, the
-                privileges to create it.
+                OPTION, or the privileges to create the metadata.
             password: The account's password. The connection's stored one when
                 empty.
             sandbox_port: The port of the sandbox the server is, for a
@@ -504,8 +501,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             port: The port the daemon serves HTTPS on. The first free one
                 from 8443 up when empty.
             metadata_schema: The REST metadata schema to serve. Needed only
-                when the server has several; the one there is otherwise, or
-                mariadb_rest_service, which is created when there is none.
+                when the server has several.
             restd_path: The mariadb-restd executable to use, or its folder.
 
         Returns:
