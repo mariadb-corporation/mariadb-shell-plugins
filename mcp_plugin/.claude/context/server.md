@@ -171,8 +171,10 @@ session machinery the db tools sit on is in
   (`func_metadata.py` `model_validate`), never with `tool.parameters`, which it builds
   once at registration and only publishes: an explicit null is still accepted. Only a
   two-member `anyOf` with a `{"type": "null"}` member is collapsed, so `urls:
-  Union[str, list]` keeps its `anyOf`, and an enum or `items` survives. Real defaults
-  (`false`, `"json"`) stay.
+  Union[str, list]` keeps its `anyOf`, and an enum or `items` survives. The keys of
+  `properties`, `$defs` and the like are names, never trimmed: a parameter called
+  `title` stays (`test_a_parameter_called_title_is_kept`). Real defaults (`false`,
+  `"json"`) stay.
 - **The tool listing is a per-request cost** (2026-10-21): with every group served
   it was 82k characters, about 20k tokens, and is 59k after the trim of that day:
   titles gone (5.4k), the null alternatives gone (5.8k), `sandbox.deploy` dedented (its `{mcp_access_doc}` placeholder

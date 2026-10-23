@@ -193,6 +193,10 @@ def use_tool_name_separator(server, separator: str) -> None:
     server.tool = tool
 
 
+# The schema keywords whose keys are names, each mapping to a schema.
+_NAME_MAPS = ("properties", "patternProperties", "$defs", "definitions")
+
+
 def _is_null(schema) -> bool:
     return schema == {"type": "null"}
 
@@ -216,7 +220,9 @@ def _trim_schema(schema):
       real defaults (false, "json") stay.
 
     Together they were a fifth of the whole tool listing a client sends
-    with every request.
+    with every request. The keys of a name map (properties, $defs) are
+    parameter and model names, not keywords: a parameter called title is
+    kept.
     """
     if isinstance(schema, dict):
         if "anyOf" in schema:
@@ -230,7 +236,11 @@ def _trim_schema(schema):
                 }
                 return _trim_schema({**kept, **rest})
         return {
-            key: _trim_schema(value)
+            key: (
+                {name: _trim_schema(value) for name, value in value.items()}
+                if key in _NAME_MAPS and isinstance(value, dict)
+                else _trim_schema(value)
+            )
             for key, value in schema.items()
             if key != "title"
         }

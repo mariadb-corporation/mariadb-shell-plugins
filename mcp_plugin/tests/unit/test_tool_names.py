@@ -131,6 +131,20 @@ def test_a_nullable_enum_and_list_keep_their_shape():
     }
 
 
+def test_a_parameter_called_title_is_kept():
+    """Only the title keyword goes, not a property of that name."""
+    trimmed = tool_registrar._trim_schema({
+        "title": "T",
+        "properties": {"title": {"title": "Title", "type": "string"}},
+        "required": ["title"],
+    })
+
+    assert trimmed == {
+        "properties": {"title": {"type": "string"}},
+        "required": ["title"],
+    }
+
+
 def test_tool_names_with_a_separator(tenant_config):
     """Names, descriptions and parameter descriptions all use the separator.
 

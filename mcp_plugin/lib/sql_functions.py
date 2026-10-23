@@ -294,8 +294,10 @@ def register_sql_tools(server, function_groups=()) -> None:
 
         Give the SQL inline (sql) or as a file (file_path); exactly one. A
         file_path must be within the allowed directories. MSM SOURCE
-        directives are expanded as db.execute_sql_script expands them, and
-        every included file must be within the allowed directories too.
+        directives (SOURCE '<path>'[<start>:<end>];) are expanded as MariaDB
+        Schema Management does: a relative path is relative to the file's
+        folder, or to source_dir for inline SQL, and every included file
+        must be within the allowed directories too.
 
         Args:
             sql: The SQL to check: one or more statements.

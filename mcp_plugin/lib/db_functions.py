@@ -3561,8 +3561,9 @@ def register_db_tools(server, function_groups=()) -> None:
             With output_format table, each result set has table and
             row_count instead: the grid the mariadb client prints with
             --binary-as-hex, with a backslash, newline, carriage return, tab
-            or NUL inside a value written \\\\, \\n, \\r, \\t or \\0, so
-            that every row stays on one line.
+            or NUL inside a value written \\\\, \\n, \\r, \\t or \\0 and any
+            other control character as \\xNN, so that every row stays on one
+            line.
 
             With column_metadata true, each result set also has
             column_metadata: one dict per column with its type (INT,
@@ -3633,7 +3634,8 @@ def register_db_tools(server, function_groups=()) -> None:
         semantics ([100:200], [-50:]) or as line numbers lnN (from 1, end
         line included, ln-1 the last: [ln3:ln10]). It works anywhere, inside
         a procedure body too; one level only. A relative path is relative to
-        file_path's folder, or to source_dir for an inline script. A
+        file_path's folder, or to source_dir for an inline script (without
+        it, an inline script can use only absolute paths). A
         directive that cannot be expanded fails the call before any
         statement runs.
 
