@@ -70,6 +70,18 @@ change.
   - `get_task` / `list_tasks` / `cancel_task` are sync, so `wait_ms` (at most
     30 s) blocks a worker thread, not the loop.
   - The group registers only alongside `db`.
+  - Tool descriptions steer the agent (2026-10-21): `import_table` names
+    the file formats it takes (CSV, TSV, JSON lines, every LOAD DATA
+    format, local or object storage), its dialects and the mapping
+    options, and says to use it instead of `LOAD DATA` through
+    `db.execute_sql`, `mariadb-import` or generated INSERTs; `load_dump`
+    says it takes only `util.dump_*` dumps; `export_table` says to use it
+    instead of `SELECT ... INTO OUTFILE`. The server rule in
+    `server.server_instructions` repeats that (an agent was loading CSV
+    files through mariadb-dump and clients before). The nine start tools
+    no longer say that `session`, `progressCallback` and `showProgress`
+    are refused: the refusal's error says it, and the sentence cost nine
+    times its tokens (the token trim of 2026-10-21, see server.md).
 - `db_functions.connection_credentials()` makes the check every session open
   makes (the URI is still configured). It refuses login (grant) connections:
   a process of its own would outlive the grant and skip the default role.

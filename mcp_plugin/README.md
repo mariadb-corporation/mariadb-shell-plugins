@@ -475,6 +475,13 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   shell that ends itself with an error code fails the task with that error, even
   one it printed only on stderr, and is not started again. The process ends with
   the server, however the server ends.
+- **Data files are loaded with `util.import_table`**: CSV, TSV, JSON lines and any
+  other format `LOAD DATA` reads (`dialect` and the `fields*`/`lines*` options), from
+  local files or object storage, into an existing table over parallel connections.
+  The tool description tells the agent to use it instead of `LOAD DATA` through
+  `db.execute_sql`, `mariadb-import` or generated `INSERT`s, and `util.export_table`
+  instead of `SELECT ... INTO OUTFILE`; the server instructions repeat the rule.
+  `util.load_dump` takes only dumps the `util.dump_*` tools made.
 - **Options** are the utility's own, with their camelCase names, in `options`, such as
   `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
   are refused. A value the shell's command line cannot pass on unchanged is refused

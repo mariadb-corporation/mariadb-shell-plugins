@@ -97,6 +97,8 @@ def _register_deploy(tool, deploy) -> None:
     Returns:
         None
     """
+    # The placeholder line sits at column 0, so the compiler's docstring
+    # dedent found nothing to strip; cleandoc does it once it is filled.
     if general.is_gui_mode():
         deploy.__doc__ = deploy.__doc__.replace("{mcp_access_doc}", _MCP_ACCESS_DOC)
     else:
@@ -109,6 +111,7 @@ def _register_deploy(tool, deploy) -> None:
                 if parameter.name != "mcp_access"
             ]
         )
+    deploy.__doc__ = inspect.cleandoc(deploy.__doc__)
 
     tool(name="sandbox.deploy")(deploy)
 
@@ -232,47 +235,38 @@ def register_sandbox_tools(server, function_groups=()) -> None:
     ) -> str:
         """Deploys a new MariaDB sandbox instance on localhost.
 
-        Deploys a plain standalone instance using the server found on the PATH
-        (or at mariadbd_path, or of the requested server_version). The server is
-        started, the root password is set and the instance is left running.
-        SSL/TLS is disabled by default; pass ssl=True to enable it.
-
-        The instance is registered as a connection that db.connect opens, its
-        root password kept in the secret store. Work with it through the db.*
-        tools, never by running the mariadb client or mariadb-shell from a
-        shell.
+        A plain standalone instance of the server on the PATH, at
+        mariadbd_path or of the requested server_version is started with its
+        root password set and left running. It is registered as a connection
+        that db.connect opens, its root password kept in the secret store:
+        work with it through the db.* tools, never by running the mariadb
+        client or mariadb-shell from a shell.
 
         Args:
             port: The port the new instance will listen on.
-            password: Password for the root user on the new instance. Pass a
-                freshly generated random one (16 or more letters and digits)
-                unless the user asks for a particular password; it is stored
-                with the connection, so it is never needed again - do not
-                repeat it in a command, a file or a reply. Required: the shell
-                refuses a deploy without one. Never pass an empty string unless
-                the user explicitly asks for it: root then has no password,
-                and with the default allow_root_from of '%' anyone who can
-                reach the port logs in as root.
-            sandbox_dir: Path where the new instance will be deployed.
-                Leave empty to use the default sandbox path.
+            password: The root password. Required. Pass a freshly generated
+                random one (16 or more letters and digits) unless the user
+                asks for a particular password; it is stored with the
+                connection, so never repeat it in a command, a file or a
+                reply. Never pass an empty string unless the user explicitly
+                asks: root then has no password, and with the default
+                allow_root_from anyone who can reach the port logs in.
+            sandbox_dir: Path to deploy in. Leave empty for the default
+                sandbox path.
             allow_root_from: Host pattern for a remote root account to create.
                 Defaults to '%'. Set to an empty string to skip creating it.
             server_id: server_id value for the instance.
-            ssl: Whether to generate SSL certificates and enable TLS. Defaults
-                to False (unlike the shell's sandbox default of True) to avoid
-                depending on openssl for local test instances.
+            ssl: Whether to generate certificates and enable TLS. Defaults
+                to False, so that openssl is not needed.
             openssl_path: Path to the openssl executable or its directory.
-            server_version: The MariaDB server version to run, as
-                'major.minor.patch' (for example '11.8.9'), as 'major.minor'
-                (for example '11.8' - the latest patch release of that series)
-                or as 'major' (for example '11' - the latest release of that
-                major version). The server on the PATH is used when it
-                satisfies the request, otherwise a copy already downloaded,
-                otherwise the published package is downloaded first - which
-                takes a few hundred megabytes and a while. Call
-                sandbox.list_available_versions for the versions on offer.
-                Leave empty to deploy with whatever server is on the PATH.
-                Cannot be combined with mariadbd_path.
+            server_version: The MariaDB server version to run: '11.8.9',
+                '11.8' (the latest patch release of that series) or '11'
+                (the latest release of that major version). The server on
+                the PATH is used when it satisfies the request, else a copy
+                already downloaded, else the package is downloaded first
+                (a few hundred megabytes). sandbox.list_available_versions
+                lists the versions on offer. Leave empty for the server on
+                the PATH. Not with mariadbd_path.
             mariadbd_path: Path to the mariadbd binary or its
                 installation directory.
             mariadbd_options: Additional server options for the [mysqld]

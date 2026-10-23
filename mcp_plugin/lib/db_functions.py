@@ -3237,33 +3237,21 @@ def register_db_tools(server, function_groups=()) -> None:
     def connect(ctx: Context, uri: str) -> str:
         """Opens a configured database connection and caches it.
 
-        The connection is usable until it is closed with db.close, or until it
-        expires - a few hours after it was opened, whichever comes first. Once
-        it has expired the UUID no longer works and this tool has to be called
-        again for a new one; the URI is checked against the configured
-        connections each time, so a connection that has been removed in the
-        meantime is not opened again.
-
-        Its database session is also closed whenever it has been unused for a
-        while, but that leaves the connection itself usable: the next call opens
-        a new session automatically, so no state that only lived in the previous
-        session - temporary tables, session variables, the current schema or an
-        open transaction - survives an idle period.
-
-        When the server is served over HTTP the connection can only be used by
-        the client that opened it.
-
-        Only a limited number of connections can be open at a time, so close the
-        ones that are no longer needed with db.close rather than opening another
-        for every task.
+        The connection is usable until db.close, or until it expires a few
+        hours after it was opened; then call this tool again for a new UUID.
+        Its database session is closed after a while unused and reopened by
+        the next call, so temporary tables, session variables, the current
+        schema and an open transaction do not survive an idle period (the
+        next result then carries session_restarted: true). Over HTTP only
+        the client that opened a connection can use it. Only a limited
+        number can be open at a time: close the ones no longer needed.
 
         Args:
-            uri: A connection URI, as returned by db.list_connections. It does
-                not have to be spelled exactly as it is listed: a left-out
-                scheme (which means mariadb://) and a left-out default port name
-                the same connection. Anything the configured connection does not
-                name - a default schema, a connection option, another scheme -
-                does not, as it would not be applied.
+            uri: A connection URI, as returned by db.list_connections. A
+                left-out scheme (mariadb://) or default port still names the
+                same connection; a default schema, connection option or
+                other scheme the configured connection does not name does
+                not.
 
         Returns:
             The UUID identifying the open connection. Pass it to
@@ -3547,73 +3535,54 @@ def register_db_tools(server, function_groups=()) -> None:
             connection_id: The UUID returned by db.connect.
             sql: The SQL statement to run. May contain ? placeholders.
             params: The parameters to bind to the ? placeholders, in order.
-            limit: The most rows to return. When given, a SELECT with no
-                LIMIT of its own has one added, which is how a client pages
-                through a large result. A SELECT that limits itself, or has
-                a clause a LIMIT would have to come before (INTO, FOR
-                UPDATE, FOR SHARE, LOCK IN SHARE MODE, PROCEDURE), and any
-                statement that is not a SELECT, runs as written.
-            offset: How many rows to skip before the first one returned,
-                for the pages after the first. Needs a limit.
+            limit: The most rows to return: a SELECT with no LIMIT of its
+                own gets one, which is how to page through a large result.
+                A SELECT that limits itself or has a clause a LIMIT would
+                precede (INTO, FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE,
+                PROCEDURE), and any other statement, runs as written.
+            offset: Rows to skip before the first one returned, for the
+                pages after the first. Needs a limit.
             column_metadata: Whether each result set also reports its
-                columns' metadata. Off by default, as most callers only need
-                the rows.
-            output_format: How each result set's rows come back. json (the
-                default) gives columns and rows to work with. table gives
-                instead the text grid the mariadb client prints (table) and
-                the number of rows in it (row_count): use it to show a
-                result to the user as it is, without redrawing it.
+                columns' metadata. Off by default.
+            output_format: json (the default) gives columns and rows to
+                work with. table gives the text grid the mariadb client
+                prints (table) and its row_count: use it to show a result
+                to the user as it is, without redrawing it.
 
         Returns:
-            A dict with the statement's result sets and execution metadata.
-            result_sets is a list with one dict per result set the statement
-            returned, in order: none for a statement that returns no rows,
-            one for a SELECT, and one per SELECT a called procedure runs.
-            Each has columns (the column labels) and rows, each row keyed by
-            those labels. Where a query selects two columns with the same
-            label - joining two tables that both have an id, say - the later
-            one is listed and keyed as label_2 (then _3, and so on), so that
-            no column is lost. Binary values come as hex text, and
-            DATETIME, TIMESTAMP and TIME values as the server writes them,
-            with the column's fractional seconds (2026-01-01 00:00:00.000,
-            -838:59:59).
+            A dict with result_sets: one dict per result set, in order
+            (none for a statement without rows, one per SELECT a called
+            procedure runs), each with columns (the labels) and rows keyed
+            by them; a repeated label is keyed label_2, label_3 and so on.
+            Binary values are hex text; DATETIME, TIMESTAMP and TIME values
+            are as the server writes them, with the column's fractional
+            seconds.
 
             With output_format table, each result set has table and
-            row_count in place of columns and rows. The grid shows what the
-            mariadb client shows with --binary-as-hex: the column labels as
-            the server sent them, NULL for a NULL, binary and BIT values as
-            0x and hex, numbers as the server writes them. A backslash,
-            newline, carriage return, tab or NUL inside a value or label is
-            written \\\\, \\n, \\r, \\t or \\0, and any other control
-            character as \\xNN, so that every row stays on one line. A result
-            set without rows still shows its header.
+            row_count instead: the grid the mariadb client prints with
+            --binary-as-hex, with a backslash, newline, carriage return, tab
+            or NUL inside a value written \\\\, \\n, \\r, \\t or \\0 and any
+            other control character as \\xNN, so that every row stays on one
+            line.
 
             With column_metadata true, each result set also has
-            column_metadata: one dict per column, in the order of columns,
-            with what the shell reports for it - type (INT, BIGINT, DECIMAL,
-            DOUBLE, STRING, BYTES, JSON, GEOMETRY, DATE, DATETIME, TIME,
-            ENUM, SET, BIT and so on) and flags (a list: NOT_NULL, PRI_KEY,
-            UNSIGNED, AUTO_INCREMENT, BLOB, BINARY, ...).
+            column_metadata: one dict per column with its type (INT,
+            STRING, BYTES, DATETIME, ...) and flags (NOT_NULL, PRI_KEY,
+            UNSIGNED, AUTO_INCREMENT, ...).
 
             warnings_count is how many warnings the statement produced, and
-            warnings - present only when there were any - lists them, each
-            with its level, code and message, as SHOW WARNINGS would report
-            them.
+            warnings (only when there were any) lists them with level, code
+            and message.
 
-            If it contains session_restarted: true, this statement ran on a
-            newly opened database session, because the previous one had been
-            closed for being idle or lost. Nothing that only lived in that
-            session is still there: no temporary tables, no session variables,
-            no current schema - and no open transaction. A COMMIT or ROLLBACK
-            reported as successful alongside this flag committed or rolled back
-            nothing, and any statements of that transaction are gone. Start the
-            work again on this connection.
+            session_restarted: true means the statement ran on a newly
+            opened session, the previous one closed for being idle or lost:
+            temporary tables, session variables, the current schema and any
+            open transaction are gone, so a COMMIT or ROLLBACK reported next
+            to this flag did nothing. Start the work again.
 
-            The result set carries has_more_pages when the limit (and
-            offset) were added to the statement: true when rows exist past
-            the ones returned - ask for the next page with offset + limit -
-            and false on the last page. It is absent where the statement ran
-            as written, whose rows are then all of them.
+            has_more_pages is present where the limit was added: true when
+            rows exist past the ones returned (ask for the next page with
+            offset + limit), false on the last page.
         """
         _check_paging(limit, offset)
 
@@ -3647,141 +3616,76 @@ def register_db_tools(server, function_groups=()) -> None:
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
-        The script is split into individual statements which are executed in
-        order, so several semicolon-separated statements can be run in a single
-        call. Use db.execute_sql for a single parameterized statement.
+        The script is split into statements run in order. Use db.execute_sql
+        for a single parameterized statement, and this instead of
+        `mariadb < script.sql` or `mariadb-shell --sql -f` from a shell,
+        which would need the password on the command line.
 
-        Use this instead of running a script through the mariadb client or
-        mariadb-shell (`mariadb < script.sql`, `mariadb-shell --sql -f`) from a
-        shell, which would need the password on its command line.
-
-        The script can be provided either inline via sql_script or read from a
-        file on disk via file_path. Exactly one of the two must be given. A
-        file_path must be within one of the directories allowed via mcp.setup.
+        Give the script inline (sql_script) or as a file (file_path);
+        exactly one. A file_path must be within the directories allowed via
+        mcp.setup, and so must every file a SOURCE directive includes.
 
         MSM SOURCE directives are expanded first, as MariaDB Schema
-        Management does when it releases a schema project, so a project's
-        development script (development/<schema>_next.sql) runs with its
-        section files. A directive is a line of its own:
-
-            SOURCE '<path>'[<start>:<end>]; -- optional comment
-
-        and is replaced - its comment and line break with it - by the part of
-        the file the slice selects. The slice is optional: without one, or
-        with [:], the whole file. A bound is empty, a character offset
-        (Python slice semantics, so [100:200] or [-50:]) or a line number lnN
-        (from 1, the end line included, ln-1 the last line): [ln3:ln10]. A
-        directive works anywhere in the text, inside a procedure body too.
-        One level only: an included part must not hold a SOURCE directive.
-        A relative path is relative to the folder of file_path, or to
-        source_dir for an inline script; an inline script without
-        source_dir can only use absolute paths. Every included file must be
-        within the allowed directories, as file_path must, and a directive
-        that cannot be expanded fails the call before any statement runs.
-        Line breaks are made \\n first - \\r\\n and a lone \\r, inside string
-        literals too - as reading a file does.
+        Management does, so a project's development script runs with its
+        section files. A directive is a line of its own,
+        SOURCE '<path>'[<start>:<end>]; with an optional comment, replaced
+        by the selected part of the file: the whole file without a slice,
+        else from start to end as character offsets with Python slice
+        semantics ([100:200], [-50:]) or as line numbers lnN (from 1, end
+        line included, ln-1 the last: [ln3:ln10]). It works anywhere, inside
+        a procedure body too; one level only. A relative path is relative to
+        file_path's folder, or to source_dir for an inline script (without
+        it, an inline script can use only absolute paths). A
+        directive that cannot be expanded fails the call before any
+        statement runs.
 
         Args:
             connection_id: The UUID returned by db.connect.
             sql_script: One or more semicolon-separated SQL statements.
-            file_path: Path to a .sql file on disk to read the script from,
-                as an alternative to sql_script.
-            stop_on_error: Whether a failing statement ends the script.
-                True (the default) runs no further statements once one
-                fails, which is what a script whose later statements build
-                on its earlier ones needs. False runs every statement and
-                reports each failure, which suits a script of independent
-                statements - a batch of inserts, or a set of DROPs - where
-                one failure should not hold up the rest.
-            limit: The most rows any one SELECT returns. When given, every
-                SELECT with no LIMIT of its own has one added. A SELECT that
-                limits itself, or has a clause a LIMIT would have to come
-                before (INTO, FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE,
-                PROCEDURE), and every other statement, runs as written. Use
-                db.execute_sql's limit and offset for the pages after the
-                first.
-            column_metadata: Whether each result set also reports its
-                columns' metadata, as for db.execute_sql. Off by default.
-            ansi_quotes: Whether the script is split with "..." read as a
-                quoted identifier rather than a string, as the server reads
-                it when the session's sql_mode has ANSI_QUOTES. It only
-                matters where a backslash ends a double-quoted identifier,
-                which as a string would escape the closing quote. Off by
-                default; pass what the session's sql_mode says, which
-                report_sql_mode tells.
-            report_sql_mode: Whether the last entry also reports how the
-                script was split (ansi_quotes) and the session's sql_mode
-                once the script is over (sql_mode), read after the last
-                statement - so a script that changed it reports the new
-                one. Off by default, as it costs a query.
-            output_format: How each result set's rows come back, as for
-                db.execute_sql: json (the default) for columns and rows,
-                table for the text grid the mariadb client prints (table)
-                and its row_count, to show a result to the user as it is.
+            file_path: A .sql file to read the script from instead.
+            stop_on_error: True (the default) runs no further statements
+                once one fails. False runs every statement and reports each
+                failure, for a script of independent statements.
+            limit: The most rows any one SELECT returns, as db.execute_sql's
+                limit; use db.execute_sql with an offset for the pages after
+                the first.
+            column_metadata: As for db.execute_sql. Off by default.
+            ansi_quotes: Split the script with "..." read as a quoted
+                identifier, as the server does when its sql_mode has
+                ANSI_QUOTES. Only matters where a backslash ends a
+                double-quoted identifier. Off by default.
+            report_sql_mode: Whether the last entry also reports ansi_quotes
+                and the session's sql_mode after the script. Off by default.
+            output_format: As for db.execute_sql: json (the default) or
+                table.
             source_dir: The folder relative SOURCE paths of an inline
-                sql_script are taken from - the folder the script was saved
-                in. It must be within the allowed directories. Not with
-                file_path, whose own folder is used.
+                sql_script are taken from. Must be within the allowed
+                directories. Not with file_path, whose own folder is used.
 
         Returns:
-            A list with one entry per statement that ran, each a dict with its
-            result sets and execution metadata: its position in the script
-            (statement_index, counting the non-empty statements from 0) and
-            how long it took (execution_time, in seconds). result_sets is a
-            list with one dict of columns and rows per result set the
-            statement returned - none, one, or one per SELECT of a called
-            procedure - as for db.execute_sql, and so are column_metadata
-            and output_format.
-            Each entry also carries warnings_count, and warnings - the level,
-            code and message of each - where the statement produced any.
+            A list with one entry per statement that ran: its
+            statement_index (position in the script, counting the non-empty
+            statements from 0), execution_time (seconds), and result_sets,
+            warnings_count and warnings as db.execute_sql returns them.
+            Statements a SOURCE directive brought in share the directive's
+            statement_index and carry source: the included file and the
+            line the statement starts on in it. A statement that is only a
+            -- or # comment is not run and has no entry, but keeps its
+            statement_index.
 
-            For a script with SOURCE directives, statement_index is still
-            the position in the script as given, so every statement a
-            directive brought in carries the directive's statement_index -
-            several entries can share one. Such an entry also has source:
-            the included file (file, its resolved path) and the line the
-            statement starts on in it (line, from 1).
+            IMPORTANT: a failing statement does NOT raise. Its entry carries
+            error (the message) and statement (the text that failed) instead
+            of result sets, so check every entry for an error key. Nothing
+            is rolled back: the statements that already ran have taken
+            effect. With stop_on_error true the statements after the failure
+            have no entries.
 
-            A statement that is nothing but a -- or # line comment is NOT run
-            and has no entry, since it carries no SQL. It still takes up a
-            statement_index, so the indexes of the statements around it are
-            what they would be if it had run - a caller that split the script
-            for itself can go on pairing results with statements by this
-            number.
-
-            IMPORTANT - a failing statement does NOT raise. Its entry carries
-            error (the message) and statement (the text that failed) INSTEAD
-            of result sets, so check every entry for an error key before
-            treating the script as done. Nothing is rolled back either way: a
-            script is not a transaction, and the statements that already ran
-            have taken effect.
-
-            With stop_on_error true (the default) the script ends at the first
-            failure, and the statements after it have no entries because they
-            never ran - so fewer entries than statements means it stopped
-            early, or that the script held a comment. With stop_on_error false
-            every statement is attempted and there is one entry per statement
-            that ran, error or not.
-
-            If the FIRST entry contains session_restarted: true, the script ran
-            on a newly opened database session, because the previous one had
-            been closed for being idle or lost. Nothing that only lived in that
-            session is still there - temporary tables, session variables, the
-            current schema, and any open transaction are all gone, so a COMMIT
-            in this script committed nothing that came before it. The flag is on
-            the first entry only, as the session is opened once, before the
-            script starts.
-
-            An entry's result set carries has_more_pages where the limit was
-            added to its statement: true when rows exist past the ones
-            returned - fetch the next page with db.execute_sql and an offset -
-            and false when these are all of them. It is absent where the
-            statement ran as written.
-
-            With report_sql_mode, the LAST entry also carries ansi_quotes
-            (how the script was split) and sql_mode (the session's, after
-            the script; absent if it could not be read). A script of nothing
-            but comments has no entries to carry them.
+            session_restarted: true on the FIRST entry means the script ran
+            on a newly opened session (the previous one closed for being
+            idle or lost): temporary tables, session variables, the current
+            schema and any open transaction are gone. has_more_pages on a
+            result set is as for db.execute_sql. With report_sql_mode the
+            LAST entry also carries ansi_quotes and sql_mode.
         """
         _check_paging(limit)
         client = general.get_client_identity(ctx)

@@ -160,7 +160,44 @@ session machinery the db tools sit on is in
   --toolNameSeparator=_` (settings.json `toolNameSeparator`, `config.get_tool_name_separator`)
   and wraps each tool so its ToolError text is rewritten; `finish_tool_names` (after)
   rewrites descriptions and parameter schemas through the SDK's PRIVATE `_tool_manager`.
-  Only dotted words that are registered tool names are rewritten. `tool_group()` reads the
+  Only dotted words that are registered tool names are rewritten. `finish_tool_names`
+  also trims every published schema, whatever the separator (2026-10-21,
+  `_trim_schema`, tests `test_the_published_schemas_are_trimmed`,
+  `test_an_explicit_null_is_still_accepted`, `test_a_nullable_enum_and_list_keep...`):
+  the `title` the SDK puts on every parameter and schema goes, and so does the null
+  alternative of every optional parameter (`Optional[str] = None` is published as
+  `anyOf [string, null], default null`; now `type: string`, no default). SAFE because
+  the SDK validates a call with the pydantic `arg_model` built from the signature
+  (`func_metadata.py` `model_validate`), never with `tool.parameters`, which it builds
+  once at registration and only publishes: an explicit null is still accepted. Only a
+  two-member `anyOf` with a `{"type": "null"}` member is collapsed, so `urls:
+  Union[str, list]` keeps its `anyOf`, and an enum or `items` survives. The keys of
+  `properties`, `$defs` and the like are names, never trimmed: a parameter called
+  `title` stays (`test_a_parameter_called_title_is_kept`). Real defaults (`false`,
+  `"json"`) stay.
+- **The tool listing is a per-request cost** (2026-10-21): with every group served
+  it was 82k characters, about 20k tokens, and is 59k after the trim of that day:
+  titles gone (5.4k), the null alternatives gone (5.8k), `sandbox.deploy` dedented (its `{mcp_access_doc}` placeholder
+  at column 0 had defeated the compiler's docstring dedent, so every line kept 8
+  spaces; `_register_deploy` now runs `inspect.cleandoc` after filling it), and the
+  long descriptions cut by the rule "keep what changes the agent's choice or prevents
+  a wrong call, drop repeated explanation, justification of defaults and detail an
+  error message would give". `db.execute_sql_script` says "as db.execute_sql" instead
+  of restating its result shape, and the `sql` tools point at it for SOURCE. Measure
+  with a script that builds the server and sums `tool.description` and
+  `json.dumps(tool.input_schema)` over `list_tools()` before adding prose. **Keep
+  every description under 4,096 characters**: Claude Code cuts a description there
+  when it loads tools upfront (`ENABLE_TOOL_SEARCH=false`, older models, HIPAA) and at
+  16,384 when it comes through tool search; `CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`
+  moves both. `db.execute_sql_script` at 7,490 lost its whole Returns section that
+  way, IMPORTANT note included. With tool search on (Claude Code's default) only the
+  names and the server instructions load at session start and a description loads
+  when the model searches for the tool (lexical, regex or BM25, over names,
+  descriptions and argument names), so the listing's per-request cost falls in full
+  on clients that load everything upfront: Cursor, VS Code Copilot, Arcade/OpenAI,
+  local models. The one exposure of the null trim: a model that used to send null for `sandbox.deploy`'s
+  `password` and reaches for `""` instead would deploy a root without a password;
+  the description forbids the empty string in plain words. `tool_group()` reads the
   group from either form (scopes, `auth.filtered_tools`). Arcade and OpenAI refuse dots;
   SEP-986 allows them, so `.` stays the default. Tests: `test_tool_names.py` (resets the
   module's `_separator` after each test). Imports the SDK

@@ -593,39 +593,32 @@ def register_migrator_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Writes the migration tooling's config/migration.yaml.
 
-        The file follows the tooling's own config/migration.yaml.example, whose
-        path is returned so it can be read for the full set of keys and what
-        each mode requires.
+        The file follows the tooling's config/migration.yaml.example, whose
+        path is returned: read it for the full set of keys and what each
+        mode requires.
 
-        Only servers that are already configured as MCP connections may be
-        named. Every account the configuration gives - SRC_ADMIN_USER at
-        SRC_HOST:SRC_PORT, TGT_ADMIN_USER at TGT_HOST:TGT_PORT, and so on - has
-        to match one of the connections mcp.setup configured, and a
-        configuration naming anything else is refused rather than written. Use
-        db.list_connections to see what is available. A side that names a host
-        must also name the account to reach it by, since otherwise there is
-        nothing to check.
-
-        Passwords are NOT written here and are refused if given: SRC_PASS,
-        SRC_ADMIN_PASS, TGT_PASS, TGT_ADMIN_PASS and REPL_PASS are read from the
-        matching configured connection at the moment a migration runs. Set the
-        user, host and port fields and the password follows on its own.
+        Every account the configuration names (SRC_ADMIN_USER at
+        SRC_HOST:SRC_PORT, TGT_ADMIN_USER at TGT_HOST:TGT_PORT, and so on)
+        must match a connection db.list_connections lists, and a side that
+        names a host must name its account too; anything else is refused.
+        Passwords (SRC_PASS, SRC_ADMIN_PASS, TGT_PASS, TGT_ADMIN_PASS,
+        REPL_PASS) are refused: they are read from the matching connection
+        when a migration runs.
 
         Args:
             mode: The default execution mode (for example one_step, two_step,
                 staged, binlog, inplace, replace_slave). The mode a run uses is
                 passed per call and overrides this.
-            env: The tooling's environment mapping - SRC_HOST, SRC_PORT,
+            env: The tooling's environment mapping, SRC_HOST, SRC_PORT,
                 SRC_ADMIN_USER, SRC_DBS, TGT_HOST and so on. Values are written
-                as strings; booleans become the "1"/"0" the tooling reads.
-            merge: Update the keys given and leave the rest of an existing
-                configuration alone, instead of replacing the whole file.
+                as strings; booleans become "1"/"0".
+            merge: Update the keys given and keep the rest of an existing
+                configuration, instead of replacing the whole file.
 
         Returns:
             A dict naming the file written, the keys it now holds, the example
-            it follows, the configured connection each account resolved to, and
-            which passwords will be read from which of them when a migration
-            runs.
+            it follows, the connection each account resolved to, and which
+            passwords will be read from which of them.
         """
         return await anyio.to_thread.run_sync(
             lambda: write_config(mode, env, merge)

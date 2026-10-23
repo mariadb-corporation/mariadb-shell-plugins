@@ -427,30 +427,26 @@ def register_rest_tools(server, function_groups=()) -> None:
 
         Or, with open_api_ui, the REST service's OpenAPI UI: Swagger UI,
         downloaded from github.com and patched to show the service's OpenAPI
-        catalog (<service path>/open-api-catalog/) and to sign in with the
-        REST Daemon. It is then served at the content set's path, by default
-        /openApiUi, to a published service's users.
+        catalog and sign in with the REST Daemon, served at the content
+        set's path (default /openApiUi).
 
         Args:
             connection_id: The UUID returned by db.connect.
             directory: The directory holding the files. Leave empty with
                 open_api_ui.
             content_set_path: The request path of the content set. Required
-                unless open_api_ui is set, which defaults it to /openApiUi.
+                unless open_api_ui is set.
             service_path: The request path of the REST service. Defaults to
                 the current one.
-            ignore_list: Comma-separated file patterns to ignore, matched
-                against the path relative to the directory. Defaults to
-                "*node_modules/*, */.*". Not with open_api_ui.
+            ignore_list: Comma-separated file patterns to ignore, relative
+                to the directory. Defaults to "*node_modules/*, */.*".
             load_scripts: Register the MRS scripts of the files. By default
-                they are registered if the directory holds any. Not with
-                open_api_ui.
+                they are registered if the directory holds any.
             replace: Replace the content set if it exists.
             open_api_ui: Upload the REST service's OpenAPI UI instead of a
                 directory's files.
-            requires_auth: Whether the content set and each of its files
-                require authentication. By default they do, except the
-                OpenAPI UI, which signs in with its Authorize button.
+            requires_auth: Whether the content set and its files require
+                authentication. By default they do, except the OpenAPI UI.
 
         Returns:
             A dict with the request paths of the uploaded files and a
