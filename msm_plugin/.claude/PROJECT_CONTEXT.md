@@ -87,7 +87,7 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19, evening), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-23), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current
@@ -97,7 +97,7 @@ $ git -C msm_plugin status --short   (one repository: every project's lines)
 (clean)
 ```
 
-- PR #60 (SOURCE without a slice = whole file, `lnN` slices) is merged; the
-  SOURCE code moved to `lib/source.py` in #61 and gained `directives()`,
-  `Segment.first_column`/`indent` and a 4-tuple `locate` in #63. No open
-  msm_plugin branch.
+- Merged since 2026-10-19: #67 (a release states its own version; the
+  schema-name check is no longer inverted) and #68 (a release takes section
+  910 from the template; an empty schema name is rejected). #66 and #70
+  changed only the `LICENSE` copy. No open msm_plugin branch.

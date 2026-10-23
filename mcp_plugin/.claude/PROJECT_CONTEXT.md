@@ -89,7 +89,7 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19, evening):
+Checked at this checkpoint (2026-10-23):
 
 ```text
 $ git -C mcp_plugin branch --show-current
@@ -99,16 +99,15 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
 (clean)
 ```
 
-- **Merged today:** #59 (`output_format` text grid), #62 (its zero-fill and
-  bidi follow-ups, which missed #59's merge by 90 s), #61
-  (`db.execute_sql_script` expands MSM SOURCE), #63 (the `sql` group, see
-  [`context/sql.md`](context/sql.md), with the security fix: the plugin
-  expands SOURCE, `mariadb-lsp` gets `--no-source`). Every merged `wip/`
-  branch and worktree is deleted, locally and on origin; none is left.
-- **Elsewhere, open:** mariadb-shell `wip/time-out-of-day-range`
-  (`5f5883393`, pushed, NO PR yet - the user's call): TIME values outside
-  one day fetchable, as `datetime.timedelta` in Python. lsp-server
-  `wip/source-dir` (`8e98d91`, `mariadb-lsp --source-dir`): no longer
-  needed by the `sql` tools, which send expanded text on stdin.
+- **Merged since 2026-10-19:** #65 (the `sql` tools find `mariadb-lsp` next to
+  the running shell), #69 (`util.import_table` steering, the tool listing a
+  quarter cheaper, see [`context/server.md`](context/server.md); its second
+  commit keeps a parameter called `title` through the schema trim). #66 and
+  #70 changed only the shared `LICENSE` copies. `wip/mcp-tool-listing-tokens`
+  is deleted locally and on origin; no `wip/` branch or worktree is left.
+- **Elsewhere, open (as of 2026-10-19, not rechecked):** mariadb-shell
+  `wip/time-out-of-day-range` (`5f5883393`, pushed, NO PR yet - the user's
+  call). lsp-server `wip/source-dir` (`8e98d91`): no longer needed by the
+  `sql` tools.
 - [`context/history.md`](context/history.md) is deliberately NOT updated,
   as by every session since `wip/sandbox-binaries`.

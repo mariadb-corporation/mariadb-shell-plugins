@@ -175,7 +175,7 @@ session machinery the db tools sit on is in
   `properties`, `$defs` and the like are names, never trimmed: a parameter called
   `title` stays (`test_a_parameter_called_title_is_kept`). Real defaults (`false`,
   `"json"`) stay.
-- **The tool listing is a per-request cost** (2026-10-21): with every group served
+- **The tool listing is a per-request cost** (2026-10-21, PR #69, merged 2026-10-23): with every group served
   it was 82k characters, about 20k tokens, and is 59k after the trim of that day:
   titles gone (5.4k), the null alternatives gone (5.8k), `sandbox.deploy` dedented (its `{mcp_access_doc}` placeholder
   at column 0 had defeated the compiler's docstring dedent, so every line kept 8

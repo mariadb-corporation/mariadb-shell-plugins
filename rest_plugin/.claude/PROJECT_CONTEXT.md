@@ -325,7 +325,7 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-19, evening), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
+Checked at this checkpoint (2026-10-23), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
 
 ```text
 $ git -C rest_plugin branch --show-current
@@ -335,6 +335,5 @@ $ git -C rest_plugin status --short   (one repository: every project's lines)
 (clean)
 ```
 
-- No rest_plugin change since the 2026-10-12 checkpoint, apart from the
-  REST naming of #57 (`rest_plugin`, its `rest` global), merged; its branch
-  `wip/rest-restd-groups` is deleted. No open rest_plugin branch.
+- No rest_plugin change since the 2026-10-12 checkpoint apart from the
+  shared `LICENSE` copy (#66, #70). No open rest_plugin branch.
