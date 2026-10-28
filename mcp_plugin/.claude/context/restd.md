@@ -140,6 +140,39 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - **Tested:** the real-daemon e2e test checks that the daemon serves exactly
   `web-certs/server.crt`. The OS dialogs were not exercised by a test.
 
+## Behind a TLS proxy (2026-10-28)
+
+For the MariaDB Cloud Workbench, a server several Linux users share (one
+Theia per user, `mariadb-workbench` repo, `deploy/hetzner/`). The local CA
+does not work there: it is trusted only by browsers on the server itself, and
+the server's own certificate key cannot be given to the users' daemons (any
+user could then impersonate the whole site, its login page included). The
+user chose TLS termination in nginx over a shared certificate path.
+
+- **Switched on by the environment** (`restd.proxy()`), which the Workbench's
+  per-user unit sets: `MARIADB_RESTD_PROXY_HOST` (turns it on),
+  `MARIADB_RESTD_PROXY_PORTS` (`8443-8462` by default),
+  `MARIADB_RESTD_PROXY_PORT_OFFSET` (`10000`). Unset, nothing changes.
+- **A daemon listens on its public port plus the offset**, on `127.0.0.1`,
+  `ssl=0` (`--conf-set-option` for `bind_address` and `ssl`; the setup gets no
+  certificate). nginx has one static server block per public port, with the
+  server's certificate, passing to `http://127.0.0.1:<port + offset>`: no
+  nginx reload when a daemon is set up.
+- **`deployment["port"]` stays the daemon's own port**: start, stop and the
+  port checks use it. `public_port` and `url` (`https://<host>:<public>`) are
+  what users see; the extension shows and opens the `url`.
+- **`choose_port` checks the daemon port**, not the public one: nginx listens
+  on every public port, so those always look taken. A named `port` is a public
+  one (`restd.proxied_port`), refused when the proxy does not serve it.
+- **A deployment made before the proxy keeps its address**: `public_port` is
+  only derived for `ssl=0` daemons whose port is in the proxied range.
+- **The certificate tools** answer `trusted` (and `proxied: True`) and make or
+  add nothing.
+- **MRS's links are relative** (`/myService/v1/.../?offset=1&limit=1`), checked
+  against a real 26.10.0 daemon behind nginx: the proxy needs no rewriting and
+  the daemon no public-address option. Firefox accepted the server's
+  certificate on the public port.
+
 ## Gotchas
 
 - **A JWT secret from `token_urlsafe` can start with `-`**, which restd's

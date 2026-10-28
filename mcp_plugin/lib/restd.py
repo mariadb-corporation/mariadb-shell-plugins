@@ -97,6 +97,11 @@ DEFAULT_METADATA_SCHEMA = "mariadb_rest_service"
 DEFAULT_PORT = 8443
 MAX_PORT = 65535
 
+# Behind a TLS proxy (see :func:`proxy`): the public ports it serves when the
+# environment names none, and how far above its public port a daemon listens.
+DEFAULT_PROXY_PORTS = (DEFAULT_PORT, DEFAULT_PORT + 19)
+DEFAULT_PROXY_PORT_OFFSET = 10000
+
 # How long a setup, a start and a stop may take.
 SETUP_TIMEOUT = 120
 START_TIMEOUT = 30
@@ -445,20 +450,119 @@ def choose_port(taken=()) -> int:
     """Picks the port for a new deployment's daemon: the first free one
     from 8443 up, for a sandbox's daemon as for any other.
 
+    Behind a TLS proxy (:func:`proxy`), the daemon port of the first of the
+    proxy's public ports whose daemon port is free.
+
     Args:
         taken: Ports to count as used; see :func:`is_port_free`.
 
     Returns:
-        The port.
+        The port the daemon listens on.
 
     Raises:
-        ToolError: If no port from 8443 up is free.
+        ToolError: If no port from 8443 up is free, or none of the proxy's.
     """
+    proxied = proxy()
+    if proxied is not None:
+        for public in range(proxied["first"], proxied["last"] + 1):
+            if is_port_free(public + proxied["offset"], taken):
+                return public + proxied["offset"]
+        raise tool_error(
+            f"None of the ports {proxied['first']}-{proxied['last']} the TLS "
+            "proxy serves is free."
+        )
+
     for port in range(DEFAULT_PORT, MAX_PORT + 1):
         if is_port_free(port, taken):
             return port
 
     raise tool_error(f"No free port was found from {DEFAULT_PORT} up.")
+
+
+# --------------------------------------------------------------------------- #
+# Behind a TLS proxy
+# --------------------------------------------------------------------------- #
+def proxy() -> Optional[dict]:
+    """Says whether the daemons are served through a TLS proxy, and how.
+
+    On a server several users share, such as the MariaDB Cloud Workbench's, a
+    daemon cannot serve a certificate browsers trust: the key of the server's
+    own certificate has to stay out of the users' reach, and the local CA of
+    :mod:`mcp_plugin.lib.restd_certs` is trusted by no browser but the
+    server's own. A proxy (nginx) answers there on public ports with the
+    server's certificate and passes each request on, unencrypted, to a daemon
+    that listens on the loopback only, on the public port plus an offset. The
+    environment says so:
+
+    * ``MARIADB_RESTD_PROXY_HOST``: the host name the proxy serves; set, it
+      turns this on;
+    * ``MARIADB_RESTD_PROXY_PORTS``: the public ports, ``<first>-<last>`` or
+      one port, 8443-8462 when not set;
+    * ``MARIADB_RESTD_PROXY_PORT_OFFSET``: how far above its public port a
+      daemon listens, 10000 when not set.
+
+    Returns:
+        dict: ``host``, the ``first`` and ``last`` public port and the
+        ``offset``; None when the daemons serve HTTPS themselves.
+
+    Raises:
+        ToolError: If the ports or the offset are not what they have to be.
+    """
+    host = os.environ.get("MARIADB_RESTD_PROXY_HOST", "").strip()
+    if not host:
+        return None
+
+    ports = os.environ.get("MARIADB_RESTD_PROXY_PORTS", "").strip()
+    offset = os.environ.get("MARIADB_RESTD_PROXY_PORT_OFFSET", "").strip()
+    first, last = DEFAULT_PROXY_PORTS
+    if ports:
+        match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", ports)
+        if match is None:
+            raise tool_error(
+                "MARIADB_RESTD_PROXY_PORTS has to be <first>-<last> or one "
+                f"port, not '{ports}'."
+            )
+        first, last = int(match.group(1)), int(match.group(2) or match.group(1))
+    if offset and not offset.isdigit():
+        raise tool_error(
+            f"MARIADB_RESTD_PROXY_PORT_OFFSET has to be a number, not '{offset}'."
+        )
+    offset = int(offset) if offset else DEFAULT_PROXY_PORT_OFFSET
+    if not 0 < first <= last <= MAX_PORT or offset < 1 or last + offset > MAX_PORT:
+        raise tool_error(
+            f"The TLS proxy's ports {first}-{last} with the offset {offset} "
+            f"do not fit below {MAX_PORT + 1}."
+        )
+
+    return {"host": host, "first": first, "last": last, "offset": offset}
+
+
+def proxied_port(public: int) -> int:
+    """The port a daemon listens on to be served on a public port.
+
+    The port itself when there is no TLS proxy.
+
+    Raises:
+        ToolError: If the proxy does not serve the public port.
+    """
+    proxied = proxy()
+    if proxied is None:
+        return public
+    if not proxied["first"] <= public <= proxied["last"]:
+        raise tool_error(
+            f"Port {public} is not one of the ports {proxied['first']}-"
+            f"{proxied['last']} the TLS proxy serves."
+        )
+    return public + proxied["offset"]
+
+
+def public_port(port: int) -> Optional[int]:
+    """The public port the TLS proxy serves a daemon's port on, or None."""
+    proxied = proxy()
+    if proxied is None:
+        return None
+    public = port - proxied["offset"]
+    return public if proxied["first"] <= public <= proxied["last"] else None
 
 
 # --------------------------------------------------------------------------- #
@@ -479,10 +583,12 @@ def read_deployment(directory: str) -> dict:
 
     Returns:
         dict: ``directory``, ``port`` (the daemon's), ``url``,
-        ``metadata_schema``, ``accounts`` (the server accounts the daemon
-        uses), ``rest_daemon_id``, ``log_path``, and what deployment.json
-        holds: ``host`` and ``server_port`` of the server, ``connection_uri``
-        and ``sandbox_port`` (None when it is not a sandbox's).
+        ``public_port`` (the port a TLS proxy serves the daemon on, None
+        without one), ``metadata_schema``, ``accounts`` (the server accounts
+        the daemon uses), ``rest_daemon_id``, ``log_path``, and what
+        deployment.json holds: ``host`` and ``server_port`` of the server,
+        ``connection_uri`` and ``sandbox_port`` (None when it is not a
+        sandbox's). Behind a TLS proxy the ``url`` is the proxy's address.
     """
     config = _read_config(directory)
     port = config.getint("http_server", "port", fallback=DEFAULT_PORT)
@@ -528,10 +634,19 @@ def read_deployment(directory: str) -> dict:
             host = host.strip("[]")
             server_port = int(port_text) if port_text.isdigit() else None
 
+    # A daemon behind a TLS proxy serves plain HTTP; one set up before the
+    # proxy came serves HTTPS itself, and keeps its own address.
+    public = None if ssl else public_port(port)
+    if public is not None:
+        url = f"https://{proxy()['host']}:{public}"
+    else:
+        url = f"{'https' if ssl else 'http'}://localhost:{port}"
+
     return {
         "directory": directory,
         "port": port,
-        "url": f"{'https' if ssl else 'http'}://localhost:{port}",
+        "url": url,
+        "public_port": public,
         "metadata_schema": config.get(
             service, "metadata_schema", fallback=DEFAULT_METADATA_SCHEMA
         ),
@@ -978,7 +1093,9 @@ def setup(
         timeout (float): Seconds the setup may take.
         certificate (dict): The HTTPS certificate to serve, its `cert` and
             `key` paths (see :mod:`mcp_plugin.lib.restd_certs`); the setup
-            makes one of its own when None.
+            makes one of its own when None. Behind a TLS proxy
+            (:func:`proxy`) the daemon serves plain HTTP on the loopback
+            instead, and this is not used.
 
     Returns:
         str: What the setup printed.
@@ -999,7 +1116,14 @@ def setup(
         command += ["--socket", connection["socket"]]
     if metadata_schema != DEFAULT_METADATA_SCHEMA:
         command += ["--metadata-schema", metadata_schema]
-    if certificate is not None:
+    if proxy() is not None:
+        # The proxy has the certificate and reaches the daemon on the
+        # loopback; nothing else does.
+        command += [
+            "--conf-set-option=http_server.bind_address=127.0.0.1",
+            "--conf-set-option=http_server.ssl=0",
+        ]
+    elif certificate is not None:
         command += [
             f"--conf-set-option=http_server.ssl_cert={certificate['cert']}",
             f"--conf-set-option=http_server.ssl_key={certificate['key']}",

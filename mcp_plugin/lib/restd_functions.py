@@ -320,16 +320,24 @@ def register_restd_tools(server, function_groups=()) -> None:
         trusted counts as not trusted. Makes nothing: before the first REST
         Daemon setup there is no certificate yet.
 
+        Behind a TLS proxy (MARIADB_RESTD_PROXY_HOST) the daemons serve no
+        certificate: the proxy serves the server's own, which is trusted.
+
         Returns:
-            'exists' (whether the first setup made it), 'trusted', and
-            'ca_path', the local certificate authority's certificate.
+            'exists' (whether the first setup made it), 'trusted',
+            'ca_path', the local certificate authority's certificate, and
+            'proxied', whether a TLS proxy serves the daemons.
         """
+        if restd.proxy() is not None:
+            return {"exists": False, "trusted": True, "ca_path": None, "proxied": True}
+
         ca_path = restd_certs.ca_path()
         exists = os.path.isfile(ca_path)
         return {
             "exists": exists,
             "trusted": exists and restd_certs.is_trusted(),
             "ca_path": ca_path,
+            "proxied": False,
         }
 
     @tool(name="restd.trust_certificate")
@@ -342,12 +350,17 @@ def register_restd_tools(server, function_groups=()) -> None:
         https://localhost address. It is added to the user's own store - the
         login keychain on macOS, the Root store on Windows, the NSS database
         on Linux - and macOS and Windows ask the user to confirm in a system
-        dialog. Nothing is done where it is trusted already.
+        dialog. Nothing is done where it is trusted already, nor behind a TLS
+        proxy (MARIADB_RESTD_PROXY_HOST), which serves the server's own
+        certificate.
 
         Returns:
             'trusted' (True), 'changed' (whether it was added now) and
-            'ca_path', the authority's certificate.
+            'ca_path', the authority's certificate (None behind a proxy).
         """
+        if restd.proxy() is not None:
+            return {"trusted": True, "changed": False, "ca_path": None}
+
         def trusted():
             restd_certs.ensure()
             return restd_certs.is_trusted()
@@ -499,7 +512,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             sandbox_dir: Path the sandbox is in. The default sandbox path when
                 empty.
             port: The port the daemon serves HTTPS on. The first free one
-                from 8443 up when empty.
+                from 8443 up when empty. Behind a TLS proxy
+                (MARIADB_RESTD_PROXY_HOST), one of the proxy's public ports.
             metadata_schema: The REST metadata schema to serve. Needed only
                 when the server has several.
             restd_path: The mariadb-restd executable to use, or its folder.
@@ -604,15 +618,18 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                     "REST Daemon. It lacks " + "; ".join(missing) + "."
                 )
 
-            daemon_port = port
-            if daemon_port is None:
+            if port is None:
                 daemon_port = restd.choose_port(restd.taken_ports(base_dir))
-            elif not restd.is_port_free(daemon_port, restd.taken_ports(base_dir)):
-                raise tool_error(f"Port {daemon_port} is in use.")
+            else:
+                # Behind a TLS proxy the port named is the public one.
+                daemon_port = restd.proxied_port(port)
+                if not restd.is_port_free(daemon_port, restd.taken_ports(base_dir)):
+                    raise tool_error(f"Port {port} is in use.")
 
             # The one certificate every daemon here serves, made by the
             # first setup: trusted once, it is trusted for all of them.
-            certificate = restd_certs.ensure()
+            # Behind a TLS proxy the proxy has the server's own instead.
+            certificate = None if restd.proxy() is not None else restd_certs.ensure()
             output = restd.setup(
                 executable,
                 directory,
