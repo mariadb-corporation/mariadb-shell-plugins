@@ -542,8 +542,13 @@ the user to confirm, and the NSS database Chromium-based browsers read on Linux.
 agent is asked first, through MCP elicitation.
 
 On a server several users share, the daemons can run behind a TLS proxy instead, such
-as nginx with the server's own certificate: its key stays out of the users' reach, and
-browsers anywhere trust it. `MARIADB_RESTD_PROXY_HOST` turns this on:
+as nginx with a certificate of the server's: its key stays out of the users' reach, and
+browsers anywhere trust it. `MARIADB_RESTD_PROXY_HOST` turns this on, set in the
+environment or, for every user of the server, in `/etc/mariadb-restd/proxy.conf` (a
+`NAME=value` line each, written by the server's administrator). The file is read when
+the environment names no host; an MCP server is not always started with the user's
+environment (the MCP SDK's stdio client passes on only `HOME`, `LOGNAME`, `PATH`, `SHELL`,
+`TERM` and `USER`).
 
 | Variable | Means |
 | --- | --- |
@@ -558,6 +563,14 @@ is a public port, a deployment's `url` is `https://<proxy host>:<public port>`, 
 `public_port` says which; no certificate is made, and the certificate tools report it
 trusted. A daemon set up before keeps serving HTTPS itself, at its own address. MRS's
 links are relative, so a response says the same behind the proxy.
+
+**Serve the daemons under a host of their own, outside the cookie domain of anything
+else on the server** - a sibling name such as `rest-ide.example.com` beside
+`ide.example.com`, or a separate domain; never the site's own name or a name below it.
+Nothing ties a daemon port to a user: any user of the server can listen on a port whose
+daemon is stopped, and the proxy then serves that user's content under the host's name
+and certificate. Under the site's own name, browsers would send that content the site's
+cookies, a login session included, and it could pose as the site's login page.
 
 `restd.configure_restd`, in this order:
 
