@@ -118,10 +118,12 @@ _PROXY_VARIABLES = (
 
 
 @pytest.fixture(autouse=True)
-def no_proxy(monkeypatch):
-    """No TLS proxy, unless a test sets one: an IDE may run the suite with one."""
+def no_proxy(monkeypatch, tmp_path):
+    """No TLS proxy, unless a test sets one: an IDE may run the suite with one,
+    and a server may have the file that sets one for every user."""
     for name in _PROXY_VARIABLES:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(restd, "PROXY_FILE", str(tmp_path / "proxy.conf"))
 
 
 def _behind_a_proxy(monkeypatch, daemon_port, public_port=8443, host="wb.example.com"):
@@ -275,6 +277,9 @@ def test_the_proxy_settings_are_checked(monkeypatch):
     monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443:8462")
     with pytest.raises(Exception, match="<first>-<last> or one port"):
         restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "9000-8000")
+    with pytest.raises(Exception, match="the first not above the last"):
+        restd.proxy()
     monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "9000")
     monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "60000")
     with pytest.raises(Exception, match="do not fit"):
@@ -282,6 +287,66 @@ def test_the_proxy_settings_are_checked(monkeypatch):
     monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "ten")
     with pytest.raises(Exception, match="has to be a number"):
         restd.proxy()
+    # Daemon ports among the public ones, where the proxy itself listens.
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443-8462")
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "19")
+    with pytest.raises(Exception, match="has to be above 19"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "20")
+    assert restd.proxy()["offset"] == 20
+    # The host goes into an https URL as it is.
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "https://wb.example.com")
+    with pytest.raises(Exception, match="has to be a host name"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "[::1]")
+    assert restd.proxy()["host"] == "[::1]"
+
+    # A wrong setting is reported by a setup, not hidden in what is read
+    # about the deployments there are (their status, a stop, a delete).
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "wb.example.com/")
+    with pytest.raises(Exception, match="has to be a host name"):
+        restd.proxy()
+    assert restd.proxy(strict=False) is None
+    assert restd.public_port(18443) is None
+
+
+def test_the_proxy_can_be_set_for_every_user_in_a_file(monkeypatch):
+    """For an MCP server started without the user's environment; the
+    environment, when it names a host, wins whole."""
+    with open(restd.PROXY_FILE, "w", encoding="utf-8") as file:
+        file.write(
+            "# set by the server's administrator\n"
+            "MARIADB_RESTD_PROXY_HOST=rest.example.com\n"
+            "MARIADB_RESTD_PROXY_PORTS=9443-9445\n"
+            "UNRELATED=1\n"
+        )
+    assert restd.proxy() == {
+        "host": "rest.example.com", "first": 9443, "last": 9445, "offset": 10000
+    }
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "other.example.com")
+    assert restd.proxy() == {
+        "host": "other.example.com", "first": 8443, "last": 8462, "offset": 10000
+    }
+
+
+def test_a_wrong_proxy_setting_does_not_hide_a_deployment(fake_restd, tmp_path, monkeypatch):
+    """Its status still says what the daemon's files say, and it still stops."""
+    executable, _ = fake_restd
+    port = helpers.find_free_port()
+    _behind_a_proxy(monkeypatch, port)
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory, port=port)
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443:8462")
+    with pytest.raises(Exception, match="<first>-<last> or one port"):
+        restd.choose_port()
+
+    deployment = restd.read_deployment(directory)
+    assert deployment["port"] == port
+    assert deployment["public_port"] is None
+    assert deployment["url"] == f"http://localhost:{port}"
+    assert restd.status(directory)["status"] == "stopped"
 
 
 # --- setup, start, stop --------------------------------------------------------

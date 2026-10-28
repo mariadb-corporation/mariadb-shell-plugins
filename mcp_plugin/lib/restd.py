@@ -101,6 +101,15 @@ MAX_PORT = 65535
 # environment names none, and how far above its public port a daemon listens.
 DEFAULT_PROXY_PORTS = (DEFAULT_PORT, DEFAULT_PORT + 19)
 DEFAULT_PROXY_PORT_OFFSET = 10000
+# Where a server's administrator sets the proxy for every user: the MCP server
+# is not always started with the user's environment (the MCP SDK's stdio client
+# passes on only HOME, LOGNAME, PATH, SHELL, TERM and USER).
+PROXY_FILE = "/etc/mariadb-restd/proxy.conf"
+_PROXY_SETTINGS = (
+    "MARIADB_RESTD_PROXY_HOST",
+    "MARIADB_RESTD_PROXY_PORTS",
+    "MARIADB_RESTD_PROXY_PORT_OFFSET",
+)
 
 # How long a setup, a start and a stop may take.
 SETUP_TIMEOUT = 120
@@ -463,26 +472,28 @@ def choose_port(taken=()) -> int:
         ToolError: If no port from 8443 up is free, or none of the proxy's.
     """
     proxied = proxy()
-    if proxied is not None:
-        for public in range(proxied["first"], proxied["last"] + 1):
-            if is_port_free(public + proxied["offset"], taken):
-                return public + proxied["offset"]
-        raise tool_error(
+    if proxied is None:
+        first, last = DEFAULT_PORT, MAX_PORT
+        error = f"No free port was found from {DEFAULT_PORT} up."
+    else:
+        first = proxied["first"] + proxied["offset"]
+        last = proxied["last"] + proxied["offset"]
+        error = (
             f"None of the ports {proxied['first']}-{proxied['last']} the TLS "
             "proxy serves is free."
         )
 
-    for port in range(DEFAULT_PORT, MAX_PORT + 1):
+    for port in range(first, last + 1):
         if is_port_free(port, taken):
             return port
 
-    raise tool_error(f"No free port was found from {DEFAULT_PORT} up.")
+    raise tool_error(error)
 
 
 # --------------------------------------------------------------------------- #
 # Behind a TLS proxy
 # --------------------------------------------------------------------------- #
-def proxy() -> Optional[dict]:
+def proxy(strict: bool = True) -> Optional[dict]:
     """Says whether the daemons are served through a TLS proxy, and how.
 
     On a server several users share, such as the MariaDB Cloud Workbench's, a
@@ -491,8 +502,15 @@ def proxy() -> Optional[dict]:
     :mod:`mcp_plugin.lib.restd_certs` is trusted by no browser but the
     server's own. A proxy (nginx) answers there on public ports with the
     server's certificate and passes each request on, unencrypted, to a daemon
-    that listens on the loopback only, on the public port plus an offset. The
-    environment says so:
+    that listens on the loopback only, on the public port plus an offset.
+
+    The host has to be outside the cookie domain of whatever else the server
+    serves (a sibling name, not the site's own name or one below it): any user
+    can listen on a stopped daemon's port, so the content under that host is
+    not the site's.
+
+    The environment says so, or else :data:`PROXY_FILE` with the same names, a
+    ``NAME=value`` line each:
 
     * ``MARIADB_RESTD_PROXY_HOST``: the host name the proxy serves; set, it
       turns this on;
@@ -501,35 +519,97 @@ def proxy() -> Optional[dict]:
     * ``MARIADB_RESTD_PROXY_PORT_OFFSET``: how far above its public port a
       daemon listens, 10000 when not set.
 
+    Args:
+        strict (bool): Whether settings that are not what they have to be
+            raise. False gives None for them, as if there were no proxy: for
+            reading a deployment that exists, which a wrong setting must not
+            hide from the status, a stop or a delete.
+
     Returns:
         dict: ``host``, the ``first`` and ``last`` public port and the
         ``offset``; None when the daemons serve HTTPS themselves.
 
     Raises:
-        ToolError: If the ports or the offset are not what they have to be.
+        ToolError: If strict and the host, the ports or the offset are not
+            what they have to be.
     """
-    host = os.environ.get("MARIADB_RESTD_PROXY_HOST", "").strip()
-    if not host:
+    try:
+        return _read_proxy()
+    except ValueError as error:
+        if strict:
+            raise tool_error(str(error)) from None
         return None
 
-    ports = os.environ.get("MARIADB_RESTD_PROXY_PORTS", "").strip()
-    offset = os.environ.get("MARIADB_RESTD_PROXY_PORT_OFFSET", "").strip()
+
+def _proxy_settings() -> dict:
+    """The TLS proxy's three settings, by name.
+
+    From the environment when it names a host; else from :data:`PROXY_FILE`,
+    lines of ``NAME=value`` with ``#`` comments. Never a mix of the two.
+    """
+    if os.environ.get("MARIADB_RESTD_PROXY_HOST", "").strip():
+        return {name: os.environ.get(name, "") for name in _PROXY_SETTINGS}
+
+    settings = {}
+    try:
+        with open(PROXY_FILE, encoding="utf-8") as file:
+            for line in file:
+                name, separator, value = line.strip().partition("=")
+                if separator and name.strip() in _PROXY_SETTINGS:
+                    settings[name.strip()] = value
+    except OSError:
+        pass
+    return settings
+
+
+def _read_proxy() -> Optional[dict]:
+    """Reads the TLS proxy's settings; see :func:`proxy`.
+
+    Raises:
+        ValueError: With the message for the setting that is wrong.
+    """
+    settings = _proxy_settings()
+    host = settings.get("MARIADB_RESTD_PROXY_HOST", "").strip()
+    if not host:
+        return None
+    # A host name or a bracketed IPv6 address, as it goes into an https URL:
+    # a scheme, a port or a path would make one no browser can open.
+    if re.fullmatch(r"[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\]", host) is None:
+        raise ValueError(
+            f"MARIADB_RESTD_PROXY_HOST has to be a host name, not '{host}'."
+        )
+
+    ports = settings.get("MARIADB_RESTD_PROXY_PORTS", "").strip()
+    offset = settings.get("MARIADB_RESTD_PROXY_PORT_OFFSET", "").strip()
     first, last = DEFAULT_PROXY_PORTS
     if ports:
         match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", ports)
         if match is None:
-            raise tool_error(
+            raise ValueError(
                 "MARIADB_RESTD_PROXY_PORTS has to be <first>-<last> or one "
                 f"port, not '{ports}'."
             )
         first, last = int(match.group(1)), int(match.group(2) or match.group(1))
+        if not 0 < first <= last <= MAX_PORT:
+            raise ValueError(
+                f"MARIADB_RESTD_PROXY_PORTS has to be ports from 1 to {MAX_PORT}, "
+                f"the first not above the last, not '{ports}'."
+            )
     if offset and not offset.isdigit():
-        raise tool_error(
+        raise ValueError(
             f"MARIADB_RESTD_PROXY_PORT_OFFSET has to be a number, not '{offset}'."
         )
     offset = int(offset) if offset else DEFAULT_PROXY_PORT_OFFSET
-    if not 0 < first <= last <= MAX_PORT or offset < 1 or last + offset > MAX_PORT:
-        raise tool_error(
+    # The daemon ports above the public ones, where the proxy itself listens,
+    # and all of them ports.
+    if offset <= last - first:
+        raise ValueError(
+            f"MARIADB_RESTD_PROXY_PORT_OFFSET has to be above {last - first}, so "
+            f"that no daemon listens on one of the proxy's ports {first}-{last}, "
+            f"not {offset}."
+        )
+    if last + offset > MAX_PORT:
+        raise ValueError(
             f"The TLS proxy's ports {first}-{last} with the offset {offset} "
             f"do not fit below {MAX_PORT + 1}."
         )
@@ -557,8 +637,12 @@ def proxied_port(public: int) -> int:
 
 
 def public_port(port: int) -> Optional[int]:
-    """The public port the TLS proxy serves a daemon's port on, or None."""
-    proxied = proxy()
+    """The public port the TLS proxy serves a daemon's port on, or None.
+
+    None as well when the proxy's settings are wrong: what is read about a
+    deployment does not fail on them (see :func:`proxy`).
+    """
+    proxied = proxy(strict=False)
     if proxied is None:
         return None
     public = port - proxied["offset"]
