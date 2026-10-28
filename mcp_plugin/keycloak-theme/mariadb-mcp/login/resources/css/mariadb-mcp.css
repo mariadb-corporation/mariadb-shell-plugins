@@ -24,7 +24,12 @@ a{color:var(--textLink-foreground)}
 #kc-content,#kc-content-wrapper,#kc-form,#kc-form-wrapper{display:flex;flex-direction:column;
 align-items:center;gap:12px;width:100%}
 #kc-content-wrapper form{display:flex;flex-direction:column;align-items:stretch;width:300px}
-.mcpGroup{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+/* A form group: the label centred above an input as wide as the form; checkboxes and buttons centred. */
+.mcpGroup{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin-bottom:12px;
+text-align:center}
+.mcpGroup .mcpInput{width:100%;box-sizing:border-box}
+.mcpGroup .checkbox label{display:inline-flex;gap:8px;align-items:center}
+#kc-form-buttons{display:flex;justify-content:center}
 .mcpLabel,#kc-content-wrapper label{font-size:14px;font-weight:300}
 .mcpInput,#kc-content-wrapper form:not(.mrsLoginFields) input:is([type=text],[type=email],[type=password]){
 border:1px solid var(--secondary-text-color);border-radius:5px;padding:8px 12px;
@@ -55,3 +60,13 @@ border-radius:18px;padding:8px;color:var(--primary-text-color);text-decoration:n
 font-size:15px;font-weight:300}
 .mcpSocialButton:hover,.mcpSocialButton:focus-visible{border-color:var(--focus-color);outline:0}
 .mcpSocialButton[aria-disabled=true]{opacity:.5;pointer-events:none}
+/* Mobile Authenticator Setup: the numbered steps, the lists of apps and of configuration values
+   ("Unable to scan?"), the QR code and the key, centred like the rest of the card. */
+#kc-totp-settings{list-style-position:inside;text-align:center;max-width:400px;
+font-size:15px;font-weight:200;line-height:19px}
+#kc-totp-settings>li{margin-bottom:14px}
+#kc-totp-settings>li>p:first-child{display:inline}
+#kc-totp-settings ul{list-style:none;margin:6px 0 0;font-size:14px}
+#kc-totp-secret-qr-code{display:block;margin:10px auto 4px}
+#kc-totp-secret-key{display:block;margin:6px 0;font-family:monospace;font-size:14px;
+overflow-wrap:anywhere}
