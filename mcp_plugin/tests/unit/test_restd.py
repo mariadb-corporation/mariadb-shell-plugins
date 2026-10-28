@@ -64,14 +64,19 @@ if argv and argv[0] == "--setup":
         print("Error: Access denied for user 'root'", file=sys.stderr)
         sys.exit(1)
     directory = argv[argv.index("--directory") + 1]
-    port = [a.split("=", 2)[2] for a in argv if a.startswith("--conf-set-option=http_server.port")][0]
+    # As the real one: each --conf-set-option sets or adds an option.
+    http_server = {"port": "", "ssl": "1"}
+    for a in argv:
+        if a.startswith("--conf-set-option=http_server."):
+            option, _, value = a[len("--conf-set-option=http_server."):].partition("=")
+            http_server[option] = value
     for folder in ("log", "run", "data"):
         os.makedirs(os.path.join(directory, folder))
     with open(os.path.join(directory, "mariadb-restd.conf"), "w") as file:
         file.write(
-            f"[DEFAULT]\nlogging_folder={directory}/log\n"
-            f"[http_server]\nport={port}\nssl=1\n"
-            "[mariadb_rest_service]\nmetadata_user=mariadb_restd_abc123\n"
+            f"[DEFAULT]\nlogging_folder={directory}/log\n[http_server]\n"
+            + "".join(f"{option}={value}\n" for option, value in http_server.items())
+            + "[mariadb_rest_service]\nmetadata_user=mariadb_restd_abc123\n"
             "read_write_destinations=127.0.0.1:3311\n"
             "rest_daemon_id=0199a1b2-6c3e-7d41-9a0f-2b8c4d5e6f70\n"
         )
@@ -103,6 +108,29 @@ signal.signal(signal.SIGTERM, bye)
 while True:
     time.sleep(0.1)
 '''
+
+
+_PROXY_VARIABLES = (
+    "MARIADB_RESTD_PROXY_HOST",
+    "MARIADB_RESTD_PROXY_PORTS",
+    "MARIADB_RESTD_PROXY_PORT_OFFSET",
+)
+
+
+@pytest.fixture(autouse=True)
+def no_proxy(monkeypatch, tmp_path):
+    """No TLS proxy, unless a test sets one: an IDE may run the suite with one,
+    and a server may have the file that sets one for every user."""
+    for name in _PROXY_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(restd, "PROXY_FILE", str(tmp_path / "proxy.conf"))
+
+
+def _behind_a_proxy(monkeypatch, daemon_port, public_port=8443, host="wb.example.com"):
+    """A TLS proxy serving public_port, whose daemon listens on daemon_port."""
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", host)
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", str(public_port))
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", str(daemon_port - public_port))
 
 
 @pytest.fixture
@@ -217,6 +245,110 @@ def test_a_daemon_listens_on_the_first_free_port_from_8443(monkeypatch):
     assert restd.choose_port(taken={8444}) == 8445
 
 
+def test_behind_a_proxy_a_daemon_listens_above_the_first_free_public_port(monkeypatch):
+    """The proxy's public ports only, the daemon's own port checked."""
+    used = {8443, 8444}  # the proxy itself listens on its public ports
+    monkeypatch.setattr(restd, "is_listening", lambda port: port in used)
+    monkeypatch.setattr(restd, "_can_bind", lambda port: port not in used)
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "wb.example.com")
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443-8445")
+
+    assert restd.choose_port() == 18443
+    used.add(18443)
+    assert restd.choose_port() == 18444
+    with pytest.raises(Exception, match="8443-8445 the TLS proxy serves is free"):
+        restd.choose_port(taken={18444, 18445})
+
+    assert restd.proxied_port(8445) == 18445
+    with pytest.raises(Exception, match="not one of the ports 8443-8445"):
+        restd.proxied_port(8446)
+    assert restd.public_port(18444) == 8444
+    assert restd.public_port(8444) is None
+
+
+def test_the_proxy_settings_are_checked(monkeypatch):
+    assert restd.proxy() is None
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "wb.example.com")
+    assert restd.proxy() == {
+        "host": "wb.example.com", "first": 8443, "last": 8462, "offset": 10000
+    }
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443:8462")
+    with pytest.raises(Exception, match="<first>-<last> or one port"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "9000-8000")
+    with pytest.raises(Exception, match="the first not above the last"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "9000")
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "60000")
+    with pytest.raises(Exception, match="do not fit"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "ten")
+    with pytest.raises(Exception, match="has to be a number"):
+        restd.proxy()
+    # Daemon ports among the public ones, where the proxy itself listens.
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443-8462")
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "19")
+    with pytest.raises(Exception, match="has to be above 19"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORT_OFFSET", "20")
+    assert restd.proxy()["offset"] == 20
+    # The host goes into an https URL as it is.
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "https://wb.example.com")
+    with pytest.raises(Exception, match="has to be a host name"):
+        restd.proxy()
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "[::1]")
+    assert restd.proxy()["host"] == "[::1]"
+
+    # A wrong setting is reported by a setup, not hidden in what is read
+    # about the deployments there are (their status, a stop, a delete).
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "wb.example.com/")
+    with pytest.raises(Exception, match="has to be a host name"):
+        restd.proxy()
+    assert restd.proxy(strict=False) is None
+    assert restd.public_port(18443) is None
+
+
+def test_the_proxy_can_be_set_for_every_user_in_a_file(monkeypatch):
+    """For an MCP server started without the user's environment; the
+    environment, when it names a host, wins whole."""
+    with open(restd.PROXY_FILE, "w", encoding="utf-8") as file:
+        file.write(
+            "# set by the server's administrator\n"
+            "MARIADB_RESTD_PROXY_HOST=rest.example.com\n"
+            "MARIADB_RESTD_PROXY_PORTS=9443-9445\n"
+            "UNRELATED=1\n"
+        )
+    assert restd.proxy() == {
+        "host": "rest.example.com", "first": 9443, "last": 9445, "offset": 10000
+    }
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "other.example.com")
+    assert restd.proxy() == {
+        "host": "other.example.com", "first": 8443, "last": 8462, "offset": 10000
+    }
+
+
+def test_a_wrong_proxy_setting_does_not_hide_a_deployment(fake_restd, tmp_path, monkeypatch):
+    """Its status still says what the daemon's files say, and it still stops."""
+    executable, _ = fake_restd
+    port = helpers.find_free_port()
+    _behind_a_proxy(monkeypatch, port)
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory, port=port)
+
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_PORTS", "8443:8462")
+    with pytest.raises(Exception, match="<first>-<last> or one port"):
+        restd.choose_port()
+
+    deployment = restd.read_deployment(directory)
+    assert deployment["port"] == port
+    assert deployment["public_port"] is None
+    assert deployment["url"] == f"http://localhost:{port}"
+    assert restd.status(directory)["status"] == "stopped"
+
+
 # --- setup, start, stop --------------------------------------------------------
 
 
@@ -242,6 +374,44 @@ def test_the_setup_gets_the_password_on_stdin(fake_restd, tmp_path):
     assert deployment["sandbox_port"] == 3311
     assert deployment["host"] == "127.0.0.1"
     assert restd.generated_accounts(deployment) == ["mariadb_restd_abc123"]
+
+
+def test_behind_a_proxy_a_daemon_serves_plain_http_on_the_loopback(fake_restd, tmp_path, monkeypatch):
+    """And reports the proxy's address, where browsers find it."""
+    executable, runs = fake_restd
+    port = helpers.find_free_port()
+    _behind_a_proxy(monkeypatch, port)
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory, port=port)
+
+    (run,) = runs()
+    assert "--conf-set-option=http_server.bind_address=127.0.0.1" in run["argv"]
+    assert "--conf-set-option=http_server.ssl=0" in run["argv"]
+    assert not any("ssl_cert" in argument for argument in run["argv"])
+
+    deployment = restd.read_deployment(directory)
+    assert deployment["port"] == port
+    assert deployment["public_port"] == 8443
+    assert deployment["url"] == "https://wb.example.com:8443"
+
+    restd.start(executable, directory)
+    try:
+        assert restd.status(directory)["status"] == "running"
+    finally:
+        restd.stop(directory)
+
+
+def test_a_daemon_set_up_before_the_proxy_keeps_its_own_address(fake_restd, tmp_path, monkeypatch):
+    """It serves HTTPS itself, whatever port it has."""
+    executable, _ = fake_restd
+    port = helpers.find_free_port()
+    directory = str(tmp_path / "deployment")
+    _set_up(executable, directory, port=port)
+    _behind_a_proxy(monkeypatch, port)
+
+    deployment = restd.read_deployment(directory)
+    assert deployment["public_port"] is None
+    assert deployment["url"] == f"https://localhost:{port}"
 
 
 def test_a_failed_setup_says_why(fake_restd, tmp_path, monkeypatch):
@@ -567,6 +737,22 @@ def test_the_stored_password_is_used_when_none_is_given(configure, monkeypatch):
     # It has its metadata already.
     assert not any(s.startswith("CONFIGURE") for s in statements)
     assert result["directory"] == restd.connection_deployment_dir("127.0.0.1", 3311)
+
+
+def test_behind_a_proxy_the_port_named_is_a_public_one(configure, home, monkeypatch):
+    """And no certificate is made: the proxy serves the server's own."""
+    port = helpers.find_free_port()
+    _behind_a_proxy(monkeypatch, port)
+
+    with pytest.raises(Exception, match="not one of the ports 8443-8443"):
+        configure(schemas=["mariadb_rest_service"], port=port)
+
+    result, _, _ = configure(schemas=["mariadb_rest_service"], port=8443)
+
+    assert result["status"] == "running"
+    assert result["port"] == port
+    assert result["url"] == "https://wb.example.com:8443"
+    assert not os.path.exists(restd_certs.certs_dir())
 
 
 def test_of_several_metadata_schemas_one_must_be_named(configure):
@@ -1189,7 +1375,23 @@ def test_the_certificate_status_makes_nothing(home, monkeypatch):
     restd_certs.ensure()
     monkeypatch.setattr(restd_certs, "is_trusted", lambda: True)
     assert status() == {"exists": True, "trusted": True,
-                        "ca_path": os.path.join(restd_certs.certs_dir(), "rootCA.crt")}
+                        "ca_path": os.path.join(restd_certs.certs_dir(), "rootCA.crt"),
+                        "proxied": False}
+
+
+def test_behind_a_proxy_there_is_no_certificate_to_trust(home, monkeypatch, gui_mode):
+    """The proxy serves the server's own; the local CA is neither made nor added."""
+    monkeypatch.setenv("MARIADB_RESTD_PROXY_HOST", "wb.example.com")
+    monkeypatch.setattr(restd_certs, "trust", lambda: pytest.fail("trusted a CA"))
+    tools = _tools()
+
+    assert tools["restd.get_certificate_status"]() == {
+        "exists": False, "trusted": True, "ca_path": None, "proxied": True
+    }
+    assert asyncio.run(tools["restd.trust_certificate"](None)) == {
+        "trusted": True, "changed": False, "ca_path": None
+    }
+    assert not os.path.exists(restd_certs.certs_dir())
 
 
 def test_a_server_has_one_daemon_per_metadata_schema(home, tmp_path):

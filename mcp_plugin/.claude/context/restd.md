@@ -140,6 +140,60 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - **Tested:** the real-daemon e2e test checks that the daemon serves exactly
   `web-certs/server.crt`. The OS dialogs were not exercised by a test.
 
+## Behind a TLS proxy (2026-10-28)
+
+For the MariaDB Cloud Workbench, a server several Linux users share (one
+Theia per user, `mariadb-workbench` repo, `deploy/hetzner/`). The local CA
+does not work there: it is trusted only by browsers on the server itself, and
+the server's own certificate key cannot be given to the users' daemons (any
+user could then impersonate the whole site, its login page included). The
+user chose TLS termination in nginx over a shared certificate path.
+
+- **Switched on by `MARIADB_RESTD_PROXY_HOST`** (`restd.proxy()`), with
+  `MARIADB_RESTD_PROXY_PORTS` (`8443-8462` by default) and
+  `MARIADB_RESTD_PROXY_PORT_OFFSET` (`10000`, has to exceed the range so no
+  daemon port is a public one). Read from the environment when it names a
+  host, else whole from `/etc/mariadb-restd/proxy.conf` (`restd.PROXY_FILE`,
+  `NAME=value` lines), never mixed. The file exists because the environment
+  does not reach the MCP server: the VS Code extension starts it through the
+  MCP SDK's `StdioClientTransport` without `env`, which passes on only `HOME`,
+  `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`. Unset, nothing changes.
+  `proxy(strict=False)` (used by `public_port`, so by `read_deployment`) gives
+  None for wrong settings instead of raising, so they never hide a deployment
+  from the status, a stop or a delete; a setup still reports them.
+- **The host must be outside the site's cookie domain** (security review of
+  PR #73): nothing ties a daemon port to a Linux user (`taken_ports` sees only
+  the caller's own deployments, `is_port_free` is a probe), so any user can
+  listen on a stopped daemon's port, for example after the Workbench stopped
+  an idle IDE and its daemons with it, and get the proxy to serve their
+  content under the host's certificate. Under the Workbench's own name (or
+  below it: oauth2-proxy's cookie is set for `.<host>`) browsers would send
+  that content the login cookie, and a replayed cookie opens the victim's IDE.
+  The Workbench serves the daemons as `webapps.0bject.space` beside
+  `webapp-1.0bject.space`. Sub-paths under the site's name were rejected: the
+  same origin as the IDE, and MRS's root-relative links would break. Ports
+  cannot be bound to users with Unix sockets: restd's `http_server` has only
+  `bind_address`, `port` and `ssl`.
+- **A daemon listens on its public port plus the offset**, on `127.0.0.1`,
+  `ssl=0` (`--conf-set-option` for `bind_address` and `ssl`; the setup gets no
+  certificate). nginx has one static server block per public port, with the
+  REST host's certificate, passing to `http://127.0.0.1:<port + offset>`: no
+  nginx reload when a daemon is set up.
+- **`deployment["port"]` stays the daemon's own port**: start, stop and the
+  port checks use it. `public_port` and `url` (`https://<host>:<public>`) are
+  what users see; the extension shows and opens the `url`.
+- **`choose_port` checks the daemon port**, not the public one: nginx listens
+  on every public port, so those always look taken. A named `port` is a public
+  one (`restd.proxied_port`), refused when the proxy does not serve it.
+- **A deployment made before the proxy keeps its address**: `public_port` is
+  only derived for `ssl=0` daemons whose port is in the proxied range.
+- **The certificate tools** answer `trusted` (and `proxied: True`) and make or
+  add nothing.
+- **MRS's links are relative** (`/myService/v1/.../?offset=1&limit=1`), checked
+  against a real 26.10.0 daemon behind nginx: the proxy needs no rewriting and
+  the daemon no public-address option. Firefox accepted the server's
+  certificate on the public port.
+
 ## Gotchas
 
 - **A JWT secret from `token_urlsafe` can start with `-`**, which restd's

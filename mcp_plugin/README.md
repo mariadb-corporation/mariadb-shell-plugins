@@ -541,6 +541,37 @@ login keychain on macOS and the user's Root store on Windows, where the system a
 the user to confirm, and the NSS database Chromium-based browsers read on Linux. An
 agent is asked first, through MCP elicitation.
 
+On a server several users share, the daemons can run behind a TLS proxy instead, such
+as nginx with a certificate of the server's: its key stays out of the users' reach, and
+browsers anywhere trust it. `MARIADB_RESTD_PROXY_HOST` turns this on, set in the
+environment or, for every user of the server, in `/etc/mariadb-restd/proxy.conf` (a
+`NAME=value` line each, written by the server's administrator). The file is read when
+the environment names no host; an MCP server is not always started with the user's
+environment (the MCP SDK's stdio client passes on only `HOME`, `LOGNAME`, `PATH`, `SHELL`,
+`TERM` and `USER`).
+
+| Variable | Means |
+| --- | --- |
+| `MARIADB_RESTD_PROXY_HOST` | The host name the proxy serves the daemons under |
+| `MARIADB_RESTD_PROXY_PORTS` | The public ports it serves, `<first>-<last>` or one port; `8443-8462` when not set |
+| `MARIADB_RESTD_PROXY_PORT_OFFSET` | How far above its public port a daemon listens; `10000` when not set |
+
+A new daemon then listens on `127.0.0.1` only, without TLS, on the first of the public
+ports whose daemon port is free, plus the offset: public port 8443 is daemon port 18443.
+The proxy passes each public port on to its daemon port. `restd.configure_restd`'s `port`
+is a public port, a deployment's `url` is `https://<proxy host>:<public port>`, and its
+`public_port` says which; no certificate is made, and the certificate tools report it
+trusted. A daemon set up before keeps serving HTTPS itself, at its own address. MRS's
+links are relative, so a response says the same behind the proxy.
+
+**Serve the daemons under a host of their own, outside the cookie domain of anything
+else on the server** - a sibling name such as `rest-ide.example.com` beside
+`ide.example.com`, or a separate domain; never the site's own name or a name below it.
+Nothing ties a daemon port to a user: any user of the server can listen on a port whose
+daemon is stopped, and the proxy then serves that user's content under the host's name
+and certificate. Under the site's own name, browsers would send that content the site's
+cookies, a login session included, and it could pose as the site's login page.
+
 `restd.configure_restd`, in this order:
 
 1. Connects with the password given, or the connection's stored one.
@@ -568,7 +599,7 @@ A daemon serves one metadata schema: for any other than `mariadb_rest_service`, 
 folder name ends in `_<schema>`, so each of a server's metadata schemas can have a
 daemon of its own.
 Either daemon listens on the first free port from 8443 up, a stopped deployment's port
-counting as taken. The daemon logs to `log/mariadb-restd.log` in its deployment.
+counting as taken (behind a TLS proxy, see above). The daemon logs to `log/mariadb-restd.log` in its deployment.
 
 `restd.configure_restd` is registered only when the `db` group is served as well. The
 group is never served in multi-tenant mode.
