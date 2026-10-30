@@ -43,8 +43,8 @@ Objects are named with **standardized object types**, whatever the vendor calls 
 | `dba.get.vendor.objectInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_info` | What of a type can be deployed: sizes (architecture, cores, RAM, disk, included traffic, prices), locations, images, versions. |
 | `dba.list.vendor.objects(vendorName, objectType[, tags, project])` | `dba.list_vendor_objects` | The deployed objects of a type, filtered by tags and project. |
 | `dba.get.vendor.objectStatus(vendorName, objectType, objectName[, project])` | `dba.get_vendor_object_status` | The current status of one object. |
-| `dba.deploy.vendor.object(vendorName, objectType, settings[, project])` | `dba.deploy_vendor_object` (`--gui`) | Deploys an object with the given settings. |
-| `dba.delete.vendor.object(vendorName, objectType, objectName[, project])` | `dba.delete_vendor_object` (`--gui`) | Deletes an object, by name or id. |
+| `dba.deploy.vendor.object(vendorName, objectType, settings[, project])` | `dba.deploy_vendor_object` (`--gui`) | Starts a task deploying an object with the given settings. |
+| `dba.delete.vendor.object(vendorName, objectType, objectName[, project])` | `dba.delete_vendor_object` (`--gui`) | Starts a task deleting an object, by name or id. |
 
 Every vendor object has the same functions without the vendor name:
 `dba.vendor.<name>.featureSet()`, `objectSupport()`, `objectInfo()`, `listObjects()`,
@@ -53,14 +53,37 @@ Every vendor object has the same functions without the vendor name:
 An MCP server started without `--gui` - one an agent talks to - offers only the tools that
 read.
 
+### Deploying and deleting are background tasks
+
+Deploying takes minutes, a managed service far longer, so `dba.deploy.vendor.object` and
+`dba.delete.vendor.object` do not wait for it. They check what they can at once - the
+vendor, its API key, that it can deploy or delete the type, that the settings name the
+object - then start a task of the shell's task manager (task type `dba`) and return its
+`task_id`. The task:
+
+- **deploys** the object and then waits until the vendor reports it ready to use
+  (`running`, `started`, `available`, `online`, `active`, `ready`), up to an hour, with
+  the object as its result; a status naming a failure or an error fails it;
+- **deletes** the object and then waits until the vendor no longer lists it, up to half
+  an hour, with the object as it was and what the vendor reported as its result.
+
+Each status the vendor reports on the way is a message of the task. Follow it with
+`task.get(taskId[, since][, waitMs])` in the shell, or the `task.get` MCP tool; list the
+tasks with `task.list("dba")`. `task.cancel(taskId)` stops the waiting, not the vendor:
+what it already started goes on there. One object is worked on by one task at a time.
+
+Tasks live in the process that started them, so these functions are not offered on the
+command line, where the shell ends right after the call.
+
 ```python
 dba.set.api_key("hetzner", "<token>", "prod")
 dba.list.vendors("CoreCompute")
 dba.get.vendor.object_info("hetzner", "vms", "prod")["sizes"]
-dba.deploy.vendor.object("hetzner", "vms", {
+started = dba.deploy.vendor.object("hetzner", "vms", {
     "name": "galera-1", "size": "cx32", "location": "fsn1", "image": "debian-13",
     "ssh_keys": ["admin"], "labels": {"cluster": "galera"},
 }, "prod")
+task.get(started["task_id"], 0, 30000)    # waits up to 30 s for news
 dba.list.vendor.objects("hetzner", "vms", "cluster=galera", "prod")
 dba.get.vendor.object_status("hetzner", "vms", "galera-1", "prod")
 dba.delete.vendor.object("hetzner", "vms", "galera-1", "prod")

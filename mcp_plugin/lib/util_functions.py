@@ -16,7 +16,7 @@
 """MCP tools wrapping the shell's dump, load, copy, export and import utilities.
 
 Every utility runs as a background task (see :mod:`mcp_plugin.lib.tasks`): the
-tool starts it and returns its id at once, and ``util.get_task`` follows it.
+tool starts it and returns its id at once, and ``task.get`` follows it.
 A task runs the utility in a MariaDB Shell process of its own (see
 :mod:`mcp_plugin.lib.util_process`), connected with the URI and password of
 the connection a client got from ``db.connect``. So it never takes that
@@ -198,7 +198,10 @@ def register_util_tools(server, function_groups=()) -> None:
         # task starts, so that a wrong connection fails the call itself.
         source, target = await anyio.to_thread.run_sync(prepare)
 
-        task = tasks.create(kind, title, client, connection_id)
+        task = tasks.create(
+            tasks.TASK_TYPE_UTIL, kind, title, client, tasks.MAX_RUNNING_UTIL_TASKS,
+            {"connection_id": connection_id},
+        )
 
         def work(task):
             util_process.run(task, function, args, options, source, target, executable)
@@ -218,7 +221,7 @@ def register_util_tools(server, function_groups=()) -> None:
         """Starts a dump of the whole server, as a background task.
 
         Runs MariaDB Shell's util.dump_instance; follow the task with
-        util.get_task.
+        task.get.
 
         Args:
             connection_id: The UUID returned by db.connect, for the server to
@@ -249,7 +252,7 @@ def register_util_tools(server, function_groups=()) -> None:
         """Starts a dump of database schemas, as a background task.
 
         Runs MariaDB Shell's util.dump_schemas; follow the task with
-        util.get_task.
+        task.get.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -281,7 +284,7 @@ def register_util_tools(server, function_groups=()) -> None:
         """Starts a dump of tables and views of a schema, as a background task.
 
         Runs MariaDB Shell's util.dump_tables; follow the task with
-        util.get_task.
+        task.get.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -315,7 +318,7 @@ def register_util_tools(server, function_groups=()) -> None:
         delimited text file, as a background task.
 
         Runs MariaDB Shell's util.export_table; follow the task with
-        util.get_task. Use it instead of SELECT ... INTO OUTFILE or reading
+        task.get. Use it instead of SELECT ... INTO OUTFILE or reading
         the rows with db.execute_sql and writing the file yourself; the
         file can be loaded again with util.import_table.
 
@@ -345,7 +348,7 @@ def register_util_tools(server, function_groups=()) -> None:
         """Starts loading a dump into the server, as a background task.
 
         Runs MariaDB Shell's util.load_dump; follow the task with
-        util.get_task. The server needs local_infile switched on. Only for
+        task.get. The server needs local_infile switched on. Only for
         dumps the util.dump_* tools made: for CSV, TSV, JSON or other data
         files use util.import_table.
 
@@ -382,7 +385,7 @@ def register_util_tools(server, function_groups=()) -> None:
         or generated INSERT statements.
 
         Runs MariaDB Shell's util.import_table; follow the task with
-        util.get_task. The table must exist (create it with db.execute_sql
+        task.get. The table must exist (create it with db.execute_sql
         first), and the server needs local_infile switched on.
 
         Args:
@@ -419,7 +422,7 @@ def register_util_tools(server, function_groups=()) -> None:
 
         Runs MariaDB Shell's util.copy_instance, which dumps from the source
         and loads into the target at once, without files; follow the task
-        with util.get_task. The target needs local_infile switched on.
+        with task.get. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
@@ -450,7 +453,7 @@ def register_util_tools(server, function_groups=()) -> None:
 
         Runs MariaDB Shell's util.copy_schemas, which dumps from the source
         and loads into the target at once, without files; follow the task
-        with util.get_task. The target needs local_infile switched on.
+        with task.get. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
@@ -483,7 +486,7 @@ def register_util_tools(server, function_groups=()) -> None:
 
         Runs MariaDB Shell's util.copy_tables, which dumps from the source
         and loads into the target at once, without files; follow the task
-        with util.get_task. The target needs local_infile switched on.
+        with task.get. The target needs local_infile switched on.
 
         Args:
             connection_id: The UUID returned by db.connect, for the source.
@@ -504,81 +507,3 @@ def register_util_tools(server, function_groups=()) -> None:
             target_connection_id=target_connection_id,
             result={"target_connection_id": target_connection_id},
         )
-
-    @tool(name="util.get_task")
-    def get_task(
-        ctx: Context,
-        task_id: str,
-        since: int = 0,
-        wait_ms: int = 0,
-    ) -> dict:
-        """Returns the state of a task started by a util tool.
-
-        Args:
-            task_id: The task_id a util tool returned.
-            since: The next_since of the previous call, to get only the
-                messages printed after it. 0 gets all that are kept.
-            wait_ms: Wait up to this many milliseconds (at most 30000) for
-                something to change before answering, instead of answering at
-                once. Ends early when the task finishes.
-
-        Returns:
-            A dict with the task's status (pending, running, completed, failed
-            or cancelled), its kind and title, its stages with their state,
-            the current stage and its progress (current, total, percent,
-            throughput, eta_seconds and items where the stage measures them),
-            the messages after since (each with seq, time, level and text),
-            next_since for the next call, and, once it ended, its result or
-            error.
-        """
-        client = general.get_client_identity(ctx)
-        task = tasks.get(task_id, client)
-
-        if wait_ms > 0:
-            return task.wait_for_news(since, min(wait_ms, tasks.MAX_WAIT_MS) / 1000.0)
-
-        return task.snapshot(since)
-
-    @tool(name="util.list_tasks")
-    def list_tasks(ctx: Context) -> list:
-        """Lists the tasks this client started that are still kept.
-
-        Finished tasks are kept for an hour.
-
-        Returns:
-            A list with one dict per task, as util.get_task returns it but
-            without its messages.
-        """
-        client = general.get_client_identity(ctx)
-        listed = []
-        for task in tasks.list_for(client):
-            snapshot = task.snapshot(task.message_count)
-            snapshot.pop("messages")
-            snapshot.pop("messages_dropped")
-            listed.append(snapshot)
-
-        return listed
-
-    @tool(name="util.cancel_task")
-    def cancel_task(ctx: Context, task_id: str) -> dict:
-        """Stops a running task.
-
-        The utility is interrupted as by Ctrl+C, and the task then ends as
-        cancelled. A load that is stopped can be
-        resumed by loading the same dump again.
-
-        Args:
-            task_id: The task_id a util tool returned.
-
-        Returns:
-            The task's state, as util.get_task returns it, without messages.
-        """
-        client = general.get_client_identity(ctx)
-        task = tasks.get(task_id, client)
-        task.cancel()
-
-        snapshot = task.snapshot(task.message_count)
-        snapshot.pop("messages")
-        snapshot.pop("messages_dropped")
-
-        return snapshot

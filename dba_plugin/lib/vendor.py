@@ -56,6 +56,12 @@ PROJECT_LABEL = "dba_project"
 # SSH key: it exists, and that is all there is to it.
 STATUS_ACTIVE = "active"
 
+# The statuses, in any vendor's words, of an object that is ready to use: what
+# waiting for a deployment waits for. A status naming a failure or an error
+# ends the wait as failed.
+READY_STATUSES = frozenset(("running", "started", "available", "online", "active", "ready", "ok"))
+FAILED_STATUS_WORDS = ("fail", "error")
+
 # The standardized settings keys per object type, with what each means. A
 # vendor maps the ones it supports onto its API, refuses those it does not
 # and passes ``vendor_settings`` through.
@@ -283,6 +289,10 @@ def check_settings(object_type: str, settings, required=("name",), supported=Non
     return settings
 
 
+class ObjectNotFound(DbaError):
+    """There is no deployed object of the name or id."""
+
+
 class Vendor:
     """The base class of every vendor.
 
@@ -297,6 +307,8 @@ class Vendor:
       labels what it deploys for a project with :data:`PROJECT_LABEL`,
       filters by that label, and lets one key serve every project.
     * ``api_key_help`` - where the user gets an API key, for messages.
+    * ``ready_statuses`` - the statuses of an object ready to use, if not
+      :data:`READY_STATUSES`.
 
     Args:
         api_key (str): The API key; None for what needs none.
@@ -308,6 +320,7 @@ class Vendor:
     feature_sets = ()
     native_projects = False
     api_key_help = ""
+    ready_statuses = READY_STATUSES
 
     def __init__(self, api_key: Optional[str] = None, project: Optional[str] = None):
         self.api_key = api_key
@@ -420,7 +433,8 @@ class Vendor:
         rather than one of them picked.
 
         Raises:
-            DbaError: There is none, or more than one.
+            ObjectNotFound: There is none.
+            DbaError: There are more than one.
         """
         if object_name in (None, ""):
             raise DbaError("object_name is empty.")
@@ -441,11 +455,20 @@ class Vendor:
         if by_id:
             return by_id[0]
 
-        raise DbaError(
+        raise ObjectNotFound(
             f"There is no {object_type} named '{object_name}' at {self.display_name}"
             + (f" in project '{self.project}'" if self.project else "")
             + "."
         )
+
+    def is_ready(self, obj: dict) -> bool:
+        """Whether an object's status says it is ready to use."""
+        return str(obj.get("status") or "").lower() in self.ready_statuses
+
+    def has_failed(self, obj: dict) -> bool:
+        """Whether an object's status says its deployment failed."""
+        status = str(obj.get("status") or "").lower()
+        return any(word in status for word in FAILED_STATUS_WORDS)
 
     def object_status(self, object_type: str, object_name: str) -> dict:
         """The current status of one object, by its name or id."""

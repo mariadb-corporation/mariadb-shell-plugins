@@ -18,9 +18,12 @@ operations and the shell functions, over a stub vendor."""
 
 # cSpell:ignore mysqlsh MariaDB
 
+import time
+
 import pytest
 
 import mysqlsh
+from mysqlsh import task_manager
 
 from dba_plugin.lib import api_keys, object_types, objects, operations, vendor as vendor_lib, vendors
 from dba_plugin.lib.general import DbaError
@@ -37,6 +40,7 @@ class StubVendor(vendor_lib.Vendor):
     deployed = []
     deleted = []
     keys = []
+    hold = False
 
     def __init__(self, api_key=None, project=None):
         super().__init__(api_key, project)
@@ -54,10 +58,21 @@ class StubVendor(vendor_lib.Vendor):
     def _deploy_vms(self, settings):
         settings = vendor_lib.check_settings("vms", settings, supported=("size",))
         StubVendor.deployed.append(settings)
-        return vendor_lib.make_object("vms", 9, settings["name"], "starting", labels=settings["labels"])
+        deployed = vendor_lib.make_object("vms", 9, settings["name"], "starting", labels=settings["labels"])
+        StubVendor.objects.append(deployed)
+        return dict(deployed)
+
+    def _status_vms(self, obj):
+        # A VM starts on the first look, and runs from the second on, unless
+        # a test holds it at a status of its own.
+        reported = dict(obj)
+        if obj["status"] == "starting" and not StubVendor.hold:
+            obj["status"] = "running"
+        return reported
 
     def _delete_vms(self, obj):
         StubVendor.deleted.append(obj["id"])
+        StubVendor.objects[:] = [o for o in StubVendor.objects if o["id"] != obj["id"]]
         return {"action": "delete"}
 
     def _list_volumes(self):
@@ -84,7 +99,23 @@ def stub(monkeypatch, clean_api_keys):
         vendor_lib.make_object("vms", 4, "twin", "running"),
     ]
     StubVendor.deployed, StubVendor.deleted, StubVendor.keys = [], [], []
-    return StubVendor
+    StubVendor.hold = False
+    monkeypatch.setattr(operations, "POLL_INTERVAL", 0.01)
+    task_manager.clear()
+    yield StubVendor
+    for task in task_manager.list_tasks():
+        task.cancel()
+    task_manager.clear()
+
+
+def _ended(answer, owner=None, timeout=5.0):
+    """The snapshot of the task a deploy or delete started, once it ended."""
+    task = task_manager.get(answer["task_id"], owner)
+    deadline = time.monotonic() + timeout
+    while task.status not in task_manager.FINISHED_STATES:
+        assert time.monotonic() < deadline, f"the task is still {task.status}"
+        task.wait_for_change(task.version, 0.1)
+    return task.snapshot()
 
 
 # --- The interface ------------------------------------------------------------
@@ -257,9 +288,122 @@ def test_operations_use_the_stored_key(stub):
     assert operations.object_info("stubcloud", "vms") == {"sizes": [{"name": "small"}]}
     assert operations.object_status("stubcloud", "vms", "db2")["status"] == "off"
     assert [o["id"] for o in operations.list_objects("stubcloud", "VMS", {"env": "prod"})] == ["1"]
-    deleted = operations.delete_object("stubcloud", "vms", "db2")
-    assert deleted == {"deleted": StubVendor.objects[1], "result": {"action": "delete"}}
+    db2 = StubVendor.objects[1]
+    deleted = _ended(operations.delete_object("stubcloud", "vms", "db2"))
+    assert deleted["status"] == task_manager.COMPLETED
+    assert deleted["result"] == {"deleted": db2, "result": {"action": "delete"}}
     assert set(StubVendor.keys) == {"k"}
+
+
+# --- Deploying and deleting as tasks ---------------------------------------------
+
+
+def test_a_deployment_is_a_task_that_ends_once_the_object_is_ready(stub):
+    operations.set_api_key("stubcloud", "k")
+    started = operations.deploy_object("stubcloud", "vms", {"name": "db9", "size": "small"}, owner="me")
+    assert set(started) == {"task_id", "status"}
+
+    ended = _ended(started, "me")
+    assert ended["status"] == task_manager.COMPLETED
+    assert ended["task_type"] == "dba"
+    assert ended["kind"] == "deploy_object"
+    assert ended["title"] == "Deploy vms 'db9' on Stub Cloud"
+    assert (ended["vendor"], ended["project"], ended["object_type"]) == ("stubcloud", None, "vms")
+    assert ended["result"]["name"] == "db9"
+    assert ended["result"]["status"] == "running"
+    assert [stage["name"] for stage in ended["stages"]] == ["Deploying", "Waiting until it is ready"]
+    assert [m["text"] for m in ended["messages"]] == [
+        "Stub Cloud accepted the vms 'db9' (id 9).",
+        "The vms 'db9' is starting.",
+        "The vms 'db9' is running.",
+    ]
+    # the task is its owner's only
+    assert task_manager.list_tasks() == []
+
+
+def test_a_deletion_is_a_task_that_ends_once_the_object_is_gone(stub):
+    operations.set_api_key("stubcloud", "k")
+    ended = _ended(operations.delete_object("stubcloud", "vms", "db1"))
+    assert ended["status"] == task_manager.COMPLETED
+    assert ended["result"]["deleted"]["name"] == "db1"
+    assert ended["messages"][-1]["text"] == "The vms 'db1' is gone."
+    assert StubVendor.deleted == ["1"]
+
+
+@pytest.mark.parametrize(
+    "call, refusal",
+    [
+        (lambda: operations.deploy_object("stubcloud", "vms", {"size": "small"}), "naming the object"),
+        (lambda: operations.deploy_object("stubcloud", "volumes", {"name": "v"}), "does not support 'deploy' for volumes"),
+        (lambda: operations.deploy_object("nocloud", "vms", {"name": "v"}), "Unknown vendor 'nocloud'"),
+        (lambda: operations.delete_object("stubcloud", "vms", ""), "object_name is empty"),
+        (lambda: operations.delete_object("nativecloud", "vms", "db1"), "No Native Cloud API key"),
+    ],
+)
+def test_what_can_be_checked_at_once_fails_the_call(stub, call, refusal):
+    operations.set_api_key("stubcloud", "k")
+    with pytest.raises(DbaError, match=refusal):
+        call()
+    assert task_manager.list_tasks() == []
+
+
+def test_what_the_vendor_refuses_fails_the_task(stub):
+    operations.set_api_key("stubcloud", "k")
+    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9", "color": "red"}))
+    assert ended["status"] == task_manager.FAILED
+    assert "color" in ended["error"]
+    ended = _ended(operations.delete_object("stubcloud", "vms", "nothere"))
+    assert ended["status"] == task_manager.FAILED
+    assert "There is no vms named 'nothere'" in ended["error"]
+
+
+def test_a_failed_status_fails_the_deployment(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.hold = True
+    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    StubVendor.objects[-1]["status"] = "error"
+    ended = _ended(started)
+    assert ended["status"] == task_manager.FAILED
+    assert ended["error"] == "Stub Cloud reports The vms 'db9' as error."
+
+
+def test_a_deployment_waits_only_so_long(stub, monkeypatch):
+    operations.set_api_key("stubcloud", "k")
+    monkeypatch.setattr(operations, "DEPLOY_TIMEOUT", 0)
+    StubVendor.hold = True
+    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    assert ended["status"] == task_manager.FAILED
+    assert "is still starting after 0 minutes" in ended["error"]
+
+
+def test_a_cancel_stops_the_waiting_at_once(stub, monkeypatch):
+    operations.set_api_key("stubcloud", "k")
+    monkeypatch.setattr(operations, "POLL_INTERVAL", 60)
+    StubVendor.hold = True
+    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    task = task_manager.get(started["task_id"])
+    task.wait_for_change(0, 1)
+    while task.stage != "Waiting until it is ready":
+        task.wait_for_change(task.version, 1)
+
+    began = time.monotonic()
+    task.cancel()
+    assert _ended(started)["status"] == task_manager.CANCELLED
+    assert time.monotonic() - began < 2
+
+
+def test_one_object_is_worked_on_by_one_task_at_a_time(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.hold = True
+    first = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    with pytest.raises(DbaError, match="A task is already working on the vms 'db9'"):
+        operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    # another object is fine
+    operations.deploy_object("stubcloud", "vms", {"name": "db10"})
+
+    task_manager.get(first["task_id"]).cancel()
+    _ended(first)
+    _ended(operations.delete_object("stubcloud", "vms", "db9"))
 
 
 # --- The shell functions ---------------------------------------------------------
@@ -280,11 +424,18 @@ def test_the_shell_functions_use_the_gui_keys(stub):
     listed = dba.list.vendor.objects("stubcloud", "vms", ["env=prod"], "alpha")
     assert [o["name"] for o in listed] == ["db1"]
 
-    deployed = dba.deploy.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"}, "alpha")
+    started = dba.deploy.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"}, "alpha")
+    deployed = _ended(started)["result"]
     assert deployed["labels"] == {vendor_lib.PROJECT_LABEL: "alpha"}
     assert dba.get.vendor.object_status("stubcloud", "vms", "db1", "alpha")["status"] == "running"
     assert dba.get.vendor.object_info("stubcloud", "vms", "alpha")["sizes"] == [{"name": "small"}]
-    assert dba.delete.vendor.object("stubcloud", "vms", "db1", "alpha")["result"] == {"action": "delete"}
+    deleted = _ended(dba.delete.vendor.object("stubcloud", "vms", "db1", "alpha"))
+    assert deleted["result"]["result"] == {"action": "delete"}
+
+    # the task global follows them, as the shell's own tasks
+    listed = mysqlsh.globals.task.list("dba")
+    assert [t["kind"] for t in listed] == ["deploy_object", "delete_object"]
+    assert mysqlsh.globals.task.get(started["task_id"])["status"] == "completed"
 
 
 def test_object_names_are_camel_cased():

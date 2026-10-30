@@ -150,6 +150,10 @@ DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 # listed: it is served either way.
 FUNCTION_GROUP_REQUIREMENTS = {FUNCTION_GROUP_UTIL: FUNCTION_GROUP_DB}
 
+# The groups with tools that start background tasks. Where one of them is
+# served, the task tools that follow the tasks are too.
+TASK_FUNCTION_GROUPS = (FUNCTION_GROUP_UTIL, FUNCTION_GROUP_DBA)
+
 
 def group_requirement_met(group, function_groups) -> bool:
     """Whether a group registers its tools next to the given groups.

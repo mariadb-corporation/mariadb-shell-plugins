@@ -117,8 +117,8 @@ def register_vendor_plugin(vendor_cls) -> None:
     * objectInfo(objectType[, project]) - what of a type can be deployed.
     * listObjects(objectType[, tags, project]) - the deployed objects.
     * objectStatus(objectType, objectName[, project]) - one object's status.
-    * deployObject(objectType, settings[, project]) - deploys one.
-    * deleteObject(objectType, objectName[, project]) - deletes one.
+    * deployObject(objectType, settings[, project]) - starts a task deploying one.
+    * deleteObject(objectType, objectName[, project]) - starts a task deleting one.
 
     Args:
         vendor_cls: The :class:`dba_plugin.lib.vendor.Vendor` subclass.
@@ -226,7 +226,11 @@ def register_vendor_plugin(vendor_cls) -> None:
             lambda: operations.deploy_object(name, object_type, plain(settings), project)
         )
 
-    deploy_object.__doc__ = f"""Deploys one {display} object.
+    deploy_object.__doc__ = f"""Starts deploying one {display} object as a background task.
+
+        Returns the id of a task at once; follow it with task.get(taskId).
+        It ends once the object is ready to use, with the object as its
+        result.
 
         Args:
             object_type (str): The standardized object type, e.g. vms.
@@ -235,7 +239,7 @@ def register_vendor_plugin(vendor_cls) -> None:
             project (str): The project to deploy it in.
 
         Returns:
-            The deployed object.
+            The task_id and status of the task.
         """
 
     def delete_object(object_type: str, object_name: str, project: str = None) -> dict:
@@ -243,7 +247,10 @@ def register_vendor_plugin(vendor_cls) -> None:
             lambda: operations.delete_object(name, object_type, object_name, project)
         )
 
-    delete_object.__doc__ = f"""Deletes one {display} object.
+    delete_object.__doc__ = f"""Starts deleting one {display} object as a background task.
+
+        Returns the id of a task at once; follow it with task.get(taskId).
+        It ends once the object is gone.
 
         Args:
             object_type (str): The standardized object type, e.g. vms.
@@ -251,7 +258,7 @@ def register_vendor_plugin(vendor_cls) -> None:
             project (str): The project it belongs to.
 
         Returns:
-            The object deleted and what the vendor reported.
+            The task_id and status of the task.
         """
 
     for function_name, function in (
