@@ -32,6 +32,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import pytest
@@ -72,8 +73,27 @@ def _finished(task, timeout=5):
     return task.status
 
 
-def test_a_task_belongs_to_its_client():
-    task = _create("dump_schemas", "Dump")
+@pytest.fixture
+def release():
+    """An event the running tasks of a test wait on, set when it ends."""
+    event = threading.Event()
+    yield event
+    event.set()
+
+
+def _started(release, kind, title, client=CLIENT, max_running=tasks.MAX_RUNNING_UTIL_TASKS):
+    """A util task that runs - holds its client's slot - until ``release`` is set."""
+    task = _create(kind, title, client, max_running=max_running)
+    tasks.start(task, lambda t: release.wait(5))
+    return task
+
+
+def test_a_task_belongs_to_its_client(release):
+    # a task created and never started is nobody's: it is listed from its start
+    _create("dump_schemas", "Never started")
+    assert tasks.list_for(CLIENT) == []
+
+    task = _started(release, "dump_schemas", "Dump")
     assert tasks.get(task.id, CLIENT) is task
     with pytest.raises(Exception, match="There is no task with the id"):
         tasks.get(task.id, OTHER)
@@ -83,13 +103,13 @@ def test_a_task_belongs_to_its_client():
     assert tasks.list_for(CLIENT) == [task]
 
 
-def test_running_tasks_are_limited_per_client():
-    _create("a", "A", max_running=2)
-    _create("b", "B", max_running=2)
+def test_running_tasks_are_limited_per_client(release):
+    _started(release, "a", "A", max_running=2)
+    _started(release, "b", "B", max_running=2)
     with pytest.raises(Exception, match="Already 2 util tasks are running"):
         _create("c", "C", max_running=2)
     # another client has its own allowance
-    _create("d", "D", OTHER, max_running=2)
+    _started(release, "d", "D", OTHER, max_running=2)
 
 
 def test_a_task_that_cannot_start_is_a_tool_error(monkeypatch):

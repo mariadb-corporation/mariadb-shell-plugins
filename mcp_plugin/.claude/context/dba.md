@@ -45,7 +45,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   max_running, attributes)`, `get`, `list_for(client, task_type)`,
   `start(task, work)` (a failed start -> `tool_error`), `owner(client)`; the
   util tasks use type `util`, max 4 running per client, attribute
-  `connection_id`. The registry's own tests live in the shell now.
+  `connection_id`. The registry's own tests live in the shell.
+- **A task counts from its start:** the task manager lists it, finds it and
+  counts it against the owner's `max_running` from `Task.start()` on, not
+  from `create()`, which only refuses one too many early. A task created and
+  never started holds nothing - so a failure between the two leaves no
+  phantom. A test of listing, ownership or the cap must start its tasks
+  (`test_util.py`'s `_started`, work waiting on an event the test releases).
 
 ## Files that matter
 
@@ -53,8 +59,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   `lib/setup_dba.py`; `lib/setup_cli.py` (`DBA_API_KEY_OPTIONS`,
   `_check_dba_api_key_combination`, `_resolve_dba_api_key`).
 - `tests/unit/test_dba.py` (stub vendor `stubcloud`, a stdio `SimpleNamespace`
-  ctx, `_ended()` waits for a task), `tests/unit/test_util.py` (only the
-  client-ownership and cap tests of the registry remain).
+  ctx, `_ended()` waits for a task), `tests/unit/test_util.py` (of the
+  registry only what the MCP side adds: client ownership, the cap and a
+  failed start as tool errors).
 
 ## Gotchas / things not to repeat
 
