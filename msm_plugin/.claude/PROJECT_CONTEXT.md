@@ -2,7 +2,7 @@
 
 ## Project
 
-`msm_plugin` ("MariaDB Schema Management Plugin", MSM) is a MariaDB Shell plugin that manages one database schema across its lifecycle as a **schema project on disk**: develop the full current schema in `development/<schema>_next.sql`, snapshot it as a released version, hand-write the release-to-release update script, generate a self-contained create-or-upgrade **deployment script**, and deploy it to a server. Registers the `msm` global (plus `msm.get` / `msm.set` sub-objects). Forked from Oracle's MySQL Shell plugin; dual copyright (Oracle line kept, `Copyright (c) 2026, MariaDB plc.` added). Version `26.9.5` (`lib/general.py`), reports itself as `PREVIEW` in `msm.info()`. Bundled into the MariaDB Shell release packages by `mariadb-shell/.github/workflows/shell-release.yml` (with `mcp_plugin` and `rest_plugin`); consumed by `mcp_plugin`'s `msm.*` MCP tools (12 tools wrapping `management.py`) and by the ai-plugins skills in `ai-plugins/additional-skills/schema-management/` (5 skills: overview, create, develop, release, deploy).
+`msm_plugin` ("MariaDB Schema Management Plugin", MSM) is a MariaDB Shell plugin that manages one database schema across its lifecycle as a **schema project on disk**: develop the full current schema in `development/<schema>_next.sql`, snapshot it as a released version, hand-write the release-to-release update script, generate a self-contained create-or-upgrade **deployment script**, and deploy it to a server. Registers the `msm` global (plus `msm.get` / `msm.set` sub-objects). Forked from Oracle's MySQL Shell plugin; dual copyright (Oracle line kept, `Copyright (c) 2026, MariaDB plc.` added). Version `26.10.4` (`lib/general.py`, since #71 on 2026-10-23), reports itself as `PREVIEW` in `msm.info()`. Bundled into the MariaDB Shell release packages by `mariadb-shell/.github/workflows/shell-release.yml` (with `mcp_plugin` and `rest_plugin`); consumed by `mcp_plugin`'s `msm.*` MCP tools (12 tools wrapping `management.py`) and by the ai-plugins skills in `ai-plugins/additional-skills/schema-management/` (5 skills: overview, create, develop, release, deploy).
 
 ## Architecture / key decisions
 
@@ -87,17 +87,18 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-23), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-29), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current
 main
 
 $ git -C msm_plugin status --short   (one repository: every project's lines)
-(clean)
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/context/oauth.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+ M rest_plugin/.claude/PROJECT_CONTEXT.md
 ```
 
-- Merged since 2026-10-19: #67 (a release states its own version; the
-  schema-name check is no longer inverted) and #68 (a release takes section
-  910 from the template; an empty schema name is rejected). #66 and #70
-  changed only the `LICENSE` copy. No open msm_plugin branch.
+- Only this checkpoint's context edits are uncommitted. Since 2026-10-23 msm_plugin
+  changed only its version (#71, 26.10.4). No open msm_plugin branch.

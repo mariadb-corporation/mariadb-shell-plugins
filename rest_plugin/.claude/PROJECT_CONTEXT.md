@@ -16,7 +16,7 @@ gone. The docs, the ANTLR reference grammar and their tools moved to the mariadb
 (`docs-ref/content/mariadb-rest-service/`, `mysqlshdk/libs/mrs/antlr_grammar/`). The plugin also manages the
 metadata schema (`mariadb_rest_service`, an MSM project maintained in mariadb-shell
 `mysqlshdk/libs/mrs/db_schema/` since 2026-10-09) and generates the
-client SDKs (`sdk/`). Plugin version `26.9.5`,
+client SDKs (`sdk/`). Plugin version `26.10.4` (#71),
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
 `mcp_plugin` (REST SQL through its `db.*` tools) and bundled into the shell release
 packages with msm_plugin and mcp_plugin.
@@ -325,15 +325,19 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-23), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
+Checked at this checkpoint (2026-10-29), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
 
 ```text
 $ git -C rest_plugin branch --show-current
 main
 
 $ git -C rest_plugin status --short   (one repository: every project's lines)
-(clean)
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/context/oauth.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+ M rest_plugin/.claude/PROJECT_CONTEXT.md
 ```
 
-- No rest_plugin change since the 2026-10-12 checkpoint apart from the
-  shared `LICENSE` copy (#66, #70). No open rest_plugin branch.
+- Only this checkpoint's context edits are uncommitted. Since 2026-10-12 rest_plugin
+  changed only its version (#71, 26.10.4) and the shared `LICENSE` copy (#66, #70). No
+  open rest_plugin branch.

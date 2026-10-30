@@ -34,6 +34,16 @@ opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 pa
   `appearance:none` (Safari), and the inputs `flex:1 1 250px` so the button sits at the
   field's end. Commits `0ec99ee9`, `8f38d498`. The user's screenshot is in the docs.
   2026-10-13 (user's values): logo 204x168, `h2` weight 400 with margin `40px 0 5px`.
+- **Keycloak theme, pages from the `base` theme centred** (2026-10-28, PR #72): the
+  `mariadb-mcp` theme has its own `template.ftl` and `login.ftl` only; every other page
+  (Mobile Authenticator Setup, Update Password, ...) is styled through its classes
+  (`kcFormGroupClass=mcpGroup`, ...) and sat at the left of the card. `keycloak-theme/
+  mariadb-mcp/login/resources/css/mariadb-mcp.css` now centres `.mcpGroup` (label above an
+  input as wide as the form, checkbox and `#kc-form-buttons` centred) and `#kc-totp-settings`
+  (steps, bullet-less app and "Unable to scan?" lists, QR code, monospace key). `login.ftl`
+  uses its own `mrsLogin*` classes and is unchanged. Checked in Chrome against Keycloak
+  26.8.0 with a realm requiring an authenticator app; `test_keycloak_theme` (6) requires
+  `theme.properties` and `sign-in-page.css` unchanged.
 - **Landing page at `/`** (2026-10-13, PR #47): `oauth_builtin.landing_page`, added by
   `server.add_landing_page` to every streamable-http server, whatever the OAuth2 mode, after
   the SDK's routes. The REST Service's landing page in the sign-in page's frame: text and

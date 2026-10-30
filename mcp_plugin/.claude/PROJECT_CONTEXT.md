@@ -23,7 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **937 pass, 6 skipped (~130s)** on `main` after #63 at the
+Standard suite: **948 pass, 7 skipped** on PR #73's tree (2026-10-28, the
+7 are the opt-in `--e2e` and `--keycloak` cases; not rerun for this checkpoint);
+937 / 6 on `main` after #63 at the
 2026-10-19 evening checkpoint (the 6 are opt-in: 5 `--e2e`, 1 `--keycloak`); 865 / 6 on PR #59's
 tree earlier that day; 616 / 3 on PR #44's
 tree at the 2026-10-11 checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
@@ -73,7 +75,7 @@ this table with it.
 | [`context/migrator.md`](context/migrator.md) | The migration tooling: the naming rule, the four `migrator.*` tools, the install, the Windows gate and the opt-in end-to-end test. |
 | [`context/setup.md`](context/setup.md) | `mcp.setup`: the three interactive modules, the shell's own prompt types, and the command-line option surface. |
 | [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, the shell process each task runs in, how a crashed load is resumed, and what the extension does with the tasks. |
-| [`context/restd.md`](context/restd.md) | The `restd` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it. |
+| [`context/restd.md`](context/restd.md) | The `restd` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it; the TLS proxy mode for shared servers (PR #73). |
 | [`context/sql.md`](context/sql.md) | The `sql` group: `sql.check`, `sql.outline`, `sql.format` over the `mariadb-lsp` binary, offered only where it is found; SOURCE includes checked before the binary reads them; positions made 1-based. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
@@ -89,22 +91,25 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-23):
+Checked at this checkpoint (2026-10-29):
 
 ```text
 $ git -C mcp_plugin branch --show-current
 main
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
-(clean)
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/context/oauth.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+ M rest_plugin/.claude/PROJECT_CONTEXT.md
 ```
 
-- **Merged since 2026-10-19:** #65 (the `sql` tools find `mariadb-lsp` next to
-  the running shell), #69 (`util.import_table` steering, the tool listing a
-  quarter cheaper, see [`context/server.md`](context/server.md); its second
-  commit keeps a parameter called `title` through the schema trim). #66 and
-  #70 changed only the shared `LICENSE` copies. `wip/mcp-tool-listing-tokens`
-  is deleted locally and on origin; no `wip/` branch or worktree is left.
+- Only this checkpoint's context edits are uncommitted.
+- **Merged since 2026-10-23:** #71 (version 26.10.4; the sandbox server index unchanged:
+  11.8.9, 12.3.3, 13.1.1 from v26.10.0), #72 (Keycloak theme centres the `base` theme's
+  pages, see [`context/oauth.md`](context/oauth.md)), #73 (REST daemons behind a TLS proxy,
+  see [`context/restd.md`](context/restd.md), which the PR itself updated). No `wip/`
+  branch is open in this repo.
 - **Elsewhere, open (as of 2026-10-19, not rechecked):** mariadb-shell
   `wip/time-out-of-day-range` (`5f5883393`, pushed, NO PR yet - the user's
   call). lsp-server `wip/source-dir` (`8e98d91`): no longer needed by the
