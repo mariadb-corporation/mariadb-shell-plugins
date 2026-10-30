@@ -16,7 +16,26 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   none. One client, `lib/rest_client.py` on the bundled `httpx2`: retries (429
   always; 502/503/504 and connection errors for idempotent methods,
   `Retry-After` up to 30 s), the vendor's own error message, never a header in
-  a message. `last_headers` carries MariaDB Cloud's next-page token header.
+  a message. It keeps no request state, so threads share it;
+  `get_with_headers` returns MariaDB Cloud's next-page token header.
+- **Shared machinery in `lib/vendor.py`:** `paginate(fetch)` for every vendor's
+  paging (page number, offset, header token); `parallel(*calls)` runs an
+  offering's independent info requests side by side; `state_of(status)` gives
+  every object a `state` (ready, pending, stopped, deleting, failed, unknown)
+  next to the vendor's `status`, and the task waits use it.
+- **Settings** are declared per vendor and type (`deploy_settings`: required,
+  supported) with static rules in `_check_<type>(settings)`;
+  `check_deploy_settings` runs both before a deployment's task starts and in
+  `_deploy_<type>`. Rules needing a request (a size offered) fail the task.
+- **Label filters on the vendor's side** where verified: a `_list_<type>`
+  taking `labels=` gets the tag and project filter (Hetzner `label_selector`
+  everywhere; UpCloud `label` on servers, storages, networks). The core
+  filters the answer anyway. Not for UpCloud load balancers and object
+  storage or MariaDB Cloud: their syntax is unverified, and a filter read
+  differently would drop objects the core cannot bring back.
+- **Reading operations share an open vendor** per vendor, project, key
+  context and API key (`operations._shared_vendor`), so its connections stay
+  open between calls; a new key gets a new vendor. Tasks open their own.
 - **Functions** (shell names; MCP: `dba.<verb>_<rest>`): `dba.list.vendors
   ([featureSet])`, `dba.set.apiKey`, `dba.list.vendor.objectSupport`,
   `dba.get.vendor.objectInfo`, `dba.list.vendor.objects([tags, project])`,
@@ -42,7 +61,9 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
     (`off`/`stopped`); up to 1 h. A delete ends when the object is gone (404
     or not listed) or `deleted`; up to 30 min. A failed/error status fails it.
   - Polls every 10 s by id (`vendor.current_status`: `_status_<type>`, a 404
-    = gone, else listing); up to 6 failed polls in a row are warnings.
+    = gone, else listing); up to 6 failed polls in a row are warnings. A
+    deleted UpCloud object storage is reported `deleting`: it stays listed
+    for a while and answers a second DELETE with 500.
   - One task per object: claims by name AND id, project None = `default`,
     type normalized; released when the task ends or fails to start.
   - Cancelling stops the waiting, not the vendor.
@@ -94,11 +115,9 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
 1. The vscode-extension: move from `util.*` to the `task.*` tools (see the MCP
    plugin's `context/dba.md`), then a dba UI on top of them.
 2. The mariadb-shell release workflow must bundle the four new plugins.
-3. Not done, from reviews: one pager for the three vendors; a common status
-   vocabulary next to the vendor's; vendor-specific settings checked before
-   the task starts; `object_info` requests in parallel; a client per vendor
-   kept open in the MCP server; server-side project label filters; UpCloud
-   object storage delete reports `deleted` while it is still going.
+3. Label filters on UpCloud load balancers and object storage and on MariaDB
+   Cloud services, once their syntax is verified against objects that carry
+   labels (their APIs accept `label` / `tags` parameters without an error).
 4. Unverified: UpCloud monthly price = hourly x 672; MariaDB Cloud required
    create fields beyond the serverless case; Hetzner load balancer deploy live.
 

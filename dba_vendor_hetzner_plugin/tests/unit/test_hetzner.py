@@ -108,6 +108,19 @@ def test_what_is_not_supported_is_refused(vendor):
 # --- vms ----------------------------------------------------------------------
 
 
+def test_a_tag_filter_is_asked_of_hetzner_and_checked_here(vendor, mock_api):
+    # the API's answer is taken as a superset: what does not match is dropped here
+    mock_api.add("GET", "/v1/servers", json=_page(
+        "servers", [_server(1, "db1", {"env": "prod", "role": "galera"}), _server(2, "db2", {"env": "test"})]
+    ))
+    assert [o["name"] for o in vendor.list_objects("vms", "env=prod, role")] == ["db1"]
+    [request] = mock_api.requests_to("GET", "/v1/servers")
+    assert request["params"]["label_selector"] == "env=prod,role"
+    # no filter, no selector
+    vendor.list_objects("vms")
+    assert "label_selector" not in mock_api.requests_to("GET", "/v1/servers")[1]["params"]
+
+
 def test_vms_are_listed_through_every_page_and_filtered_by_labels(vendor, mock_api):
     pages = {
         "1": _page("servers", [_server(1, "db1", {"env": "prod", "role": "galera"})], next_page=2),
@@ -127,6 +140,7 @@ def test_vms_are_listed_through_every_page_and_filtered_by_labels(vendor, mock_a
         "id": "1",
         "name": "db1",
         "status": "running",
+        "state": "ready",
         "location": "fsn1",
         "labels": {"env": "prod", "role": "galera"},
         "created": "2026-10-01T10:00:00Z",
@@ -802,17 +816,14 @@ def test_the_project_picks_the_token(clean_api_keys, mock_api):
         globals.dba.vendor.hetzner.list_objects("vms", None, "test")
 
 
-def test_a_refusal_reaches_the_shell_as_a_failed_task(clean_api_keys, mock_api):
+def test_a_refusal_reaches_the_shell_before_any_task(clean_api_keys, mock_api):
     from mysqlsh import globals
 
     api_keys.store_api_key("hetzner", "hc-default-token")
-    started = globals.dba.vendor.hetzner.deploy_object(
-        "vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"}
-    )
-    ended = globals.task.get(started["task_id"], 0, 5000)
-    assert ended["status"] == "failed"
-    assert "requires ssh_keys" in ended["error"]
+    with pytest.raises(Exception, match="requires ssh_keys"):
+        globals.dba.vendor.hetzner.deploy_object("vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"})
     assert mock_api.requests == []
+    assert globals.task.list("dba") == []
 
 
 # --- Live -----------------------------------------------------------------------

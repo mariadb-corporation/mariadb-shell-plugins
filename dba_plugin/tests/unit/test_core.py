@@ -66,6 +66,11 @@ class StubVendor(vendor_lib.Vendor):
         StubVendor.objects.append(deployed)
         return dict(deployed)
 
+    @staticmethod
+    def _check_vms(settings):
+        if settings.get("size") == "huge":
+            raise DbaError("Stub Cloud has no size 'huge'.")
+
     def _status_vms(self, obj):
         # Asked by id, as the vendors are. A VM starts on the first look, and
         # runs from the second on, unless a test holds it at a status of its
@@ -349,6 +354,7 @@ def test_a_deletion_is_a_task_that_ends_once_the_object_is_gone(stub):
     [
         (lambda: operations.deploy_object("stubcloud", "vms", {"size": "small"}), "Missing settings for vms: name"),
         (lambda: operations.deploy_object("stubcloud", "vms", {"name": "db9", "color": "red"}), "Unsupported settings for vms: color"),
+        (lambda: operations.deploy_object("stubcloud", "vms", {"name": "db9", "size": "huge"}), "no size 'huge'"),
         (lambda: operations.deploy_object("stubcloud", "volumes", {"name": "v"}), "does not support 'deploy' for volumes"),
         (lambda: operations.deploy_object("nocloud", "vms", {"name": "v"}), "Unknown vendor 'nocloud'"),
         (lambda: operations.delete_object("stubcloud", "vms", ""), "object_name is empty"),
@@ -553,3 +559,51 @@ def test_on_the_command_line_a_deployment_waits_for_its_task(stub, monkeypatch, 
         dba.deploy.vendor.object("stubcloud", "vms", {"name": "db10", "color": "red"})
     # another function is no command-line call: it returns the task's id
     assert "task_id" in dba.delete.vendor.object("stubcloud", "vms", "db9")
+
+
+@pytest.mark.parametrize(
+    "status, state",
+    [
+        ("running", "ready"), ("Online", "ready"), ("active", "ready"),
+        ("off", "stopped"), ("stopped", "stopped"),
+        ("initializing", "pending"), ("maintenance", "pending"), ("pending_create", "pending"),
+        ("pending_delete", "deleting"), ("deleting", "deleting"),
+        ("error", "failed"), ("delete_failed", "failed"),
+        (None, "unknown"),
+    ],
+)
+def test_every_status_has_a_state_in_the_same_words_for_every_vendor(status, state):
+    assert vendor_lib.state_of(status) == state
+    assert vendor_lib.make_object("vms", 1, "db1", status)["state"] == state
+
+
+def test_one_pager_follows_page_numbers_offsets_and_tokens():
+    pages = {None: ([1, 2], "b"), "b": ([3], "c"), "c": ([4], None)}
+    assert vendor_lib.paginate(lambda cursor: pages[cursor]) == [1, 2, 3, 4]
+    # a cursor seen before would page in a circle
+    looping = {None: ([1], "a"), "a": ([2], "a")}
+    assert vendor_lib.paginate(lambda cursor: looping[cursor]) == [1, 2]
+    assert vendor_lib.paginate(lambda cursor: ([cursor], (cursor or 0) + 1), max_pages=3) == [None, 1, 2]
+
+
+def test_independent_requests_run_side_by_side():
+    import threading as threads
+
+    barrier = threads.Barrier(3, timeout=5)
+
+    def request(answer):
+        barrier.wait()  # only returns once all three run at once
+        return answer
+
+    assert vendor_lib.parallel(*(lambda n=n: request(n) for n in range(3))) == [0, 1, 2]
+
+
+def test_reading_calls_share_one_vendor_per_api_key(stub):
+    operations.set_api_key("stubcloud", "k1")
+    operations.list_objects("stubcloud", "vms")
+    operations.object_status("stubcloud", "vms", "db1")
+    assert StubVendor.keys == ["k1"]
+    # a key stored anew gets a vendor of its own
+    operations.set_api_key("stubcloud", "k2")
+    operations.list_objects("stubcloud", "vms")
+    assert StubVendor.keys == ["k1", "k2"]

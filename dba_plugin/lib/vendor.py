@@ -20,7 +20,9 @@ implements, per object type it supports, the methods named after it:
 
 * ``_list_<type>()`` - REQUIRED; what defines that the type is supported.
   Returns every deployed object of the type, each made with
-  :func:`make_object`. The dba plugin filters by tags and project itself.
+  :func:`make_object`. The dba plugin filters by tags and project itself. A
+  vendor whose API filters by labels takes ``labels=None`` - a dict of key
+  to value, None for any value - and asks for those only.
 * ``_info_<type>()`` - what can be deployed: the sizes, locations, images,
   versions and prices the vendor offers. Returns a dict of lists.
 * ``_deploy_<type>(settings)`` - deploys one object and returns it, made
@@ -43,6 +45,8 @@ vendor's own request body, for what the standardized keys do not cover.
 
 # cSpell:ignore mysqlsh MariaDB
 
+import concurrent.futures
+import inspect
 from typing import Optional
 
 from dba_plugin.lib import object_types as types
@@ -65,6 +69,38 @@ FAILED_STATUS_WORDS = ("fail", "error")
 # The statuses of a server deployed not to start - Hetzner's start_after_create
 # false, an UpCloud server created stopped: its deployment is done, too.
 STOPPED_STATUSES = frozenset(("off", "stopped"))
+
+# The state every object reports next to its vendor's status, in the same
+# words for every vendor, so that a client can tell what is ready to use, on
+# its way, stopped, going or broken without knowing each vendor's wording.
+STATE_READY = "ready"
+STATE_PENDING = "pending"
+STATE_STOPPED = "stopped"
+STATE_DELETING = "deleting"
+STATE_FAILED = "failed"
+STATE_UNKNOWN = "unknown"
+
+
+def state_of(status) -> str:
+    """The standardized state of a vendor's status.
+
+    Ready, stopped and failed statuses are known (:data:`READY_STATUSES`,
+    :data:`STOPPED_STATUSES`, :data:`FAILED_STATUS_WORDS`); one naming a
+    deletion is deleting; any other status - creating, starting,
+    maintenance, pending_create - is an object on its way: pending.
+    """
+    if status in (None, ""):
+        return STATE_UNKNOWN
+    status = str(status).lower()
+    if any(word in status for word in FAILED_STATUS_WORDS):
+        return STATE_FAILED
+    if status in READY_STATUSES:
+        return STATE_READY
+    if status in STOPPED_STATUSES:
+        return STATE_STOPPED
+    if "delet" in status:
+        return STATE_DELETING
+    return STATE_PENDING
 
 # The standardized settings keys per object type, with what each means. A
 # vendor maps the ones it supports onto its API, refuses those it does not
@@ -152,7 +188,9 @@ def make_object(
         id: The vendor's id of the object; reported as a string.
         name (str): Its name.
         status (str): Its status, in the vendor's own words, or
-            STATUS_ACTIVE for an object the vendor gives no state.
+            STATUS_ACTIVE for an object the vendor gives no state. The
+            object reports it as ``status``, and its :func:`state_of` as
+            ``state``.
         location (str): Where it runs: a location, zone or region.
         labels (dict): Its labels or tags, as a dict; a tag without a value
             maps to "".
@@ -169,6 +207,7 @@ def make_object(
         "id": None if id is None else str(id),
         "name": name,
         "status": status,
+        "state": state_of(status),
         "location": location,
         "labels": dict(labels or {}),
         "created": created,
@@ -196,6 +235,51 @@ def architecture(value):
     if value is None:
         return None
     return _ARCHITECTURES.get(str(value).strip().lower(), value)
+
+
+# A stop for a listing that never ends.
+MAX_PAGES = 100
+
+
+def paginate(fetch, max_pages: int = MAX_PAGES) -> list:
+    """Every item of a paged listing, whatever the vendor pages it by.
+
+    Args:
+        fetch: Called with the cursor of a page - None for the first - and
+            returning its items and the next page's cursor: a page number,
+            an offset or a token; None after the last page.
+        max_pages (int): A stop for a listing that never ends.
+
+    Returns:
+        list: The items of every page.
+    """
+    items = []
+    cursor = None
+    seen = set()
+    for _ in range(max_pages):
+        batch, cursor = fetch(cursor)
+        items.extend(batch or [])
+        # a cursor seen before would page in a circle
+        if cursor is None or cursor in seen:
+            break
+        seen.add(cursor)
+    return items
+
+
+def parallel(*calls) -> list:
+    """Runs independent calls - requests to one vendor - side by side.
+
+    Returns:
+        list: Their results, in the order of the calls.
+
+    Raises:
+        Exception: What the first failing call raised.
+    """
+    if len(calls) < 2:
+        return [call() for call in calls]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(calls)) as pool:
+        futures = [pool.submit(call) for call in calls]
+        return [future.result() for future in futures]
 
 
 def as_list(value) -> list:
@@ -311,8 +395,9 @@ class Vendor:
       labels what it deploys for a project with :data:`PROJECT_LABEL`,
       filters by that label, and lets one key serve every project.
     * ``api_key_help`` - where the user gets an API key, for messages.
-    * ``ready_statuses`` - the statuses of an object ready to use, if not
-      :data:`READY_STATUSES`.
+    * ``deploy_settings`` - the settings each type requires and supports,
+      checked by :meth:`check_deploy_settings` with what ``_check_<type>``
+      adds, before a deployment's task starts.
 
     Args:
         api_key (str): The API key; None for what needs none.
@@ -324,7 +409,10 @@ class Vendor:
     feature_sets = ()
     native_projects = False
     api_key_help = ""
-    ready_statuses = READY_STATUSES
+    # The settings each type's deployment requires and supports, beyond the
+    # common ones, as {object_type: {"required": (...), "supported": (...)}};
+    # a type not named requires a name and takes every standardized setting.
+    deploy_settings = {}
 
     def __init__(self, api_key: Optional[str] = None, project: Optional[str] = None):
         self.api_key = api_key
@@ -421,6 +509,34 @@ class Vendor:
         """
         return self._operation(operation, object_type)
 
+    def check_deploy_settings(self, object_type: str, settings) -> dict:
+        """Checks a deployment's settings as far as it can without the vendor's API.
+
+        The settings the type requires and supports (``deploy_settings``),
+        then ``_check_<type>(settings)``, where the vendor has more rules
+        that need no request: the format of a value, a combination. Called
+        before a deployment's task starts, so that a mistake fails the call,
+        and by ``_deploy_<type>`` itself.
+
+        Returns:
+            dict: The settings, as :func:`check_settings` returns them.
+
+        Raises:
+            DbaError: A setting is missing, not supported or not valid.
+        """
+        object_type = types.check_object_type(object_type)
+        rules = self.deploy_settings.get(object_type, {})
+        settings = check_settings(
+            object_type,
+            settings,
+            required=rules.get("required", ("name",)),
+            supported=rules.get("supported"),
+        )
+        more = getattr(self, f"_check_{object_type}", None)
+        if callable(more):
+            more(settings)
+        return settings
+
     def object_info(self, object_type: str) -> dict:
         """What of an object type can be deployed. See ``_info_<type>``."""
         return self._operation("info", object_type)()
@@ -439,7 +555,14 @@ class Vendor:
         if self.project and not self.native_projects:
             tag_filter[PROJECT_LABEL] = self.project
 
-        objects = self._operation("list", object_type)()
+        list_type = self._operation("list", object_type)
+        # A vendor that can filter by labels on its side says so with a
+        # labels parameter; it gets the filter, and what it answers is
+        # filtered here all the same, whatever it made of it.
+        if tag_filter and "labels" in inspect.signature(list_type).parameters:
+            objects = list_type(labels=tag_filter)
+        else:
+            objects = list_type()
         return [obj for obj in objects if matches_tags(obj, tag_filter)]
 
     def find_object(self, object_type: str, object_name: str) -> dict:
@@ -477,18 +600,20 @@ class Vendor:
             + "."
         )
 
-    def is_ready(self, obj: dict) -> bool:
+    @staticmethod
+    def is_ready(obj: dict) -> bool:
         """Whether an object's status says it is ready to use."""
-        return str(obj.get("status") or "").lower() in self.ready_statuses
+        return state_of(obj.get("status")) == STATE_READY
 
-    def is_stopped(self, obj: dict) -> bool:
+    @staticmethod
+    def is_stopped(obj: dict) -> bool:
         """Whether an object's status says it exists but does not run."""
-        return str(obj.get("status") or "").lower() in STOPPED_STATUSES
+        return state_of(obj.get("status")) == STATE_STOPPED
 
-    def has_failed(self, obj: dict) -> bool:
+    @staticmethod
+    def has_failed(obj: dict) -> bool:
         """Whether an object's status says its deployment failed."""
-        status = str(obj.get("status") or "").lower()
-        return any(word in status for word in FAILED_STATUS_WORDS)
+        return state_of(obj.get("status")) == STATE_FAILED
 
     def object_status(self, object_type: str, object_name: str) -> dict:
         """The current status of one object, by its name or id."""

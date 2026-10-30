@@ -112,6 +112,7 @@ def test_a_service_is_reported_compactly_and_without_credentials(mock_api, cloud
         "id": "dbpgf1",
         "name": "one",
         "status": "ready",
+        "state": "ready",
         "location": "us-east-1",
         "labels": {"env": "prod"},
         "created": "2026-01-01T00:00:00+00:00",

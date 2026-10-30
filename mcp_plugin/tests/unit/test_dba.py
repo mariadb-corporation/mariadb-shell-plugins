@@ -36,7 +36,7 @@ pytest.importorskip("dba_plugin")
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from dba_plugin.lib import api_keys, object_types, vendor as vendor_lib, vendors
+from dba_plugin.lib import api_keys, object_types, operations, vendor as vendor_lib, vendors
 
 from mysqlsh import task_manager
 
@@ -115,6 +115,7 @@ def stub_vendor(monkeypatch):
     StubVendor.deployed = []
     StubVendor.gone = []
     task_manager.clear()
+    operations.close_vendors()
 
     saved = {
         name: shell.read_secret(name)
