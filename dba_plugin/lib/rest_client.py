@@ -258,14 +258,6 @@ class RestClient:
         """Sends a POST request. See :meth:`request`."""
         return self.request("POST", path, params=params, json=json)
 
-    def put(self, path, json=None, params=None):
-        """Sends a PUT request. See :meth:`request`."""
-        return self.request("PUT", path, params=params, json=json)
-
-    def patch(self, path, json=None, params=None):
-        """Sends a PATCH request. See :meth:`request`."""
-        return self.request("PATCH", path, params=params, json=json)
-
     def delete(self, path, params=None, json=None):
         """Sends a DELETE request. See :meth:`request`."""
         return self.request("DELETE", path, params=params, json=json)

@@ -180,8 +180,6 @@ def deploy_object(
     vendor_name: str, object_type: str, settings, project=None, context=api_keys.CONTEXT_GUI
 ) -> dict:
     """Deploys one object with the given settings."""
-    if settings is not None and not isinstance(settings, dict):
-        raise DbaError("settings must be a dict.")
     return _with_vendor(
         vendor_name, project, context, lambda v: v.deploy_object(object_type, settings)
     )

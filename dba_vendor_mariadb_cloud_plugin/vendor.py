@@ -117,7 +117,7 @@ def _allow_list(allowed_ips) -> list:
     ``{"ip", "comment"}`` dict.
     """
     if isinstance(allowed_ips, str):
-        allowed_ips = [ip for ip in allowed_ips.split(",")]
+        allowed_ips = allowed_ips.split(",")
     if not isinstance(allowed_ips, (list, tuple)):
         raise DbaError("The setting allowed_ips must be a list of IP addresses or CIDR ranges.")
 
@@ -346,9 +346,9 @@ class MariadbCloud(v.Vendor):
             "topology": str(settings["topology"]),
             "ssl_enabled": True,
         }
-        for key, field in (("version", "version"), ("size", "size")):
+        for key in ("version", "size"):
             if settings.get(key) not in (None, ""):
-                body[field] = str(settings[key])
+                body[key] = str(settings[key])
         nodes = _positive_int(settings, "nodes")
         if nodes is not None:
             body["nodes"] = nodes

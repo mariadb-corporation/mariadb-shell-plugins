@@ -417,19 +417,9 @@ def _check_dba_api_key_combination(options: dict) -> None:
 def _resolve_dba_api_key(options: dict) -> str:
     """Returns the API key for --set-dba-api-key, from stdin, the environment or a prompt."""
     if options.get("dba_api_key_stdin"):
-        if sys.stdin.isatty():
-            raise mysqlsh.Error(
-                "--dbaApiKeyStdin expects the API key to be piped in, but stdin "
-                "is a terminal. Pipe it, or leave the option out to be prompted."
-            )
-        return sys.stdin.readline().strip()
+        return _password_from_stdin("--dbaApiKeyStdin", "the API key")
     if options.get("dba_api_key_env"):
-        name = str(options["dba_api_key_env"])
-        if not os.environ.get(name):
-            raise mysqlsh.Error(
-                f"--dbaApiKeyEnv names '{name}', which is not set in the environment."
-            )
-        return os.environ[name]
+        return _password_from_env(str(options["dba_api_key_env"]), "--dbaApiKeyEnv")
 
     if options.get("non_interactive") or not prompts.shell().options.useWizards:
         raise mysqlsh.Error(
@@ -439,8 +429,12 @@ def _resolve_dba_api_key(options: dict) -> str:
     return prompts.password(f"Enter the API key of {options['set_dba_api_key']}: ")
 
 
-def _password_from_stdin() -> str:
+def _password_from_stdin(option="--passwordStdin", what="the password") -> str:
     """Returns the password read from stdin.
+
+    Args:
+        option (str): The option that asked for it, for the refusal.
+        what (str): What is read, for the refusal.
 
     Returns:
         The first line of stdin, without its line ending.
@@ -451,7 +445,7 @@ def _password_from_stdin() -> str:
     """
     if sys.stdin.isatty():
         raise mysqlsh.Error(
-            "--passwordStdin expects the password to be piped in, but stdin "
+            f"{option} expects {what} to be piped in, but stdin "
             "is a terminal. Pipe it, or leave the option out to be prompted."
         )
 
@@ -460,7 +454,7 @@ def _password_from_stdin() -> str:
     return sys.stdin.readline().rstrip("\r\n")
 
 
-def _password_from_env(name: str) -> str:
+def _password_from_env(name: str, option="--passwordEnv") -> str:
     """Returns the password held by the named environment variable.
 
     The variable's NAME is what the option takes, so the password itself never
@@ -468,6 +462,7 @@ def _password_from_env(name: str) -> str:
 
     Args:
         name (str): The environment variable to read.
+        option (str): The option that named it, for the refusal.
 
     Returns:
         Its value, which may be empty - an empty password is a password.
@@ -477,7 +472,7 @@ def _password_from_env(name: str) -> str:
     """
     if name not in os.environ:
         raise mysqlsh.Error(
-            f"--passwordEnv names '{name}', which is not set in the "
+            f"{option} names '{name}', which is not set in the "
             "environment."
         )
 
