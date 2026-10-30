@@ -1,0 +1,24 @@
+{
+    "version": "0.2",
+    "language": "en",
+    "words": [
+        "hetzner",
+        "rrsets",
+        "proxyprotocol",
+        "hcloud",
+        "xfs",
+        "netmask"
+    ],
+    "flagWords": [
+        "hte"
+    ],
+    "ignorePaths": [
+        "cspell.json"
+    ],
+    "ignoreWords": [
+        "mysqlsh",
+        "mysqld",
+        "streamable",
+        "pytest"
+    ]
+}

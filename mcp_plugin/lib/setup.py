@@ -42,7 +42,7 @@ import os
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_cli, setup_migrator, tenants
+from mcp_plugin.lib import config, general, setup_cli, setup_dba, setup_migrator, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # The management menu's last choice, and its default: picking it (or replying
@@ -399,6 +399,7 @@ def _menu_entries() -> list:
         ("Delete a connection", _delete_connection),
         ("Add an allowed path", _add_path),
         ("Delete an allowed path", _delete_path),
+        *setup_dba.menu_entries(),
     ]
     if setup_migrator.is_supported():
         entries.append((setup_migrator.menu_label(), setup_migrator.manage))
