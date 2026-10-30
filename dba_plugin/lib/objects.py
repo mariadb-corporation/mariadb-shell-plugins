@@ -93,11 +93,28 @@ def shell_call(call):
         mysqlsh.Error: The operation refused or failed, with its message.
     """
     import mysqlsh
+    from mysqlsh import task_manager
 
     try:
         return call()
-    except DbaError as e:
+    except (DbaError, task_manager.TaskError) as e:
         raise mysqlsh.Error(str(e)) from e
+
+
+def task_answer(started: dict, function: str):
+    """What a shell function returns for the task it started.
+
+    The task's id and status - or, where the function is the command-line
+    call, the task's result once it ended, as the process ends right after
+    the call (see ``mysqlsh.task_manager.answer``).
+
+    Args:
+        started (dict): What the operation that started the task returned.
+        function (str): The shell function, e.g. "dba.deploy.vendor.object".
+    """
+    from mysqlsh import task_manager
+
+    return task_manager.answer(task_manager.get(started["task_id"]), function)
 
 
 def camel_case(name: str) -> str:

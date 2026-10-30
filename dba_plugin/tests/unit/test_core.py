@@ -445,3 +445,20 @@ def test_object_names_are_camel_cased():
 
 def test_shell_values_become_plain_python():
     assert objects.plain({"a": [1, {"b": (2,)}]}) == {"a": [1, {"b": [2]}]}
+
+
+def test_on_the_command_line_a_deployment_waits_for_its_task(stub, monkeypatch, capsys):
+    dba = mysqlsh.globals.dba
+    dba.set.api_key("stubcloud", "k")
+    # as the shell runs mariadb-shell -- dba deploy vendor object ...
+    monkeypatch.setattr(task_manager, "cli_function", "dba.deploy.vendor.object")
+
+    deployed = dba.deploy.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"})
+    assert deployed["name"] == "db9"
+    assert deployed["status"] == "running"
+    assert "The vms 'db9' is running." in capsys.readouterr().err
+
+    with pytest.raises(RuntimeError, match="color"):
+        dba.deploy.vendor.object("stubcloud", "vms", {"name": "db10", "color": "red"})
+    # another function is no command-line call: it returns the task's id
+    assert "task_id" in dba.delete.vendor.object("stubcloud", "vms", "db9")

@@ -25,7 +25,7 @@ dba_plugin.lib.api_keys).
 from mysqlsh.plugin_manager import plugin_function
 
 from dba_plugin.lib import operations
-from dba_plugin.lib.objects import plain, shell_call
+from dba_plugin.lib.objects import plain, shell_call, task_answer
 
 
 @plugin_function("dba.list.vendors", shell=True, cli=True, web=True)
@@ -143,7 +143,7 @@ def list_objects(
     )
 
 
-@plugin_function("dba.deploy.vendor.object", shell=True, cli=False, web=True)
+@plugin_function("dba.deploy.vendor.object", shell=True, cli=True, web=True)
 def deploy_object(
     vendor_name: str, object_type: str, settings: dict, project: str = None
 ) -> dict:
@@ -158,8 +158,12 @@ def deploy_object(
     the vendor's status of the object as it changes. The task ends once the
     object is ready to use, with the object as its result. Cancelling it
     with task.cancel(taskId) stops the waiting, not the vendor; delete what
-    was deployed on its own. Not offered on the command line, where the
-    shell would end before the task.
+    was deployed on its own.
+
+    On the command line, mariadb-shell -- dba deploy vendor object ...,
+    the call waits for the task instead. It writes the vendor's statuses
+    to stderr as they come and returns the object once it is ready, or
+    fails with the task's error. Ctrl+C cancels the task.
 
     Args:
         vendor_name (str): The vendor.
@@ -168,14 +172,17 @@ def deploy_object(
         project (str): The project to deploy it in.
 
     Returns:
-        The task_id and status of the task.
+        The task_id and status of the task; on the command line, the object.
     """
     return shell_call(
-        lambda: operations.deploy_object(vendor_name, object_type, plain(settings), project)
+        lambda: task_answer(
+            operations.deploy_object(vendor_name, object_type, plain(settings), project),
+            "dba.deploy.vendor.object",
+        )
     )
 
 
-@plugin_function("dba.delete.vendor.object", shell=True, cli=False, web=True)
+@plugin_function("dba.delete.vendor.object", shell=True, cli=True, web=True)
 def delete_object(
     vendor_name: str, object_type: str, object_name: str, project: str = None
 ) -> dict:
@@ -184,8 +191,8 @@ def delete_object(
     Returns the id of a task at once. Follow it with task.get(taskId). The
     task ends once the vendor no longer lists the object, with the object as
     it was and what the vendor reported as its result. Deleting a VM keeps
-    the volumes attached to it. Not offered on the command line, where the
-    shell would end before the task.
+    the volumes attached to it. On the command line, the call waits for the
+    task and returns its result.
 
     Args:
         vendor_name (str): The vendor.
@@ -194,8 +201,12 @@ def delete_object(
         project (str): The project it belongs to.
 
     Returns:
-        The task_id and status of the task.
+        The task_id and status of the task; on the command line, the object
+        deleted and what the vendor reported.
     """
     return shell_call(
-        lambda: operations.delete_object(vendor_name, object_type, object_name, project)
+        lambda: task_answer(
+            operations.delete_object(vendor_name, object_type, object_name, project),
+            "dba.delete.vendor.object",
+        )
     )
