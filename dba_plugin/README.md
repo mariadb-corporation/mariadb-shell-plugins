@@ -72,8 +72,15 @@ Each status the vendor reports on the way is a message of the task. Follow it wi
 tasks with `task.list("dba")`. `task.cancel(taskId)` stops the waiting, not the vendor:
 what it already started goes on there. One object is worked on by one task at a time.
 
-Tasks live in the process that started them, so these functions are not offered on the
-command line, where the shell ends right after the call.
+Tasks live in the process that started them, so the process must not end under them:
+
+- **On the command line** the call waits for its task:
+  `mariadb-shell -- dba deploy vendor object hetzner vms --name=db1 ...` writes the
+  vendor's statuses to stderr as they come and prints the object once it is ready, or
+  fails with the task's error and exit code 1. Ctrl+C cancels the task.
+- **A script** (`-f`, `-e`) that ends with tasks still running waits for them before the
+  shell exits; Ctrl+C stops the waiting.
+- **An interactive session** that ends with tasks still running says which stop with it.
 
 ```python
 dba.set.api_key("hetzner", "<token>", "prod")
