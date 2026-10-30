@@ -107,6 +107,11 @@ nothing else. Run `mariadb-shell -- mcp setup --help` for the generated list.
 | `--deletePaths=<list>` | Stop allowing directories. |
 | `--installMigrator` | Download, provision and wrap the migration tooling. |
 | `--removeMigrator` | Remove every installed release, and the wrapper. |
+| `--setDbaApiKey=<vendor>` | Store a cloud vendor's REST API key for the `dba` tools (needs the dba plugin). The key is read from `--dbaApiKeyStdin` or `--dbaApiKeyEnv`, or prompted for; there is no option taking the key itself. |
+| `--deleteDbaApiKey=<vendor>` | Delete a cloud vendor's API key. |
+| `--dbaProject=<name>` | The project the key of `--setDbaApiKey` or `--deleteDbaApiKey` is for (default `default`). |
+| `--dbaApiKeyEnv=<VARNAME>` | Read the API key from the *named* environment variable. |
+| `--dbaApiKeyStdin` | Read the API key from the first line of stdin. |
 | `--nonInteractive` | Never prompt; a missing password is an error, not a question. |
 | `--show` | Print the configuration and do nothing else. |
 | `--json` | Print what `--show` reports as JSON. Only applies to `--show`. |
@@ -220,7 +225,7 @@ primitives in `lib/setup_prompts.py`).
 
 The tools are grouped into function groups that can be loaded independently via the
 `function_groups` option of `mcp.start_server` (`db`, `msm`, `rest`, `sandbox`, `migrator`,
-`util`, `restd`, `sql`; defaults to all):
+`util`, `restd`, `sql`, `dba`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -678,6 +683,37 @@ as `db.execute_sql_script` - every included file must be within the caller's all
 paths - and the binary is given the expanded text and reads no file itself
 (`--no-source`). A position in an included part names that file, with its line and
 column in it, so `sql.check` reports an error in a section where it is.
+
+### Cloud deployment tools (`dba`)
+
+| MCP tool | Purpose |
+| -------- | ------- |
+| `dba.list_vendors` | Lists the cloud vendors, optionally only those implementing a feature set (`ManagedService`, `CoreCompute`), with the projects an API key is stored for. |
+| `dba.list_vendor_object_support` | Lists the standardized object types (`managed_mariadb_services`, `vms`, `volumes`, `networking`, `firewalls`, `load_balancers`, `dns`, `object_storage`, `ssh_keys`) with their deployment settings, or what one vendor supports. |
+| `dba.get_vendor_object_info` | What of an object type a vendor offers: VM sizes with architecture, cores, RAM, disk, included traffic and prices, locations, images, managed service versions and topologies. |
+| `dba.list_vendor_objects` | Lists the deployed objects of a type, filtered by tags and project. |
+| `dba.get_vendor_object_status` | The current status of one deployed object. |
+| `dba.set_api_key` | `--gui` only. Stores a vendor's API key. |
+| `dba.deploy_vendor_object` | `--gui` only. Deploys an object, such as a VM, with the given settings. |
+| `dba.delete_vendor_object` | `--gui` only. Deletes an object. |
+
+They wrap the [dba plugin](../dba_plugin/README.md) and are registered **only where it is
+installed**; the vendors are its vendor plugins (Hetzner, UpCloud, MariaDB Cloud).
+
+An agent - a server started without `--gui` - gets the five tools that **read**: it can
+neither store a key nor create or delete anything that costs money or holds data. It works
+with the API keys stored by `mcp setup` (`MCP:DBA_API_KEY:<vendor>:<project>` secrets),
+which the server instructions tell it to ask the user to store rather than ask for:
+
+```bash
+# A Hetzner Cloud token for the project "prod", from a secret manager
+vault read -field=token cloud/hetzner | mariadb-shell -- mcp setup --setDbaApiKey=hetzner --dbaProject=prod --dbaApiKeyStdin
+```
+
+The VS Code extension (`--gui`) gets every tool and works with its own keys
+(`GUI:DBA_API_KEY:<vendor>:<project>`), which `dba.set_api_key` stores. A multi-tenant
+server does not serve the group: the keys are the server's, so every user would reach the
+same vendor accounts.
 
 ## Installation
 

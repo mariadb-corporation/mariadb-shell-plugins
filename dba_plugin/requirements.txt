@@ -1,0 +1,11 @@
+# Copyright (c) 2026, MariaDB plc.
+
+# Run the following command to install the dependencies in the local MariaDB Shell
+# mariadb-shell --pym pip install -r dba_plugin/requirements.txt
+
+# The plugin itself needs nothing beyond what the shell bundles: it talks to
+# the vendor APIs with httpx2, which the shell ships for the MCP SDK.
+
+# pytest 7.0 crashes on the shell's Python 3.14, see mcp_plugin/requirements.txt.
+pytest >= 7.4
+pytest-cov >= 2.10.1

@@ -487,15 +487,16 @@ def test_the_windows_menu_leaves_the_entry_out_and_renumbers(monkeypatch):
     from mcp_plugin.lib import setup
 
     supported = setup._menu_entries()
-    assert len(supported) == 5
+    # Connections, paths and the dba plugin's two API key entries come first.
+    assert len(supported) == 7
     assert "migration tooling" in supported[-1][0]
 
     monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
     unsupported = setup._menu_entries()
-    assert len(unsupported) == 4
+    assert len(unsupported) == 6
     assert not any("migration" in label for label, _ in unsupported)
     # The labels that remain are unchanged and in the same order.
-    assert [label for label, _ in unsupported] == [label for label, _ in supported[:4]]
+    assert [label for label, _ in unsupported] == [label for label, _ in supported[:6]]
 
 
 def test_the_data_home_follows_the_xdg_specification(monkeypatch):

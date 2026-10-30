@@ -50,8 +50,8 @@ def setup(**options) -> None:
 
     Called without options this is an interactive walkthrough. On the first run
     it walks through adding connections and allowed paths; on subsequent runs it
-    presents a menu to add or delete connections and paths and to install or
-    remove the MySQL-to-MariaDB migration tooling.
+    presents a menu to add or delete connections, paths and cloud vendor API
+    keys and to install or remove the MySQL-to-MariaDB migration tooling.
 
     Called with any option it does exactly what the options say and asks
     nothing else, so it can run where there is no terminal - a provisioning
@@ -155,6 +155,17 @@ def setup(**options) -> None:
         lsp_path (str): The mariadb-lsp binary the sql tools run, or the
             folder it is in. Empty searches the PATH, then ~/.local/bin; the
             sql group is offered only where one is found.
+        set_dba_api_key (str): The cloud vendor, e.g. hetzner, to store the
+            REST API key of, for the dba tools an agent gets. The key is read
+            from dba_api_key_stdin or dba_api_key_env, or prompted for. Needs
+            the dba plugin.
+        delete_dba_api_key (str): The cloud vendor to delete the API key of.
+        dba_project (str): The project the API key of set_dba_api_key or
+            delete_dba_api_key is for. Defaults to default.
+        dba_api_key_env (str): The NAME of an environment variable holding
+            the API key for set_dba_api_key.
+        dba_api_key_stdin (bool): Read the API key for set_dba_api_key from
+            the first line of stdin.
 
     Returns:
         None
