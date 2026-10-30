@@ -146,6 +146,21 @@ def _country(zone_id: str) -> str:
     return {"UK": "GB"}.get(code, code) or None
 
 
+def _find_one(items: list, value, name_key: str, what: str) -> dict:
+    """The item of a name or uuid, refusing a name that is not unique."""
+    for key in (name_key, "uuid"):
+        found = [item for item in items if item.get(key) == str(value)]
+        if len(found) > 1:
+            raise DbaError(f"There are {len(found)} {what}s named '{value}'; name one by its uuid.")
+        if found:
+            return found[0]
+    raise DbaError(f"There is no {what} named '{value}'.")
+
+
+def _ip(ip: dict) -> dict:
+    return {"address": ip.get("address"), "access": ip.get("access"), "family": ip.get("family")}
+
+
 def _system_disk(server: dict):
     """The storage device a server was created with, the one it boots from.
 
@@ -239,28 +254,21 @@ class UpCloud(v.Vendor):
     def _find_network(self, network) -> dict:
         """The private network of a name or uuid."""
         private = [net for net in self._networks() if net.get("type") == "private"]
-        for key in ("name", "uuid"):
-            found = [net for net in private if net.get(key) == str(network)]
-            if len(found) > 1:
-                raise DbaError(
-                    f"There are {len(found)} UpCloud networks named '{network}'; name one by its uuid."
-                )
-            if found:
-                return found[0]
-        raise DbaError(f"There is no private UpCloud network named '{network}'.")
+        return _find_one(private, network, "name", "private UpCloud network")
 
-    def _find_server(self, server) -> dict:
-        """The server summary of a name (title) or uuid."""
-        servers = _wrapped(self.client.get("/server"), "servers", "server")
-        for key in ("title", "uuid"):
-            found = [srv for srv in servers if srv.get(key) == str(server)]
-            if len(found) > 1:
-                raise DbaError(
-                    f"There are {len(found)} UpCloud servers named '{server}'; name one by its uuid."
-                )
-            if found:
-                return found[0]
-        raise DbaError(f"There is no UpCloud server named '{server}'.")
+    def _servers(self) -> list:
+        return _wrapped(self.client.get("/server"), "servers", "server")
+
+    def _find_server(self, server, servers=None) -> dict:
+        """The server summary of a name (title) or uuid.
+
+        Args:
+            server: The name or uuid.
+            servers (list): The server summaries, when they are at hand.
+        """
+        return _find_one(
+            self._servers() if servers is None else servers, server, "title", "UpCloud server"
+        )
 
     def _server_details(self, uuid: str) -> dict:
         return (self.client.get(f"/server/{uuid}") or {}).get("server") or {}
@@ -286,16 +294,14 @@ class UpCloud(v.Vendor):
         )
 
     def _list_vms(self) -> list:
-        servers = _wrapped(self.client.get("/server"), "servers", "server")
+        servers = self._servers()
         if not servers:
             return []
 
         addresses = {}
         for ip in _wrapped(self.client.get("/ip_address"), "ip_addresses", "ip_address"):
             if ip.get("server"):
-                addresses.setdefault(ip["server"], []).append(
-                    {"address": ip.get("address"), "access": ip.get("access"), "family": ip.get("family")}
-                )
+                addresses.setdefault(ip["server"], []).append(_ip(ip))
 
         return [
             self._server_object(server, addresses.get(server.get("uuid"), []))
@@ -303,10 +309,7 @@ class UpCloud(v.Vendor):
         ]
 
     def _server_details_object(self, server: dict) -> dict:
-        addresses = [
-            {"address": ip.get("address"), "access": ip.get("access"), "family": ip.get("family")}
-            for ip in _wrapped(server, "ip_addresses", "ip_address")
-        ]
+        addresses = [_ip(ip) for ip in _wrapped(server, "ip_addresses", "ip_address")]
         storages = [
             {
                 "uuid": device.get("storage"),
@@ -401,10 +404,8 @@ class UpCloud(v.Vendor):
             required=("name", "size", "location", "image", "ssh_keys"),
             supported=("size", "location", "image", "ssh_keys", "user_data", "networks"),
         )
-        ssh_keys = settings["ssh_keys"]
-        if isinstance(ssh_keys, str):
-            ssh_keys = [ssh_keys]
-        if not isinstance(ssh_keys, list) or not all(
+        ssh_keys = v.as_list(settings["ssh_keys"])
+        if not ssh_keys or not all(
             isinstance(key, str) and key.strip().startswith(("ssh-", "ecdsa-", "sk-")) for key in ssh_keys
         ):
             raise DbaError(
@@ -423,10 +424,7 @@ class UpCloud(v.Vendor):
             {"type": "public", "ip_addresses": {"ip_address": [{"family": "IPv4"}]}},
             {"type": "utility", "ip_addresses": {"ip_address": [{"family": "IPv4"}]}},
         ]
-        networks = settings.get("networks") or []
-        if isinstance(networks, str):
-            networks = [networks]
-        for network in networks:
+        for network in v.as_list(settings.get("networks")):
             interfaces.append(
                 {
                     "type": "private",
@@ -690,9 +688,9 @@ class UpCloud(v.Vendor):
     def _status_load_balancers(self, obj: dict) -> dict:
         return self._load_balancer_object(self.client.get(f"/load-balancer/{obj['id']}") or {})
 
-    def _target_ip(self, target, network_uuid: str) -> dict:
+    def _target_ip(self, target, network_uuid: str, servers: list) -> dict:
         """The name and address on the private network of a target server."""
-        server = self._server_details(self._find_server(target)["uuid"])
+        server = self._server_details(self._find_server(target, servers)["uuid"])
         interfaces = ((server.get("networking") or {}).get("interfaces") or {}).get("interface") or []
         for interface in interfaces:
             if interface.get("network") == network_uuid:
@@ -713,10 +711,9 @@ class UpCloud(v.Vendor):
         services = settings["services"]
         if not isinstance(services, list) or not all(isinstance(s, dict) for s in services):
             raise DbaError("services must be a list of {protocol, listen_port, destination_port}.")
-        targets = settings.get("targets") or []
-        if isinstance(targets, str):
-            targets = [targets]
-        members = [self._target_ip(target, network["uuid"]) for target in targets]
+        targets = v.as_list(settings.get("targets"))
+        servers = self._servers() if targets else []
+        members = [self._target_ip(target, network["uuid"], servers) for target in targets]
 
         frontends, backends = [], []
         for index, service in enumerate(services, start=1):

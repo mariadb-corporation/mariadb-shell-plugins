@@ -27,7 +27,8 @@ implements, per object type it supports, the methods named after it:
   with :func:`make_object`.
 * ``_delete_<type>(obj)`` - deletes the object :meth:`Vendor.find_object`
   found, and returns a dict describing what the vendor did (an action id,
-  a status), or None.
+  a status), or None. Deleting a VM deletes its system disk only: volumes
+  attached to it - a database's data - are kept.
 * ``_status_<type>(obj)`` - the object's current status. Optional: by
   default the object as listed is its status.
 
@@ -187,6 +188,13 @@ def architecture(value):
     return _ARCHITECTURES.get(str(value).strip().lower(), value)
 
 
+def as_list(value) -> list:
+    """A setting that takes a list, given as a list or as one value."""
+    if value in (None, "", []):
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
 def parse_tags(tags) -> dict:
     """Turns the forms a tag filter can be given in into one dict.
 
@@ -203,7 +211,7 @@ def parse_tags(tags) -> dict:
     if isinstance(tags, dict):
         return {str(key): None if value is None else str(value) for key, value in tags.items()}
     if isinstance(tags, str):
-        tags = [tag for tag in tags.split(",")]
+        tags = tags.split(",")
     if not isinstance(tags, (list, tuple)):
         raise DbaError(
             "tags must be a dict, a list of 'key=value' strings or a comma-separated string."
@@ -472,27 +480,3 @@ class Vendor:
         obj = self.find_object(object_type, object_name)
         return {"deleted": obj, "result": delete(obj)}
 
-
-def paginate(fetch, items_key: str, page_size: int = 50, limit_pages: int = 100) -> list:
-    """Collects the items of a page-numbered listing (Hetzner's style).
-
-    Args:
-        fetch: Called with ``page`` and ``per_page``; returns the decoded
-            body, which carries ``meta.pagination.next_page``.
-        items_key (str): The key of the body's list of items.
-        page_size (int): Items per page.
-        limit_pages (int): A stop for a listing that never ends.
-
-    Returns:
-        list: The items of every page.
-    """
-    items = []
-    page = 1
-    for _ in range(limit_pages):
-        body = fetch(page=page, per_page=page_size) or {}
-        items.extend(body.get(items_key) or [])
-        next_page = ((body.get("meta") or {}).get("pagination") or {}).get("next_page")
-        if not next_page:
-            break
-        page = next_page
-    return items

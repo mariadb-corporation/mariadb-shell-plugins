@@ -72,7 +72,6 @@ SDK checks before any tool runs (see :mod:`mcp_plugin.lib.auth`).
 
 # cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2 uvicorn starlette
 
-import importlib.util
 import ipaddress
 import os
 import sys
@@ -84,7 +83,7 @@ import mysqlsh
 # same way, lazily. It costs nothing: `mcp_plugin.lib` imports it eagerly
 # anyway, and unlike `migrator_functions` it pulls in no MCP SDK module at
 # import time.
-from mcp_plugin.lib import config, db_functions, general, tenants
+from mcp_plugin.lib import config, db_functions, general, setup_dba, tenants
 
 
 # Maps a function group name to the (module, function) naming the callback that
@@ -224,7 +223,7 @@ def server_instructions(
             "mariadb-import or generated INSERT statements; export a table "
             f"to such a file with {name('util', 'export_table')}."
         )
-    if general.FUNCTION_GROUP_DBA in groups and importlib.util.find_spec("dba_plugin"):
+    if general.FUNCTION_GROUP_DBA in groups and setup_dba.is_available():
         rules.append(
             "- Never ask the user for a cloud vendor's API key, and never put "
             "one in a command, a file or a reply. A vendor that "

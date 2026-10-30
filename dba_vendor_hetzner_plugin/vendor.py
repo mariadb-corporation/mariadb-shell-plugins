@@ -31,9 +31,9 @@ What the API makes worth knowing:
   agent's transcript among them. Deploying a VM therefore requires SSH keys,
   and the password field is never passed on.
 * Most changes answer with an action that keeps running. Deploying does not
-  wait for it and reports it instead; deleting waits, bounded, only for what
-  has to finish first - a volume's detach, a firewall's removal from the
-  servers it is applied to.
+  wait for it and reports it instead; deleting waits for it, bounded, as for
+  what has to finish first - a volume's detach, a firewall's removal from
+  the servers it is applied to.
 * Prices come net and gross of VAT; they are reported net, in the currency
   ``/pricing`` names.
 """
@@ -49,6 +49,8 @@ BASE_URL = "https://api.hetzner.cloud/v1"
 
 # The most items a page of a Hetzner listing holds.
 PAGE_SIZE = 50
+# A stop for a listing that never ends.
+LIMIT_PAGES = 100
 
 # How long a delete waits for an action that has to finish first, and how
 # often it asks.
@@ -136,12 +138,10 @@ def _deployed(obj: dict, answer: dict) -> dict:
     action = _action(answer.get("action"))
     if action:
         obj["properties"]["action"] = action
-    actions = [_action(item) for item in answer.get("actions") or []]
-    if actions:
-        obj["properties"]["actions"] = actions
-    next_actions = [_action(item) for item in answer.get("next_actions") or []]
-    if next_actions:
-        obj["properties"]["next_actions"] = next_actions
+    for key in ("actions", "next_actions"):
+        actions = [_action(item) for item in answer.get(key) or []]
+        if actions:
+            obj["properties"][key] = actions
     return obj
 
 
@@ -316,13 +316,6 @@ def _ssh_key(ssh_key: dict) -> dict:
     )
 
 
-def _as_list(value) -> list:
-    """A setting that takes a list, given as a list or as one value."""
-    if value in (None, "", []):
-        return []
-    return list(value) if isinstance(value, (list, tuple)) else [value]
-
-
 def _body(**fields) -> dict:
     """A request body without the fields that were not given."""
     return {key: value for key, value in fields.items() if value not in (None, "", [], {})}
@@ -350,15 +343,19 @@ class Hetzner(v.Vendor):
 
     # --- Helpers ----------------------------------------------------------
 
-    def _all(self, path: str, items_key: str, **params) -> list:
-        """Every item of a listing, through its pages."""
-        return v.paginate(
-            lambda page, per_page: self.client.get(
-                path, params={**params, "page": page, "per_page": per_page}
-            ),
-            items_key,
-            page_size=PAGE_SIZE,
-        )
+    def _all(self, items_key: str, **params) -> list:
+        """Every item of the listing ``/<items_key>``, through its pages."""
+        items = []
+        page = 1
+        for _ in range(LIMIT_PAGES):
+            body = self.client.get(
+                f"/{items_key}", params={**params, "page": page, "per_page": PAGE_SIZE}
+            ) or {}
+            items.extend(body.get(items_key) or [])
+            page = ((body.get("meta") or {}).get("pagination") or {}).get("next_page")
+            if not page:
+                break
+        return items
 
     def _pricing(self) -> dict:
         return (self.client.get("/pricing") or {}).get("pricing") or {}
@@ -372,20 +369,20 @@ class Hetzner(v.Vendor):
                 "city": location.get("city"),
                 "network_zone": location.get("network_zone"),
             }
-            for location in self._all("/locations", "locations")
+            for location in self._all("locations")
         ]
 
-    def _resolve_ids(self, path: str, items_key: str, what: str, values) -> list:
+    def _resolve_ids(self, items_key: str, what: str, values) -> list:
         """The ids of objects given by name or id, in the order given.
 
         Raises:
             DbaError: One of them does not exist.
         """
-        values = _as_list(values)
+        values = v.as_list(values)
         if not values:
             return []
 
-        items = self._all(path, items_key)
+        items = self._all(items_key)
         by_name = {item.get("name"): item["id"] for item in items}
         by_id = {str(item["id"]): item["id"] for item in items}
 
@@ -409,16 +406,16 @@ class Hetzner(v.Vendor):
             )
         return ids
 
-    def _resolve_id(self, path: str, items_key: str, what: str, value):
+    def _resolve_id(self, items_key: str, what: str, value):
         """The id of one object given by name or id, or None for none."""
-        ids = self._resolve_ids(path, items_key, what, value)
+        ids = self._resolve_ids(items_key, what, value)
         if len(ids) > 1:
             raise DbaError(f"Name one {what}, not {len(ids)}.")
         return ids[0] if ids else None
 
     def _network_zone(self, location: str) -> str:
         """The network zone a location is in; a network zone is itself."""
-        locations = self._all("/locations", "locations")
+        locations = self._all("locations")
         zones = sorted({item.get("network_zone") for item in locations if item.get("network_zone")})
         if location in zones:
             return location
@@ -472,7 +469,7 @@ class Hetzner(v.Vendor):
     # --- vms --------------------------------------------------------------
 
     def _list_vms(self) -> list:
-        return [_server(server) for server in self._all("/servers", "servers")]
+        return [_server(server) for server in self._all("servers")]
 
     def _info_vms(self) -> dict:
         currency = self._pricing().get("currency")
@@ -489,7 +486,7 @@ class Hetzner(v.Vendor):
                 "prices": _prices(server_type.get("prices"), currency),
                 "deprecated": bool(server_type.get("deprecated")),
             }
-            for server_type in self._all("/server_types", "server_types")
+            for server_type in self._all("server_types")
         ]
         images = [
             {
@@ -498,7 +495,7 @@ class Hetzner(v.Vendor):
                 "architecture": v.architecture(image.get("architecture")),
                 "os_flavor": image.get("os_flavor"),
             }
-            for image in self._all("/images", "images", type="system", status="available")
+            for image in self._all("images", type="system", status="available")
         ]
         return {"sizes": sizes, "locations": self._locations(), "images": images}
 
@@ -516,12 +513,11 @@ class Hetzner(v.Vendor):
             server_type=settings["size"],
             image=settings["image"],
             location=settings.get("location"),
-            ssh_keys=self._resolve_ids("/ssh_keys", "ssh_keys", "SSH key", settings.get("ssh_keys")),
-            networks=self._resolve_ids("/networks", "networks", "network", settings.get("networks")),
+            ssh_keys=self._resolve_ids("ssh_keys", "SSH key", settings.get("ssh_keys")),
+            networks=self._resolve_ids("networks", "network", settings.get("networks")),
             firewalls=[
                 {"firewall": firewall_id}
-                for firewall_id in self._resolve_ids(
-                    "/firewalls", "firewalls", "firewall", settings.get("firewalls")
+                for firewall_id in self._resolve_ids("firewalls", "firewall", settings.get("firewalls")
                 )
             ],
             user_data=settings.get("user_data"),
@@ -542,7 +538,7 @@ class Hetzner(v.Vendor):
     # --- volumes ----------------------------------------------------------
 
     def _list_volumes(self) -> list:
-        return [_volume(volume) for volume in self._all("/volumes", "volumes")]
+        return [_volume(volume) for volume in self._all("volumes")]
 
     def _info_volumes(self) -> dict:
         pricing = self._pricing()
@@ -572,7 +568,7 @@ class Hetzner(v.Vendor):
         except (TypeError, ValueError) as e:
             raise DbaError(f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.") from e
 
-        server_id = self._resolve_id("/servers", "servers", "VM", settings.get("vm"))
+        server_id = self._resolve_id("servers", "VM", settings.get("vm"))
         body = _body(
             name=settings["name"],
             size=size,
@@ -598,11 +594,11 @@ class Hetzner(v.Vendor):
     # --- networking -------------------------------------------------------
 
     def _list_networking(self) -> list:
-        return [_network(network) for network in self._all("/networks", "networks")]
+        return [_network(network) for network in self._all("networks")]
 
     def _info_networking(self) -> dict:
         zones = {}
-        for location in self._all("/locations", "locations"):
+        for location in self._all("locations"):
             zones.setdefault(location.get("network_zone"), []).append(location.get("name"))
         return {
             "network_zones": [
@@ -641,7 +637,7 @@ class Hetzner(v.Vendor):
     # --- firewalls --------------------------------------------------------
 
     def _list_firewalls(self) -> list:
-        return [_firewall(firewall) for firewall in self._all("/firewalls", "firewalls")]
+        return [_firewall(firewall) for firewall in self._all("firewalls")]
 
     def _info_firewalls(self) -> dict:
         return {"directions": ["in", "out"], "protocols": list(FIREWALL_PROTOCOLS)}
@@ -668,7 +664,7 @@ class Hetzner(v.Vendor):
                 f"not '{rule.get('protocol')}'."
             )
         ips_key = "source_ips" if direction == "in" else "destination_ips"
-        ips = _as_list(rule.get(ips_key))
+        ips = v.as_list(rule.get(ips_key))
         if not ips:
             raise DbaError(f"A firewall rule of direction '{direction}' needs {ips_key}.")
 
@@ -682,13 +678,13 @@ class Hetzner(v.Vendor):
 
     def _deploy_firewalls(self, settings) -> dict:
         settings = v.check_settings(types.FIREWALLS, settings)
-        rules = [self._firewall_rule(rule) for rule in _as_list(settings.get("rules"))]
+        rules = [self._firewall_rule(rule) for rule in v.as_list(settings.get("rules"))]
         body = _body(
             name=settings["name"],
             rules=rules,
             apply_to=[
                 {"type": "server", "server": {"id": server_id}}
-                for server_id in self._resolve_ids("/servers", "servers", "VM", settings.get("vms"))
+                for server_id in self._resolve_ids("servers", "VM", settings.get("vms"))
             ],
             labels=settings["labels"],
         )
@@ -723,7 +719,7 @@ class Hetzner(v.Vendor):
     def _list_load_balancers(self) -> list:
         return [
             _load_balancer(load_balancer)
-            for load_balancer in self._all("/load_balancers", "load_balancers")
+            for load_balancer in self._all("load_balancers")
         ]
 
     def _info_load_balancers(self) -> dict:
@@ -739,7 +735,7 @@ class Hetzner(v.Vendor):
                 "prices": _prices(lb_type.get("prices"), currency),
                 "deprecated": bool(lb_type.get("deprecated")),
             }
-            for lb_type in self._all("/load_balancer_types", "load_balancer_types")
+            for lb_type in self._all("load_balancer_types")
         ]
         return {
             "sizes": sizes,
@@ -785,18 +781,17 @@ class Hetzner(v.Vendor):
 
     def _deploy_load_balancers(self, settings) -> dict:
         settings = v.check_settings(types.LOAD_BALANCERS, settings, required=("name", "size"))
-        network_id = self._resolve_id("/networks", "networks", "network", settings.get("network"))
+        network_id = self._resolve_id("networks", "network", settings.get("network"))
         body = _body(
             name=settings["name"],
             load_balancer_type=settings["size"],
             location=settings.get("location"),
             network=network_id,
-            services=[self._lb_service(service) for service in _as_list(settings.get("services"))],
+            services=[self._lb_service(service) for service in v.as_list(settings.get("services"))],
             targets=[
                 # Through the private network when there is one.
                 {"type": "server", "server": {"id": server_id}, "use_private_ip": network_id is not None}
-                for server_id in self._resolve_ids(
-                    "/servers", "servers", "VM", settings.get("targets")
+                for server_id in self._resolve_ids("servers", "VM", settings.get("targets")
                 )
             ],
             labels=settings["labels"],
@@ -812,7 +807,7 @@ class Hetzner(v.Vendor):
     # --- dns --------------------------------------------------------------
 
     def _list_dns(self) -> list:
-        return [_zone(zone) for zone in self._all("/zones", "zones")]
+        return [_zone(zone) for zone in self._all("zones")]
 
     def _info_dns(self) -> dict:
         return {"record_types": list(DNS_RECORD_TYPES)}
@@ -824,7 +819,7 @@ class Hetzner(v.Vendor):
     def _rrsets(records) -> list:
         """Standardized records as Hetzner's rrsets: one per name and type."""
         rrsets = {}
-        for record in _as_list(records):
+        for record in v.as_list(records):
             if not isinstance(record, dict) or not record.get("type") or record.get("value") in (None, ""):
                 raise DbaError("Each DNS record must be a dict with a type and a value.")
             record_type = str(record["type"]).upper()
@@ -863,7 +858,7 @@ class Hetzner(v.Vendor):
     # --- ssh_keys ---------------------------------------------------------
 
     def _list_ssh_keys(self) -> list:
-        return [_ssh_key(ssh_key) for ssh_key in self._all("/ssh_keys", "ssh_keys")]
+        return [_ssh_key(ssh_key) for ssh_key in self._all("ssh_keys")]
 
     def _deploy_ssh_keys(self, settings) -> dict:
         settings = v.check_settings(types.SSH_KEYS, settings, required=("name", "public_key"))

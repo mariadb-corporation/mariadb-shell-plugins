@@ -99,7 +99,8 @@ def list_api_keys():
     """
     if not is_available():
         return None
-    api_keys, _, _ = _dba()
+    from dba_plugin.lib import api_keys
+
     return api_keys.list_api_keys(api_keys.CONTEXT_MCP)
 
 

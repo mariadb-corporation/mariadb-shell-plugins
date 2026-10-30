@@ -110,10 +110,10 @@ def delete_api_key(vendor_name: str, project=None, context=CONTEXT_GUI) -> bool:
     Returns:
         bool: Whether there was one to delete.
     """
-    name = secret_key(vendor_name, project, context)
-    if name not in _shell().list_secrets():
+    try:
+        _shell().delete_secret(secret_key(vendor_name, project, context))
+    except Exception:  # noqa: BLE001 - no key is the shell's missing-secret error
         return False
-    _shell().delete_secret(name)
     return True
 
 
@@ -133,24 +133,24 @@ def read_api_key(
     Returns:
         str: The key, or None.
     """
-    stored = set(_shell().list_secrets())
     names = [secret_key(vendor_name, project, context)]
     if fall_back_to_default:
         names.append(secret_key(vendor_name, None, context))
 
     for name in names:
-        if name in stored:
+        try:
             return _shell().read_secret(name)
+        except Exception:  # noqa: BLE001 - no key is the shell's missing-secret error
+            continue
 
     return None
 
 
-def list_api_keys(context=CONTEXT_GUI, vendor_name=None) -> list:
+def list_api_keys(context=CONTEXT_GUI) -> list:
     """Lists the vendors and projects there are API keys for. Never the keys.
 
     Args:
         context (str): GUI or MCP.
-        vendor_name (str): Only this vendor's; None for every vendor's.
 
     Returns:
         list: One ``{"vendor", "project"}`` dict per key, sorted.
@@ -161,7 +161,6 @@ def list_api_keys(context=CONTEXT_GUI, vendor_name=None) -> list:
         if not name.startswith(prefix):
             continue
         vendor, _, project = name[len(prefix):].partition(":")
-        if vendor_name is None or vendor == vendor_name:
-            found.append({"vendor": vendor, "project": project})
+        found.append({"vendor": vendor, "project": project})
 
     return sorted(found, key=lambda entry: (entry["vendor"], entry["project"]))
