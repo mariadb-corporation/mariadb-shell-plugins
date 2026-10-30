@@ -5,7 +5,9 @@ prompt types, and the command-line option surface that makes every menu item
 scriptable.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The migration tooling
-setup installs is in [migrator.md](migrator.md).
+setup installs is in [migrator.md](migrator.md). The cloud vendor API key
+options and menu entries (`--setDbaApiKey` and co., 2026-10-30) are in
+[dba.md](dba.md); they shifted the menu numbers the tests use (6 -> 8, 5 -> 7).
 
 ## Architecture / key decisions
 

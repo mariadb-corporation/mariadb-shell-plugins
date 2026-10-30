@@ -92,6 +92,20 @@ def test_running_tasks_are_limited_per_client():
     _create("d", "D", OTHER, max_running=2)
 
 
+def test_a_task_that_cannot_start_is_a_tool_error(monkeypatch):
+    import threading
+
+    def no_thread(self):
+        raise RuntimeError("can't start new thread")
+
+    task = _create("dump_schemas", "Dump")
+    monkeypatch.setattr(threading.Thread, "start", no_thread)
+    with pytest.raises(Exception, match="^The task could not start: can't start new thread$") as raised:
+        tasks.start(task, lambda t: None)
+    assert type(raised.value).__name__ == "ToolError"
+    assert task.status == tasks.FAILED
+
+
 def test_options_set_by_the_tools_are_refused():
     assert util_functions._options(None) == {}
     assert util_functions._options({"threads": 4}) == {"threads": 4}

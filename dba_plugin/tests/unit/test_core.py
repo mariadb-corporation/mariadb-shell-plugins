@@ -18,6 +18,7 @@ operations and the shell functions, over a stub vendor."""
 
 # cSpell:ignore mysqlsh MariaDB
 
+import threading
 import time
 
 import pytest
@@ -27,6 +28,7 @@ from mysqlsh import task_manager
 
 from dba_plugin.lib import api_keys, object_types, objects, operations, vendor as vendor_lib, vendors
 from dba_plugin.lib.general import DbaError
+from dba_plugin.lib.rest_client import VendorApiError
 
 
 class StubVendor(vendor_lib.Vendor):
@@ -41,6 +43,8 @@ class StubVendor(vendor_lib.Vendor):
     deleted = []
     keys = []
     hold = False
+    flaky = 0
+    delete_fails = False
 
     def __init__(self, api_key=None, project=None):
         super().__init__(api_key, project)
@@ -63,16 +67,26 @@ class StubVendor(vendor_lib.Vendor):
         return dict(deployed)
 
     def _status_vms(self, obj):
-        # A VM starts on the first look, and runs from the second on, unless
-        # a test holds it at a status of its own.
-        reported = dict(obj)
-        if obj["status"] == "starting" and not StubVendor.hold:
-            obj["status"] = "running"
+        # Asked by id, as the vendors are. A VM starts on the first look, and
+        # runs from the second on, unless a test holds it at a status of its
+        # own; the first `flaky` asks fail as an API blip does.
+        if StubVendor.flaky:
+            StubVendor.flaky -= 1
+            raise VendorApiError("The Stub Cloud API refused GET with HTTP 502: bad gateway", 502)
+        stored = next((o for o in StubVendor.objects if o["id"] == obj["id"]), None)
+        if stored is None:
+            raise VendorApiError("The Stub Cloud API refused GET with HTTP 404: not found", 404)
+        reported = dict(stored)
+        if stored["status"] == "starting" and not StubVendor.hold:
+            stored["status"] = "running"
         return reported
 
     def _delete_vms(self, obj):
         StubVendor.deleted.append(obj["id"])
-        StubVendor.objects[:] = [o for o in StubVendor.objects if o["id"] != obj["id"]]
+        if StubVendor.delete_fails:
+            next(o for o in StubVendor.objects if o["id"] == obj["id"])["status"] = "delete_failed"
+        else:
+            StubVendor.objects[:] = [o for o in StubVendor.objects if o["id"] != obj["id"]]
         return {"action": "delete"}
 
     def _list_volumes(self):
@@ -99,7 +113,7 @@ def stub(monkeypatch, clean_api_keys):
         vendor_lib.make_object("vms", 4, "twin", "running"),
     ]
     StubVendor.deployed, StubVendor.deleted, StubVendor.keys = [], [], []
-    StubVendor.hold = False
+    StubVendor.hold, StubVendor.flaky, StubVendor.delete_fails = False, 0, False
     monkeypatch.setattr(operations, "POLL_INTERVAL", 0.01)
     task_manager.clear()
     yield StubVendor
@@ -333,7 +347,8 @@ def test_a_deletion_is_a_task_that_ends_once_the_object_is_gone(stub):
 @pytest.mark.parametrize(
     "call, refusal",
     [
-        (lambda: operations.deploy_object("stubcloud", "vms", {"size": "small"}), "naming the object"),
+        (lambda: operations.deploy_object("stubcloud", "vms", {"size": "small"}), "Missing settings for vms: name"),
+        (lambda: operations.deploy_object("stubcloud", "vms", {"name": "db9", "color": "red"}), "Unsupported settings for vms: color"),
         (lambda: operations.deploy_object("stubcloud", "volumes", {"name": "v"}), "does not support 'deploy' for volumes"),
         (lambda: operations.deploy_object("nocloud", "vms", {"name": "v"}), "Unknown vendor 'nocloud'"),
         (lambda: operations.delete_object("stubcloud", "vms", ""), "object_name is empty"),
@@ -349,13 +364,89 @@ def test_what_can_be_checked_at_once_fails_the_call(stub, call, refusal):
 
 def test_what_the_vendor_refuses_fails_the_task(stub):
     operations.set_api_key("stubcloud", "k")
-    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9", "color": "red"}))
+    # a standardized setting this vendor does not take
+    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9", "image": "debian-13"}))
     assert ended["status"] == task_manager.FAILED
-    assert "color" in ended["error"]
+    assert "Unsupported settings for vms: image" in ended["error"]
     ended = _ended(operations.delete_object("stubcloud", "vms", "nothere"))
     assert ended["status"] == task_manager.FAILED
     assert "There is no vms named 'nothere'" in ended["error"]
 
+
+def test_a_few_failed_polls_do_not_fail_the_deployment(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.flaky = operations.MAX_POLL_ERRORS
+    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    assert ended["status"] == task_manager.COMPLETED
+    warnings = [m["text"] for m in ended["messages"] if m["level"] == "warning"]
+    assert len(warnings) == operations.MAX_POLL_ERRORS
+    assert "HTTP 502" in warnings[0]
+
+
+def test_polls_that_keep_failing_fail_the_deployment(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.flaky = operations.MAX_POLL_ERRORS + 1
+    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    assert ended["status"] == task_manager.FAILED
+    assert "HTTP 502" in ended["error"]
+
+
+def test_a_server_deployed_stopped_is_deployed(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.hold = True
+    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    StubVendor.objects[-1]["status"] = "off"
+    ended = _ended(started)
+    assert ended["status"] == task_manager.COMPLETED
+    assert ended["result"]["status"] == "off"
+
+
+def test_a_deletion_the_vendor_fails_fails_at_once(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.delete_fails = True
+    began = time.monotonic()
+    ended = _ended(operations.delete_object("stubcloud", "vms", "db1"))
+    assert ended["status"] == task_manager.FAILED
+    assert ended["error"] == "Stub Cloud reports The vms 'db1' as delete_failed."
+    assert time.monotonic() - began < 2
+
+
+def test_an_object_is_one_tasks_by_its_id_and_in_the_default_project(stub):
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.hold = True
+    first = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    task = task_manager.get(first["task_id"])
+    while task.stage != "Waiting until it is ready":
+        task.wait_for_change(task.version, 1)
+
+    # by the id the deployment got, and with the default project named
+    with pytest.raises(DbaError, match="A task is already working on the vms '9'"):
+        operations.delete_object("stubcloud", "vms", "9")
+    with pytest.raises(DbaError, match="A task is already working on the vms 'db9'"):
+        operations.delete_object("stubcloud", "VMS", "db9", project="default")
+
+    task.cancel()
+    _ended(first)
+    _ended(operations.delete_object("stubcloud", "vms", "9"))
+
+
+def test_a_task_that_cannot_start_lets_go_of_its_object(stub, monkeypatch):
+    operations.set_api_key("stubcloud", "k")
+
+    start = threading.Thread.start
+
+    def no_thread(self):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading.Thread, "start", no_thread)
+    with pytest.raises(DbaError, match="^The task could not start: can't start new thread$"):
+        operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    [failed] = task_manager.list_tasks()
+    assert failed.status == task_manager.FAILED
+
+    # the object is free again for the next task
+    monkeypatch.setattr(threading.Thread, "start", start)
+    assert _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))["status"] == "completed"
 
 def test_a_failed_status_fails_the_deployment(stub):
     operations.set_api_key("stubcloud", "k")

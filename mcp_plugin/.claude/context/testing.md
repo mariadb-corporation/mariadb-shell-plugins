@@ -8,6 +8,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Current state
 
+- **2026-10-30, `wip/dba_plugin` + mariadb-shell `wip/task_plugin` build:**
+  958 passed, 7 skipped. Needs a shell build with `mysqlsh.task_manager`
+  (`cmake --build build --target python_extensions`, after a `cmake build`
+  reconfigure the first time - the plugin folders are globbed at configure).
+  New: `test_dba.py`; `test_util.py` lost the registry tests (now in the
+  shell's `task_plugin/test`).
+
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (9), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,

@@ -207,7 +207,7 @@ def register_util_tools(server, function_groups=()) -> None:
             util_process.run(task, function, args, options, source, target, executable)
             return result
 
-        task.start(work)
+        tasks.start(task, work)
 
         return {"task_id": task.id, "status": task.status}
 
