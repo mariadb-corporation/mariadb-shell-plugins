@@ -127,10 +127,8 @@ def _retry_delay(response, attempt: int) -> float:
 class RestClient:
     """A JSON client for one vendor API.
 
-    Attributes:
-        last_headers: The headers of the last answer, for what a vendor
-            sends there rather than in the body - MariaDB Cloud's next-page
-            token. None before the first answer.
+    It keeps no state of a request, so threads may share it: the parallel
+    requests of an offering's info, the calls of an MCP server.
 
     Args:
         vendor (str): The vendor's display name, for messages.
@@ -163,7 +161,6 @@ class RestClient:
             options["transport"] = _transport_factory()
 
         self._client = httpx2.Client(**options)
-        self.last_headers = None
 
     def close(self) -> None:
         """Closes the client's connections."""
@@ -175,7 +172,7 @@ class RestClient:
     def __exit__(self, *exc_info):
         self.close()
 
-    def request(self, method: str, path: str, params=None, json=None):
+    def request(self, method: str, path: str, params=None, json=None, with_headers=False):
         """Sends a request and returns its JSON answer.
 
         Args:
@@ -183,9 +180,12 @@ class RestClient:
             path (str): The path, relative to the base URL.
             params (dict): The query parameters; None values are left out.
             json: The request body, sent as JSON.
+            with_headers (bool): Return the answer's headers too, for what a
+                vendor sends there - MariaDB Cloud's next-page token.
 
         Returns:
-            The decoded JSON body, or None for an empty one.
+            The decoded JSON body, or None for an empty one; with
+            ``with_headers``, a (body, headers) tuple.
 
         Raises:
             VendorApiError: The request failed, after the retries it allows.
@@ -225,8 +225,8 @@ class RestClient:
                     f"The {self.vendor} API request {method} {path} {failure}."
                 )
 
-            self.last_headers = response.headers
-            return self._answer(method, path, response)
+            body = self._answer(method, path, response)
+            return (body, response.headers) if with_headers else body
 
     def _answer(self, method, path, response):
         """The body of a response, or the error it reports."""
@@ -253,6 +253,10 @@ class RestClient:
     def get(self, path, params=None):
         """Sends a GET request. See :meth:`request`."""
         return self.request("GET", path, params=params)
+
+    def get_with_headers(self, path, params=None) -> tuple:
+        """Sends a GET request; returns its body and its headers. See :meth:`request`."""
+        return self.request("GET", path, params=params, with_headers=True)
 
     def post(self, path, json=None, params=None):
         """Sends a POST request. See :meth:`request`."""

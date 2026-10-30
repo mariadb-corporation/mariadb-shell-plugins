@@ -51,8 +51,6 @@ PROVISIONING = "/provisioning/v1"
 # The response header carrying the token of the next page of a listing.
 PAGE_TOKEN_HEADER = "X-SkySQL-Page-Token-Next"
 PAGE_SIZE = 100
-# A stop for a listing that never ends.
-MAX_PAGES = 100
 
 # The service type a deployment gets unless vendor_settings names another,
 # e.g. transactional_serverless.
@@ -166,6 +164,20 @@ class MariadbCloud(v.Vendor):
         "(the portal's user profile, API Keys)."
     )
 
+    deploy_settings = {
+        types.MANAGED_MARIADB_SERVICES: {"required": ("name", "provider", "location", "topology")},
+    }
+
+    @staticmethod
+    def _check_managed_mariadb_services(settings) -> None:
+        """What a service's settings must be, before any request."""
+        _positive_int(settings, "nodes")
+        _positive_int(settings, "storage_gb")
+        if settings.get("allowed_ips") not in (None, "", []):
+            _allow_list(settings["allowed_ips"])
+        if not isinstance(settings["vendor_settings"].get("tags") or {}, dict):
+            raise DbaError("vendor_settings tags must be a dict.")
+
     def create_client(self):
         return rest_client.RestClient(
             self.display_name, API_URL, headers={"X-API-Key": self.api_key}
@@ -174,22 +186,23 @@ class MariadbCloud(v.Vendor):
     # --- Helpers ----------------------------------------------------------
 
     def _get_all(self, path: str, params=None) -> list:
-        """Every item of a token-paged listing."""
-        items = []
-        query = {**(params or {}), "page_size": PAGE_SIZE}
-        for _ in range(MAX_PAGES):
-            body = self.client.get(path, params=query)
-            # The next page's token comes in a header, not in the body.
-            token = self.client.last_headers.get(PAGE_TOKEN_HEADER) or None
+        """Every item of a listing paged with a token, which comes in a header."""
+
+        def page(token):
+            query = {**(params or {}), "page_size": PAGE_SIZE}
+            if token:
+                query["page_token"] = token
+            body, headers = self.client.get_with_headers(path, params=query)
             if isinstance(body, list):
-                items.extend(body)
+                batch = body
             elif isinstance(body, dict):
                 # Not documented, but tolerated: a body wrapping its items.
-                items.extend(body.get("items") or body.get("data") or [])
-            if not token or token == query.get("page_token") or not body:
-                break
-            query["page_token"] = token
-        return items
+                batch = body.get("items") or body.get("data") or []
+            else:
+                batch = []
+            return batch, (headers.get(PAGE_TOKEN_HEADER) or None) if batch else None
+
+        return v.paginate(page)
 
     @staticmethod
     def _service(service: dict) -> dict:
@@ -234,11 +247,19 @@ class MariadbCloud(v.Vendor):
     def _info_managed_mariadb_services(self) -> dict:
         """What can be deployed. MariaDB Cloud prices by billing offering,
         not by size, so no prices are reported here."""
+        # five independent listings, asked for side by side
+        size_list, version_list, topology_list, provider_list, region_list = v.parallel(
+            lambda: self._get_all(
+                f"{PROVISIONING}/sizes", {"type": "server", "service_type": DEFAULT_SERVICE_TYPE}
+            ),
+            lambda: self._get_all(f"{PROVISIONING}/versions"),
+            lambda: self._get_all(f"{PROVISIONING}/topologies", {"service_type": DEFAULT_SERVICE_TYPE}),
+            lambda: self.client.get(f"{PROVISIONING}/providers") or [],
+            lambda: self._get_all(f"{PROVISIONING}/regions"),
+        )
+
         sizes = {}
-        for size in self._get_all(
-            f"{PROVISIONING}/sizes",
-            {"type": "server", "service_type": DEFAULT_SERVICE_TYPE},
-        ):
+        for size in size_list:
             if size.get("is_active") is False or not size.get("name"):
                 continue
             entry = sizes.setdefault(
@@ -263,7 +284,7 @@ class MariadbCloud(v.Vendor):
                     entry[key].append(value)
 
         versions = {}
-        for version in self._get_all(f"{PROVISIONING}/versions"):
+        for version in version_list:
             if not version.get("name"):
                 continue
             entry = versions.setdefault(
@@ -289,7 +310,7 @@ class MariadbCloud(v.Vendor):
                 "default": bool(topology.get("is_default")),
             }
             for topology in sorted(
-                self._get_all(f"{PROVISIONING}/topologies", {"service_type": DEFAULT_SERVICE_TYPE}),
+                topology_list,
                 key=lambda topology: topology.get("order") or 0,
             )
             if topology.get("name")
@@ -303,7 +324,7 @@ class MariadbCloud(v.Vendor):
                 "storage_gb_min": provider.get("volume_size_min_gb"),
                 "storage_gb_max": provider.get("volume_size_max_gb"),
             }
-            for provider in self.client.get(f"{PROVISIONING}/providers") or []
+            for provider in provider_list
             if provider.get("name") and provider.get("active") is not False
         ]
 
@@ -315,7 +336,7 @@ class MariadbCloud(v.Vendor):
                 "default": bool(region.get("default")),
             }
             for region in sorted(
-                self._get_all(f"{PROVISIONING}/regions"),
+                region_list,
                 key=lambda region: (region.get("provider") or "", region.get("order") or 0),
             )
             if region.get("name") and region.get("is_available") is not False
@@ -332,11 +353,7 @@ class MariadbCloud(v.Vendor):
     def _deploy_managed_mariadb_services(self, settings) -> dict:
         """Requests a new service and returns it as the API accepted it,
         typically ``pending_create``; it does not wait for it to be ready."""
-        settings = v.check_settings(
-            types.MANAGED_MARIADB_SERVICES,
-            settings,
-            required=("name", "provider", "location", "topology"),
-        )
+        settings = self.check_deploy_settings(types.MANAGED_MARIADB_SERVICES, settings)
 
         body = {
             "name": str(settings["name"]),
@@ -359,8 +376,6 @@ class MariadbCloud(v.Vendor):
             body["allow_list"] = _allow_list(settings["allowed_ips"])
         vendor_settings = dict(settings["vendor_settings"])
         vendor_tags = vendor_settings.pop("tags", None) or {}
-        if not isinstance(vendor_tags, dict):
-            raise DbaError("vendor_settings tags must be a dict.")
         body.update(vendor_settings)
         # The labels win over tags given in vendor_settings: the dba_project
         # one must survive, or the project would lose the service.

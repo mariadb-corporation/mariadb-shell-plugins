@@ -47,6 +47,7 @@ volumes and networking. What the API made awkward, and how it is handled:
 
 import re
 import time
+from typing import Optional
 from datetime import datetime, timezone
 
 from dba_plugin.lib import object_types as types, rest_client
@@ -73,7 +74,6 @@ DEFAULT_STORAGE_TIER = "maxiops"
 
 # Paging of the APIs that page with limit and offset.
 PAGE_SIZE = 100
-LIMIT_PAGES = 100
 
 # Replaced by the tests, so that waiting for a server takes no time.
 _sleep = time.sleep
@@ -146,6 +146,17 @@ def _country(zone_id: str) -> str:
     return {"UK": "GB"}.get(code, code) or None
 
 
+def _label_filter(labels) -> Optional[dict]:
+    """The listing parameters that have UpCloud filter by labels: one label=key=value,
+    or label=key for any value, per label. Only the classic listings - servers,
+    storages, networks - take them as such."""
+    if not labels:
+        return None
+    return {
+        "label": [key if value is None else f"{key}={value}" for key, value in labels.items()]
+    }
+
+
 def _find_one(items: list, value, name_key: str, what: str) -> dict:
     """The item of a name or uuid, refusing a name that is not unique."""
     for key in (name_key, "uuid"):
@@ -197,6 +208,47 @@ class UpCloud(v.Vendor):
         "upctl, or store an API sub-account's credentials as 'username:password'."
     )
 
+    deploy_settings = {
+        types.VMS: {
+            "required": ("name", "size", "location", "image", "ssh_keys"),
+            "supported": ("size", "location", "image", "ssh_keys", "user_data", "networks"),
+        },
+        types.VOLUMES: {"required": ("name", "size_gb"), "supported": ("size_gb", "location", "vm")},
+        types.NETWORKING: {"required": ("name", "ip_range", "location")},
+        types.LOAD_BALANCERS: {"required": ("name", "size", "location", "network", "services")},
+        types.OBJECT_STORAGE: {"required": ("name", "location"), "supported": ("location",)},
+    }
+
+    # --- What a deployment's settings must be, before any request ----------
+
+    @staticmethod
+    def _check_vms(settings) -> None:
+        ssh_keys = v.as_list(settings["ssh_keys"])
+        if not ssh_keys or not all(
+            isinstance(key, str) and key.strip().startswith(("ssh-", "ecdsa-", "sk-")) for key in ssh_keys
+        ):
+            raise DbaError(
+                "UpCloud has no SSH key store: ssh_keys must be a list of public keys in "
+                "OpenSSH format, e.g. 'ssh-ed25519 AAAA... user@host'."
+            )
+
+    @staticmethod
+    def _check_volumes(settings) -> None:
+        if not settings.get("location") and not settings.get("vm"):
+            raise DbaError("Missing settings for volumes: location, or a vm to attach it to.")
+
+    @staticmethod
+    def _check_load_balancers(settings) -> None:
+        services = settings["services"]
+        if not isinstance(services, list) or not all(isinstance(s, dict) for s in services):
+            raise DbaError("services must be a list of {protocol, listen_port, destination_port}.")
+        for service in services:
+            protocol = str(service.get("protocol") or "tcp").lower()
+            if protocol not in ("tcp", "http"):
+                raise DbaError(f"UpCloud load balancers balance tcp or http, not '{protocol}'.")
+            if not _int(service.get("listen_port")):
+                raise DbaError("Every service needs a listen_port.")
+
     def create_client(self):
         """The API client: a token is sent as a Bearer token, a
         ``username:password`` key with HTTP basic authentication."""
@@ -212,13 +264,13 @@ class UpCloud(v.Vendor):
 
     def _paged(self, path: str) -> list:
         """Every item of a listing paged with limit and offset."""
-        items = []
-        for page in range(LIMIT_PAGES):
-            batch = self.client.get(path, params={"limit": PAGE_SIZE, "offset": page * PAGE_SIZE}) or []
-            items.extend(batch)
-            if len(batch) < PAGE_SIZE:
-                break
-        return items
+
+        def page(offset):
+            offset = offset or 0
+            batch = self.client.get(path, params={"limit": PAGE_SIZE, "offset": offset}) or []
+            return batch, offset + PAGE_SIZE if len(batch) >= PAGE_SIZE else None
+
+        return v.paginate(page)
 
     def _zones(self) -> list:
         """The public zones, as locations."""
@@ -248,16 +300,16 @@ class UpCloud(v.Vendor):
         except rest_client.VendorApiError:
             return None
 
-    def _networks(self) -> list:
-        return _wrapped(self.client.get("/network"), "networks", "network")
+    def _networks(self, labels=None) -> list:
+        return _wrapped(self.client.get("/network", params=_label_filter(labels)), "networks", "network")
 
     def _find_network(self, network) -> dict:
         """The private network of a name or uuid."""
         private = [net for net in self._networks() if net.get("type") == "private"]
         return _find_one(private, network, "name", "private UpCloud network")
 
-    def _servers(self) -> list:
-        return _wrapped(self.client.get("/server"), "servers", "server")
+    def _servers(self, labels=None) -> list:
+        return _wrapped(self.client.get("/server", params=_label_filter(labels)), "servers", "server")
 
     def _find_server(self, server, servers=None) -> dict:
         """The server summary of a name (title) or uuid.
@@ -293,8 +345,8 @@ class UpCloud(v.Vendor):
             storages=storages,
         )
 
-    def _list_vms(self) -> list:
-        servers = self._servers()
+    def _list_vms(self, labels=None) -> list:
+        servers = self._servers(labels)
         if not servers:
             return []
 
@@ -326,11 +378,18 @@ class UpCloud(v.Vendor):
         return self._server_details_object(self._server_details(obj["id"]))
 
     def _info_vms(self) -> dict:
-        prices = _wrapped(self.client.get("/price"), "prices", "zone")
-        currency = self._currency()
+        # independent requests, asked for side by side
+        price_list, currency, plans, zones, templates = v.parallel(
+            lambda: self.client.get("/price"),
+            self._currency,
+            self._plans,
+            self._zones,
+            self._templates,
+        )
+        prices = _wrapped(price_list, "prices", "zone")
 
         sizes = []
-        for plan in self._plans():
+        for plan in plans:
             plan_name = plan.get("name")
             plan_prices = []
             for zone in prices:
@@ -369,7 +428,7 @@ class UpCloud(v.Vendor):
                 }
             )
 
-        return {"sizes": sizes, "locations": self._zones(), "images": self._templates()}
+        return {"sizes": sizes, "locations": zones, "images": templates}
 
     def _templates(self) -> list:
         templates = _wrapped(self.client.get("/storage/template"), "storages", "storage")
@@ -398,20 +457,8 @@ class UpCloud(v.Vendor):
         )
 
     def _deploy_vms(self, settings) -> dict:
-        settings = v.check_settings(
-            types.VMS,
-            settings,
-            required=("name", "size", "location", "image", "ssh_keys"),
-            supported=("size", "location", "image", "ssh_keys", "user_data", "networks"),
-        )
+        settings = self.check_deploy_settings(types.VMS, settings)
         ssh_keys = v.as_list(settings["ssh_keys"])
-        if not ssh_keys or not all(
-            isinstance(key, str) and key.strip().startswith(("ssh-", "ecdsa-", "sk-")) for key in ssh_keys
-        ):
-            raise DbaError(
-                "UpCloud has no SSH key store: ssh_keys must be a list of public keys in "
-                "OpenSSH format, e.g. 'ssh-ed25519 AAAA... user@host'."
-            )
 
         plan = next((p for p in self._plans() if p.get("name") == settings["size"]), None)
         if plan is None:
@@ -526,8 +573,10 @@ class UpCloud(v.Vendor):
             servers=servers,
         )
 
-    def _list_volumes(self) -> list:
-        storages = _wrapped(self.client.get("/storage/normal"), "storages", "storage")
+    def _list_volumes(self, labels=None) -> list:
+        storages = _wrapped(
+            self.client.get("/storage/normal", params=_label_filter(labels)), "storages", "storage"
+        )
         return [self._storage_object(storage) for storage in storages]
 
     def _info_volumes(self) -> dict:
@@ -540,12 +589,7 @@ class UpCloud(v.Vendor):
         return self._storage_object((self.client.get(f"/storage/{obj['id']}") or {}).get("storage") or {})
 
     def _deploy_volumes(self, settings) -> dict:
-        settings = v.check_settings(
-            types.VOLUMES,
-            settings,
-            required=("name", "size_gb"),
-            supported=("size_gb", "location", "vm"),
-        )
+        settings = self.check_deploy_settings(types.VOLUMES, settings)
         server = self._find_server(settings["vm"]) if settings.get("vm") else None
         zone = settings.get("location") or (server or {}).get("zone")
         if not zone:
@@ -608,10 +652,10 @@ class UpCloud(v.Vendor):
             servers=server_uuids,
         )
 
-    def _list_networking(self) -> list:
+    def _list_networking(self, labels=None) -> list:
         return [
             self._network_object(network)
-            for network in self._networks()
+            for network in self._networks(labels)
             if network.get("type") == "private"
         ]
 
@@ -622,9 +666,7 @@ class UpCloud(v.Vendor):
         return self._network_object((self.client.get(f"/network/{obj['id']}") or {}).get("network") or {})
 
     def _deploy_networking(self, settings) -> dict:
-        settings = v.check_settings(
-            types.NETWORKING, settings, required=("name", "ip_range", "location")
-        )
+        settings = self.check_deploy_settings(types.NETWORKING, settings)
         network = {
             "name": settings["name"],
             "zone": settings["location"],
@@ -702,15 +744,9 @@ class UpCloud(v.Vendor):
         )
 
     def _deploy_load_balancers(self, settings) -> dict:
-        settings = v.check_settings(
-            types.LOAD_BALANCERS,
-            settings,
-            required=("name", "size", "location", "network", "services"),
-        )
+        settings = self.check_deploy_settings(types.LOAD_BALANCERS, settings)
         network = self._find_network(settings["network"])
         services = settings["services"]
-        if not isinstance(services, list) or not all(isinstance(s, dict) for s in services):
-            raise DbaError("services must be a list of {protocol, listen_port, destination_port}.")
         targets = v.as_list(settings.get("targets"))
         servers = self._servers() if targets else []
         members = [self._target_ip(target, network["uuid"], servers) for target in targets]
@@ -718,12 +754,8 @@ class UpCloud(v.Vendor):
         frontends, backends = [], []
         for index, service in enumerate(services, start=1):
             protocol = str(service.get("protocol") or "tcp").lower()
-            if protocol not in ("tcp", "http"):
-                raise DbaError(f"UpCloud load balancers balance tcp or http, not '{protocol}'.")
             listen_port = _int(service.get("listen_port"))
             destination_port = _int(service.get("destination_port")) or listen_port
-            if not listen_port:
-                raise DbaError("Every service needs a listen_port.")
             backend = f"backend-{index}"
             backends.append(
                 {
@@ -811,9 +843,7 @@ class UpCloud(v.Vendor):
         return self._object_storage_object(self.client.get(f"/object-storage-2/{obj['id']}") or {})
 
     def _deploy_object_storage(self, settings) -> dict:
-        settings = v.check_settings(
-            types.OBJECT_STORAGE, settings, required=("name", "location"), supported=("location",)
-        )
+        settings = self.check_deploy_settings(types.OBJECT_STORAGE, settings)
         service = {
             "name": settings["name"],
             "region": settings["location"],
@@ -825,5 +855,7 @@ class UpCloud(v.Vendor):
         return self._object_storage_object(self.client.post("/object-storage-2", json=service) or {})
 
     def _delete_object_storage(self, obj: dict) -> dict:
+        # Accepted, not done: the service is listed for a minute or more, and
+        # a second DELETE meanwhile answers 500. The dba task waits it out.
         self.client.delete(f"/object-storage-2/{obj['id']}")
-        return {"status": "deleted"}
+        return {"status": "deleting"}

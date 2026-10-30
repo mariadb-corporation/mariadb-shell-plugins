@@ -171,6 +171,22 @@ def vendor(mock_api):
     instance.close()
 
 
+def test_a_tag_filter_is_asked_of_upcloud_for_servers_and_checked_here(vendor, mock_api):
+    _servers(mock_api)
+    mock_api.add("GET", "/1.3/ip_address", json={"ip_addresses": {"ip_address": []}})
+    assert [o["name"] for o in vendor.list_objects("vms", {"env": "prod"})] == ["db1"]
+    [request] = mock_api.requests_to("GET", "/1.3/server")
+    assert request["params"] == {"label": "env=prod"}
+
+
+def test_load_balancers_are_filtered_here_only(vendor, mock_api):
+    # their API's filter syntax is unverified: a filter read differently
+    # would lose objects, which filtering here cannot bring back
+    mock_api.add("GET", "/1.3/load-balancer", json=[])
+    vendor.list_objects("load_balancers", {"env": "prod"})
+    assert "label" not in mock_api.requests_to("GET", "/1.3/load-balancer")[0]["params"]
+
+
 # --- Registration and the shell object -------------------------------------
 
 
@@ -829,7 +845,7 @@ def test_deploy_and_delete_object_storage(mock_api):
     instance = UpCloud(api_key=TOKEN, project="shop")
     try:
         created = instance.deploy_object("object_storage", {"name": "backups", "location": "europe-1"})
-        assert instance.delete_object("object_storage", "backups")["result"] == {"status": "deleted"}
+        assert instance.delete_object("object_storage", "backups")["result"] == {"status": "deleting"}
         with pytest.raises(DbaError, match="Unsupported settings for object_storage: size"):
             instance.deploy_object("object_storage", {"name": "b", "location": "europe-1", "size": "1TB"})
     finally:

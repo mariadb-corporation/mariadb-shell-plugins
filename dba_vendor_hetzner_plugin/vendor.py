@@ -49,8 +49,6 @@ BASE_URL = "https://api.hetzner.cloud/v1"
 
 # The most items a page of a Hetzner listing holds.
 PAGE_SIZE = 50
-# A stop for a listing that never ends.
-LIMIT_PAGES = 100
 
 # How long a delete waits for an action that has to finish first, and how
 # often it asks.
@@ -316,6 +314,18 @@ def _ssh_key(ssh_key: dict) -> dict:
     )
 
 
+def _label_selector(labels) -> dict:
+    """The listing parameter that has Hetzner filter by labels: key=value, or a
+    bare key for any value."""
+    if not labels:
+        return {}
+    return {
+        "label_selector": ",".join(
+            key if value is None else f"{key}={value}" for key, value in labels.items()
+        )
+    }
+
+
 def _body(**fields) -> dict:
     """A request body without the fields that were not given."""
     return {key: value for key, value in fields.items() if value not in (None, "", [], {})}
@@ -336,6 +346,49 @@ class Hetzner(v.Vendor):
         "store one per project."
     )
 
+    deploy_settings = {
+        types.VMS: {"required": ("name", "size", "image")},
+        types.VOLUMES: {
+            "required": ("name", "size_gb"),
+            "supported": ("size_gb", "location", "vm", "format"),
+        },
+        types.NETWORKING: {"required": ("name", "ip_range")},
+        types.LOAD_BALANCERS: {"required": ("name", "size")},
+        types.SSH_KEYS: {"required": ("name", "public_key")},
+    }
+
+    # --- What a deployment's settings must be, before any request ----------
+
+    @staticmethod
+    def _check_vms(settings) -> None:
+        if not settings.get("ssh_keys") and not settings["vendor_settings"].get("ssh_keys"):
+            raise DbaError(_SSH_KEYS_REQUIRED)
+
+    @staticmethod
+    def _check_volumes(settings) -> None:
+        if not settings.get("location") and not settings.get("vm"):
+            raise DbaError("A volume needs a location, or a vm to attach it to.")
+        try:
+            int(settings["size_gb"])
+        except (TypeError, ValueError) as e:
+            raise DbaError(f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.") from e
+
+    def _check_firewalls(self, settings) -> None:
+        for rule in v.as_list(settings.get("rules")):
+            self._firewall_rule(rule)
+
+    def _check_load_balancers(self, settings) -> None:
+        for service in v.as_list(settings.get("services")):
+            self._lb_service(service)
+
+    def _check_dns(self, settings) -> None:
+        if settings.get("ttl") is not None:
+            try:
+                int(settings["ttl"])
+            except (TypeError, ValueError) as e:
+                raise DbaError(f"ttl must be a whole number of seconds, not '{settings['ttl']}'.") from e
+        self._rrsets(settings.get("records"))
+
     def create_client(self):
         return rest_client.RestClient(
             self.display_name, BASE_URL, headers={"Authorization": f"Bearer {self.api_key}"}
@@ -344,18 +397,16 @@ class Hetzner(v.Vendor):
     # --- Helpers ----------------------------------------------------------
 
     def _all(self, items_key: str, **params) -> list:
-        """Every item of the listing ``/<items_key>``, through its pages."""
-        items = []
-        page = 1
-        for _ in range(LIMIT_PAGES):
+        """Every item of the listing ``/<items_key>``, through its numbered pages."""
+
+        def page(number):
             body = self.client.get(
-                f"/{items_key}", params={**params, "page": page, "per_page": PAGE_SIZE}
+                f"/{items_key}", params={**params, "page": number or 1, "per_page": PAGE_SIZE}
             ) or {}
-            items.extend(body.get(items_key) or [])
-            page = ((body.get("meta") or {}).get("pagination") or {}).get("next_page")
-            if not page:
-                break
-        return items
+            next_page = ((body.get("meta") or {}).get("pagination") or {}).get("next_page")
+            return body.get(items_key) or [], next_page or None
+
+        return v.paginate(page)
 
     def _pricing(self) -> dict:
         return (self.client.get("/pricing") or {}).get("pricing") or {}
@@ -468,11 +519,18 @@ class Hetzner(v.Vendor):
 
     # --- vms --------------------------------------------------------------
 
-    def _list_vms(self) -> list:
-        return [_server(server) for server in self._all("servers")]
+    def _list_vms(self, labels=None) -> list:
+        return [_server(server) for server in self._all("servers", **_label_selector(labels))]
 
     def _info_vms(self) -> dict:
-        currency = self._pricing().get("currency")
+        # independent listings, asked for side by side
+        pricing, server_types, image_list, locations = v.parallel(
+            self._pricing,
+            lambda: self._all("server_types"),
+            lambda: self._all("images", type="system", status="available"),
+            self._locations,
+        )
+        currency = pricing.get("currency")
         sizes = [
             {
                 "name": server_type.get("name"),
@@ -486,7 +544,7 @@ class Hetzner(v.Vendor):
                 "prices": _prices(server_type.get("prices"), currency),
                 "deprecated": bool(server_type.get("deprecated")),
             }
-            for server_type in self._all("server_types")
+            for server_type in server_types
         ]
         images = [
             {
@@ -495,18 +553,16 @@ class Hetzner(v.Vendor):
                 "architecture": v.architecture(image.get("architecture")),
                 "os_flavor": image.get("os_flavor"),
             }
-            for image in self._all("images", type="system", status="available")
+            for image in image_list
         ]
-        return {"sizes": sizes, "locations": self._locations(), "images": images}
+        return {"sizes": sizes, "locations": locations, "images": images}
 
     def _status_vms(self, obj: dict) -> dict:
         return _server((self.client.get(f"/servers/{obj['id']}") or {}).get("server") or {})
 
     def _deploy_vms(self, settings) -> dict:
-        settings = v.check_settings(types.VMS, settings, required=("name", "size", "image"))
+        settings = self.check_deploy_settings(types.VMS, settings)
         vendor_settings = settings["vendor_settings"]
-        if not settings.get("ssh_keys") and not vendor_settings.get("ssh_keys"):
-            raise DbaError(_SSH_KEYS_REQUIRED)
 
         body = _body(
             name=settings["name"],
@@ -537,13 +593,13 @@ class Hetzner(v.Vendor):
 
     # --- volumes ----------------------------------------------------------
 
-    def _list_volumes(self) -> list:
-        return [_volume(volume) for volume in self._all("volumes")]
+    def _list_volumes(self, labels=None) -> list:
+        return [_volume(volume) for volume in self._all("volumes", **_label_selector(labels))]
 
     def _info_volumes(self) -> dict:
-        pricing = self._pricing()
+        pricing, locations = v.parallel(self._pricing, self._locations)
         return {
-            "locations": self._locations(),
+            "locations": locations,
             "prices": [
                 {
                     "price_per_gb_month": _net_price(pricing.get("volume"), "price_per_gb_month"),
@@ -557,16 +613,8 @@ class Hetzner(v.Vendor):
         return _volume((self.client.get(f"/volumes/{obj['id']}") or {}).get("volume") or {})
 
     def _deploy_volumes(self, settings) -> dict:
-        settings = v.check_settings(
-            types.VOLUMES, settings, required=("name", "size_gb"),
-            supported=("size_gb", "location", "vm", "format"),
-        )
-        if not settings.get("location") and not settings.get("vm"):
-            raise DbaError("A volume needs a location, or a vm to attach it to.")
-        try:
-            size = int(settings["size_gb"])
-        except (TypeError, ValueError) as e:
-            raise DbaError(f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.") from e
+        settings = self.check_deploy_settings(types.VOLUMES, settings)
+        size = int(settings["size_gb"])
 
         server_id = self._resolve_id("servers", "VM", settings.get("vm"))
         body = _body(
@@ -593,8 +641,8 @@ class Hetzner(v.Vendor):
 
     # --- networking -------------------------------------------------------
 
-    def _list_networking(self) -> list:
-        return [_network(network) for network in self._all("networks")]
+    def _list_networking(self, labels=None) -> list:
+        return [_network(network) for network in self._all("networks", **_label_selector(labels))]
 
     def _info_networking(self) -> dict:
         zones = {}
@@ -608,7 +656,7 @@ class Hetzner(v.Vendor):
         }
 
     def _deploy_networking(self, settings) -> dict:
-        settings = v.check_settings(types.NETWORKING, settings, required=("name", "ip_range"))
+        settings = self.check_deploy_settings(types.NETWORKING, settings)
         subnets = None
         if settings.get("location"):
             # One subnet spanning the network, in the location's zone, so
@@ -636,8 +684,8 @@ class Hetzner(v.Vendor):
 
     # --- firewalls --------------------------------------------------------
 
-    def _list_firewalls(self) -> list:
-        return [_firewall(firewall) for firewall in self._all("firewalls")]
+    def _list_firewalls(self, labels=None) -> list:
+        return [_firewall(firewall) for firewall in self._all("firewalls", **_label_selector(labels))]
 
     def _info_firewalls(self) -> dict:
         return {"directions": ["in", "out"], "protocols": list(FIREWALL_PROTOCOLS)}
@@ -677,7 +725,7 @@ class Hetzner(v.Vendor):
         )
 
     def _deploy_firewalls(self, settings) -> dict:
-        settings = v.check_settings(types.FIREWALLS, settings)
+        settings = self.check_deploy_settings(types.FIREWALLS, settings)
         rules = [self._firewall_rule(rule) for rule in v.as_list(settings.get("rules"))]
         body = _body(
             name=settings["name"],
@@ -716,14 +764,17 @@ class Hetzner(v.Vendor):
 
     # --- load_balancers ---------------------------------------------------
 
-    def _list_load_balancers(self) -> list:
+    def _list_load_balancers(self, labels=None) -> list:
         return [
             _load_balancer(load_balancer)
-            for load_balancer in self._all("load_balancers")
+            for load_balancer in self._all("load_balancers", **_label_selector(labels))
         ]
 
     def _info_load_balancers(self) -> dict:
-        currency = self._pricing().get("currency")
+        pricing, lb_types, locations = v.parallel(
+            self._pricing, lambda: self._all("load_balancer_types"), self._locations
+        )
+        currency = pricing.get("currency")
         sizes = [
             {
                 "name": lb_type.get("name"),
@@ -735,11 +786,11 @@ class Hetzner(v.Vendor):
                 "prices": _prices(lb_type.get("prices"), currency),
                 "deprecated": bool(lb_type.get("deprecated")),
             }
-            for lb_type in self._all("load_balancer_types")
+            for lb_type in lb_types
         ]
         return {
             "sizes": sizes,
-            "locations": self._locations(),
+            "locations": locations,
             "algorithms": ["round_robin", "least_connections"],
         }
 
@@ -780,7 +831,7 @@ class Hetzner(v.Vendor):
         }
 
     def _deploy_load_balancers(self, settings) -> dict:
-        settings = v.check_settings(types.LOAD_BALANCERS, settings, required=("name", "size"))
+        settings = self.check_deploy_settings(types.LOAD_BALANCERS, settings)
         network_id = self._resolve_id("networks", "network", settings.get("network"))
         body = _body(
             name=settings["name"],
@@ -806,8 +857,8 @@ class Hetzner(v.Vendor):
 
     # --- dns --------------------------------------------------------------
 
-    def _list_dns(self) -> list:
-        return [_zone(zone) for zone in self._all("zones")]
+    def _list_dns(self, labels=None) -> list:
+        return [_zone(zone) for zone in self._all("zones", **_label_selector(labels))]
 
     def _info_dns(self) -> dict:
         return {"record_types": list(DNS_RECORD_TYPES)}
@@ -839,7 +890,7 @@ class Hetzner(v.Vendor):
         return list(rrsets.values())
 
     def _deploy_dns(self, settings) -> dict:
-        settings = v.check_settings(types.DNS, settings)
+        settings = self.check_deploy_settings(types.DNS, settings)
         body = _body(
             name=settings["name"],
             mode="primary",
@@ -857,11 +908,11 @@ class Hetzner(v.Vendor):
 
     # --- ssh_keys ---------------------------------------------------------
 
-    def _list_ssh_keys(self) -> list:
-        return [_ssh_key(ssh_key) for ssh_key in self._all("ssh_keys")]
+    def _list_ssh_keys(self, labels=None) -> list:
+        return [_ssh_key(ssh_key) for ssh_key in self._all("ssh_keys", **_label_selector(labels))]
 
     def _deploy_ssh_keys(self, settings) -> dict:
-        settings = v.check_settings(types.SSH_KEYS, settings, required=("name", "public_key"))
+        settings = self.check_deploy_settings(types.SSH_KEYS, settings)
         body = _body(
             name=settings["name"],
             public_key=str(settings["public_key"]).strip(),

@@ -32,6 +32,7 @@ started. One object is worked on by one task at a time.
 
 # cSpell:ignore mysqlsh MariaDB
 
+import atexit
 import threading
 import time
 
@@ -143,13 +144,12 @@ def set_api_key(vendor_name: str, key: str, project=None, context=api_keys.CONTE
     }
 
 
-def open_vendor(vendor_name: str, project=None, context=api_keys.CONTEXT_GUI):
-    """A vendor instance holding the API key of the project.
+def _api_key(vendor_cls, project, context) -> str:
+    """The API key of the project, or a refusal saying how to store one.
 
     Raises:
-        DbaError: There is no such vendor, or no key for it.
+        DbaError: No key is stored.
     """
-    vendor_cls = vendors.get_vendor(vendor_name)
     key = api_keys.read_api_key(
         vendor_cls.name,
         project,
@@ -172,16 +172,60 @@ def open_vendor(vendor_name: str, project=None, context=api_keys.CONTEXT_GUI):
             + f". Store one with {where}."
             + (f" {vendor_cls.api_key_help}" if vendor_cls.api_key_help else "")
         )
+    return key
 
-    return vendor_cls(api_key=key, project=project)
+
+def open_vendor(vendor_name: str, project=None, context=api_keys.CONTEXT_GUI):
+    """A new vendor instance holding the API key of the project; the caller closes it.
+
+    Raises:
+        DbaError: There is no such vendor, or no key for it.
+    """
+    vendor_cls = vendors.get_vendor(vendor_name)
+    return vendor_cls(api_key=_api_key(vendor_cls, project, context), project=project)
+
+
+# The vendors the reading operations share, one per vendor, project, key
+# context and API key: their HTTP clients keep connections open between
+# calls, which an MCP server answering one call after the other - a GUI
+# refreshing, an agent polling a status - would otherwise open anew each time.
+_shared = {}
+_shared_lock = threading.Lock()
+
+
+def _shared_vendor(vendor_name, project, context):
+    """The open vendor for the project's current API key.
+
+    A key stored anew gets a vendor of its own, and the one of the key it
+    replaced is closed.
+    """
+    vendor_cls = vendors.get_vendor(vendor_name)
+    key = _api_key(vendor_cls, project, context)
+    wanted = (vendor_cls.name, project, context, key)
+    with _shared_lock:
+        vendor = _shared.get(wanted)
+        if vendor is None:
+            for stale in [k for k in _shared if k[:3] == wanted[:3]]:
+                _shared.pop(stale).close()
+            vendor = vendor_cls(api_key=key, project=project)
+            # made here, under the lock: threads sharing the vendor share one client
+            vendor.client  # noqa: B018 - creates it
+            _shared[wanted] = vendor
+    return vendor
+
+
+def close_vendors() -> None:
+    """Closes the vendors the reading operations share."""
+    with _shared_lock:
+        while _shared:
+            _shared.popitem()[1].close()
+
+
+atexit.register(close_vendors)
 
 
 def _with_vendor(vendor_name, project, context, call):
-    vendor = open_vendor(vendor_name, project, context)
-    try:
-        return call(vendor)
-    finally:
-        vendor.close()
+    return call(_shared_vendor(vendor_name, project, context))
 
 
 def object_info(vendor_name: str, object_type: str, project=None, context=api_keys.CONTEXT_GUI) -> dict:
@@ -350,8 +394,9 @@ def deploy_object(
 ) -> dict:
     """Starts a task deploying one object, which ends once the object is ready.
 
-    The settings are checked against the type's standardized ones at once;
-    what only the vendor's own rules refuse fails the task.
+    The settings are checked at once, as far as the vendor's rules need no
+    request (``Vendor.check_deploy_settings``); what only the vendor's API
+    refuses - a size it does not offer - fails the task.
 
     Args:
         vendor_name (str): The vendor.
@@ -367,8 +412,12 @@ def deploy_object(
         ready to use - or stopped, where it was deployed not to start.
     """
     object_type = types.check_object_type(object_type)
-    vendor_lib.check_settings(object_type, settings)
     vendor = _open_for("deploy", vendor_name, object_type, project, context)
+    try:
+        vendor.check_deploy_settings(object_type, settings)
+    except DbaError:
+        vendor.close()
+        raise
     name = str(settings["name"])
     describe = f"The {object_type} '{name}'"
 

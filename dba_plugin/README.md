@@ -99,8 +99,14 @@ dba.delete.vendor.object("hetzner", "vms", "galera-1", "prod")
 ### Objects
 
 Every object is reported in one shape: `object_type`, `id`, `name`, `status` (in the
-vendor's words, or `active` for an object the vendor gives no state), `location`, `labels`, `created`, `vendor_type` (what the vendor calls
-it) and a compact `properties` dict of what else matters about it, such as addresses.
+vendor's words, or `active` for an object the vendor gives no state), `state` (the same
+words for every vendor: `ready`, `pending`, `stopped`, `deleting`, `failed` or
+`unknown`), `location`, `labels`, `created`, `vendor_type` (what the vendor calls it) and
+a compact `properties` dict of what else matters about it, such as addresses.
+
+Listing by tags or project asks the vendor to filter where its API does - Hetzner for
+every type, UpCloud for servers, storages and networks - and filters what comes back all
+the same.
 
 ### Settings
 
@@ -108,8 +114,9 @@ it) and a compact `properties` dict of what else matters about it, such as addre
 for example `size`, `location`, `image` and `ssh_keys` for `vms` - and `labels` and
 `vendor_settings`, a dict merged into the vendor's own request as is, for whatever the
 standardized ones do not cover. A setting the vendor does not support is refused rather
-than ignored. VMs are only deployed with SSH keys, so that no root password is created
-and handed back.
+than ignored, and every rule that needs no request to the vendor - a required setting,
+the format of a value - is checked before a deployment's task starts. VMs are only
+deployed with SSH keys, so that no root password is created and handed back.
 
 ## API keys and projects
 

@@ -153,10 +153,16 @@ class MockApi:
 def mock_api(monkeypatch):
     import httpx2
 
+    from dba_plugin.lib import operations
+
     api = MockApi()
     monkeypatch.setattr(rest_client, "_transport_factory", lambda: httpx2.MockTransport(api.handle))
     monkeypatch.setattr(rest_client, "_sleep", lambda seconds: None)
-    return api
+    # a vendor the operations share keeps the client - and the mock - it was
+    # made with: none is carried from one test to the next
+    operations.close_vendors()
+    yield api
+    operations.close_vendors()
 
 
 def _dba_secrets():
@@ -169,10 +175,14 @@ def _dba_secrets():
 def clean_api_keys():
     from mysqlsh.globals import shell
 
+    from dba_plugin.lib import operations
+
     saved = {name: shell.read_secret(name) for name in _dba_secrets()}
     for name in saved:
         shell.delete_secret(name)
+    operations.close_vendors()
     yield
+    operations.close_vendors()
     for name in _dba_secrets():
         shell.delete_secret(name)
     for name, value in saved.items():
