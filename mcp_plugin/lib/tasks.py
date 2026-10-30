@@ -82,6 +82,18 @@ def create(task_type: str, kind: str, title: str, client, max_running: int, attr
         raise tool_error(str(e)) from e
 
 
+def start(task, work) -> None:
+    """Starts a task's work on its own thread, refusing as a tool error where it cannot.
+
+    The task manager ends a task it could not start, so it is not left
+    running.
+    """
+    try:
+        task.start(work)
+    except TaskError as e:
+        raise tool_error(str(e)) from e
+
+
 def get(task_id: str, client):
     """Looks a task up for a client.
 

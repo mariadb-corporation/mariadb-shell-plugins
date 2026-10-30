@@ -47,6 +47,7 @@ from typing import Optional
 
 from dba_plugin.lib import object_types as types
 from dba_plugin.lib.general import DbaError
+from dba_plugin.lib.rest_client import VendorApiError
 
 # The label every object deployed for a named project carries, for vendors
 # whose API has no projects of its own.
@@ -61,6 +62,9 @@ STATUS_ACTIVE = "active"
 # ends the wait as failed.
 READY_STATUSES = frozenset(("running", "started", "available", "online", "active", "ready", "ok"))
 FAILED_STATUS_WORDS = ("fail", "error")
+# The statuses of a server deployed not to start - Hetzner's start_after_create
+# false, an UpCloud server created stopped: its deployment is done, too.
+STOPPED_STATUSES = frozenset(("off", "stopped"))
 
 # The standardized settings keys per object type, with what each means. A
 # vendor maps the ones it supports onto its API, refuses those it does not
@@ -405,6 +409,18 @@ class Vendor:
             )
         return method
 
+    def require(self, operation: str, object_type: str):
+        """The method implementing an operation for a type, or a refusal naming why not.
+
+        Args:
+            operation (str): info, list, status, deploy or delete.
+            object_type (str): The standardized object type.
+
+        Raises:
+            DbaError: The vendor does not support it.
+        """
+        return self._operation(operation, object_type)
+
     def object_info(self, object_type: str) -> dict:
         """What of an object type can be deployed. See ``_info_<type>``."""
         return self._operation("info", object_type)()
@@ -465,6 +481,10 @@ class Vendor:
         """Whether an object's status says it is ready to use."""
         return str(obj.get("status") or "").lower() in self.ready_statuses
 
+    def is_stopped(self, obj: dict) -> bool:
+        """Whether an object's status says it exists but does not run."""
+        return str(obj.get("status") or "").lower() in STOPPED_STATUSES
+
     def has_failed(self, obj: dict) -> bool:
         """Whether an object's status says its deployment failed."""
         status = str(obj.get("status") or "").lower()
@@ -499,7 +519,32 @@ class Vendor:
             dict: ``deleted`` (the object as it was) and ``result`` (what
             the vendor reported, or None).
         """
-        delete = self._operation("delete", object_type)
-        obj = self.find_object(object_type, object_name)
-        return {"deleted": obj, "result": delete(obj)}
+        self._operation("delete", object_type)
+        return self.delete_found(object_type, self.find_object(object_type, object_name))
+
+    def delete_found(self, object_type: str, obj: dict) -> dict:
+        """Deletes an object :meth:`find_object` found. See :meth:`delete_object`."""
+        return {"deleted": obj, "result": self._operation("delete", object_type)(obj)}
+
+    def current_status(self, object_type: str, obj: dict) -> dict:
+        """The current status of an object found or deployed before, by its id.
+
+        Asks for that one object where the vendor answers for one, instead of
+        listing every object of the type, as following a deployment does
+        every few seconds.
+
+        Raises:
+            ObjectNotFound: It is gone.
+        """
+        method = getattr(self, f"_status_{types.check_object_type(object_type)}", None)
+        if not callable(method):
+            return self.find_object(object_type, obj["id"])
+        try:
+            return method(obj)
+        except VendorApiError as e:
+            if e.status == 404:
+                raise ObjectNotFound(
+                    f"There is no {object_type} with the id '{obj['id']}' at {self.display_name}."
+                ) from e
+            raise
 

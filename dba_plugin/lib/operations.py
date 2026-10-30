@@ -48,9 +48,13 @@ MAX_RUNNING_TASKS = 16
 DEPLOY_TIMEOUT = 3600
 DELETE_TIMEOUT = 1800
 POLL_INTERVAL = 10
+# How many asks in a row may fail - an API that answers 502 for a moment, an
+# object not listed yet right after it was created - before a wait gives up.
+MAX_POLL_ERRORS = 6
 
-# The objects a task is working on, as (vendor, project, type, name or id).
-_busy = set()
+# The objects tasks are working on, as (vendor, project, type, name or id),
+# each with the claim of the task working on it.
+_busy = {}
 _busy_lock = threading.Lock()
 
 
@@ -203,64 +207,130 @@ def object_status(
     )
 
 
-def _start_task(kind, title, owner, busy_key, vendor, work) -> dict:
-    """Starts a dba task running ``work(task)`` with the vendor, and closes it after.
+def _busy_key(vendor, project, object_type, name_or_id) -> tuple:
+    return (vendor.name, project or api_keys.DEFAULT_PROJECT, object_type, str(name_or_id))
+
+
+def _claim(claim, vendor, keys) -> None:
+    """Marks objects as worked on under a claim, refusing one another claim holds.
 
     Raises:
-        DbaError: A task already works on the object, or the owner runs too
-            many.
+        DbaError: Another task works on one of them.
     """
     with _busy_lock:
-        if busy_key in _busy:
-            vendor.close()
-            raise DbaError(
-                f"A task is already working on the {busy_key[2]} '{busy_key[3]}' at "
-                f"{vendor.display_name}; wait for it to end, see task.list."
-            )
-        try:
-            task = task_manager.create(
-                TASK_TYPE,
-                kind,
-                title,
-                owner,
-                MAX_RUNNING_TASKS,
-                {"vendor": vendor.name, "project": busy_key[1], "object_type": busy_key[2]},
-            )
-        except task_manager.TaskError as e:
-            vendor.close()
-            raise DbaError(str(e)) from e
-        _busy.add(busy_key)
+        for key in keys:
+            if _busy.get(key, claim) is not claim:
+                raise DbaError(
+                    f"A task is already working on the {key[2]} '{key[3]}' at "
+                    f"{vendor.display_name}; wait for it to end, see task.list."
+                )
+        for key in keys:
+            _busy[key] = claim
+
+
+def _release(claim) -> None:
+    with _busy_lock:
+        for key in [key for key, holder in _busy.items() if holder is claim]:
+            del _busy[key]
+
+
+def _open_for(operation, vendor_name, object_type, project, context):
+    """A vendor with the API key, that supports the operation for the type.
+
+    Raises:
+        DbaError: There is no such vendor, no key, or no such support.
+    """
+    vendor = open_vendor(vendor_name, project, context)
+    try:
+        vendor.require(operation, object_type)
+    except DbaError:
+        vendor.close()
+        raise
+    return vendor
+
+
+def _start_task(kind, title, owner, vendor, project, object_type, object_name, work) -> dict:
+    """Starts a dba task running ``work(task, claim)``, which owns the vendor.
+
+    The object, by the name or id given, is claimed for the task, and ``claim``
+    claims it by more of them - its id once deployed, its name once found -
+    so that no other task works on it meanwhile. The claims are released and
+    the vendor closed when the task ends, or fails to start.
+
+    Raises:
+        DbaError: A task already works on the object, the owner runs too
+            many, or the task cannot start.
+    """
+    claim = object()
+    try:
+        _claim(claim, vendor, [_busy_key(vendor, project, object_type, object_name)])
+        task = task_manager.create(
+            TASK_TYPE,
+            kind,
+            title,
+            owner,
+            MAX_RUNNING_TASKS,
+            {"vendor": vendor.name, "project": project, "object_type": object_type},
+        )
+    except (DbaError, task_manager.TaskError) as e:
+        _release(claim)
+        vendor.close()
+        raise DbaError(str(e)) from e
 
     def run(task):
         try:
-            return work(task)
+            return work(task, lambda *names: _claim(
+                claim, vendor, [_busy_key(vendor, project, object_type, n) for n in names]
+            ))
         finally:
-            with _busy_lock:
-                _busy.discard(busy_key)
+            _release(claim)
             vendor.close()
 
-    task.start(run)
+    try:
+        task.start(run)
+    except BaseException as e:
+        # no thread to be had, or a Ctrl+C meanwhile: the task manager ended
+        # the task, and the work, which would let go of all this, never runs
+        _release(claim)
+        vendor.close()
+        if isinstance(e, task_manager.TaskError):
+            raise DbaError(str(e)) from e
+        raise
     return {"task_id": task.id, "status": task.status}
 
 
 def _wait(task, vendor, describe, poll, done, timeout):
     """Polls until ``done(answer)``, reporting each new status; returns the last answer.
 
+    A poll that fails is tried again, :data:`MAX_POLL_ERRORS` times in a row
+    at most: one failed request in an hour of asking must not fail a
+    deployment the vendor goes on with.
+
     Raises:
-        DbaError: The vendor reports a failure, or ``timeout`` passed.
+        DbaError: The vendor reports a failure, the polls keep failing, or
+            ``timeout`` passed.
         mysqlsh.task_manager.TaskCancelled: The task was cancelled.
     """
     deadline = time.monotonic() + timeout
     status = None
+    errors = 0
     while True:
-        answer = poll()
-        if answer is not None and answer.get("status") != status:
-            status = answer.get("status")
-            task.message(f"{describe} is {status}.")
-        if done(answer):
-            return answer
-        if answer is not None and vendor.has_failed(answer):
-            raise DbaError(f"{vendor.display_name} reports {describe} as {status}.")
+        try:
+            answer = poll()
+        except DbaError as e:
+            errors += 1
+            if errors > MAX_POLL_ERRORS:
+                raise
+            task.message(f"Could not get the status: {e} Asking again.", "warning")
+        else:
+            errors = 0
+            if answer is not None and answer.get("status") != status:
+                status = answer.get("status")
+                task.message(f"{describe} is {status}.")
+            if done(answer):
+                return answer
+            if answer is not None and vendor.has_failed(answer):
+                raise DbaError(f"{vendor.display_name} reports {describe} as {status}.")
         if time.monotonic() > deadline:
             raise DbaError(
                 f"{describe} is still {status} after {timeout // 60} minutes. "
@@ -280,6 +350,9 @@ def deploy_object(
 ) -> dict:
     """Starts a task deploying one object, which ends once the object is ready.
 
+    The settings are checked against the type's standardized ones at once;
+    what only the vendor's own rules refuse fails the task.
+
     Args:
         vendor_name (str): The vendor.
         object_type (str): The standardized object type.
@@ -291,23 +364,18 @@ def deploy_object(
 
     Returns:
         dict: ``task_id`` and ``status``. The task's result is the object,
-        ready to use.
+        ready to use - or stopped, where it was deployed not to start.
     """
-    if not isinstance(settings, dict) or not settings.get("name"):
-        raise DbaError("settings must be a dict naming the object: {\"name\": ...}.")
-
-    vendor = open_vendor(vendor_name, project, context)
-    try:
-        vendor._operation("deploy", object_type)
-    except DbaError:
-        vendor.close()
-        raise
+    object_type = types.check_object_type(object_type)
+    vendor_lib.check_settings(object_type, settings)
+    vendor = _open_for("deploy", vendor_name, object_type, project, context)
     name = str(settings["name"])
     describe = f"The {object_type} '{name}'"
 
-    def work(task):
+    def work(task, claim):
         task.stage_started("Deploying")
         deployed = vendor.deploy_object(object_type, settings)
+        claim(deployed["id"])
         task.message(
             f"{vendor.display_name} accepted the {object_type} '{name}' (id {deployed['id']})."
         )
@@ -316,8 +384,8 @@ def deploy_object(
         task.stage_started("Waiting until it is ready")
         ready = _wait(
             task, vendor, describe,
-            lambda: vendor.object_status(object_type, deployed["id"]),
-            vendor.is_ready,
+            lambda: vendor.current_status(object_type, deployed),
+            lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
             DEPLOY_TIMEOUT,
         )
         task.stage_finished("Waiting until it is ready")
@@ -326,10 +394,7 @@ def deploy_object(
     return _start_task(
         "deploy_object",
         f"Deploy {object_type} '{name}' on {vendor.display_name}",
-        owner,
-        (vendor.name, project, object_type, name),
-        vendor,
-        work,
+        owner, vendor, project, object_type, name, work,
     )
 
 
@@ -358,40 +423,35 @@ def delete_object(
     """
     if object_name in (None, ""):
         raise DbaError("object_name is empty.")
-
-    vendor = open_vendor(vendor_name, project, context)
-    try:
-        vendor._operation("delete", object_type)
-    except DbaError:
-        vendor.close()
-        raise
+    object_type = types.check_object_type(object_type)
+    vendor = _open_for("delete", vendor_name, object_type, project, context)
     describe = f"The {object_type} '{object_name}'"
 
-    def gone():
-        try:
-            vendor.find_object(object_type, deleted["deleted"]["id"])
-        except vendor_lib.ObjectNotFound:
-            return None
-        return {"status": "deleting"}
-
-    deleted = {}
-
-    def work(task):
+    def work(task, claim):
         task.stage_started("Deleting")
-        deleted.update(vendor.delete_object(object_type, object_name))
+        found = vendor.find_object(object_type, object_name)
+        claim(found["name"], found["id"])
+        deleted = vendor.delete_found(object_type, found)
         task.stage_finished("Deleting")
 
+        def poll():
+            try:
+                return vendor.current_status(object_type, found)
+            except vendor_lib.ObjectNotFound:
+                return None
+
         task.stage_started("Waiting until it is gone")
-        _wait(task, vendor, describe, gone, lambda answer: answer is None, DELETE_TIMEOUT)
+        _wait(
+            task, vendor, describe, poll,
+            lambda answer: answer is None or str(answer.get("status")).lower() == "deleted",
+            DELETE_TIMEOUT,
+        )
         task.message(f"{describe} is gone.")
         task.stage_finished("Waiting until it is gone")
-        return dict(deleted)
+        return deleted
 
     return _start_task(
         "delete_object",
         f"Delete {object_type} '{object_name}' on {vendor.display_name}",
-        owner,
-        (vendor.name, project, object_type, str(object_name)),
-        vendor,
-        work,
+        owner, vendor, project, object_type, object_name, work,
     )

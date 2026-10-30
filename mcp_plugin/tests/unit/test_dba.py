@@ -198,7 +198,7 @@ def test_a_refusal_is_a_tool_error(stub_vendor, gui_mode):
         tools["dba.list_vendor_objects"]("stubcloud", "volumes")
     with pytest.raises(ToolError, match="Unknown vendor 'nocloud'"):
         tools["dba.get_vendor_object_status"]("nocloud", "vms", "db1")
-    with pytest.raises(ToolError, match="settings must be a dict naming the object"):
+    with pytest.raises(ToolError, match="Missing settings for vms: name"):
         tools["dba.deploy_vendor_object"](STDIO, "stubcloud", "vms", {})
 
     deleted = _ended(tools["dba.delete_vendor_object"](STDIO, "stubcloud", "vms", "db1"))
