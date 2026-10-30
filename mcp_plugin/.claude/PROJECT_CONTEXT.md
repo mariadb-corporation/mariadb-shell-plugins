@@ -5,44 +5,25 @@
 `mcp_plugin` ("MariaDB MCP Server Plugin") is a MariaDB Shell plugin that hosts a
 Model Context Protocol (MCP) server exposing MariaDB AI Plugin capabilities to
 MCP-compatible clients. It registers the global `mcp` object in the shell and serves
-`db.*`, `msm.*`, and `sandbox.*` tool groups over stdio or streamable-http. `mcp.setup`
-additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21), and
+the `db`, `msm`, `sandbox`, `migrator`, `util`, `restd`, `sql` and `dba` tool groups,
+and the `task.*` tools that follow background tasks, over stdio or streamable-http.
+`mcp.setup` additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21), and
 `sandbox.deploy` can be asked for a MariaDB server VERSION, downloading it if the machine
-has none (see [`context/sandbox.md`](context/sandbox.md); that work merged as
-PR #21). `sandbox.list_instances` lists the sandboxes in the default
-sandbox path (all, or one by `port`), and a `--gui` server's `sandbox.deploy`
-takes `mcp_access` - both for the VS Code extension's Sandboxes view. GPLv2,
-"MariaDB plc". Top-level plugin folder in mysql-shell-plugins
-(sibling to `msm_plugin`, `rest_plugin`, etc.). Verified against a real `mariadb-shell`
-(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.4** at the 2026-09-25
-checkpoint — checked with `--version`; 26.9.3, 26.9.1 and 26.9.0 in earlier sessions. 26.9.3 is what the connection
-URI now REQUIRES: it is the first shell whose parser accepts `mariadb://`, and
-connections are stored with their scheme from here on — see
-[`context/connections.md`](context/connections.md)), **MCP SDK 2.1.1** (2.0.0 before the
-SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
-[`context/environment.md`](context/environment.md)),
-Python 3.14, pytest
-9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **958 pass, 7 skipped** on `wip/dba_plugin` against a shell build of
-mariadb-shell `wip/task_plugin` (2026-10-30; the plugin now needs that shell's
-`mysqlsh.task_manager`); **948 pass, 7 skipped** on PR #73's tree (2026-10-28, the
-7 are the opt-in `--e2e` and `--keycloak` cases; not rerun for this checkpoint);
-937 / 6 on `main` after #63 at the
-2026-10-19 evening checkpoint (the 6 are opt-in: 5 `--e2e`, 1 `--keycloak`); 865 / 6 on PR #59's
-tree earlier that day; 616 / 3 on PR #44's
-tree at the 2026-10-11 checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
-on `wip/mcp-multi-tenant` at the 2026-10-07 checkpoint, with Rene's review fixes in the
-working tree (584 / 4 after the simplification pass; 585 / 3 at the 2026-10-06 evening
-checkpoint; 577 and 93%, 5200 statements, at the one before),
-on MCP SDK **2.3.0** with **httpx2 2.13.1** (the local build's site-packages were cleaned
-to match `build/bundled-python-deps`; see working-practices.md) (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
-[`context/testing.md`](context/testing.md)). The three skipped are OPT-IN: the
-end-to-end tests (`--e2e`: `test_migration_e2e`,
-`test_a_sandbox_really_runs_a_downloaded_server`) and the live Keycloak test
-(`--keycloak`, see [`context/oauth.md`](context/oauth.md)).
-Run it with
-`mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
-on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
+has none (see [`context/sandbox.md`](context/sandbox.md)). `sandbox.list_instances` lists
+the sandboxes in the default sandbox path (all, or one by `port`), and a `--gui`
+server's `sandbox.deploy` takes `mcp_access` - both for the VS Code extension's
+Sandboxes view. GPLv2, "MariaDB plc". Top-level plugin folder in mariadb-shell-plugins
+(sibling to `msm_plugin`, `rest_plugin`, `dba_plugin`, etc.).
+
+- Needs the shell it is released with: it imports the shell's `mysqlsh.task_manager`.
+  Connection URIs need a shell whose parser accepts `mariadb://` (26.9.3 and later;
+  see [`context/connections.md`](context/connections.md)).
+- Built on the MCP SDK 2.x API; a jump in the SDK version is what once broke CI, see
+  the SDK-error gotcha in [`context/environment.md`](context/environment.md).
+- Run the suite with `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir,
+  with the `bin` directory of a MariaDB server (`mariadbd`, `mariadb-dump`) and `pv`
+  on PATH. The skipped tests are opt-in: `--e2e` and `--keycloak` (see
+  [`context/testing.md`](context/testing.md) and [`context/oauth.md`](context/oauth.md)).
 
 ## Layout
 
@@ -91,38 +72,3 @@ this table with it.
 | [`context/oauth-builtin.md`](context/oauth-builtin.md) | Phase 2c/2d (BUILT): the built-in authorization server that logs users in against MariaDB, grants (90 days by default) and their login connections, and the Snowflake-style setup through Arcade. |
 | [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M26 (M22: MCP 2026-07-28 has no sessions; M23: Arcade opens a session per call; M24..M26 and M17's rebinding: from Rene's review, fixed 2026-10-07), the threat, what is built, the test and its revert probe, and what is left open. |
 | [`context/history.md`](context/history.md) | The session-by-session record and the branch and commit history. Background, not current truth. |
-
-## Git state
-
-Checked at this checkpoint (2026-10-30), before its commit:
-
-```text
-$ git branch --show-current
-wip/dba_plugin
-
-$ git status --short   (one repository: every project's lines)
- M dba_plugin/lib/operations.py
- M dba_plugin/lib/vendor.py
- M dba_plugin/tests/unit/test_core.py
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/context/server.md
- M mcp_plugin/.claude/context/setup.md
- M mcp_plugin/.claude/context/testing.md
- M mcp_plugin/.claude/context/util.md
- M mcp_plugin/lib/tasks.py
- M mcp_plugin/lib/util_functions.py
- M mcp_plugin/tests/unit/test_dba.py
- M mcp_plugin/tests/unit/test_util.py
-?? dba_plugin/.claude/
-?? mcp_plugin/.claude/context/dba.md
-```
-
-- All of it is committed and pushed with this checkpoint, on `wip/dba_plugin`
-  (code-review fixes, the adaptation to mariadb-shell e0acbc7c7, the context).
-- `wip/dba_plugin` has no PR yet: code reviews first, then the vscode-extension
-  step (step 3).
-- mariadb-shell `wip/task_plugin` (pushed, clean): d9aa4fe5e, 662919d49,
-  373562984, a7ac48018, e0acbc7c7 (the last one by another session). The
-  plugins need it; shell and plugins are always released together.
-- [`context/history.md`](context/history.md) is deliberately NOT updated,
-  as by every session since `wip/sandbox-binaries`.
