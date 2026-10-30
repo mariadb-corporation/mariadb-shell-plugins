@@ -3,7 +3,7 @@
 The MCP side of the dba plugin (cloud deployments, see
 [`dba_plugin/.claude/PROJECT_CONTEXT.md`](../../../dba_plugin/.claude/PROJECT_CONTEXT.md)):
 the `dba.*` tools, the MCP API keys `mcp setup` stores, and the `task.*`
-tools every background task is followed with since 2026-10-30.
+tools every background task is followed with.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
 [util.md](util.md).
@@ -37,11 +37,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
 - **Task tools** (`lib/task_functions.py`): `task.get(task_id, since, wait_ms)`,
   `task.list(task_type)`, `task.cancel(task_id)`, registered in
   `build_mcp_server` once, when any of `general.TASK_FUNCTION_GROUPS` (util,
-  dba) is served - not a group of their own. `util.get_task`,
-  `util.list_tasks`, `util.cancel_task` were REMOVED without aliases (the
-  user's call: the extension is unreleased and moves in step 3).
+  dba) is served - not a group of their own. There are no `util.*` task
+  tools and no aliases for them: the user's call, as the VS Code extension
+  has not been released and moves to `task.*` itself.
 - **`lib/tasks.py`** is a thin layer over the shell's `mysqlsh.task_manager`
-  (mariadb-shell `wip/task_plugin`): `create(task_type, kind, title, client,
+  (shipped with the shell): `create(task_type, kind, title, client,
   max_running, attributes)`, `get`, `list_for(client, task_type)`,
   `start(task, work)` (a failed start -> `tool_error`), `owner(client)`; the
   util tasks use type `util`, max 4 running per client, attribute
@@ -67,12 +67,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
 - The `--gui` server's `owner` for stdio is `ClientIdentity(None, None, None)`
   normalized - not None - which is what keeps the exit wait away from it.
 - Ctrl+C on the HTTP server prints `ERROR: KeyboardInterrupt ...` and exits 1:
-  uvicorn's doing, the same before the task work (checked 2026-10-30 against
-  a build without the new interrupt handler).
+  uvicorn's doing, not the shell's command-line interrupt handler (the same
+  without it).
 
 ## Next steps
 
-- Code reviews of `wip/dba_plugin` here and `wip/task_plugin` in mariadb-shell.
-- Step 3: the vscode-extension PR - `src/mcp/utilApi.ts` (`util.get_task` etc.
-  -> `task.*`), `src/util/taskMonitor.ts`, their tests, task_type in the Tasks
-  view, minimum shell version. No `util.*` fallback.
+- The vscode-extension moves to the `task.*` tools: `src/mcp/utilApi.ts`
+  (`util.get_task` etc.), `src/util/taskMonitor.ts`, their tests, the
+  task_type in the Tasks view, its minimum shell version. No `util.*` fallback.

@@ -139,7 +139,7 @@ session machinery the db tools sit on is in
   `config.is_path_allowed` directly and just errors out) — but they DO take `ctx` now, see
   the connection-safeguards bullet above.
 
-- **dba group and task tools (2026-10-30):** `general.FUNCTION_GROUP_DBA`; the
+- **dba group and task tools:** `general.FUNCTION_GROUP_DBA`; the
   `task.*` tools are registered once after the group loop when util or dba is
   served (`general.TASK_FUNCTION_GROUPS`); a server-instructions rule against
   asking for vendor API keys. See [dba.md](dba.md).

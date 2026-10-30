@@ -1,23 +1,20 @@
 # The `util` function group: dumps and loads as background tasks
 
-Branch `wip/mcp_dump_load` (2026-10-10, from `main` after #42). Since
-2026-10-12 every task runs the utility in a MariaDB Shell process of its own,
-`mariadb-shell --json=raw --passwords-from-stdin --uri=<uri> -- util ...`.
-The first version ran it in the server's process on a session of its own,
-through the `session` and `progressCallback` options of mariadb-shell PR #73,
-which was closed for this: a crash of a utility then took the whole server
-down. Any released shell can run the tasks now; the MCP interface did not
-change.
+Every task runs the utility in a MariaDB Shell process of its own,
+`mariadb-shell --json=raw --passwords-from-stdin --uri=<uri> -- util ...`, and
+is followed with the `task.*` tools. Running it in the server's process on a
+session of its own, through the `session` and `progressCallback` options of
+mariadb-shell PR #73 (closed for this), let a crash of a utility take the
+whole server down.
 
 ## Pieces
 
-- `lib/tasks.py`: since 2026-10-30 a thin layer over the shell's
-  `mysqlsh.task_manager` (mariadb-shell `wip/task_plugin`), which holds the
-  registry described below and is shared with the dba plugin's tasks; this
-  module makes a task its client's and turns refusals into tool errors. The
-  `task.get` / `task.list(task_type)` / `task.cancel` tools are in
-  `lib/task_functions.py`, served with the util or dba group; the old
-  `util.get_task` / `util.list_tasks` / `util.cancel_task` are gone.
+- `lib/tasks.py`: a thin layer over the shell's `mysqlsh.task_manager`, which
+  holds the registry described below and is shared with the dba plugin's
+  tasks; this module makes a task its client's and turns refusals into tool
+  errors. The `task.get` / `task.list(task_type)` / `task.cancel` tools are in
+  `lib/task_functions.py`, served with the util or dba group (see
+  [dba.md](dba.md)).
   - A `Task` holds its status, stages, current progress, a deque of messages
     with sequence numbers and a `version` bumped on every change, and a
     `Condition` that waiting callers sleep on.
@@ -192,8 +189,8 @@ substitutions"), which this branch does not touch.
 
 ## The extension's side
 
-`code_ext` (PRs #43 / #44) follows a task with `util.get_task` - to move to
-`task.get` in the extension's step-3 PR - at most once a
+`code_ext` (PRs #43 / #44) follows a task with `util.get_task`, which this
+server no longer offers - the extension has to move to `task.get` - at most once a
 second (the tool answers as soon as a task changes, which while data moves
 is many times a second), puts each task in the Actions tab with only its
 totals and warnings under it, and writes a log file per task. It still strips
