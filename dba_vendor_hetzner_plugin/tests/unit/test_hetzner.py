@@ -802,12 +802,16 @@ def test_the_project_picks_the_token(clean_api_keys, mock_api):
         globals.dba.vendor.hetzner.list_objects("vms", None, "test")
 
 
-def test_a_refusal_reaches_the_shell_as_an_error(clean_api_keys, mock_api):
+def test_a_refusal_reaches_the_shell_as_a_failed_task(clean_api_keys, mock_api):
     from mysqlsh import globals
 
     api_keys.store_api_key("hetzner", "hc-default-token")
-    with pytest.raises(Exception, match="requires ssh_keys"):
-        globals.dba.vendor.hetzner.deploy_object("vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"})
+    started = globals.dba.vendor.hetzner.deploy_object(
+        "vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"}
+    )
+    ended = globals.task.get(started["task_id"], 0, 5000)
+    assert ended["status"] == "failed"
+    assert "requires ssh_keys" in ended["error"]
     assert mock_api.requests == []
 
 

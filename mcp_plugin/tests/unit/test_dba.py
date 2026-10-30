@@ -24,6 +24,8 @@ registered with the dba plugin for the test, so nothing reaches a network.
 # cSpell:ignore mysqlsh MariaDB mcpserver
 
 import sys
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,7 +38,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from dba_plugin.lib import api_keys, object_types, vendor as vendor_lib, vendors
 
-from mcp_plugin.lib import dba_functions, server, setup_cli
+from mysqlsh import task_manager
+
+from mcp_plugin.lib import dba_functions, general, server, setup_cli, tasks
 import mcp_plugin.tests.unit.helpers as helpers
 
 READ_TOOLS = {
@@ -53,6 +57,20 @@ GUI_TOOLS = READ_TOOLS | {
 }
 
 
+# A request over stdio, where there is only ever the one client.
+STDIO = SimpleNamespace(request_context=SimpleNamespace(request=None))
+
+
+def _ended(started, timeout=5.0):
+    """The snapshot of the task a tool started, once it ended."""
+    task = tasks.get(started["task_id"], general.get_client_identity(STDIO))
+    deadline = time.monotonic() + timeout
+    while task.status not in task_manager.FINISHED_STATES:
+        assert time.monotonic() < deadline, f"the task is still {task.status}"
+        task.wait_for_change(task.version, 0.1)
+    return task.snapshot()
+
+
 class StubVendor(vendor_lib.Vendor):
     """A vendor answering from memory, recording the key it was opened with."""
 
@@ -61,6 +79,7 @@ class StubVendor(vendor_lib.Vendor):
     feature_sets = (object_types.CORE_COMPUTE,)
     opened_with = []
     deployed = []
+    gone = []
 
     def __init__(self, api_key=None, project=None):
         super().__init__(api_key, project)
@@ -70,7 +89,11 @@ class StubVendor(vendor_lib.Vendor):
         return None
 
     def _list_vms(self):
-        return [vendor_lib.make_object("vms", 1, "db1", "running", "zone-1", {"env": "prod"})]
+        listed = [vendor_lib.make_object("vms", 1, "db1", "running", "zone-1", {"env": "prod"})]
+        return [o for o in listed if o["id"] not in StubVendor.gone] + [
+            vendor_lib.make_object("vms", 2, d["name"], "running", labels=d["labels"])
+            for d in StubVendor.deployed
+        ]
 
     def _deploy_vms(self, settings):
         settings = vendor_lib.check_settings("vms", settings)
@@ -78,6 +101,7 @@ class StubVendor(vendor_lib.Vendor):
         return vendor_lib.make_object("vms", 2, settings["name"], "starting")
 
     def _delete_vms(self, obj):
+        StubVendor.gone.append(obj["id"])
         return {"status": "deleting"}
 
 
@@ -89,6 +113,8 @@ def stub_vendor(monkeypatch):
     monkeypatch.setitem(vendors._vendors, StubVendor.name, StubVendor)
     StubVendor.opened_with = []
     StubVendor.deployed = []
+    StubVendor.gone = []
+    task_manager.clear()
 
     saved = {
         name: shell.read_secret(name)
@@ -155,8 +181,10 @@ def test_the_extension_uses_its_own_keys(stub_vendor, gui_mode):
         "secret": "GUI:DBA_API_KEY:stubcloud:staging",
     }
 
-    deployed = tools["dba.deploy_vendor_object"]("stubcloud", "vms", {"name": "db2"}, "staging")
-    assert deployed["name"] == "db2"
+    started = tools["dba.deploy_vendor_object"](STDIO, "stubcloud", "vms", {"name": "db2"}, "staging")
+    ended = _ended(started)
+    assert ended["status"] == "completed"
+    assert ended["result"]["name"] == "db2"
     assert stub_vendor.opened_with == ["gui-key"]
     # A vendor without projects of its own labels what it deploys for one.
     assert stub_vendor.deployed[0]["labels"] == {vendor_lib.PROJECT_LABEL: "staging"}
@@ -170,12 +198,24 @@ def test_a_refusal_is_a_tool_error(stub_vendor, gui_mode):
         tools["dba.list_vendor_objects"]("stubcloud", "volumes")
     with pytest.raises(ToolError, match="Unknown vendor 'nocloud'"):
         tools["dba.get_vendor_object_status"]("nocloud", "vms", "db1")
-    with pytest.raises(ToolError, match="Missing settings for vms: name"):
-        tools["dba.deploy_vendor_object"]("stubcloud", "vms", {})
+    with pytest.raises(ToolError, match="settings must be a dict naming the object"):
+        tools["dba.deploy_vendor_object"](STDIO, "stubcloud", "vms", {})
 
-    deleted = tools["dba.delete_vendor_object"]("stubcloud", "vms", "db1")
-    assert deleted["deleted"]["id"] == "1"
-    assert deleted["result"] == {"status": "deleting"}
+    deleted = _ended(tools["dba.delete_vendor_object"](STDIO, "stubcloud", "vms", "db1"))
+    assert deleted["result"]["deleted"]["id"] == "1"
+    assert deleted["result"]["result"] == {"status": "deleting"}
+
+
+def test_a_task_belongs_to_the_client_that_started_it(stub_vendor, gui_mode):
+    api_keys.store_api_key("stubcloud", "gui-key")
+    started = _tools()["dba.delete_vendor_object"](STDIO, "stubcloud", "vms", "db1")
+    _ended(started)
+
+    other = general.ClientIdentity("10.0.0.2", "session-2")
+    assert [t.kind for t in tasks.list_for(general.get_client_identity(STDIO), "dba")] == ["delete_object"]
+    assert tasks.list_for(other) == []
+    with pytest.raises(ToolError, match="There is no task with the id"):
+        tasks.get(started["task_id"], other)
 
 
 def test_the_instructions_tell_an_agent_not_to_ask_for_a_key():

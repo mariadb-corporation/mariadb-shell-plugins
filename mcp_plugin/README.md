@@ -451,7 +451,7 @@ Verified on Windows 11 ARM64 against shell 26.9.1.
 
 Tools wrapping the shell's dump, load, copy, export and import utilities. Each of them
 runs for minutes or hours, so the tools start it as a background **task** and return
-its `task_id` at once; the client follows the task with `util.get_task`.
+its `task_id` at once; the client follows the task with the [task tools](#background-tasks-task).
 
 | MCP tool | Wraps |
 | --- | --- |
@@ -464,9 +464,6 @@ its `task_id` at once; the client follows the task with `util.get_task`.
 | `util.copy_instance` | `util.copy_instance` |
 | `util.copy_schemas` | `util.copy_schemas` |
 | `util.copy_tables` | `util.copy_tables` |
-| `util.get_task` | - (`lib/tasks.py`) |
-| `util.list_tasks` | - |
-| `util.cancel_task` | - |
 
 - **A task runs in a MariaDB Shell process of its own**, `mariadb-shell --json=raw
   --uri=<uri> -- util <command> ...`, connected with the URI and password of the
@@ -498,20 +495,10 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   `password`, `socket`, `ssl-*`,
   `ssh-*` and the others, in any spelling): the target is the connection named by
   `target_connection_id`, and the options cannot change it.
-- **`util.get_task(task_id, since, wait_ms)`** returns:
-  - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
-  - the stages with their state, and the current stage's `progress`: `current`,
-    `total`, `percent`, and `throughput`, `eta_seconds` and `items` where the stage
-    measures them;
-  - the messages printed after `since`, with `next_since` for the next call;
-  - once it ended, the `result` or the `error`.
-
-  With `wait_ms` (up to 30000) it waits for a change before answering, so a client
-  can follow a task without polling quickly.
-- **`util.cancel_task`** interrupts the utility as Ctrl+C would, and ends its process
-  if it has not stopped 30 seconds later. A load that is stopped can be resumed by loading the same dump again.
-- **Limits:** a client may run 4 tasks at once. Finished tasks are kept for an hour,
-  100 at most. A task belongs to the client that started it, as a connection does.
+- **`task.cancel`** interrupts the utility as Ctrl+C would, and ends its process
+  if it has not stopped 30 seconds later. A load that is stopped can be resumed by
+  loading the same dump again.
+- **Limits:** a client may run 4 util tasks at once.
 - Local paths are checked against the allowed paths: a path with no scheme, a
   `file://` URL (as the shell reads it, scheme in any case), and the local files
   named by `progressFile`, `ociConfigFile`, `s3ConfigFile`, `s3CredentialsFile` and
@@ -684,6 +671,38 @@ paths - and the binary is given the expanded text and reads no file itself
 (`--no-source`). A position in an included part names that file, with its line and
 column in it, so `sql.check` reports an error in a section where it is.
 
+### Background tasks (`task`)
+
+The tools that start a background task - the `util` tools, and `dba.deploy_vendor_object`
+and `dba.delete_vendor_object` - return its `task_id` at once. Three tools follow the
+tasks, whichever group started them. They are served with the `util` or the `dba` group,
+not as a group of their own.
+
+| MCP tool | Description |
+| --- | --- |
+| `task.get(task_id, since, wait_ms)` | The state of one task. |
+| `task.list(task_type)` | The client's tasks, oldest first, without their messages; `task_type` narrows them to `util` or `dba`. |
+| `task.cancel(task_id)` | Stops a running task. |
+
+- **`task.get`** returns:
+  - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
+  - the `task_type` (`util`, `dba`), `kind` (such as `dump_schemas` or `deploy_object`)
+    and `title`, plus what the type adds: a util task's `connection_id`, a dba task's
+    `vendor`, `project` and `object_type`;
+  - the stages with their state, and the current stage's `progress`: `current`,
+    `total`, `percent`, and `throughput`, `eta_seconds` and `items` where the stage
+    measures them;
+  - the messages after `since`, with `next_since` for the next call;
+  - once it ended, the `result` or the `error`.
+
+  With `wait_ms` (up to 30000) it waits for a change before answering, so a client
+  can follow a task without polling quickly.
+- **The tasks are the shell's** (`mysqlsh.task_manager`, shipped with the shell), shared
+  with every plugin that starts one; `lib/tasks.py` makes them the client's. A task
+  belongs to the client that started it, as a connection does: another client is told
+  it does not exist. Finished tasks are kept for an hour, 100 at most, and a server
+  restart forgets every task.
+
 ### Cloud deployment tools (`dba`)
 
 | MCP tool | Purpose |
@@ -694,8 +713,8 @@ column in it, so `sql.check` reports an error in a section where it is.
 | `dba.list_vendor_objects` | Lists the deployed objects of a type, filtered by tags and project. |
 | `dba.get_vendor_object_status` | The current status of one deployed object. |
 | `dba.set_api_key` | `--gui` only. Stores a vendor's API key. |
-| `dba.deploy_vendor_object` | `--gui` only. Deploys an object, such as a VM, with the given settings. |
-| `dba.delete_vendor_object` | `--gui` only. Deletes an object. |
+| `dba.deploy_vendor_object` | `--gui` only. Starts a task deploying an object, such as a VM, with the given settings; it ends once the object is ready to use. |
+| `dba.delete_vendor_object` | `--gui` only. Starts a task deleting an object; it ends once the object is gone. |
 
 They wrap the [dba plugin](../dba_plugin/README.md) and are registered **only where it is
 installed**; the vendors are its vendor plugins (Hetzner, UpCloud, MariaDB Cloud).

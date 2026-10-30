@@ -19,7 +19,9 @@ Thin wrappers around ``dba_plugin.lib.operations``, registered only where the
 dba plugin is installed. What a client gets depends on who it is:
 
 * With ``--gui`` (the MariaDB VS Code extension) every tool, working with the
-  GUI API keys: storing a key, deploying and deleting included.
+  GUI API keys: storing a key, deploying and deleting included. Deploying
+  and deleting start a background task of the client and return its id;
+  ``task.get`` follows it (see :mod:`mcp_plugin.lib.task_functions`).
 * Otherwise (an agent) only the tools that read: vendors, object types,
   offerings, deployed objects and their status, with the MCP API keys that
   ``mcp setup --setDbaApiKey`` stores. An agent can neither store a key nor
@@ -34,7 +36,7 @@ user's, so every user would reach the same vendor accounts.
 
 from typing import Optional, Union
 
-from mcp_plugin.lib import general
+from mcp_plugin.lib import general, tasks
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 
@@ -176,11 +178,17 @@ def register_dba_tools(server, function_groups=()) -> None:
         """
         return _run(lambda: operations.set_api_key(vendor_name, key, project, context))
 
+    from mcp.server.mcpserver import Context
+
     @tool(name="dba.deploy_vendor_object")
     def deploy_vendor_object(
-        vendor_name: str, object_type: str, settings: dict, project: Optional[str] = None
+        ctx: Context,
+        vendor_name: str,
+        object_type: str,
+        settings: dict,
+        project: Optional[str] = None,
     ) -> dict:
-        """Deploys an object, such as a VM, at a vendor.
+        """Starts deploying an object, such as a VM, at a vendor, as a background task.
 
         Args:
             vendor_name: The vendor.
@@ -192,18 +200,28 @@ def register_dba_tools(server, function_groups=()) -> None:
             project: The project to deploy it in.
 
         Returns:
-            The deployed object. Deployment goes on after this returns; see
-            dba.get_vendor_object_status.
+            The task_id and status of the task. Follow it with task.get: it
+            reports the vendor's status of the object as it changes, and
+            ends once the object is ready to use, with the object as its
+            result. Cancelling it with task.cancel stops the waiting, not
+            the vendor.
         """
+        owner = tasks.owner(general.get_client_identity(ctx))
         return _run(
-            lambda: operations.deploy_object(vendor_name, object_type, settings, project, context)
+            lambda: operations.deploy_object(
+                vendor_name, object_type, settings, project, context, owner
+            )
         )
 
     @tool(name="dba.delete_vendor_object")
     def delete_vendor_object(
-        vendor_name: str, object_type: str, object_name: str, project: Optional[str] = None
+        ctx: Context,
+        vendor_name: str,
+        object_type: str,
+        object_name: str,
+        project: Optional[str] = None,
     ) -> dict:
-        """Deletes an object, such as a VM, at a vendor.
+        """Starts deleting an object, such as a VM, at a vendor, as a background task.
 
         Args:
             vendor_name: The vendor.
@@ -212,10 +230,14 @@ def register_dba_tools(server, function_groups=()) -> None:
             project: The project it belongs to.
 
         Returns:
-            The object deleted and what the vendor reported.
+            The task_id and status of the task. Follow it with task.get: it
+            ends once the vendor no longer lists the object, with the object
+            as it was and what the vendor reported as its result. Deleting a
+            VM keeps the volumes attached to it.
         """
+        owner = tasks.owner(general.get_client_identity(ctx))
         return _run(
             lambda: operations.delete_object(
-                vendor_name, object_type, object_name, project, context
+                vendor_name, object_type, object_name, project, context, owner
             )
         )

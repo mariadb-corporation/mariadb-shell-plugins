@@ -143,15 +143,23 @@ def list_objects(
     )
 
 
-@plugin_function("dba.deploy.vendor.object", shell=True, cli=True, web=True)
+@plugin_function("dba.deploy.vendor.object", shell=True, cli=False, web=True)
 def deploy_object(
     vendor_name: str, object_type: str, settings: dict, project: str = None
 ) -> dict:
-    """Deploys a vendor object, such as a VM, with the given settings.
+    """Starts deploying a vendor object, such as a VM, as a background task.
 
     The settings of each object type are listed by
     dba.list.vendor.objectSupport(). Every type takes name, labels and
     vendor_settings, a dict merged into the vendor's own request as is.
+
+    Deploying takes minutes, a managed service far longer, so this returns
+    the id of a task at once. Follow it with task.get(taskId), which reports
+    the vendor's status of the object as it changes. The task ends once the
+    object is ready to use, with the object as its result. Cancelling it
+    with task.cancel(taskId) stops the waiting, not the vendor; delete what
+    was deployed on its own. Not offered on the command line, where the
+    shell would end before the task.
 
     Args:
         vendor_name (str): The vendor.
@@ -160,18 +168,24 @@ def deploy_object(
         project (str): The project to deploy it in.
 
     Returns:
-        The deployed object.
+        The task_id and status of the task.
     """
     return shell_call(
         lambda: operations.deploy_object(vendor_name, object_type, plain(settings), project)
     )
 
 
-@plugin_function("dba.delete.vendor.object", shell=True, cli=True, web=True)
+@plugin_function("dba.delete.vendor.object", shell=True, cli=False, web=True)
 def delete_object(
     vendor_name: str, object_type: str, object_name: str, project: str = None
 ) -> dict:
-    """Deletes a vendor object, such as a VM.
+    """Starts deleting a vendor object, such as a VM, as a background task.
+
+    Returns the id of a task at once. Follow it with task.get(taskId). The
+    task ends once the vendor no longer lists the object, with the object as
+    it was and what the vendor reported as its result. Deleting a VM keeps
+    the volumes attached to it. Not offered on the command line, where the
+    shell would end before the task.
 
     Args:
         vendor_name (str): The vendor.
@@ -180,7 +194,7 @@ def delete_object(
         project (str): The project it belongs to.
 
     Returns:
-        The object deleted and what the vendor reported.
+        The task_id and status of the task.
     """
     return shell_call(
         lambda: operations.delete_object(vendor_name, object_type, object_name, project)
