@@ -48,7 +48,7 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, oauth_config, setup_migrator, tenants
+from mcp_plugin.lib import config, general, oauth_config, setup_dba, setup_migrator, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # Options that change something. Their presence is what switches mcp.setup from
@@ -74,10 +74,17 @@ ACTION_OPTIONS = (
     "set_default_role",
     "tool_name_separator",
     "lsp_path",
+    "set_dba_api_key",
+    "delete_dba_api_key",
 )
 
 # Where the password for --add-connection may come from. Exactly one.
 PASSWORD_OPTIONS = ("password", "password_env", "password_stdin")
+
+# Where the API key for --set-dba-api-key may come from, at most one; with
+# neither it is prompted for. There is deliberately no option taking the key
+# itself: unlike a password, nothing makes that the only way a script can go.
+DBA_API_KEY_OPTIONS = ("dba_api_key_env", "dba_api_key_stdin")
 
 # Options that only qualify what the ones above do.
 MODIFIER_OPTIONS = (
@@ -89,9 +96,10 @@ MODIFIER_OPTIONS = (
     "all_users",
     "name",
     "scopes",
+    "dba_project",
 )
 
-KNOWN_OPTIONS = ACTION_OPTIONS + PASSWORD_OPTIONS + MODIFIER_OPTIONS
+KNOWN_OPTIONS = ACTION_OPTIONS + PASSWORD_OPTIONS + DBA_API_KEY_OPTIONS + MODIFIER_OPTIONS
 
 # The actions that work on what belongs to one user in multi-tenant mode, and
 # so need --user there.
@@ -363,6 +371,8 @@ def _check_combination(options: dict) -> None:
                 f"{_cli_name('add_connection')}."
             )
 
+    _check_dba_api_key_combination(options)
+
     if not actions and not options.get("show"):
         # --non-interactive on its own would otherwise fall through to the
         # walkthrough it exists to avoid.
@@ -373,8 +383,58 @@ def _check_combination(options: dict) -> None:
         )
 
 
-def _password_from_stdin() -> str:
+def _check_dba_api_key_combination(options: dict) -> None:
+    """Refuses the cloud vendor API key options where they cannot apply."""
+    given_keys = [name for name in DBA_API_KEY_OPTIONS if options.get(name)]
+    if len(given_keys) > 1:
+        raise mysqlsh.Error(
+            f"Give one of {', '.join(_cli_name(n) for n in given_keys)} at most."
+        )
+    if given_keys and not options.get("set_dba_api_key"):
+        raise mysqlsh.Error(
+            f"{_cli_name(given_keys[0])} only applies to {_cli_name('set_dba_api_key')}."
+        )
+    if options.get("dba_api_key_stdin") and options.get("password_stdin"):
+        raise mysqlsh.Error(
+            "--dbaApiKeyStdin and --passwordStdin cannot both read stdin. "
+            "Store the connection and the API key in two calls."
+        )
+    dba_actions = [
+        name for name in ("set_dba_api_key", "delete_dba_api_key") if options.get(name)
+    ]
+    if options.get("dba_project") and not dba_actions:
+        raise mysqlsh.Error(
+            f"--dbaProject only applies to {_cli_name('set_dba_api_key')} and "
+            f"{_cli_name('delete_dba_api_key')}."
+        )
+    if dba_actions and _multi_tenant_after(options):
+        raise mysqlsh.Error(
+            "Cloud vendor API keys are not available in multi-tenant mode, which "
+            "does not serve the dba tools."
+        )
+
+
+def _resolve_dba_api_key(options: dict) -> str:
+    """Returns the API key for --set-dba-api-key, from stdin, the environment or a prompt."""
+    if options.get("dba_api_key_stdin"):
+        return _password_from_stdin("--dbaApiKeyStdin", "the API key")
+    if options.get("dba_api_key_env"):
+        return _password_from_env(str(options["dba_api_key_env"]), "--dbaApiKeyEnv")
+
+    if options.get("non_interactive") or not prompts.shell().options.useWizards:
+        raise mysqlsh.Error(
+            "No API key given and this session cannot prompt for one. Use "
+            "--dbaApiKeyStdin or --dbaApiKeyEnv."
+        )
+    return prompts.password(f"Enter the API key of {options['set_dba_api_key']}: ")
+
+
+def _password_from_stdin(option="--passwordStdin", what="the password") -> str:
     """Returns the password read from stdin.
+
+    Args:
+        option (str): The option that asked for it, for the refusal.
+        what (str): What is read, for the refusal.
 
     Returns:
         The first line of stdin, without its line ending.
@@ -385,7 +445,7 @@ def _password_from_stdin() -> str:
     """
     if sys.stdin.isatty():
         raise mysqlsh.Error(
-            "--passwordStdin expects the password to be piped in, but stdin "
+            f"{option} expects {what} to be piped in, but stdin "
             "is a terminal. Pipe it, or leave the option out to be prompted."
         )
 
@@ -394,7 +454,7 @@ def _password_from_stdin() -> str:
     return sys.stdin.readline().rstrip("\r\n")
 
 
-def _password_from_env(name: str) -> str:
+def _password_from_env(name: str, option="--passwordEnv") -> str:
     """Returns the password held by the named environment variable.
 
     The variable's NAME is what the option takes, so the password itself never
@@ -402,6 +462,7 @@ def _password_from_env(name: str) -> str:
 
     Args:
         name (str): The environment variable to read.
+        option (str): The option that named it, for the refusal.
 
     Returns:
         Its value, which may be empty - an empty password is a password.
@@ -411,7 +472,7 @@ def _password_from_env(name: str) -> str:
     """
     if name not in os.environ:
         raise mysqlsh.Error(
-            f"--passwordEnv names '{name}', which is not set in the "
+            f"{option} names '{name}', which is not set in the "
             "environment."
         )
 
@@ -806,6 +867,8 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
             "install_path": general.get_migrator_path(),
             "wrapper_path": setup_migrator.wrapper_path(),
         },
+        # None where the dba plugin is not installed.
+        "dba_api_keys": setup_dba.list_api_keys(),
     }
     current["public_url"] = oauth_config.get_public_url()
     current["oauth_mode"] = oauth_config.get_mode()
@@ -866,6 +929,13 @@ def _show(options: dict) -> None:
         print(f"  {index}. {path}")
     if not current["allowed_paths"]:
         print("  (none)")
+
+    if current["dba_api_keys"] is not None:
+        print("\nCloud vendor API keys (dba):")
+        for key in current["dba_api_keys"]:
+            print(f"  {key['vendor']}, project {key['project']}")
+        if not current["dba_api_keys"]:
+            print("  (none)")
 
     tooling = current["migrator"]
     print("\nMigration tooling:")
@@ -965,6 +1035,14 @@ def apply(options: dict) -> None:
         _add_connection(options, mcp_user_id)
     if options.get("add_paths"):
         _add_paths(options, mcp_user_id)
+    if options.get("delete_dba_api_key"):
+        print(setup_dba.delete_api_key(options["delete_dba_api_key"], options.get("dba_project")))
+    if options.get("set_dba_api_key"):
+        print(
+            setup_dba.store_api_key(
+                options["set_dba_api_key"], _resolve_dba_api_key(options), options.get("dba_project")
+            )
+        )
     if options.get("remove_migrator"):
         _remove_migrator()
     if options.get("install_migrator"):

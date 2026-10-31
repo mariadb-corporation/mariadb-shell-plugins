@@ -29,7 +29,7 @@ and the server reports it, and resumes a load that can be resumed.
 - **Passwords** never reach the command line: the shell asks for them, and
   they are written to its stdin.
 - **Its output** is one JSON object per line. :class:`OutputParser` turns
-  them into the events :meth:`mcp_plugin.lib.tasks.Task.on_event` records:
+  them into the events :meth:`mysqlsh.task_manager.Task.on_event` records:
   messages, stages and their progress.
 - **The process** runs under :mod:`mcp_plugin.lib.util_watchdog`, which stops
   it when the server goes away, however the server ends.
@@ -384,7 +384,7 @@ def _data_stage(kind: str, line: dict) -> str:
 class OutputParser:
     """Turns the shell's JSON lines into the events of a task.
 
-    The events are those :meth:`mcp_plugin.lib.tasks.Task.on_event` takes:
+    The events are those :meth:`mysqlsh.task_manager.Task.on_event` takes:
     "message", "stageStarted", "progress" and "stageFinished". What the shell
     prints:
 

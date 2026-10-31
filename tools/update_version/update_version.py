@@ -146,6 +146,23 @@ PLUGIN_TARGETS = [
         "pattern": re.compile(r'^VERSION = "[^"]+"$', re.MULTILINE),
         "replacement": 'VERSION = "{v}"',
     },
+    {
+        "file": "dba_plugin/lib/general.py",
+        "pattern": re.compile(r'^VERSION = "[^"]+"$', re.MULTILINE),
+        "replacement": 'VERSION = "{v}"',
+    },
+] + [
+    {
+        "file": f"{plugin}/package.json",
+        "pattern": re.compile(r'"version": "[^"]+"'),
+        "replacement": '"version": "{v}"',
+    }
+    for plugin in (
+        "dba_plugin",
+        "dba_vendor_hetzner_plugin",
+        "dba_vendor_upcloud_plugin",
+        "dba_vendor_mariadb_cloud_plugin",
+    )
 ]
 
 

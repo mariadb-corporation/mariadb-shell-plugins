@@ -13,6 +13,7 @@ omit = run_tests.py
        # Dependencies exercised by the tools but out of scope for this plugin.
        */msm_plugin/*
        */rest_plugin/*
+       */dba_plugin/*
        */mariadb-shell/*
        */site-packages/*
 

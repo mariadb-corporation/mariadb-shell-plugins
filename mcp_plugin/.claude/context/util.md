@@ -1,17 +1,20 @@
 # The `util` function group: dumps and loads as background tasks
 
-Branch `wip/mcp_dump_load` (2026-10-10, from `main` after #42). Since
-2026-10-12 every task runs the utility in a MariaDB Shell process of its own,
-`mariadb-shell --json=raw --passwords-from-stdin --uri=<uri> -- util ...`.
-The first version ran it in the server's process on a session of its own,
-through the `session` and `progressCallback` options of mariadb-shell PR #73,
-which was closed for this: a crash of a utility then took the whole server
-down. Any released shell can run the tasks now; the MCP interface did not
-change.
+Every task runs the utility in a MariaDB Shell process of its own,
+`mariadb-shell --json=raw --passwords-from-stdin --uri=<uri> -- util ...`, and
+is followed with the `task.*` tools. Running it in the server's process on a
+session of its own, through the `session` and `progressCallback` options of
+mariadb-shell PR #73 (closed for this), let a crash of a utility take the
+whole server down.
 
 ## Pieces
 
-- `lib/tasks.py`: the registry.
+- `lib/tasks.py`: a thin layer over the shell's `mysqlsh.task_manager`, which
+  holds the registry described below and is shared with the dba plugin's
+  tasks; this module makes a task its client's and turns refusals into tool
+  errors. The `task.get` / `task.list(task_type)` / `task.cancel` tools are in
+  `lib/task_functions.py`, served with the util or dba group (see
+  [dba.md](dba.md)).
   - A `Task` holds its status, stages, current progress, a deque of messages
     with sequence numbers and a `version` bumped on every change, and a
     `Condition` that waiting callers sleep on.
@@ -67,7 +70,7 @@ change.
        via `anyio.to_thread`, so that a wrong connection or a value the
        command line cannot take fails the call itself;
     4. start the task.
-  - `get_task` / `list_tasks` / `cancel_task` are sync, so `wait_ms` (at most
+  - `task.get` / `task.list` / `task.cancel` are sync, so `wait_ms` (at most
     30 s) blocks a worker thread, not the loop.
   - The group registers only alongside `db`.
   - Tool descriptions steer the agent (2026-10-21): `import_table` names
@@ -177,7 +180,7 @@ One JSON object per line on stdout:
 - an end-to-end run over stdio on the shared sandbox: dump, load into another
   schema, a load whose shell process is SIGKILLed and resumed, export,
   import, a cancelled `maxRate` dump, a copy to the same server failing as a
-  task, `list_tasks`, refusals.
+  task, `task.list`, refusals.
 
 Full suite on 2026-10-12, with a local shell build (mariadb-shell #71 merged
 in): 700 passed, 1 failed, 3 skipped. The failure is
@@ -186,7 +189,8 @@ substitutions"), which this branch does not touch.
 
 ## The extension's side
 
-`code_ext` (PRs #43 / #44) follows a task with `util.get_task` at most once a
+`code_ext` (PRs #43 / #44) follows a task with `util.get_task`, which this
+server no longer offers - the extension has to move to `task.get` - at most once a
 second (the tool answers as soon as a task changes, which while data moves
 is many times a second), puts each task in the Actions tab with only its
 totals and warnings under it, and writes a log file per task. It still strips

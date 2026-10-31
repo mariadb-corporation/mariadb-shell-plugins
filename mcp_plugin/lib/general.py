@@ -126,6 +126,10 @@ FUNCTION_GROUP_RESTD = "restd"
 # language server's binary, mariadb-lsp. Its tools register only where that
 # binary is found - see mcp_plugin.lib.sql_functions.register_sql_tools.
 FUNCTION_GROUP_SQL = "sql"
+# MariaDB deployments on cloud vendors, through the dba plugin. Its tools
+# register only where that plugin is installed, and an agent gets only those
+# that read - see mcp_plugin.lib.dba_functions.register_dba_tools.
+FUNCTION_GROUP_DBA = "dba"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
@@ -135,6 +139,7 @@ SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_UTIL,
     FUNCTION_GROUP_RESTD,
     FUNCTION_GROUP_SQL,
+    FUNCTION_GROUP_DBA,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
@@ -144,6 +149,10 @@ DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 # gets. A group that merely leaves out SOME tools (msm, rest, restd) is not
 # listed: it is served either way.
 FUNCTION_GROUP_REQUIREMENTS = {FUNCTION_GROUP_UTIL: FUNCTION_GROUP_DB}
+
+# The groups with tools that start background tasks. Where one of them is
+# served, the task tools that follow the tasks are too.
+TASK_FUNCTION_GROUPS = (FUNCTION_GROUP_UTIL, FUNCTION_GROUP_DBA)
 
 
 def group_requirement_met(group, function_groups) -> bool:
@@ -179,7 +188,9 @@ def served_function_groups(function_groups) -> set:
 # that write to the server's disk - resources one user would take from all the
 # others - the util group's dumps and loads are such jobs too, and the msm
 # group works on schema project folders, which live on the developer's own
-# machine, not on a remote server. None of them are offered to tenants.
+# machine, not on a remote server. The dba group uses the server's own cloud
+# vendor API keys, which would hand every user the same vendor accounts. None
+# of them are offered to tenants.
 MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB,)
 
 def utc_timestamp() -> str:
