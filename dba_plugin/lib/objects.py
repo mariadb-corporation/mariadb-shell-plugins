@@ -46,7 +46,8 @@ VENDOR_DOC = """The cloud vendor plugins.
 
     Each installed vendor plugin adds an object here, named after the vendor,
     with the same functions: featureSet, objectSupport, objectInfo,
-    listObjects, objectStatus, deployObject and deleteObject.
+    objectSettingsInfo, validateObjectSettings, listObjects, objectStatus,
+    deployObject and deleteObject.
     """
 
 
@@ -132,6 +133,8 @@ def register_vendor_plugin(vendor_cls) -> None:
     * featureSet() - the feature sets it implements.
     * objectSupport() - the object types it supports, and how.
     * objectInfo(objectType[, project]) - what of a type can be deployed.
+    * objectSettingsInfo(objectType[, project]) - its settings, for a dialog.
+    * validateObjectSettings(objectType, settings[, project]) - checks them.
     * listObjects(objectType[, tags, project]) - the deployed objects.
     * objectStatus(objectType, objectName[, project]) - one object's status.
     * deployObject(objectType, settings[, project]) - starts a task deploying one.
@@ -203,6 +206,40 @@ def register_vendor_plugin(vendor_cls) -> None:
 
         Returns:
             A dict of lists.
+        """
+
+    def object_settings_info(object_type: str, project: str = None) -> dict:
+        return shell_call(lambda: operations.settings_info(name, object_type, project))
+
+    object_settings_info.__doc__ = f"""Returns the settings to deploy a {display} object type with, for a dialog.
+
+        Each setting with its position, section, caption, description,
+        type, whether it is required, its range, whether it can be changed
+        once deployed, and the values {display} offers to choose from.
+
+        Args:
+            object_type (str): The standardized object type, e.g. vms.
+            project (str): The project whose API key to use.
+
+        Returns:
+            A dict: vendor, display_name, object_type, groups and settings.
+        """
+
+    def validate_object_settings(object_type: str, settings: dict, project: str = None) -> dict:
+        return shell_call(
+            lambda: operations.validate_settings(name, object_type, plain(settings), project)
+        )
+
+    validate_object_settings.__doc__ = f"""Checks the settings of a {display} deployment before it is started.
+
+        Args:
+            object_type (str): The standardized object type, e.g. vms.
+            settings (dict): The settings, as deployObject takes them.
+            project (str): The project to deploy in.
+
+        Returns:
+            A dict: valid, errors and warnings, each problem with a message
+            and the keys of the settings it is about.
         """
 
     def list_objects(object_type: str, tags=None, project: str = None) -> list:
@@ -282,6 +319,8 @@ def register_vendor_plugin(vendor_cls) -> None:
         ("featureSet", feature_set),
         ("objectSupport", object_support),
         ("objectInfo", object_info),
+        ("objectSettingsInfo", object_settings_info),
+        ("validateObjectSettings", validate_object_settings),
         ("listObjects", list_objects),
         ("objectStatus", object_status),
         ("deployObject", deploy_object),

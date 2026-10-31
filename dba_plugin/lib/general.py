@@ -27,3 +27,17 @@ class DbaError(Exception):
     ``mysqlsh.Error`` and the MCP tools into a ``ToolError``, so that each
     caller reports it the way its own surface expects.
     """
+
+
+class SettingError(DbaError):
+    """A deployment setting that is not valid, naming the settings it is about.
+
+    Args:
+        message (str): What is wrong, worded for the user.
+        settings: The keys of the settings concerned, so that a dialog can
+            point at them; empty where it is about the settings as a whole.
+    """
+
+    def __init__(self, message: str, settings=()):
+        super().__init__(message)
+        self.settings = [settings] if isinstance(settings, str) else list(settings or ())

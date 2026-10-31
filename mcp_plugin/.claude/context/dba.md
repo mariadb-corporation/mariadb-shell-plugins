@@ -16,7 +16,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   Registers nothing (a `log_event`) where `dba_plugin.lib` does not import.
 - **Who gets what:** without `--gui` (an agent) only the reading tools -
   `dba.list_vendors`, `dba.list_vendor_object_support`,
-  `dba.get_vendor_object_info`, `dba.list_vendor_objects`,
+  `dba.get_vendor_object_info`, `dba.get_vendor_object_settings_info`,
+  `dba.validate_vendor_object_settings` (deploys nothing), `dba.list_vendor_objects`,
   `dba.get_vendor_object_status` - with the `MCP:` keys. With `--gui` also
   `dba.set_api_key`, `dba.deploy_vendor_object`, `dba.delete_vendor_object`,
   with the `GUI:` keys. Names: `dba.<verb>_<rest>` (`dba.list.vendor.objects`

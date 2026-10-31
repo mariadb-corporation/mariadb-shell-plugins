@@ -233,6 +233,27 @@ def object_info(vendor_name: str, object_type: str, project=None, context=api_ke
     return _with_vendor(vendor_name, project, context, lambda v: v.object_info(object_type))
 
 
+def settings_info(vendor_name: str, object_type: str, project=None, context=api_keys.CONTEXT_GUI) -> dict:
+    """The deployment settings of a type at a vendor, described for a dialog.
+
+    See ``Vendor.settings_info``.
+    """
+    return _with_vendor(vendor_name, project, context, lambda v: v.settings_info(object_type))
+
+
+def validate_settings(
+    vendor_name: str, object_type: str, settings, project=None, context=api_keys.CONTEXT_GUI
+) -> dict:
+    """Checks a deployment's settings, against what the vendor offers too.
+
+    See ``Vendor.validate_settings``. A setting that is not valid is
+    reported, not raised.
+    """
+    return _with_vendor(
+        vendor_name, project, context, lambda v: v.validate_settings(object_type, settings)
+    )
+
+
 def list_objects(
     vendor_name: str, object_type: str, tags=None, project=None, context=api_keys.CONTEXT_GUI
 ) -> list:

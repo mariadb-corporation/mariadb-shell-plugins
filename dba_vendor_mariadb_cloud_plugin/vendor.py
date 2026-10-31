@@ -43,7 +43,8 @@ import datetime
 import ipaddress
 
 from dba_plugin.lib import object_types as types, rest_client, vendor as v, vendors
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib import settings_fields as sf
+from dba_plugin.lib.general import DbaError, SettingError
 
 API_URL = "https://api.skysql.com"
 PROVISIONING = "/provisioning/v1"
@@ -117,7 +118,7 @@ def _allow_list(allowed_ips) -> list:
     if isinstance(allowed_ips, str):
         allowed_ips = allowed_ips.split(",")
     if not isinstance(allowed_ips, (list, tuple)):
-        raise DbaError("The setting allowed_ips must be a list of IP addresses or CIDR ranges.")
+        raise SettingError("The setting allowed_ips must be a list of IP addresses or CIDR ranges.", "allowed_ips")
 
     allow_list = []
     for item in allowed_ips:
@@ -130,7 +131,7 @@ def _allow_list(allowed_ips) -> list:
         try:
             network = ipaddress.ip_network(ip, strict=False)
         except ValueError as e:
-            raise DbaError(f"allowed_ips: '{ip}' is no IP address or CIDR range.") from e
+            raise SettingError(f"allowed_ips: '{ip}' is no IP address or CIDR range.", "allowed_ips") from e
         entry = {"ip": str(network)}
         if comment:
             entry["comment"] = str(comment)
@@ -144,7 +145,7 @@ def _positive_int(settings: dict, key: str):
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value) or value < 1:
-        raise DbaError(f"The setting {key} must be a positive whole number.")
+        raise SettingError(f"The setting {key} must be a positive whole number.", key)
     return int(value)
 
 
@@ -164,6 +165,36 @@ class MariadbCloud(v.Vendor):
         "(the portal's user profile, API Keys)."
     )
 
+    settings_fields = {
+        types.MANAGED_MARIADB_SERVICES: {
+            "size": {"is_editable": True},
+            "nodes": {"is_editable": True},
+            "storage_gb": {"is_editable": True,
+                           "description": "The storage size in GB, within the provider's "
+                           "storage_gb_min and storage_gb_max."},
+            "allowed_ips": {
+                "is_editable": True,
+                "description": "The IP addresses or CIDR ranges allowed to connect: a bare "
+                "address is a /32 (or /128) range. An entry may also be {ip, comment}.",
+                "item_fields": {
+                    "ip": sf.field("Address", "The IP address or CIDR range.",
+                                   format=sf.FORMAT_IP_OR_CIDR, required=True),
+                    "comment": sf.field("Comment", "What the entry is for."),
+                },
+            },
+            "ssl_enabled": sf.field(
+                "SSL/TLS",
+                "Whether clients connect with SSL/TLS.",
+                sf.BOOLEAN, group="security", default=True, advanced=True,
+            ),
+        },
+    }
+    settings_order = {
+        types.MANAGED_MARIADB_SERVICES: (
+            "name", "provider", "location", "topology", "version", "size", "nodes", "storage_gb",
+        ),
+    }
+
     deploy_settings = {
         types.MANAGED_MARIADB_SERVICES: {"required": ("name", "provider", "location", "topology")},
     }
@@ -176,7 +207,7 @@ class MariadbCloud(v.Vendor):
         if settings.get("allowed_ips") not in (None, "", []):
             _allow_list(settings["allowed_ips"])
         if not isinstance(settings["vendor_settings"].get("tags") or {}, dict):
-            raise DbaError("vendor_settings tags must be a dict.")
+            raise SettingError("vendor_settings tags must be a dict.", "vendor_settings")
 
     def create_client(self):
         return rest_client.RestClient(

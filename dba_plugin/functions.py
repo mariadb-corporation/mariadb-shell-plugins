@@ -100,6 +100,61 @@ def get_object_info(vendor_name: str, object_type: str, project: str = None) -> 
     return shell_call(lambda: operations.object_info(vendor_name, object_type, project))
 
 
+@plugin_function("dba.get.vendor.objectSettingsInfo", shell=True, cli=True, web=True)
+def get_object_settings_info(vendor_name: str, object_type: str, project: str = None) -> dict:
+    """Returns the settings to deploy an object type with, described for a dialog.
+
+    Every setting the vendor takes for the type, the standardized ones it
+    supports and its own, with what a dialog needs to show and check it.
+    That is its position, section, caption, description, type, whether it
+    is required, its default, range and form, and whether it can be
+    changed once the object is deployed. Where there is a choice, the
+    values to choose from come with it, with how to show them and which
+    apply with the other settings chosen. These are what the vendor offers,
+    such as sizes with their resources and prices, locations and images,
+    and what is deployed, such as networks, SSH keys and VMs.
+
+    Args:
+        vendor_name (str): The vendor.
+        object_type (str): The standardized object type, e.g. vms.
+        project (str): The project whose API key to use.
+
+    Returns:
+        A dict: vendor, display_name, object_type, groups (the sections,
+        in order) and settings (each setting by its key, in order). See the
+        dba plugin's README for every attribute of a setting.
+    """
+    return shell_call(lambda: operations.settings_info(vendor_name, object_type, project))
+
+
+@plugin_function("dba.validate.vendor.objectSettings", shell=True, cli=True, web=True)
+def validate_object_settings(
+    vendor_name: str, object_type: str, settings: dict, project: str = None
+) -> dict:
+    """Checks the settings of a deployment before it is started.
+
+    Checks what dba.deploy.vendor.object checks before it starts its task,
+    which is the settings required and supported, the type, range and form
+    of each value and the vendor's own rules. Then it checks them against
+    the vendor, that the sizes, locations, images and versions named are
+    offered, together, and that the objects named are deployed. Nothing is
+    deployed.
+
+    Args:
+        vendor_name (str): The vendor.
+        object_type (str): The standardized object type, e.g. vms.
+        settings (dict): The settings, as dba.deploy.vendor.object takes them.
+        project (str): The project to deploy in.
+
+    Returns:
+        A dict: valid, errors and warnings. Each problem has a message and
+        the keys of the settings it is about.
+    """
+    return shell_call(
+        lambda: operations.validate_settings(vendor_name, object_type, plain(settings), project)
+    )
+
+
 @plugin_function("dba.get.vendor.objectStatus", shell=True, cli=True, web=True)
 def get_object_status(
     vendor_name: str, object_type: str, object_name: str, project: str = None

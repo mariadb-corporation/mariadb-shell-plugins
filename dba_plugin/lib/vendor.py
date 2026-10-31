@@ -46,11 +46,12 @@ vendor's own request body, for what the standardized keys do not cover.
 # cSpell:ignore mysqlsh MariaDB
 
 import concurrent.futures
+import copy
 import inspect
 from typing import Optional
 
-from dba_plugin.lib import object_types as types
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib import object_types as types, settings_fields as sf
+from dba_plugin.lib.general import DbaError, SettingError
 from dba_plugin.lib.rest_client import VendorApiError
 
 # The label every object deployed for a named project carries, for vendors
@@ -104,64 +105,12 @@ def state_of(status) -> str:
 
 # The standardized settings keys per object type, with what each means. A
 # vendor maps the ones it supports onto its API, refuses those it does not
-# and passes ``vendor_settings`` through.
-COMMON_SETTINGS = {
-    "name": "The object's name. Required.",
-    "labels": "A dict of key/value labels (tags) to put on the object.",
-    "vendor_settings": "A dict merged into the vendor's own request body as is.",
-}
+# and passes ``vendor_settings`` through. Each is described for a dialog in
+# :mod:`dba_plugin.lib.settings_fields`.
+COMMON_SETTINGS = {key: field["description"] for key, field in sf.COMMON_FIELDS.items()}
 SETTINGS = {
-    types.MANAGED_MARIADB_SERVICES: {
-        "topology": "The service topology, e.g. 'es-single', 'es-replica', 'galera'.",
-        "version": "The MariaDB server version.",
-        "size": "The instance size (see object_info 'sizes').",
-        "location": "The region (see object_info 'locations').",
-        "provider": "The cloud provider the service runs on, where the vendor offers several.",
-        "nodes": "The number of nodes.",
-        "storage_gb": "The storage size in GB.",
-        "allowed_ips": "A list of IP addresses or CIDR ranges allowed to connect.",
-    },
-    types.VMS: {
-        "size": "The VM size, the vendor's server type or plan (see object_info 'sizes').",
-        "location": "The location or zone (see object_info 'locations').",
-        "image": "The OS image (see object_info 'images').",
-        "ssh_keys": "A list of SSH keys to install: key names or ids where the vendor stores keys (see ssh_keys), else the public keys themselves.",
-        "user_data": "Cloud-init user data.",
-        "networks": "A list of private network names or ids to attach.",
-        "firewalls": "A list of firewall names or ids to apply.",
-    },
-    types.VOLUMES: {
-        "size_gb": "The size in GB.",
-        "location": "The location or zone; not needed with vm.",
-        "vm": "The name or id of a VM to attach the volume to.",
-        "format": "The filesystem to format the volume with, where the vendor offers that.",
-    },
-    types.NETWORKING: {
-        "ip_range": "The network's IP range in CIDR notation, e.g. 10.0.0.0/16.",
-        "location": "The location or network zone.",
-    },
-    types.FIREWALLS: {
-        "rules": "A list of rules: {direction, protocol, port, source_ips | destination_ips, description}.",
-        "vms": "A list of VM names or ids to apply the firewall to.",
-    },
-    types.LOAD_BALANCERS: {
-        "size": "The load balancer type (see object_info 'sizes').",
-        "location": "The location or zone.",
-        "network": "The name or id of a private network to attach it to.",
-        "targets": "A list of VM names or ids to balance across.",
-        "services": "A list of {protocol, listen_port, destination_port}.",
-    },
-    types.DNS: {
-        "ttl": "The zone's default TTL in seconds.",
-        "records": "A list of {name, type, value, ttl} records to create.",
-    },
-    types.OBJECT_STORAGE: {
-        "location": "The region.",
-        "size": "The storage size or tier, where the vendor sells it in sizes.",
-    },
-    types.SSH_KEYS: {
-        "public_key": "The public key, in OpenSSH format. Required.",
-    },
+    object_type: {key: field["description"] for key, field in fields.items()}
+    for object_type, fields in sf.FIELDS.items()
 }
 
 
@@ -330,6 +279,56 @@ def matches_tags(obj: dict, tags: dict) -> bool:
     return True
 
 
+def setting_error(message: str, settings=()) -> dict:
+    """A problem with deployment settings, as a validation reports it:
+    ``message``, and ``settings`` - the keys it is about."""
+    return {"settings": [settings] if isinstance(settings, str) else list(settings), "message": message}
+
+
+def settings_problems(object_type: str, settings, required=("name",), supported=None) -> tuple:
+    """What is wrong with a deployment's settings as a whole.
+
+    The arguments are those of :func:`check_settings`.
+
+    Returns:
+        tuple: The settings, as :func:`check_settings` returns them, or None
+        if they are no dict; and the problems, each a :func:`setting_error`,
+        in the order :func:`check_settings` refuses them.
+    """
+    if settings is None:
+        settings = {}
+    if not isinstance(settings, dict):
+        return None, [setting_error("settings must be a dict.")]
+    settings = dict(settings)
+    errors = []
+
+    allowed = set(COMMON_SETTINGS) | set(
+        SETTINGS.get(object_type, {}) if supported is None else supported
+    )
+    unknown = sorted(set(settings) - allowed)
+    if unknown:
+        errors.append(
+            setting_error(
+                f"Unsupported settings for {object_type}: {', '.join(unknown)}. "
+                f"Supported: {', '.join(sorted(allowed))}.",
+                unknown,
+            )
+        )
+
+    missing = [key for key in required if settings.get(key) in (None, "", [])]
+    if missing:
+        errors.append(setting_error(f"Missing settings for {object_type}: {', '.join(missing)}.", missing))
+
+    for key in ("labels", "vendor_settings"):
+        value = settings.get(key)
+        if value is None:
+            settings[key] = {}
+        elif not isinstance(value, dict):
+            errors.append(setting_error(f"The setting {key} must be a dict.", key))
+
+    return settings, errors
+
+
 def check_settings(object_type: str, settings, required=("name",), supported=None) -> dict:
     """Checks a deployment's settings and returns them as a dict.
 
@@ -344,37 +343,104 @@ def check_settings(object_type: str, settings, required=("name",), supported=Non
         dict: The settings, with labels and vendor_settings defaulted to {}.
 
     Raises:
-        DbaError: Settings are not a dict, a required one is missing or one
-            is not supported.
+        SettingError: Settings are not a dict, a required one is missing or
+            one is not supported.
     """
-    if settings is None:
-        settings = {}
-    if not isinstance(settings, dict):
-        raise DbaError("settings must be a dict.")
-    settings = dict(settings)
-
-    allowed = set(COMMON_SETTINGS) | set(
-        SETTINGS.get(object_type, {}) if supported is None else supported
-    )
-    unknown = sorted(set(settings) - allowed)
-    if unknown:
-        raise DbaError(
-            f"Unsupported settings for {object_type}: {', '.join(unknown)}. "
-            f"Supported: {', '.join(sorted(allowed))}."
-        )
-
-    missing = [key for key in required if settings.get(key) in (None, "", [])]
-    if missing:
-        raise DbaError(f"Missing settings for {object_type}: {', '.join(missing)}.")
-
-    for key in ("labels", "vendor_settings"):
-        value = settings.get(key)
-        if value is None:
-            settings[key] = {}
-        elif not isinstance(value, dict):
-            raise DbaError(f"The setting {key} must be a dict.")
-
+    settings, errors = settings_problems(object_type, settings, required, supported)
+    if errors:
+        raise SettingError(errors[0]["message"], errors[0]["settings"])
     return settings
+
+
+def _put(target: dict, path: str, value) -> None:
+    """Sets a value in a nested dict at a dotted path, making the dicts on the way."""
+    *parents, last = path.split(".")
+    for key in parents:
+        child = target.get(key)
+        target[key] = child = dict(child) if isinstance(child, dict) else {}
+        target = child
+    target[last] = value
+
+
+def _choice(item) -> dict:
+    """An entry of what a vendor offers, as a field's choice.
+
+    The value is the entry's ``value``, else its ``name``; what else the
+    entry says - architecture, cores, prices, the locations it is offered
+    in - becomes its ``details``.
+    """
+    if not isinstance(item, dict):
+        return {"value": item, "caption": str(item), "description": None, "details": {}}
+    value = item.get("value", item.get("name"))
+    return {
+        "value": value,
+        "caption": str(item.get("name") if item.get("name") is not None else value),
+        "description": item.get("description"),
+        "details": {
+            key: detail for key, detail in item.items() if key not in ("value", "name", "description")
+        },
+    }
+
+
+def _object_choice(obj: dict) -> dict:
+    """A deployed object, as a choice: its name, else its id."""
+    return {
+        "value": obj.get("name") or obj.get("id"),
+        "caption": obj.get("name") or obj.get("id"),
+        "description": obj.get("vendor_type"),
+        "details": {
+            "id": obj.get("id"),
+            "location": obj.get("location"),
+            "status": obj.get("status"),
+            "state": obj.get("state"),
+            "labels": obj.get("labels"),
+        },
+    }
+
+
+def _same(detail, wanted) -> bool:
+    """Whether a choice's detail is, lists or is listed by a wanted value."""
+    details = [str(item).lower() for item in (detail if isinstance(detail, (list, tuple)) else [detail])]
+    wanted_values = [str(item).lower() for item in (wanted if isinstance(wanted, (list, tuple)) else [wanted])]
+    return any(item in details for item in wanted_values)
+
+
+def _matching(choices: list, value) -> Optional[dict]:
+    """The choice a value names, by its value or its id."""
+    text = str(value).lower()
+    for choice in choices:
+        if str(choice["value"]).lower() == text or str(choice["details"].get("id", "")).lower() == text:
+            return choice
+    return None
+
+
+def applying_choices(fields: dict, key: str, settings: dict) -> list:
+    """The choices of a field that apply with the other settings given.
+
+    See ``filter`` in :func:`settings_fields.field`.
+    """
+    details = fields[key]
+    choices = details.get("choices") or []
+    for rule in details.get("filter") or ():
+        given = settings.get(rule["setting"])
+        if given in (None, "", []):
+            continue
+        other = fields.get(rule["setting"]) or {}
+        selected = _matching(other.get("choices") or [], given)
+        if other.get("choices") and selected is None:
+            continue  # a value not offered is no reason to rule choices out
+        wanted = given
+        if rule.get("selected_detail"):
+            wanted = None if selected is None else selected["details"].get(rule["selected_detail"])
+            if wanted is None:
+                continue
+        choices = [
+            choice
+            for choice in choices
+            if choice["details"].get(rule["detail"]) in (None, "", [])
+            or _same(choice["details"][rule["detail"]], wanted)
+        ]
+    return choices
 
 
 class ObjectNotFound(DbaError):
@@ -398,6 +464,16 @@ class Vendor:
     * ``deploy_settings`` - the settings each type requires and supports,
       checked by :meth:`check_deploy_settings` with what ``_check_<type>``
       adds, before a deployment's task starts.
+    * ``settings_fields`` - how the vendor's settings differ from the
+      standardized fields of :mod:`settings_fields`, per type: a standardized
+      key maps to the attributes it changes - a range, the choices'
+      source, ``is_editable`` - and a new key adds a setting of the vendor's
+      own, a :func:`settings_fields.field` that goes into the request at its
+      ``vendor_key``.
+    * ``settings_order`` - per type, the keys a dialog shows first, in that
+      order, where the vendor's own console orders them differently.
+    * ``settings_groups`` - the dialog sections the vendor words
+      differently: ``{group: {"caption", "description"}}``.
 
     Args:
         api_key (str): The API key; None for what needs none.
@@ -413,6 +489,9 @@ class Vendor:
     # common ones, as {object_type: {"required": (...), "supported": (...)}};
     # a type not named requires a name and takes every standardized setting.
     deploy_settings = {}
+    settings_fields = {}
+    settings_order = {}
+    settings_groups = {}
 
     def __init__(self, api_key: Optional[str] = None, project: Optional[str] = None):
         self.api_key = api_key
@@ -509,33 +588,285 @@ class Vendor:
         """
         return self._operation(operation, object_type)
 
+    @classmethod
+    def fields(cls, object_type: str) -> dict:
+        """The fields of a type's deployment settings at this vendor, without a request.
+
+        Name, the standardized settings the vendor supports, its own, then
+        labels and vendor_settings - unless ``settings_order`` puts some
+        first. Each field is a :func:`settings_fields.field` with ``key``,
+        ``position`` (from 1), ``required``, ``is_editable``, ``advanced``,
+        ``vendor_specific`` and ``group``; static choices as dicts.
+
+        Returns:
+            dict: The fields by key, in their order.
+        """
+        object_type = types.check_object_type(object_type)
+        rules = cls.deploy_settings.get(object_type, {})
+        required = rules.get("required", ("name",))
+        supported = rules.get("supported")
+        standard = sf.FIELDS.get(object_type, {})
+        changes = cls.settings_fields.get(object_type, {})
+        own = {
+            key: {**details, "vendor_specific": True, "vendor_key": details.get("vendor_key", key)}
+            for key, details in changes.items()
+            if key not in sf.COMMON_FIELDS and key not in standard
+        }
+
+        ordered = {"name": sf.COMMON_FIELDS["name"]}
+        ordered.update(
+            (key, details) for key, details in standard.items() if supported is None or key in supported
+        )
+        ordered.update(own)
+        ordered["labels"] = sf.COMMON_FIELDS["labels"]
+        ordered["vendor_settings"] = sf.COMMON_FIELDS["vendor_settings"]
+        first = [key for key in cls.settings_order.get(object_type, ()) if key in ordered]
+        keys = first + [key for key in ordered if key not in first]
+
+        fields = {}
+        for position, key in enumerate(keys, 1):
+            details = copy.deepcopy(
+                {**sf.DEFAULTS, "group": "general", **ordered[key], **({} if key in own else changes.get(key, {}))}
+            )
+            details["required"] = key in required or bool(details["required"])
+            if details.get("choices"):
+                details["choices"] = [_choice(choice) for choice in details["choices"]]
+            for item in (details.get("item_fields") or {}).values():
+                if item.get("choices"):
+                    item["choices"] = [_choice(choice) for choice in item["choices"]]
+            fields[key] = {"key": key, "position": position, **details}
+        return fields
+
+    def settings_problems(self, object_type: str, settings) -> tuple:
+        """What is wrong with a deployment's settings, as far as is known without the vendor's API.
+
+        The settings as a whole (:func:`settings_problems`), each value by
+        its field (:func:`settings_fields.field_errors`), then - when that
+        found nothing - ``_check_<type>(settings)``, where the vendor has
+        more rules that need no request: a combination, a format. The
+        vendor's own settings are moved into ``vendor_settings`` at their
+        ``vendor_key``, as its API takes them.
+
+        Returns:
+            tuple: The settings, as :meth:`check_deploy_settings` returns
+            them, or None if they are no dict; and the problems, each a
+            :func:`setting_error`.
+        """
+        object_type = types.check_object_type(object_type)
+        fields = self.fields(object_type)
+        rules = self.deploy_settings.get(object_type, {})
+        own = {key: details for key, details in fields.items() if details["vendor_specific"]}
+        given = dict(settings) if isinstance(settings, dict) else settings
+        moved = {key: given.pop(key) for key in own if key in given} if isinstance(given, dict) else {}
+
+        checked, errors = settings_problems(
+            object_type, given, required=rules.get("required", ("name",)), supported=rules.get("supported")
+        )
+        if checked is None:
+            return None, errors
+
+        for key, value in list(checked.items()) + list(moved.items()):
+            if key in fields and not any(key in error["settings"] for error in errors):
+                errors.extend(
+                    setting_error(message, key) for message in sf.field_errors(key, fields[key], value)
+                )
+        if moved and isinstance(checked["vendor_settings"], dict):
+            vendor_settings = dict(checked["vendor_settings"])
+            for key, value in moved.items():
+                if value is not None:
+                    _put(vendor_settings, own[key]["vendor_key"], sf.converted(own[key], value))
+            checked["vendor_settings"] = vendor_settings
+
+        more = getattr(self, f"_check_{object_type}", None)
+        if not errors and callable(more):
+            try:
+                more(checked)
+            except SettingError as e:
+                errors.append(setting_error(str(e), e.settings))
+            except DbaError as e:
+                errors.append(setting_error(str(e)))
+        return checked, errors
+
     def check_deploy_settings(self, object_type: str, settings) -> dict:
         """Checks a deployment's settings as far as it can without the vendor's API.
 
-        The settings the type requires and supports (``deploy_settings``),
-        then ``_check_<type>(settings)``, where the vendor has more rules
-        that need no request: the format of a value, a combination. Called
-        before a deployment's task starts, so that a mistake fails the call,
-        and by ``_deploy_<type>`` itself.
+        See :meth:`settings_problems`. Called before a deployment's task
+        starts, so that a mistake fails the call, and by ``_deploy_<type>``
+        itself.
 
         Returns:
-            dict: The settings, as :func:`check_settings` returns them.
+            dict: The settings, as :func:`check_settings` returns them, with
+            the vendor's own settings moved into ``vendor_settings``.
 
         Raises:
-            DbaError: A setting is missing, not supported or not valid.
+            SettingError: A setting is missing, not supported or not valid;
+                the first problem found.
+        """
+        settings, errors = self.settings_problems(object_type, settings)
+        if errors:
+            raise SettingError(errors[0]["message"], errors[0]["settings"])
+        return settings
+
+    def _fill_choices(self, object_type: str, fields: dict) -> None:
+        """Gives the fields - and their items' fields - the choices the vendor offers.
+
+        What the vendor offers to deploy (``_info_<type>``) and what is
+        deployed of each type the choices name are asked for side by side,
+        once each. A source the vendor does not have leaves its field
+        without choices.
+        """
+        everything = list(fields.values()) + [
+            item for details in fields.values() for item in (details.get("item_fields") or {}).values()
+        ]
+        wants_info = any(
+            "info" in (details.get("choices_from") or {}) or details.get("prices_from") for details in everything
+        )
+        listed = sorted(
+            {
+                details["choices_from"]["objects"]
+                for details in everything
+                if "objects" in (details.get("choices_from") or {})
+            }
+            & set(self.object_types())
+        )
+        calls = []
+        if wants_info and callable(getattr(self, f"_info_{object_type}", None)):
+            calls.append(lambda: self.object_info(object_type))
+        calls += [lambda listed_type=listed_type: self.list_objects(listed_type) for listed_type in listed]
+        answers = parallel(*calls) if calls else []
+        info = answers.pop(0) if len(calls) > len(listed) else {}
+        deployed = dict(zip(listed, answers))
+
+        for details in everything:
+            source = details.get("choices_from") or {}
+            if source.get("info") in (info or {}):
+                details["choices"] = [_choice(item) for item in as_list(info[source["info"]])]
+            elif source.get("objects") in deployed:
+                details["choices"] = [_object_choice(obj) for obj in deployed[source["objects"]]]
+            prices = (details.get("prices_from") or {}).get("info")
+            if prices in (info or {}):
+                details["prices"] = info[prices]
+
+    def settings_info(self, object_type: str) -> dict:
+        """The settings of a type's deployment, described for a dialog.
+
+        The fields of :meth:`fields`, with the choices the vendor offers and
+        the objects deployed to choose from, and the sections to show them
+        in.
+
+        Returns:
+            dict: ``vendor``, ``display_name``, ``object_type``, ``groups``
+            (``key``, ``caption``, ``description`` and ``position`` of each
+            section the fields name, in order) and ``settings`` (the fields
+            by key, in order).
+
+        Raises:
+            DbaError: The vendor does not deploy the type, or what it offers
+                could not be asked for.
         """
         object_type = types.check_object_type(object_type)
-        rules = self.deploy_settings.get(object_type, {})
-        settings = check_settings(
-            object_type,
-            settings,
-            required=rules.get("required", ("name",)),
-            supported=rules.get("supported"),
-        )
-        more = getattr(self, f"_check_{object_type}", None)
-        if callable(more):
-            more(settings)
-        return settings
+        self.require("deploy", object_type)
+        fields = self.fields(object_type)
+        self._fill_choices(object_type, fields)
+
+        groups = []
+        for details in fields.values():
+            if details["group"] not in [group["key"] for group in groups]:
+                wording = {**sf.GROUPS.get(details["group"], {}), **self.settings_groups.get(details["group"], {})}
+                groups.append(
+                    {
+                        "key": details["group"],
+                        "caption": wording.get("caption", details["group"]),
+                        "description": wording.get("description"),
+                        "position": len(groups) + 1,
+                    }
+                )
+        return {
+            "vendor": self.name,
+            "display_name": self.display_name,
+            "object_type": object_type,
+            "groups": groups,
+            "settings": fields,
+        }
+
+    def validate_settings(self, object_type: str, settings) -> dict:
+        """Checks a deployment's settings, against what the vendor offers too.
+
+        What :meth:`settings_problems` finds, and - when that is nothing -
+        each value with choices against them: a size, location or version
+        the vendor does not offer, or not with the other settings given
+        (another provider, another location), is an error; a value of a
+        setting whose choices are suggestions - an image given by its id -
+        is a warning. An object named that is not deployed is an error;
+        only a warning where listing the project may not show it, at a
+        vendor without projects of its own.
+
+        Returns:
+            dict: ``valid``, ``errors`` and ``warnings``, each problem a
+            :func:`setting_error`.
+
+        Raises:
+            DbaError: The vendor does not deploy the type, or what it offers
+                could not be asked for.
+        """
+        object_type = types.check_object_type(object_type)
+        self.require("deploy", object_type)
+        checked, errors = self.settings_problems(object_type, settings)
+        warnings = []
+        if checked is not None and not errors:
+            fields = {
+                key: details
+                for key, details in self.fields(object_type).items()
+                if details.get("choices_from") or details.get("choices")
+            }
+            given = {key: value for key, value in settings.items() if value not in (None, "", [])}
+            self._fill_choices(object_type, {key: details for key, details in fields.items() if key in given})
+            for key in [key for key in fields if key in given and fields[key].get("choices") is not None]:
+                self._check_choices(fields, key, given, errors, warnings)
+        return {"valid": not errors, "errors": errors, "warnings": warnings}
+
+    def _check_choices(self, fields, key, given, errors, warnings) -> None:
+        details = fields[key]
+        applying = applying_choices(fields, key, given)
+        objects_type = (details.get("choices_from") or {}).get("objects")
+        values = as_list(given[key]) if details["type"] == sf.LIST else [given[key]]
+        others = [rule["setting"] for rule in details.get("filter") or () if given.get(rule["setting"]) not in (None, "", [])]
+        with_others = " and ".join(f"{other} '{given[other]}'" for other in others)
+        for value in values:
+            if _matching(applying, value):
+                continue
+            if _matching(details["choices"], value):
+                errors.append(
+                    setting_error(
+                        f"The {key} '{value}' cannot be used with {with_others}." if objects_type
+                        else f"{self.display_name} does not offer the {key} '{value}' with {with_others}.",
+                        [key] + others,
+                    )
+                )
+            elif objects_type:
+                message = f"There is no {objects_type} named '{value}' at {self.display_name}" + (
+                    f" in project '{self.project}'." if self.project else "."
+                )
+                hidden = self.project and not self.native_projects
+                (warnings if hidden else errors).append(setting_error(message, key))
+            elif details.get("strict"):
+                offered = sf.choice_values(applying)
+                errors.append(
+                    setting_error(
+                        f"{self.display_name} does not offer the {key} '{value}'. "
+                        + (f"Choose one of: {', '.join(offered[:20])}" + (", ..." if len(offered) > 20 else "") + "."
+                           if offered else "It offers none."),
+                        key,
+                    )
+                )
+            else:
+                warnings.append(
+                    setting_error(
+                        f"{self.display_name} does not list the {key} '{value}'; the deployment fails "
+                        "if it does not take it.",
+                        key,
+                    )
+                )
 
     def object_info(self, object_type: str) -> dict:
         """What of an object type can be deployed. See ``_info_<type>``."""

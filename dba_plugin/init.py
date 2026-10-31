@@ -52,6 +52,12 @@ class dba:
     class set:
         """Sets the dba plugin's configuration."""
 
+    class validate:
+        """Validates what vendor objects are deployed with."""
+
+        class vendor:
+            """Validates the settings of an object at a vendor."""
+
     class deploy:
         """Deploys vendor objects."""
 

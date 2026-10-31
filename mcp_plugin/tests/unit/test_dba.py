@@ -47,6 +47,8 @@ READ_TOOLS = {
     "dba.list_vendors",
     "dba.list_vendor_object_support",
     "dba.get_vendor_object_info",
+    "dba.get_vendor_object_settings_info",
+    "dba.validate_vendor_object_settings",
     "dba.list_vendor_objects",
     "dba.get_vendor_object_status",
 }
@@ -169,6 +171,25 @@ def test_an_agent_uses_the_mcp_keys(stub_vendor):
     # The real vendor plugins are listed too, wherever they are installed.
     [entry] = [e for e in tools["dba.list_vendors"]() if e["name"] == "stubcloud"]
     assert entry["api_key_projects"] == ["default"]
+
+
+def test_the_settings_are_described_and_validated_for_any_client(stub_vendor):
+    api_keys.store_api_key("stubcloud", "mcp-key", context=api_keys.CONTEXT_MCP)
+    tools = _tools()
+
+    info = tools["dba.get_vendor_object_settings_info"]("stubcloud", "vms")
+    assert info["object_type"] == "vms"
+    assert info["settings"]["name"] == {**info["settings"]["name"], "position": 1, "required": True}
+    assert [c["value"] for c in info["settings"]["firewalls"].get("choices", [])] == []
+
+    assert tools["dba.validate_vendor_object_settings"]("stubcloud", "vms", {"name": "db2"}) == {
+        "valid": True, "errors": [], "warnings": [],
+    }
+    result = tools["dba.validate_vendor_object_settings"]("stubcloud", "vms", {"user_data": 5, "colour": "red"})
+    assert [error["settings"] for error in result["errors"]] == [["colour"], ["name"]]
+    with pytest.raises(ToolError, match="Unknown vendor 'nocloud'"):
+        tools["dba.validate_vendor_object_settings"]("nocloud", "vms", {})
+    assert stub_vendor.opened_with == ["mcp-key"]
 
 
 def test_the_extension_uses_its_own_keys(stub_vendor, gui_mode):

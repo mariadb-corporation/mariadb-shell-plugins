@@ -23,7 +23,8 @@ dba plugin is installed. What a client gets depends on who it is:
   and deleting start a background task of the client and return its id;
   ``task.get`` follows it (see :mod:`mcp_plugin.lib.task_functions`).
 * Otherwise (an agent) only the tools that read: vendors, object types,
-  offerings, deployed objects and their status, with the MCP API keys that
+  offerings, deployment settings and their validation, deployed objects and
+  their status, with the MCP API keys that
   ``mcp setup --setDbaApiKey`` stores. An agent can neither store a key nor
   create or delete anything that costs money or holds data.
 
@@ -114,6 +115,59 @@ def register_dba_tools(server, function_groups=()) -> None:
         """
         return _run(
             lambda: operations.object_info(vendor_name, object_type, project, context)
+        )
+
+    @tool(name="dba.get_vendor_object_settings_info")
+    def get_vendor_object_settings_info(
+        vendor_name: str, object_type: str, project: Optional[str] = None
+    ) -> dict:
+        """Returns the settings to deploy an object type with at a vendor, described for a dialog.
+
+        Every setting the vendor takes, its own included, with its position,
+        group (section), caption, description, type, required, default,
+        range and form, is_editable (changeable once deployed), and the
+        values to choose from: what the vendor offers (sizes with resources
+        and prices per location, locations, images) and what is deployed
+        (networks, SSH keys, VMs), with the filter rules saying which apply
+        with the other settings chosen.
+
+        Args:
+            vendor_name: The vendor.
+            object_type: The standardized object type, e.g. vms.
+            project: The project whose API key to use.
+
+        Returns:
+            vendor, display_name, object_type, groups (the sections, in
+            order) and settings (by key; order them by position).
+        """
+        return _run(
+            lambda: operations.settings_info(vendor_name, object_type, project, context)
+        )
+
+    @tool(name="dba.validate_vendor_object_settings")
+    def validate_vendor_object_settings(
+        vendor_name: str, object_type: str, settings: dict, project: Optional[str] = None
+    ) -> dict:
+        """Checks the settings of a deployment, without deploying anything.
+
+        What deploying checks before its task starts, and whether the
+        sizes, locations, images and versions named are offered together
+        and the objects named are deployed.
+
+        Args:
+            vendor_name: The vendor.
+            object_type: The standardized object type.
+            settings: The settings, as dba.deploy_vendor_object takes them.
+            project: The project to deploy in.
+
+        Returns:
+            valid, errors and warnings: each problem a message and the keys
+            of the settings it is about.
+        """
+        return _run(
+            lambda: operations.validate_settings(
+                vendor_name, object_type, settings, project, context
+            )
         )
 
     @tool(name="dba.list_vendor_objects")
