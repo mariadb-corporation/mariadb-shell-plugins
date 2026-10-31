@@ -231,7 +231,7 @@ class UpCloud(v.Vendor):
         },
         types.VOLUMES: {
             **_RENAMED,
-            "size_gb": {"is_updatable": True,
+            "size_gb": {"is_updatable": True, "grows_only": True,
                         "description": "The size in GB; it can be grown later."},
             "vm": {"description": "The name or uuid of a server to attach the volume to; its zone "
                    "is the volume's."},
@@ -555,8 +555,8 @@ class UpCloud(v.Vendor):
             server["title"] = settings["name"]
         if "labels" in settings:
             server["labels"] = {"label": labels_to_api(settings["labels"])}
-        self.client.put(f"/server/{obj['id']}", json={"server": server})
-        return self._status_vms(obj)
+        updated = (self.client.put(f"/server/{obj['id']}", json={"server": server}) or {}).get("server")
+        return self._server_details_object(updated) if updated else obj
 
     def _delete_vms(self, obj: dict) -> dict:
         uuid = obj["id"]
@@ -668,17 +668,12 @@ class UpCloud(v.Vendor):
         if "name" in settings:
             storage["title"] = settings["name"]
         if "size_gb" in settings:
-            size = obj["properties"].get("size_gb")
-            if size is not None and settings["size_gb"] <= size:
-                raise SettingError(
-                    f"{self.display_name} only grows storages: size_gb must be more than {size}.", "size_gb"
-                )
             # attached to a running server, UpCloud refuses it: stop the server first
             storage["size"] = settings["size_gb"]
         if "labels" in settings:
             storage["labels"] = labels_to_api(settings["labels"])
         updated = (self.client.put(f"/storage/{obj['id']}", json={"storage": storage}) or {}).get("storage")
-        return self._storage_object(updated) if updated else self._status_volumes(obj)
+        return self._storage_object(updated) if updated else obj
 
     def _delete_volumes(self, obj: dict) -> dict:
         storage = (self.client.get(f"/storage/{obj['id']}") or {}).get("storage") or {}
@@ -751,7 +746,7 @@ class UpCloud(v.Vendor):
         if "labels" in settings:
             network["labels"] = labels_to_api(settings["labels"])
         updated = (self.client.put(f"/network/{obj['id']}", json={"network": network}) or {}).get("network")
-        return self._network_object(updated) if updated else self._status_networking(obj)
+        return self._network_object(updated) if updated else obj
 
     def _delete_networking(self, obj: dict) -> dict:
         self.client.delete(f"/network/{obj['id']}")
@@ -876,7 +871,7 @@ class UpCloud(v.Vendor):
         updated = self.client.patch(
             f"/load-balancer/{obj['id']}", json={"labels": labels_to_api(settings["labels"])}
         )
-        return self._load_balancer_object(updated) if updated else self._status_load_balancers(obj)
+        return self._load_balancer_object(updated) if updated else obj
 
     def _delete_load_balancers(self, obj: dict) -> dict:
         self.client.delete(f"/load-balancer/{obj['id']}")
@@ -936,7 +931,7 @@ class UpCloud(v.Vendor):
         updated = self.client.patch(
             f"/object-storage-2/{obj['id']}", json={"labels": labels_to_api(settings["labels"])}
         )
-        return self._object_storage_object(updated) if updated else self._status_object_storage(obj)
+        return self._object_storage_object(updated) if updated else obj
 
     def _delete_object_storage(self, obj: dict) -> dict:
         # Accepted, not done: the service is listed for a minute or more, and

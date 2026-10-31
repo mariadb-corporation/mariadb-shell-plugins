@@ -40,6 +40,7 @@ What the API makes worth knowing:
 
 # cSpell:ignore mysqlsh MariaDB hetzner rrsets proxyprotocol
 
+import copy
 import time
 
 from dba_plugin.lib import object_types as types, rest_client, vendor as v, vendors
@@ -442,7 +443,7 @@ class Hetzner(v.Vendor):
         },
         types.VOLUMES: {
             **_RENAMED,
-            "size_gb": {"minimum": 10, "maximum": 10240, "is_updatable": True,
+            "size_gb": {"minimum": 10, "maximum": 10240, "is_updatable": True, "grows_only": True,
                         "description": "The size in GB, 10 to 10240; it can be grown later."},
             "automount": sf.field(
                 "Mount automatically",
@@ -668,15 +669,16 @@ class Hetzner(v.Vendor):
         replace the object's.
         """
         path, key, convert = _UPDATED[object_type]
-        done = [
+        waited = (
             self._wait((self.client.post(f"/{path}/{obj['id']}/actions/{command}", json=body) or {}).get("action"))
             for command, body in actions
-        ]
+        )
+        done = [action for action in waited if action]
         body = {name: settings[name] for name in ("name", "labels") if name in settings}
-        answer = self.client.put(f"/{path}/{obj['id']}", json=body) if body else self.client.get(f"/{path}/{obj['id']}")
-        updated = convert((answer or {}).get(key) or {})
-        if any(done):
-            updated["properties"]["actions"] = [action for action in done if action]
+        answer = (self.client.put(f"/{path}/{obj['id']}", json=body) or {}).get(key) if body else None
+        updated = convert(answer) if answer else copy.deepcopy(obj)
+        if done:
+            updated["properties"]["actions"] = done
         return updated
 
     def _deleted(self, answer) -> dict:
@@ -834,14 +836,7 @@ class Hetzner(v.Vendor):
         return _created(_volume(answer.get("volume") or {}), answer)
 
     def _update_volumes(self, obj: dict, settings) -> dict:
-        actions = []
-        if "size_gb" in settings:
-            size = obj["properties"].get("size_gb")
-            if size is not None and settings["size_gb"] <= size:
-                raise SettingError(
-                    f"{self.display_name} only grows volumes: size_gb must be more than {size}.", "size_gb"
-                )
-            actions.append(("resize", {"size": settings["size_gb"]}))
+        actions = [("resize", {"size": settings["size_gb"]})] if "size_gb" in settings else []
         return self._updated(types.VOLUMES, obj, settings, actions)
 
     def _delete_volumes(self, obj: dict) -> dict:

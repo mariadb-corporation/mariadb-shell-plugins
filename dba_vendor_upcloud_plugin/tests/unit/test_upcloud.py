@@ -911,8 +911,7 @@ def test_live_list_and_info(live_api_key):
 
 def test_a_server_is_retitled_and_relabelled(vendor, mock_api):
     _servers(mock_api)
-    mock_api.add("PUT", f"/1.3/server/{SERVER_B}", status=202, json=_server_details(SERVER_B, "db2b", "stopped"))
-    mock_api.add("GET", f"/1.3/server/{SERVER_B}", json=_server_details(SERVER_B, "db2b", "stopped", env="test"))
+    mock_api.add("PUT", f"/1.3/server/{SERVER_B}", status=202, json=_server_details(SERVER_B, "db2b", "stopped", env="test"))
     updated = vendor.update_object("vms", "db2", {"name": "db2b", "labels": {"env": "test"}})
     assert mock_api.requests_to("PUT", f"/1.3/server/{SERVER_B}")[0]["json"] == {
         "server": {"title": "db2b", "labels": {"label": [{"key": "env", "value": "test"}]}}
@@ -926,14 +925,16 @@ def test_a_storage_grows_and_keeps_its_project(mock_api):
         "uuid": STORAGE, "title": "data", "size": 200, "state": "maintenance", "zone": "de-fra1", "labels": [],
     }})
     instance = UpCloud(api_key=TOKEN, project="shop")
-    updated = instance.update_object("volumes", "data", {"size_gb": 200, "labels": {}})
-    instance.close()
-    assert mock_api.requests_to("PUT", f"/1.3/storage/{STORAGE}")[0]["json"] == {
-        "storage": {"size": 200, "labels": [{"key": "dba_project", "value": "shop"}]}
-    }
-    assert updated["properties"]["size_gb"] == 200
-    with pytest.raises(DbaError, match="only grows storages: size_gb must be more than 100"):
-        UpCloud(api_key=TOKEN, project="shop").update_object("volumes", "data", {"size_gb": 50})
+    try:
+        updated = instance.update_object("volumes", "data", {"size_gb": 200, "labels": {}})
+        assert mock_api.requests_to("PUT", f"/1.3/storage/{STORAGE}")[0]["json"] == {
+            "storage": {"size": 200, "labels": [{"key": "dba_project", "value": "shop"}]}
+        }
+        assert updated["properties"]["size_gb"] == 200
+        with pytest.raises(DbaError, match="only grows the size_gb of volumes: it must be more than 100"):
+            instance.update_object("volumes", "data", {"size_gb": 50})
+    finally:
+        instance.close()
 
 
 def test_a_load_balancers_labels_are_patched_and_its_name_is_not(vendor, mock_api):

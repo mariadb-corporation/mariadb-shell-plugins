@@ -32,8 +32,11 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   (`fields()` forces it False where the vendor has no `_update_<type>`):
   `check_update_settings` / `update_problems` (+ optional
   `_check_update_<type>`), then `_update_<type>(obj, settings)` returns the
-  object; `update_found` keeps `dba_project` in new labels. Validation with
-  an object name checks an update, filtering choices by the object's location.
+  object as the vendor answers (no extra GET: the task polls); `update_found`
+  checks `grows_only` fields against the object (`growth_problems`) and keeps
+  `dba_project` in new labels. Validation with an object name checks an
+  update, filtering choices by what the object has for the settings their
+  `filter` rules name (`current_value`: key, else property).
 - **Settings for a dialog:** every standardized setting is a field in
   `lib/settings_fields.py` (caption, group, type, range, `choices_from`,
   `filter`, `display`); `SETTINGS` descriptions derive from it. A vendor's

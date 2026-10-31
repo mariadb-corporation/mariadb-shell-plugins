@@ -1054,25 +1054,28 @@ def test_a_volume_grows_with_a_resize_action(vendor, mock_api):
     mock_api.add("POST", "/v1/volumes/12/actions/resize", status=201,
                  json={"action": {"id": 70, "command": "resize_volume", "status": "running"}})
     mock_api.add("GET", "/v1/actions/70", json={"action": {"id": 70, "command": "resize_volume", "status": "success"}})
-    mock_api.add("GET", "/v1/volumes/12", json={"volume": _volume(12, "data2", size=80)})
     updated = vendor.update_object("volumes", "data2", {"size_gb": "80"})
     assert mock_api.requests_to("POST", "/v1/volumes/12/actions/resize")[0]["json"] == {"size": 80}
-    assert updated["properties"]["size_gb"] == 80
+    # nothing else to change: the volume as found, with the action waited for
     assert updated["properties"]["actions"] == [{"id": 70, "command": "resize_volume", "status": "success"}]
     assert mock_api.requests_to("PUT", "/v1/volumes/12") == []
+    assert mock_api.requests_to("GET", "/v1/volumes/12") == []
 
 
 def test_a_volume_does_not_shrink(vendor, mock_api):
     mock_api.add("GET", "/v1/volumes", json=_page("volumes", [_volume(12, "data2")]))
-    with pytest.raises(DbaError, match="only grows volumes: size_gb must be more than 50"):
+    with pytest.raises(SettingError, match="only grows the size_gb of volumes: it must be more than 50"):
         vendor.update_object("volumes", "data2", {"size_gb": 40})
+    assert vendor.validate_settings("volumes", {"size_gb": 50}, "data2")["errors"] == [
+        {"settings": ["size_gb"], "message": "Hetzner Cloud only grows the size_gb of volumes: it must be more than 50."}
+    ]
+    assert mock_api.requests_to("POST", "/v1/volumes/12/actions/resize") == []
 
 
 def test_a_zones_ttl_changes_with_an_action_and_its_name_does_not(vendor, mock_api):
     mock_api.add("GET", "/v1/zones", json=_page("zones", [_zone(50, "example.com")]))
     mock_api.add("POST", "/v1/zones/50/actions/change_ttl", status=201,
                  json={"action": {"id": 71, "command": "change_ttl", "status": "success"}})
-    mock_api.add("GET", "/v1/zones/50", json={"zone": _zone(50, "example.com")})
     vendor.update_object("dns", "example.com", {"ttl": 300})
     assert mock_api.requests_to("POST", "/v1/zones/50/actions/change_ttl")[0]["json"] == {"ttl": 300}
     with pytest.raises(SettingError, match="cannot change name of dns once created"):

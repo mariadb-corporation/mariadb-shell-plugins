@@ -30,7 +30,8 @@ implements, per object type it supports, the methods named after it:
 * ``_update_<type>(obj, settings)`` - changes the object
   :meth:`Vendor.find_object` found, with only the settings that change -
   each one whose field ``is_updatable`` - and returns it, made with
-  :func:`make_object`, as the vendor answers right after the change.
+  :func:`make_object`, as the vendor answers the change; the object as
+  found where the answer holds none. An update task follows its status.
 * ``_delete_<type>(obj)`` - deletes the object :meth:`Vendor.find_object`
   found, and returns a dict describing what the vendor did (an action id,
   a status), or None. Deleting a VM deletes its system disk only: volumes
@@ -350,10 +351,7 @@ def check_settings(object_type: str, settings, required=("name",), supported=Non
         SettingError: Settings are not a dict, a required one is missing or
             one is not supported.
     """
-    settings, errors = settings_problems(object_type, settings, required, supported)
-    if errors:
-        raise SettingError(**errors[0])
-    return settings
+    return _raise_first(*settings_problems(object_type, settings, required, supported))
 
 
 def _put(target: dict, path: str, value) -> None:
@@ -364,6 +362,29 @@ def _put(target: dict, path: str, value) -> None:
         target[key] = child = dict(child) if isinstance(child, dict) else {}
         target = child
     target[last] = value
+
+
+def _into_vendor_settings(checked: dict, values: dict, fields: dict) -> None:
+    """Puts a vendor's own settings into ``vendor_settings`` at their ``vendor_key``, typed as their fields say."""
+    values = {key: value for key, value in values.items() if value is not None}
+    if not values or not isinstance(checked.get("vendor_settings", {}), dict):
+        return
+    vendor_settings = dict(checked.get("vendor_settings") or {})
+    for key, value in values.items():
+        _put(vendor_settings, fields[key]["vendor_key"], sf.converted(fields[key], value))
+    checked["vendor_settings"] = vendor_settings
+
+
+def _raise_first(checked, errors: list):
+    """The settings checked, or the first problem found with them, raised."""
+    if errors:
+        raise SettingError(**errors[0])
+    return checked
+
+
+def current_value(obj: dict, key: str):
+    """What an object has for a setting: its own key, else the property of that name."""
+    return obj[key] if key in obj else (obj.get("properties") or {}).get(key)
 
 
 def _choice(item) -> dict:
@@ -679,22 +700,21 @@ class Vendor:
                 )
         # typed as the fields say, so that a vendor gets 10, not "10"
         checked.update((key, sf.converted(fields[key], value)) for key, value in checked.items() if key in fields)
-        if moved and isinstance(checked["vendor_settings"], dict):
-            vendor_settings = dict(checked["vendor_settings"])
-            for key, value in moved.items():
-                if value is not None:
-                    _put(vendor_settings, own[key]["vendor_key"], sf.converted(own[key], value))
-            checked["vendor_settings"] = vendor_settings
-
-        more = getattr(self, f"_check_{object_type}", None)
-        if not errors and callable(more):
-            try:
-                more(checked)
-            except SettingError as e:
-                errors.append(e.as_dict())
-            except DbaError as e:
-                errors.append(setting_error(str(e)))
+        _into_vendor_settings(checked, moved, fields)
+        self._vendor_problems(f"_check_{object_type}", checked, errors)
         return checked, errors
+
+    def _vendor_problems(self, check: str, checked: dict, errors: list) -> None:
+        """Runs the vendor's own rules - ``_check_<type>`` or ``_check_update_<type>`` - when nothing else is wrong."""
+        more = getattr(self, check, None)
+        if errors or not callable(more):
+            return
+        try:
+            more(checked)
+        except SettingError as e:
+            errors.append(e.as_dict())
+        except DbaError as e:
+            errors.append(setting_error(str(e)))
 
     def check_create_settings(self, object_type: str, settings) -> dict:
         """Checks the settings to create an object with as far as it can without the vendor's API.
@@ -711,10 +731,7 @@ class Vendor:
             SettingError: A setting is missing, not supported or not valid;
                 the first problem found.
         """
-        settings, errors = self.settings_problems(object_type, settings)
-        if errors:
-            raise SettingError(**errors[0])
-        return settings
+        return _raise_first(*self.settings_problems(object_type, settings))
 
     def update_problems(self, object_type: str, settings, fields: Optional[dict] = None) -> tuple:
         """What is wrong with the settings to change an object with, as far as is known without the vendor's API.
@@ -762,21 +779,24 @@ class Vendor:
             checked[key] = sf.converted(details, value)
 
         own = {key: checked.pop(key) for key in list(checked) if fields[key]["vendor_specific"]}
-        if own:
-            vendor_settings = dict(checked.get("vendor_settings") or {})
-            for key, value in own.items():
-                _put(vendor_settings, fields[key]["vendor_key"], value)
-            checked["vendor_settings"] = vendor_settings
-
-        more = getattr(self, f"_check_update_{object_type}", None)
-        if not errors and callable(more):
-            try:
-                more(checked)
-            except SettingError as e:
-                errors.append(e.as_dict())
-            except DbaError as e:
-                errors.append(setting_error(str(e)))
+        _into_vendor_settings(checked, own, fields)
+        self._vendor_problems(f"_check_update_{object_type}", checked, errors)
         return checked, errors
+
+    def growth_problems(self, object_type: str, obj: dict, settings: dict, fields: Optional[dict] = None) -> list:
+        """The settings that only grow - a field's ``grows_only`` - given no more than the object has."""
+        fields = fields or self.fields(object_type)
+        problems = []
+        for key, value in settings.items():
+            current, wanted = sf.as_int(current_value(obj, key)), sf.as_int(value)
+            if (fields.get(key) or {}).get("grows_only") and None not in (current, wanted) and wanted <= current:
+                problems.append(
+                    setting_error(
+                        f"{self.display_name} only grows the {key} of {object_type}: it must be more than {current}.",
+                        key,
+                    )
+                )
+        return problems
 
     def check_update_settings(self, object_type: str, settings) -> dict:
         """Checks the settings to change an object with as far as it can without the vendor's API.
@@ -788,10 +808,7 @@ class Vendor:
             SettingError: A setting cannot be changed or is not valid; the
                 first problem found.
         """
-        settings, errors = self.update_problems(object_type, settings)
-        if errors:
-            raise SettingError(**errors[0])
-        return settings
+        return _raise_first(*self.update_problems(object_type, settings))
 
     def _fill_choices(self, object_type: str, fields: dict) -> None:
         """Gives the fields - and their items' fields - the choices the vendor offers.
@@ -887,9 +904,10 @@ class Vendor:
         vendor without projects of its own.
 
         With ``object_name``, the settings are those to change that object
-        with (:meth:`update_problems`), and its location is what the choices
-        that depend on one are filtered by. An object that is not deployed
-        is an error.
+        with (:meth:`update_problems`, :meth:`growth_problems`), and the
+        choices that depend on other settings - a size on the location - are
+        filtered by what the object has. An object that is not deployed is
+        an error.
 
         Returns:
             dict: ``valid``, ``errors`` and ``warnings``, each problem a
@@ -908,19 +926,28 @@ class Vendor:
         else:
             checked, errors = self.update_problems(object_type, settings, fields)
             try:
-                current = {"location": self.find_object(object_type, object_name).get("location")}
+                found = self.find_object(object_type, object_name)
             except ObjectNotFound as e:
                 errors.insert(0, setting_error(str(e)))
+            else:
+                if not errors:
+                    errors.extend(self.growth_problems(object_type, found, checked, fields))
+                # what the choices of the settings changed depend on, as the object has it
+                depends = {
+                    rule["setting"] for key in settings if key in fields for rule in fields[key].get("filter") or ()
+                }
+                current = {key: current_value(found, key) for key in depends - set(settings)}
         warnings = []
         if checked is not None and not errors:
             given = {
-                **{key: value for key, value in current.items() if key in fields and value},
-                **{key: value for key, value in settings.items() if value not in (None, "", [])},
+                key: value
+                for key, value in {**current, **settings}.items()
+                if value not in (None, "", [])
             }
             offered = {
                 key: details
                 for key, details in fields.items()
-                if key in settings and key in given and (details.get("choices_from") or details.get("choices"))
+                if key in given and key in settings and (details.get("choices_from") or details.get("choices"))
             }
             self._fill_choices(object_type, offered)
             for key in [key for key, details in offered.items() if details.get("choices") is not None]:
@@ -1064,10 +1091,8 @@ class Vendor:
         """
         create = self._operation("create", object_type)
         settings = dict(settings or {}) if isinstance(settings, dict) else settings
-        if isinstance(settings, dict) and self.project and not self.native_projects:
-            labels = dict(settings.get("labels") or {})
-            labels[PROJECT_LABEL] = self.project
-            settings["labels"] = labels
+        if isinstance(settings, dict):
+            settings["labels"] = self._with_project(settings.get("labels"))
         return create(settings)
 
     def delete_object(self, object_type: str, object_name: str) -> dict:
@@ -1092,14 +1117,25 @@ class Vendor:
     def update_found(self, object_type: str, obj: dict, settings) -> dict:
         """Changes an object :meth:`find_object` found. See :meth:`update_object`.
 
+        A setting that only grows is checked against what the object has.
         For a vendor without projects of its own, new labels keep the
         project's, so that listing the project still finds the object.
         """
         update = self._operation("update", object_type)
-        settings = self.check_update_settings(object_type, settings)
-        if "labels" in settings and self.project and not self.native_projects:
-            settings["labels"] = {**settings["labels"], PROJECT_LABEL: self.project}
+        fields = self.fields(object_type)
+        settings, errors = self.update_problems(object_type, settings, fields)
+        if not errors:
+            errors = self.growth_problems(object_type, obj, settings, fields)
+        _raise_first(settings, errors)
+        if "labels" in settings:
+            settings["labels"] = self._with_project(settings["labels"])
         return update(obj, settings)
+
+    def _with_project(self, labels):
+        """Labels with the project's, at a vendor without projects of its own, so that listing the project finds the object."""
+        if not self.project or self.native_projects:
+            return labels
+        return {**(labels or {}), PROJECT_LABEL: self.project}
 
     def current_status(self, object_type: str, obj: dict) -> dict:
         """The current status of an object found or created before, by its id.

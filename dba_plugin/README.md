@@ -161,6 +161,7 @@ Each setting has:
 | `prices` | What the setting itself costs, per location, such as a public IPv4 address. |
 | `display` | How to show the choices: `style` (`select`, `cards`, `table`, `checkboxes`), `columns` of a table (`key`, `caption`, `unit`; `prices.hourly` and `prices.monthly` are the price at the location chosen), `group_by` (details to group the choices by, such as Hetzner's `cpu_type` and `category`, or an image's `os_flavor`) and `item_caption` (the detail to label a choice with, such as an image's `os_version`). |
 | `is_updatable` | Whether `dba.update.vendor.object` can change it once the object is deployed - for a dialog that changes an object. False for every setting where the vendor does not update the type. |
+| `grows_only` | For an updatable number, such as a volume's size: a change must be more than the object has. |
 | `advanced` | Whether a dialog may tuck it away. |
 | `vendor_specific`, `vendor_key` | Whether it is the vendor's own setting, and where it goes in the vendor's request. |
 
@@ -192,8 +193,9 @@ What can change depends on the vendor - see its README: a name and labels for mo
 objects, a volume's size (it only grows), a DNS zone's TTL, a managed service's size,
 nodes, storage and allowed addresses.
 `dba.validate.vendor.objectSettings(vendor, type, settings, project, objectName)`
-checks the settings to change that object with, its location filtering the choices that
-depend on one, as a dialog's apply button needs it.
+checks the settings to change that object with - a `grows_only` setting against what the
+object has, and the choices that depend on other settings (a size on the location) by
+what the object has for those - as a dialog's apply button needs it.
 
 ```python
 dba.validate.vendor.object_settings("hetzner", "volumes", {"size_gb": 100}, "prod", "data1")

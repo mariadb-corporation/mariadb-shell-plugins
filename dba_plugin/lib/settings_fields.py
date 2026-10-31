@@ -163,6 +163,8 @@ def field(caption: str, description: str, type: str = STRING, **attributes) -> d
               its group).
             * ``is_updatable`` - whether the setting of an object already
               deployed can be changed at the vendor.
+            * ``grows_only`` - for an updatable number, such as a volume's
+              size: whether a change must be more than the object has.
             * ``advanced`` - whether a dialog may tuck it away.
             * ``vendor_key`` - for a vendor's own setting: where it goes in
               the vendor's request, as a dotted path; the key by default.
