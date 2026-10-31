@@ -27,7 +27,7 @@ for a project is labelled `dba_project=<project>`.
 
 ## Object types
 
-Every type supports `info`, `list`, `status`, `create` and `delete`.
+Every type supports `info`, `list`, `status`, `create`, `update` and `delete`.
 `labels` and `vendor_settings` are accepted for every type.
 
 | Type | UpCloud object | Settings |
@@ -55,6 +55,13 @@ Notes:
   server.
 * Firewalls are not supported: UpCloud firewall rules belong to one server
   each, with no rule set to name, list or apply to several.
+
+## Updates
+
+A server's, storage's and network's `name` and `labels` can change, and a load balancer's
+and object storage's `labels`. New labels replace the object's. A storage's `size_gb`
+only grows, and UpCloud grows a storage attached to a server only while that server is
+stopped; grow the partition and filesystem yourself afterwards.
 
 ## Tests
 

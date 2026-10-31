@@ -47,6 +47,7 @@ TASK_TYPE = "dba"
 MAX_RUNNING_TASKS = 16
 # How long a task waits for the vendor, and how often it asks.
 CREATE_TIMEOUT = 3600
+UPDATE_TIMEOUT = 3600
 DELETE_TIMEOUT = 1800
 POLL_INTERVAL = 10
 # How many asks in a row may fail - an API that answers 502 for a moment, an
@@ -242,15 +243,20 @@ def settings_info(vendor_name: str, object_type: str, project=None, context=api_
 
 
 def validate_settings(
-    vendor_name: str, object_type: str, settings, project=None, context=api_keys.CONTEXT_GUI
+    vendor_name: str,
+    object_type: str,
+    settings,
+    project=None,
+    context=api_keys.CONTEXT_GUI,
+    object_name=None,
 ) -> dict:
-    """Checks the settings to create an object with, against what the vendor offers too.
+    """Checks the settings to create an object with - or to change one with - against what the vendor offers too.
 
     See ``Vendor.validate_settings``. A setting that is not valid is
     reported, not raised.
     """
     return _with_vendor(
-        vendor_name, project, context, lambda v: v.validate_settings(object_type, settings)
+        vendor_name, project, context, lambda v: v.validate_settings(object_type, settings, object_name)
     )
 
 
@@ -465,6 +471,71 @@ def create_object(
         "create_object",
         f"Create {object_type} '{name}' on {vendor.display_name}",
         owner, vendor, project, object_type, name, work,
+    )
+
+
+def update_object(
+    vendor_name: str,
+    object_type: str,
+    object_name: str,
+    settings,
+    project=None,
+    context=api_keys.CONTEXT_GUI,
+    owner=None,
+) -> dict:
+    """Starts a task changing one object, by name or id, which ends once it is ready again.
+
+    The settings are checked at once, as far as the vendor's rules need no
+    request (``Vendor.check_update_settings``): only those that change,
+    each one the vendor can change.
+
+    Args:
+        vendor_name (str): The vendor.
+        object_type (str): The standardized object type.
+        object_name (str): The object's name or id.
+        settings (dict): The settings to change, with their new values.
+        project (str): The project; None for the default one.
+        context (str): Whose API keys to use.
+        owner: Who starts the task, as the task manager compares owners;
+            None for the shell's own tasks.
+
+    Returns:
+        dict: ``task_id`` and ``status``. The task's result is the object,
+        changed - ready to use, or stopped where it was.
+    """
+    if object_name in (None, ""):
+        raise DbaError("object_name is empty.")
+    object_type = types.check_object_type(object_type)
+    vendor = _open_for("update", vendor_name, object_type, project, context)
+    try:
+        vendor.check_update_settings(object_type, settings)
+    except DbaError:
+        vendor.close()
+        raise
+    describe = f"The {object_type} '{object_name}'"
+
+    def work(task, claim):
+        task.stage_started("Updating")
+        found = vendor.find_object(object_type, object_name)
+        claim(found["name"], found["id"], *([settings["name"]] if settings.get("name") else []))
+        updated = vendor.update_found(object_type, found, settings)
+        task.message(f"{vendor.display_name} accepted the change of {describe[4:]}.")
+        task.stage_finished("Updating")
+
+        task.stage_started("Waiting until it is ready")
+        ready = _wait(
+            task, vendor, describe,
+            lambda: vendor.current_status(object_type, updated),
+            lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
+            UPDATE_TIMEOUT,
+        )
+        task.stage_finished("Waiting until it is ready")
+        return ready
+
+    return _start_task(
+        "update_object",
+        f"Update {object_type} '{object_name}' on {vendor.display_name}",
+        owner, vendor, project, object_type, object_name, work,
     )
 
 

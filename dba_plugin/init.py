@@ -64,6 +64,12 @@ class dba:
         class vendor:
             """Creates an object at a vendor."""
 
+    class update:
+        """Updates vendor objects."""
+
+        class vendor:
+            """Updates an object at a vendor."""
+
     class delete:
         """Deletes vendor objects."""
 

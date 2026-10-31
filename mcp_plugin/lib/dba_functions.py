@@ -146,19 +146,27 @@ def register_dba_tools(server, function_groups=()) -> None:
 
     @tool(name="dba.validate_vendor_object_settings")
     def validate_vendor_object_settings(
-        vendor_name: str, object_type: str, settings: dict, project: Optional[str] = None
+        vendor_name: str,
+        object_type: str,
+        settings: dict,
+        project: Optional[str] = None,
+        object_name: Optional[str] = None,
     ) -> dict:
-        """Checks the settings to create an object with, without creating anything.
+        """Checks the settings to create an object with, or to change one with, without changing anything.
 
-        What creating an object checks before its task starts, and whether the
-        sizes, locations, images and versions named are offered together
-        and the objects named are deployed.
+        What creating - or updating - an object checks before its task
+        starts, and whether the sizes, locations, images and versions named
+        are offered together and the objects named are deployed.
 
         Args:
             vendor_name: The vendor.
             object_type: The standardized object type.
-            settings: The settings, as dba.create_vendor_object takes them.
-            project: The project to create it in.
+            settings: The settings, as dba.create_vendor_object takes them;
+                with object_name, only those to change.
+            project: The project to create it in, or that the object is in.
+            object_name: The name or id of the object to change, to check
+                settings to update it with; omitted to check settings to
+                create one with.
 
         Returns:
             valid, errors and warnings: each problem a message and the keys
@@ -166,7 +174,7 @@ def register_dba_tools(server, function_groups=()) -> None:
         """
         return _run(
             lambda: operations.validate_settings(
-                vendor_name, object_type, settings, project, context
+                vendor_name, object_type, settings, project, context, object_name
             )
         )
 
@@ -264,6 +272,38 @@ def register_dba_tools(server, function_groups=()) -> None:
         return _run(
             lambda: operations.create_object(
                 vendor_name, object_type, settings, project, context, owner
+            )
+        )
+
+    @tool(name="dba.update_vendor_object")
+    def update_vendor_object(
+        ctx: Context,
+        vendor_name: str,
+        object_type: str,
+        object_name: str,
+        settings: dict,
+        project: Optional[str] = None,
+    ) -> dict:
+        """Starts changing an object, such as a VM, at a vendor, as a background task.
+
+        Args:
+            vendor_name: The vendor.
+            object_type: The standardized object type.
+            object_name: The object's name or id.
+            settings: Only the settings to change, with their new values; each
+                one dba.get_vendor_object_settings_info marks is_updatable.
+                labels replace the object's labels.
+            project: The project it belongs to.
+
+        Returns:
+            The task_id and status of the task. Follow it with task.get: it
+            ends once the object is ready again, with the object as its
+            result.
+        """
+        owner = tasks.owner(general.get_client_identity(ctx))
+        return _run(
+            lambda: operations.update_object(
+                vendor_name, object_type, object_name, settings, project, context, owner
             )
         )
 

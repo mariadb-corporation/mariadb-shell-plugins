@@ -27,6 +27,10 @@ implements, per object type it supports, the methods named after it:
   versions and prices the vendor offers. Returns a dict of lists.
 * ``_create_<type>(settings)`` - creates one object and returns it, made
   with :func:`make_object`.
+* ``_update_<type>(obj, settings)`` - changes the object
+  :meth:`Vendor.find_object` found, with only the settings that change -
+  each one whose field ``is_updatable`` - and returns it, made with
+  :func:`make_object`, as the vendor answers right after the change.
 * ``_delete_<type>(obj)`` - deletes the object :meth:`Vendor.find_object`
   found, and returns a dict describing what the vendor did (an action id,
   a status), or None. Deleting a VM deletes its system disk only: volumes
@@ -443,6 +447,10 @@ def applying_choices(fields: dict, key: str, settings: dict) -> list:
     return choices
 
 
+# What can be done with an object type, in the order objectSupport lists it.
+OPERATIONS = ("info", "list", "status", "create", "update", "delete")
+
+
 class ObjectNotFound(DbaError):
     """There is no deployed object of the name or id."""
 
@@ -537,14 +545,13 @@ class Vendor:
 
         Returns:
             list: One dict per type: ``object_type``, ``description``,
-            ``feature_set`` and ``operations`` (from info, list, status,
-            create, delete).
+            ``feature_set`` and ``operations`` (from :data:`OPERATIONS`).
         """
         support = []
         for object_type in cls.object_types():
             operations = [
                 operation
-                for operation in ("info", "list", "status", "create", "delete")
+                for operation in OPERATIONS
                 if operation == "status"
                 or callable(getattr(cls, f"_{operation}_{object_type}", None))
             ]
@@ -580,7 +587,7 @@ class Vendor:
         """The method implementing an operation for a type, or a refusal naming why not.
 
         Args:
-            operation (str): info, list, status, create or delete.
+            operation (str): One of :data:`OPERATIONS`.
             object_type (str): The standardized object type.
 
         Raises:
@@ -595,7 +602,8 @@ class Vendor:
         Name, the standardized settings the vendor supports, its own, then
         labels and vendor_settings - unless ``settings_order`` puts some
         first. Each field is a :func:`settings_fields.field` with ``key``,
-        ``position`` (from 1), ``required``, ``is_updatable``, ``advanced``,
+        ``position`` (from 1), ``required``, ``is_updatable`` (never where
+        the vendor does not update the type), ``advanced``,
         ``vendor_specific`` and ``group``; static choices as dicts.
 
         Returns:
@@ -620,6 +628,7 @@ class Vendor:
         ordered.update(own)
         ordered["labels"] = sf.COMMON_FIELDS["labels"]
         ordered["vendor_settings"] = sf.COMMON_FIELDS["vendor_settings"]
+        updates = callable(getattr(cls, f"_update_{object_type}", None))
         first = [key for key in cls.settings_order.get(object_type, ()) if key in ordered]
         keys = first + [key for key in ordered if key not in first]
 
@@ -627,6 +636,7 @@ class Vendor:
         for position, key in enumerate(keys, 1):
             details = copy.deepcopy({**sf.DEFAULTS, "group": "general", **ordered[key], **changes.get(key, {})})
             details["required"] = key in required or bool(details["required"])
+            details["is_updatable"] = updates and bool(details["is_updatable"])
             for described in [details, *(details.get("item_fields") or {}).values()]:
                 if described.get("choices"):
                     described["choices"] = [_choice(choice) for choice in described["choices"]]
@@ -702,6 +712,83 @@ class Vendor:
                 the first problem found.
         """
         settings, errors = self.settings_problems(object_type, settings)
+        if errors:
+            raise SettingError(**errors[0])
+        return settings
+
+    def update_problems(self, object_type: str, settings, fields: Optional[dict] = None) -> tuple:
+        """What is wrong with the settings to change an object with, as far as is known without the vendor's API.
+
+        Only the settings that change are given, each one whose field
+        ``is_updatable``. Each value is checked by its field and typed as
+        it says; labels replace the object's labels, None for none. The
+        vendor's own settings are moved into ``vendor_settings`` at their
+        ``vendor_key``. Then - when that found nothing -
+        ``_check_update_<type>(settings)``, where the vendor has more rules.
+
+        Returns:
+            tuple: The settings, as :meth:`check_update_settings` returns
+            them, or None if they are no dict or empty; and the problems,
+            each a :func:`setting_error`.
+        """
+        object_type = types.check_object_type(object_type)
+        fields = fields or self.fields(object_type)
+        if not isinstance(settings, dict):
+            return None, [setting_error("settings must be a dict.")]
+        if not settings:
+            return None, [setting_error("Name the settings to change.")]
+
+        errors = []
+        updatable = [key for key, details in fields.items() if details["is_updatable"]]
+        fixed = sorted(set(settings) - set(updatable))
+        if fixed:
+            errors.append(
+                setting_error(
+                    f"{self.display_name} cannot change {', '.join(fixed)} of {object_type} once created. "
+                    f"It can change: {', '.join(updatable) or 'nothing'}.",
+                    fixed,
+                )
+            )
+
+        checked = {}
+        for key in [key for key in settings if key not in fixed]:
+            details, value = fields[key], settings[key]
+            if value is None and details["type"] == sf.DICT:
+                value = {}
+            if value in (None, "", []) and details["required"]:
+                errors.append(setting_error(f"The setting {key} cannot be emptied.", key))
+                continue
+            errors.extend(setting_error(message, key) for message in sf.field_errors(key, details, value))
+            checked[key] = sf.converted(details, value)
+
+        own = {key: checked.pop(key) for key in list(checked) if fields[key]["vendor_specific"]}
+        if own:
+            vendor_settings = dict(checked.get("vendor_settings") or {})
+            for key, value in own.items():
+                _put(vendor_settings, fields[key]["vendor_key"], value)
+            checked["vendor_settings"] = vendor_settings
+
+        more = getattr(self, f"_check_update_{object_type}", None)
+        if not errors and callable(more):
+            try:
+                more(checked)
+            except SettingError as e:
+                errors.append(e.as_dict())
+            except DbaError as e:
+                errors.append(setting_error(str(e)))
+        return checked, errors
+
+    def check_update_settings(self, object_type: str, settings) -> dict:
+        """Checks the settings to change an object with as far as it can without the vendor's API.
+
+        See :meth:`update_problems`. Called before an update task starts,
+        so that a mistake fails the call, and by :meth:`update_found`.
+
+        Raises:
+            SettingError: A setting cannot be changed or is not valid; the
+                first problem found.
+        """
+        settings, errors = self.update_problems(object_type, settings)
         if errors:
             raise SettingError(**errors[0])
         return settings
@@ -787,8 +874,8 @@ class Vendor:
             "settings": fields,
         }
 
-    def validate_settings(self, object_type: str, settings) -> dict:
-        """Checks the settings to create an object with, against what the vendor offers too.
+    def validate_settings(self, object_type: str, settings, object_name: Optional[str] = None) -> dict:
+        """Checks the settings to create an object with, or to change one with, against what the vendor offers too.
 
         What :meth:`settings_problems` finds, and - when that is nothing -
         each value with choices against them: a size, location or version
@@ -799,25 +886,41 @@ class Vendor:
         only a warning where listing the project may not show it, at a
         vendor without projects of its own.
 
+        With ``object_name``, the settings are those to change that object
+        with (:meth:`update_problems`), and its location is what the choices
+        that depend on one are filtered by. An object that is not deployed
+        is an error.
+
         Returns:
             dict: ``valid``, ``errors`` and ``warnings``, each problem a
             :func:`setting_error`.
 
         Raises:
-            DbaError: The vendor does not create objects of the type, or what it offers
-                could not be asked for.
+            DbaError: The vendor does not create - or update - objects of the
+                type, or what it offers could not be asked for.
         """
         object_type = types.check_object_type(object_type)
-        self.require("create", object_type)
+        self.require("create" if object_name is None else "update", object_type)
         fields = self.fields(object_type)
-        checked, errors = self.settings_problems(object_type, settings, fields)
+        current = {}
+        if object_name is None:
+            checked, errors = self.settings_problems(object_type, settings, fields)
+        else:
+            checked, errors = self.update_problems(object_type, settings, fields)
+            try:
+                current = {"location": self.find_object(object_type, object_name).get("location")}
+            except ObjectNotFound as e:
+                errors.insert(0, setting_error(str(e)))
         warnings = []
         if checked is not None and not errors:
-            given = {key: value for key, value in settings.items() if value not in (None, "", [])}
+            given = {
+                **{key: value for key, value in current.items() if key in fields and value},
+                **{key: value for key, value in settings.items() if value not in (None, "", [])},
+            }
             offered = {
                 key: details
                 for key, details in fields.items()
-                if key in given and (details.get("choices_from") or details.get("choices"))
+                if key in settings and key in given and (details.get("choices_from") or details.get("choices"))
             }
             self._fill_choices(object_type, offered)
             for key in [key for key, details in offered.items() if details.get("choices") is not None]:
@@ -861,8 +964,8 @@ class Vendor:
             else:
                 warnings.append(
                     setting_error(
-                        f"{self.display_name} does not list the {key} '{value}'; creating the object fails "
-                        "if the vendor does not take it.",
+                        f"{self.display_name} does not list the {key} '{value}'; the object cannot be "
+                        "created or changed with it if the vendor does not take it.",
                         key,
                     )
                 )
@@ -980,6 +1083,23 @@ class Vendor:
     def delete_found(self, object_type: str, obj: dict) -> dict:
         """Deletes an object :meth:`find_object` found. See :meth:`delete_object`."""
         return {"deleted": obj, "result": self._operation("delete", object_type)(obj)}
+
+    def update_object(self, object_type: str, object_name: str, settings) -> dict:
+        """Changes one object, by its name or id. See ``_update_<type>``."""
+        self._operation("update", object_type)
+        return self.update_found(object_type, self.find_object(object_type, object_name), settings)
+
+    def update_found(self, object_type: str, obj: dict, settings) -> dict:
+        """Changes an object :meth:`find_object` found. See :meth:`update_object`.
+
+        For a vendor without projects of its own, new labels keep the
+        project's, so that listing the project still finds the object.
+        """
+        update = self._operation("update", object_type)
+        settings = self.check_update_settings(object_type, settings)
+        if "labels" in settings and self.project and not self.native_projects:
+            settings["labels"] = {**settings["labels"], PROJECT_LABEL: self.project}
+        return update(obj, settings)
 
     def current_status(self, object_type: str, obj: dict) -> dict:
         """The current status of an object found or created before, by its id.

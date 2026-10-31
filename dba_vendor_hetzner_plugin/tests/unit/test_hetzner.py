@@ -92,8 +92,8 @@ def test_the_vendor_is_registered_with_its_object_support():
     ]
 
     support = {entry["object_type"]: entry["operations"] for entry in Hetzner.object_support()}
-    assert support["vms"] == ["info", "list", "status", "create", "delete"]
-    assert support["ssh_keys"] == ["list", "status", "create", "delete"]
+    assert support["vms"] == ["info", "list", "status", "create", "update", "delete"]
+    assert support["ssh_keys"] == ["list", "status", "create", "update", "delete"]
     assert "object_storage" not in support
     assert "managed_mariadb_services" not in support
 
@@ -374,7 +374,7 @@ def test_vm_settings_are_validated_against_what_hetzner_offers(vendor, mock_api)
         {"settings": ["size"], "message": "Hetzner Cloud does not offer the size 'cx99'. Choose one of: cx22."}
     ]
     assert result["warnings"] == [
-        {"settings": ["image"], "message": "Hetzner Cloud does not list the image 'my-snapshot'; creating the object fails if the vendor does not take it."}
+        {"settings": ["image"], "message": "Hetzner Cloud does not list the image 'my-snapshot'; the object cannot be created or changed with it if the vendor does not take it."}
     ]
 
 
@@ -975,7 +975,7 @@ def test_the_shell_object_reports_the_vendor():
     hetzner_object = globals.dba.vendor.hetzner
     assert list(hetzner_object.feature_set()) == ["CoreCompute"]
     support = {entry["object_type"]: list(entry["operations"]) for entry in hetzner_object.object_support()}
-    assert support["volumes"] == ["info", "list", "status", "create", "delete"]
+    assert support["volumes"] == ["info", "list", "status", "create", "update", "delete"]
 
     listed = {entry["name"]: entry for entry in globals.dba.list.vendors()}
     assert list(listed["hetzner"]["feature_sets"]) == ["CoreCompute"]
@@ -1028,3 +1028,52 @@ def test_live_read_only(live_api_key):
         assert all(choice["details"]["locations"] for choice in settings["size"]["choices"])
     finally:
         vendor.close()
+
+
+# --- updates ------------------------------------------------------------------
+
+
+def test_a_vm_is_renamed_and_relabelled_with_one_put(vendor, mock_api):
+    mock_api.add("GET", "/v1/servers", json=_page("servers", [_server(1, "db1")]))
+    mock_api.add("PUT", "/v1/servers/1", json={"server": _server(1, "db1b", {"env": "dev"})})
+    updated = vendor.update_object("vms", "db1", {"name": "db1b", "labels": {"env": "dev"}})
+    assert (updated["name"], updated["labels"]) == ("db1b", {"env": "dev"})
+    [request] = mock_api.requests_to("PUT", "/v1/servers/1")
+    assert request["json"] == {"name": "db1b", "labels": {"env": "dev"}}
+
+
+def test_no_labels_clear_them(vendor, mock_api):
+    mock_api.add("GET", "/v1/ssh_keys", json=_page("ssh_keys", [{"id": 4, "name": "me", "labels": {"a": "b"}}]))
+    mock_api.add("PUT", "/v1/ssh_keys/4", json={"ssh_key": {"id": 4, "name": "me", "labels": {}}})
+    vendor.update_object("ssh_keys", "me", {"labels": None})
+    assert mock_api.requests_to("PUT", "/v1/ssh_keys/4")[0]["json"] == {"labels": {}}
+
+
+def test_a_volume_grows_with_a_resize_action(vendor, mock_api):
+    mock_api.add("GET", "/v1/volumes", json=_page("volumes", [_volume(12, "data2")]))
+    mock_api.add("POST", "/v1/volumes/12/actions/resize", status=201,
+                 json={"action": {"id": 70, "command": "resize_volume", "status": "running"}})
+    mock_api.add("GET", "/v1/actions/70", json={"action": {"id": 70, "command": "resize_volume", "status": "success"}})
+    mock_api.add("GET", "/v1/volumes/12", json={"volume": _volume(12, "data2", size=80)})
+    updated = vendor.update_object("volumes", "data2", {"size_gb": "80"})
+    assert mock_api.requests_to("POST", "/v1/volumes/12/actions/resize")[0]["json"] == {"size": 80}
+    assert updated["properties"]["size_gb"] == 80
+    assert updated["properties"]["actions"] == [{"id": 70, "command": "resize_volume", "status": "success"}]
+    assert mock_api.requests_to("PUT", "/v1/volumes/12") == []
+
+
+def test_a_volume_does_not_shrink(vendor, mock_api):
+    mock_api.add("GET", "/v1/volumes", json=_page("volumes", [_volume(12, "data2")]))
+    with pytest.raises(DbaError, match="only grows volumes: size_gb must be more than 50"):
+        vendor.update_object("volumes", "data2", {"size_gb": 40})
+
+
+def test_a_zones_ttl_changes_with_an_action_and_its_name_does_not(vendor, mock_api):
+    mock_api.add("GET", "/v1/zones", json=_page("zones", [_zone(50, "example.com")]))
+    mock_api.add("POST", "/v1/zones/50/actions/change_ttl", status=201,
+                 json={"action": {"id": 71, "command": "change_ttl", "status": "success"}})
+    mock_api.add("GET", "/v1/zones/50", json={"zone": _zone(50, "example.com")})
+    vendor.update_object("dns", "example.com", {"ttl": 300})
+    assert mock_api.requests_to("POST", "/v1/zones/50/actions/change_ttl")[0]["json"] == {"ttl": 300}
+    with pytest.raises(SettingError, match="cannot change name of dns once created"):
+        vendor.check_update_settings("dns", {"name": "example.org"})

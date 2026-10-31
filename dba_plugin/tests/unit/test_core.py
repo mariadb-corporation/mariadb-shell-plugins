@@ -42,10 +42,14 @@ class StubVendor(vendor_lib.Vendor):
     objects = []
     deployed = []
     deleted = []
+    updated = []
     keys = []
     hold = False
     flaky = 0
     delete_fails = False
+    settings_fields = {
+        "vms": {key: {"is_updatable": True} for key in ("name", "labels", "size")},
+    }
 
     def __init__(self, api_key=None, project=None):
         super().__init__(api_key, project)
@@ -95,6 +99,15 @@ class StubVendor(vendor_lib.Vendor):
             StubVendor.objects[:] = [o for o in StubVendor.objects if o["id"] != obj["id"]]
         return {"action": "delete"}
 
+    def _update_vms(self, obj, settings):
+        # a new size restarts the VM, as resizing does
+        stored = next(o for o in StubVendor.objects if o["id"] == obj["id"])
+        stored.update({key: settings[key] for key in ("name", "labels") if key in settings})
+        if "size" in settings:
+            stored["status"] = "starting"
+        StubVendor.updated.append(settings)
+        return dict(stored)
+
     def _list_volumes(self):
         return []
 
@@ -118,7 +131,7 @@ def stub(monkeypatch, clean_api_keys):
         vendor_lib.make_object("vms", 3, "twin", "running"),
         vendor_lib.make_object("vms", 4, "twin", "running"),
     ]
-    StubVendor.deployed, StubVendor.deleted, StubVendor.keys = [], [], []
+    StubVendor.deployed, StubVendor.deleted, StubVendor.updated, StubVendor.keys = [], [], [], []
     StubVendor.hold, StubVendor.flaky, StubVendor.delete_fails = False, 0, False
     monkeypatch.setattr(operations, "POLL_INTERVAL", 0.01)
     task_manager.clear()
@@ -173,7 +186,7 @@ def test_settings_are_checked():
 def test_object_support_follows_the_methods_a_vendor_has():
     assert StubVendor.object_types() == ["vms", "volumes"]
     vms, volumes = StubVendor.object_support()
-    assert vms["operations"] == ["info", "list", "status", "create", "delete"]
+    assert vms["operations"] == ["info", "list", "status", "create", "update", "delete"]
     assert volumes["operations"] == ["list", "status"]
     assert vms["feature_set"] == object_types.CORE_COMPUTE
 
@@ -350,9 +363,34 @@ def test_a_deletion_is_a_task_that_ends_once_the_object_is_gone(stub):
     assert StubVendor.deleted == ["1"]
 
 
+def test_an_update_is_a_task_that_ends_once_the_object_is_ready_again(stub):
+    operations.set_api_key("stubcloud", "k")
+    ended = _ended(operations.update_object("stubcloud", "vms", "db2", {"size": "big", "labels": None}))
+    assert ended["status"] == task_manager.COMPLETED
+    assert ended["kind"] == "update_object"
+    assert ended["title"] == "Update vms 'db2' on Stub Cloud"
+    assert [stage["name"] for stage in ended["stages"]] == ["Updating", "Waiting until it is ready"]
+    assert ended["result"]["status"] == "running"
+    # only what changes is passed on; no labels are an empty dict
+    assert StubVendor.updated == [{"size": "big", "labels": {}}]
+
+
+def test_new_labels_keep_the_project_at_a_vendor_without_projects(stub):
+    operations.set_api_key("stubcloud", "k", "alpha")
+    _ended(operations.update_object("stubcloud", "vms", "db1", {"name": "db1b", "labels": {"env": "dev"}}, "alpha"))
+    assert StubVendor.updated == [{"name": "db1b", "labels": {"env": "dev", vendor_lib.PROJECT_LABEL: "alpha"}}]
+    assert operations.object_status("stubcloud", "vms", "db1b", "alpha")["labels"]["env"] == "dev"
+
+
 @pytest.mark.parametrize(
     "call, refusal",
     [
+        (lambda: operations.update_object("stubcloud", "vms", "db1", {}), "Name the settings to change"),
+        (lambda: operations.update_object("stubcloud", "vms", "db1", {"image": "x"}),
+         r"Stub Cloud cannot change image of vms once created\. It can change: name, size, labels\."),
+        (lambda: operations.update_object("stubcloud", "vms", "db1", {"name": ""}), "name cannot be emptied"),
+        (lambda: operations.update_object("stubcloud", "vms", "", {"size": "big"}), "object_name is empty"),
+        (lambda: operations.update_object("stubcloud", "volumes", "v", {"name": "w"}), "does not support 'update' for volumes"),
         (lambda: operations.create_object("stubcloud", "vms", {"size": "small"}), "Missing settings for vms: name"),
         (lambda: operations.create_object("stubcloud", "vms", {"name": "db9", "color": "red"}), "Unsupported settings for vms: color"),
         (lambda: operations.create_object("stubcloud", "vms", {"name": "db9", "size": "huge"}), "no size 'huge'"),
@@ -760,7 +798,7 @@ def test_settings_are_validated_against_what_the_vendor_offers(dialog):
         {"settings": ["size"], "message": "Dialog Cloud does not offer the size 'tiny'. Choose one of: small, big."},
     ]
     assert validate({"name": "db", "size": "small", "image": "my-own"})["warnings"] == [
-        {"settings": ["image"], "message": "Dialog Cloud does not list the image 'my-own'; creating the object fails if the vendor does not take it."}
+        {"settings": ["image"], "message": "Dialog Cloud does not list the image 'my-own'; the object cannot be created or changed with it if the vendor does not take it."}
     ]
     # a network not listed is an error, but a warning in a project a vendor
     # without projects may not have labelled it with
@@ -787,6 +825,32 @@ def test_the_stub_vendors_own_rule_is_a_validation_error(dialog):
     assert result == {"valid": False, "errors": [{"settings": [], "message": "Stub Cloud has no size 'huge'."}], "warnings": []}
 
 
+def test_settings_to_change_an_object_with_are_validated_with_its_location(dialog):
+    StubVendor.objects.append(vendor_lib.make_object("vms", 7, "db7", "running", "z2"))
+
+    def validate(name, settings):
+        return operations.validate_settings("dialogcloud", "vms", settings, object_name=name)
+
+    assert validate("db7", {"size": "big"}) == {"valid": True, "errors": [], "warnings": []}
+    assert validate("db7", {"size": "small"})["errors"] == [
+        {"settings": ["size", "location"], "message": "Dialog Cloud does not offer the size 'small' with location 'z2'."}
+    ]
+    assert validate("db7", {"location": "z1"})["errors"] == [
+        {"settings": ["location"], "message": "Dialog Cloud cannot change location of vms once created. It can change: size."}
+    ]
+    assert validate("db9", {"size": "big"})["errors"] == [
+        {"settings": [], "message": "There is no vms named 'db9' at Dialog Cloud."}
+    ]
+
+
+def test_nothing_is_updatable_where_the_vendor_does_not_update(dialog):
+    class NoUpdates(DialogVendor):
+        _update_vms = None
+
+    assert DialogVendor.fields("vms")["size"]["is_updatable"]
+    assert not NoUpdates.fields("vms")["size"]["is_updatable"]
+
+
 def test_the_shell_functions_describe_and_validate_settings(dialog):
     dba = mysqlsh.globals.dba
     info = dba.get.vendor.object_settings_info("dialogcloud", "vms")
@@ -798,3 +862,11 @@ def test_the_shell_functions_describe_and_validate_settings(dialog):
     assert result["valid"] is True
     with pytest.raises(RuntimeError, match="Unknown vendor 'nocloud'"):
         dba.validate.vendor.object_settings("nocloud", "vms", {})
+    changed = dba.validate.vendor.object_settings("dialogcloud", "vms", {"size": "big"}, None, "db1")
+    assert changed["valid"] is True
+
+
+def test_the_shell_function_updates_an_object(stub):
+    operations.set_api_key("stubcloud", "k")
+    started = mysqlsh.globals.dba.update.vendor.object("stubcloud", "vms", "db2", {"size": "big"})
+    assert _ended(started)["status"] == task_manager.COMPLETED

@@ -11,7 +11,7 @@ Feature set: `ManagedService`.
 
 | Object type                | Operations                                 |
 | -------------------------- | ------------------------------------------ |
-| `managed_mariadb_services` | info, list, status, create, delete         |
+| `managed_mariadb_services` | info, list, status, create, update, delete |
 
 - **info** reports the server sizes (CPU, memory, and the providers,
   topologies and architectures each is offered for), versions, topologies,
@@ -51,6 +51,12 @@ dba.vendor.mariadb_cloud.create_object("managed_mariadb_services", {
     "topology": "es-single", "size": "sky-2x8", "storage_gb": 100,
     "allowed_ips": ["203.0.113.7"]})
 ```
+
+## Updates
+
+A running service's `size`, `nodes`, `storage_gb` and `allowed_ips` can change. Only one
+of size, nodes and storage changes at a time: the service scales (`pending_scale`) and
+the task ends once it is `ready` again. New `allowed_ips` replace the allow list.
 
 ## Projects
 

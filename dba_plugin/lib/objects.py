@@ -47,7 +47,7 @@ VENDOR_DOC = """The cloud vendor plugins.
     Each installed vendor plugin adds an object here, named after the vendor,
     with the same functions: featureSet, objectSupport, objectInfo,
     objectSettingsInfo, validateObjectSettings, listObjects, objectStatus,
-    createObject and deleteObject.
+    createObject, updateObject and deleteObject.
     """
 
 
@@ -134,10 +134,11 @@ def register_vendor_plugin(vendor_cls) -> None:
     * objectSupport() - the object types it supports, and how.
     * objectInfo(objectType[, project]) - what of a type can be created.
     * objectSettingsInfo(objectType[, project]) - its settings, for a dialog.
-    * validateObjectSettings(objectType, settings[, project]) - checks them.
+    * validateObjectSettings(objectType, settings[, project, objectName]) - checks them.
     * listObjects(objectType[, tags, project]) - the deployed objects.
     * objectStatus(objectType, objectName[, project]) - one object's status.
     * createObject(objectType, settings[, project]) - starts a task creating one.
+    * updateObject(objectType, objectName, settings[, project]) - starts a task changing one.
     * deleteObject(objectType, objectName[, project]) - starts a task deleting one.
 
     Args:
@@ -225,17 +226,26 @@ def register_vendor_plugin(vendor_cls) -> None:
             A dict: vendor, display_name, object_type, groups and settings.
         """
 
-    def validate_object_settings(object_type: str, settings: dict, project: str = None) -> dict:
+    def validate_object_settings(
+        object_type: str, settings: dict, project: str = None, object_name: str = None
+    ) -> dict:
         return shell_call(
-            lambda: operations.validate_settings(name, object_type, plain(settings), project)
+            lambda: operations.validate_settings(
+                name, object_type, plain(settings), project, object_name=object_name
+            )
         )
 
     validate_object_settings.__doc__ = f"""Checks the settings to create a {display} object with, before it is created.
 
+        With an object name, the settings to change that object with
+        instead, as updateObject takes them.
+
         Args:
             object_type (str): The standardized object type, e.g. vms.
-            settings (dict): The settings, as createObject takes them.
-            project (str): The project to create it in.
+            settings (dict): The settings, as createObject or updateObject
+                takes them.
+            project (str): The project to create it in, or that it is in.
+            object_name (str): The name or id of the object to change.
 
         Returns:
             A dict: valid, errors and warnings, each problem with a message
@@ -296,6 +306,28 @@ def register_vendor_plugin(vendor_cls) -> None:
             The task_id and status of the task.
         """
 
+    def update_object(object_type: str, object_name: str, settings: dict, project: str = None) -> dict:
+        return shell_call(
+            lambda: operations.update_object(name, object_type, object_name, plain(settings), project)
+        )
+
+    update_object.__doc__ = f"""Starts changing one {display} object as a background task.
+
+        Takes only the settings to change; objectSettingsInfo() marks those
+        that can change is_updatable. Returns the id of a task at once;
+        follow it with task.get(taskId). It ends once the object is ready
+        again, with the object as its result.
+
+        Args:
+            object_type (str): The standardized object type, e.g. vms.
+            object_name (str): The object's name or id.
+            settings (dict): The settings to change.
+            project (str): The project it belongs to.
+
+        Returns:
+            The task_id and status of the task.
+        """
+
     def delete_object(object_type: str, object_name: str, project: str = None) -> dict:
         return shell_call(
             lambda: operations.delete_object(name, object_type, object_name, project)
@@ -324,6 +356,7 @@ def register_vendor_plugin(vendor_cls) -> None:
         ("listObjects", list_objects),
         ("objectStatus", object_status),
         ("createObject", create_object),
+        ("updateObject", update_object),
         ("deleteObject", delete_object),
     ):
         plugin_function(f"{prefix}.{function_name}", shell=True, cli=False)(function)
