@@ -81,7 +81,7 @@ def test_the_vendor_describes_itself():
             "object_type": TYPE,
             "description": types.OBJECT_TYPES[TYPE]["description"],
             "feature_set": types.MANAGED_SERVICE,
-            "operations": ["info", "list", "status", "create", "delete"],
+            "operations": ["info", "list", "status", "create", "update", "delete"],
         }
     ]
 
@@ -511,3 +511,30 @@ def test_live_listing_and_info(live_api_key):
         assert info["providers"] and info["locations"] and info["topologies"]
     finally:
         vendor.close()
+
+
+# --- updates ------------------------------------------------------------------
+
+
+def test_a_service_is_resized_and_its_allow_list_replaced(mock_api, cloud):
+    mock_api.add("GET", SERVICES, json=[_service("dbpgf1", "orders")])
+    mock_api.add("PUT", f"{SERVICES}/dbpgf1/security/allowlist", json=[])
+    mock_api.add("POST", f"{SERVICES}/dbpgf1/size", status=202, json={})
+    mock_api.add("GET", f"{SERVICES}/dbpgf1", json=_service("dbpgf1", "orders", status="pending_scale", size="sky-4x16"))
+    updated = cloud.update_object(TYPE, "orders", {"size": "sky-4x16", "allowed_ips": ["198.51.100.1", {"ip": "10.0.0.0/8", "comment": "vpn"}]})
+    assert mock_api.requests_to("POST", f"{SERVICES}/dbpgf1/size")[0]["json"] == {"size": "sky-4x16"}
+    assert mock_api.requests_to("PUT", f"{SERVICES}/dbpgf1/security/allowlist")[0]["json"] == [
+        {"ip": "198.51.100.1/32"}, {"ip": "10.0.0.0/8", "comment": "vpn"},
+    ]
+    assert updated["status"] == "pending_scale"
+    assert v.state_of(updated["status"]) == v.STATE_PENDING
+
+
+def test_storage_and_nodes_change_one_at_a_time(mock_api, cloud):
+    mock_api.add("GET", SERVICES, json=[_service("dbpgf1", "orders")])
+    mock_api.add("PATCH", f"{SERVICES}/dbpgf1/storage", status=202, json={})
+    mock_api.add("GET", f"{SERVICES}/dbpgf1", json=_service("dbpgf1", "orders"))
+    cloud.update_object(TYPE, "orders", {"storage_gb": "200"})
+    assert mock_api.requests_to("PATCH", f"{SERVICES}/dbpgf1/storage")[0]["json"] == {"size": 200}
+    with pytest.raises(DbaError, match="changes one of size, nodes and storage_gb at a time"):
+        cloud.check_update_settings(TYPE, {"nodes": 3, "storage_gb": 300})

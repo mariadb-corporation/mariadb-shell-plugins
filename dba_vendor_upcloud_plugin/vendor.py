@@ -549,6 +549,15 @@ class UpCloud(v.Vendor):
         created = (self.client.post("/server", json={"server": server}) or {}).get("server") or {}
         return self._server_details_object(created)
 
+    def _update_vms(self, obj: dict, settings) -> dict:
+        server = {}
+        if "name" in settings:
+            server["title"] = settings["name"]
+        if "labels" in settings:
+            server["labels"] = {"label": labels_to_api(settings["labels"])}
+        self.client.put(f"/server/{obj['id']}", json={"server": server})
+        return self._status_vms(obj)
+
     def _delete_vms(self, obj: dict) -> dict:
         uuid = obj["id"]
         stop_sent = False
@@ -654,6 +663,23 @@ class UpCloud(v.Vendor):
             created["servers"] = {"server": [server["uuid"]]}
         return self._storage_object(created)
 
+    def _update_volumes(self, obj: dict, settings) -> dict:
+        storage = {}
+        if "name" in settings:
+            storage["title"] = settings["name"]
+        if "size_gb" in settings:
+            size = obj["properties"].get("size_gb")
+            if size is not None and settings["size_gb"] <= size:
+                raise SettingError(
+                    f"{self.display_name} only grows storages: size_gb must be more than {size}.", "size_gb"
+                )
+            # attached to a running server, UpCloud refuses it: stop the server first
+            storage["size"] = settings["size_gb"]
+        if "labels" in settings:
+            storage["labels"] = labels_to_api(settings["labels"])
+        updated = (self.client.put(f"/storage/{obj['id']}", json={"storage": storage}) or {}).get("storage")
+        return self._storage_object(updated) if updated else self._status_volumes(obj)
+
     def _delete_volumes(self, obj: dict) -> dict:
         storage = (self.client.get(f"/storage/{obj['id']}") or {}).get("storage") or {}
         servers = _wrapped(storage, "servers", "server")
@@ -717,6 +743,15 @@ class UpCloud(v.Vendor):
         network.update(settings["vendor_settings"])
         created = (self.client.post("/network", json={"network": network}) or {}).get("network") or {}
         return self._network_object(created)
+
+    def _update_networking(self, obj: dict, settings) -> dict:
+        network = {}
+        if "name" in settings:
+            network["name"] = settings["name"]
+        if "labels" in settings:
+            network["labels"] = labels_to_api(settings["labels"])
+        updated = (self.client.put(f"/network/{obj['id']}", json={"network": network}) or {}).get("network")
+        return self._network_object(updated) if updated else self._status_networking(obj)
 
     def _delete_networking(self, obj: dict) -> dict:
         self.client.delete(f"/network/{obj['id']}")
@@ -837,6 +872,12 @@ class UpCloud(v.Vendor):
         lb.update(settings["vendor_settings"])
         return self._load_balancer_object(self.client.post("/load-balancer", json=lb) or {})
 
+    def _update_load_balancers(self, obj: dict, settings) -> dict:
+        updated = self.client.patch(
+            f"/load-balancer/{obj['id']}", json={"labels": labels_to_api(settings["labels"])}
+        )
+        return self._load_balancer_object(updated) if updated else self._status_load_balancers(obj)
+
     def _delete_load_balancers(self, obj: dict) -> dict:
         self.client.delete(f"/load-balancer/{obj['id']}")
         return {"status": "deleted"}
@@ -890,6 +931,12 @@ class UpCloud(v.Vendor):
         }
         service.update(settings["vendor_settings"])
         return self._object_storage_object(self.client.post("/object-storage-2", json=service) or {})
+
+    def _update_object_storage(self, obj: dict, settings) -> dict:
+        updated = self.client.patch(
+            f"/object-storage-2/{obj['id']}", json={"labels": labels_to_api(settings["labels"])}
+        )
+        return self._object_storage_object(updated) if updated else self._status_object_storage(obj)
 
     def _delete_object_storage(self, obj: dict) -> dict:
         # Accepted, not done: the service is listed for a minute or more, and

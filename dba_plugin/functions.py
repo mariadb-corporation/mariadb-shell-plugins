@@ -129,7 +129,7 @@ def get_object_settings_info(vendor_name: str, object_type: str, project: str = 
 
 @plugin_function("dba.validate.vendor.objectSettings", shell=True, cli=True, web=True)
 def validate_object_settings(
-    vendor_name: str, object_type: str, settings: dict, project: str = None
+    vendor_name: str, object_type: str, settings: dict, project: str = None, object_name: str = None
 ) -> dict:
     """Checks the settings to create an object with, before it is created.
 
@@ -140,18 +140,25 @@ def validate_object_settings(
     offered, together, and that the objects named are deployed. Nothing is
     created.
 
+    With an object name, it checks the settings to change that object with
+    instead, as dba.update.vendor.object does.
+
     Args:
         vendor_name (str): The vendor.
         object_type (str): The standardized object type, e.g. vms.
-        settings (dict): The settings, as dba.create.vendor.object takes them.
-        project (str): The project to create it in.
+        settings (dict): The settings, as dba.create.vendor.object takes them,
+            or only those to change, as dba.update.vendor.object does.
+        project (str): The project to create it in, or that the object is in.
+        object_name (str): The name or id of the object to change.
 
     Returns:
         A dict: valid, errors and warnings. Each problem has a message and
         the keys of the settings it is about.
     """
     return shell_call(
-        lambda: operations.validate_settings(vendor_name, object_type, plain(settings), project)
+        lambda: operations.validate_settings(
+            vendor_name, object_type, plain(settings), project, object_name=object_name
+        )
     )
 
 
@@ -233,6 +240,42 @@ def create_object(
         lambda: task_answer(
             operations.create_object(vendor_name, object_type, plain(settings), project),
             "dba.create.vendor.object",
+        )
+    )
+
+
+@plugin_function("dba.update.vendor.object", shell=True, cli=True, web=True)
+def update_object(
+    vendor_name: str, object_type: str, object_name: str, settings: dict, project: str = None
+) -> dict:
+    """Starts changing a vendor object, such as a VM, as a background task.
+
+    Takes only the settings to change, with their new values. Which
+    settings can change is what dba.get.vendor.objectSettingsInfo() marks
+    is_updatable. New labels replace the object's labels.
+
+    This returns the id of a task at once. Follow it with task.get(taskId).
+    The task ends once the object is ready again, with the object as its
+    result.
+
+    On the command line, mariadb-shell -- dba update vendor object ...,
+    the call waits for the task instead and returns the object, or fails
+    with the task's error. Ctrl+C cancels the task.
+
+    Args:
+        vendor_name (str): The vendor.
+        object_type (str): The standardized object type, e.g. vms.
+        object_name (str): The object's name or id.
+        settings (dict): The settings to change.
+        project (str): The project it belongs to.
+
+    Returns:
+        The task_id and status of the task; on the command line, the object.
+    """
+    return shell_call(
+        lambda: task_answer(
+            operations.update_object(vendor_name, object_type, object_name, plain(settings), project),
+            "dba.update.vendor.object",
         )
     )
 

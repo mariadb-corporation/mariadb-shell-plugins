@@ -190,6 +190,17 @@ class MariadbCloud(v.Vendor):
         if not isinstance(settings["vendor_settings"].get("tags") or {}, dict):
             raise SettingError("vendor_settings tags must be a dict.", "vendor_settings")
 
+    @staticmethod
+    def _check_update_managed_mariadb_services(settings) -> None:
+        """A running service scales one way at a time, and refuses a change while it scales."""
+        scaling = [key for key in ("size", "nodes", "storage_gb") if key in settings]
+        if len(scaling) > 1:
+            raise SettingError(
+                "MariaDB Cloud changes one of size, nodes and storage_gb at a time: change "
+                f"{' and '.join(scaling)} one after the other, each once the service is ready again.",
+                scaling,
+            )
+
     def create_client(self):
         return rest_client.RestClient(
             self.display_name, API_URL, headers={"X-API-Key": self.api_key}
@@ -406,6 +417,18 @@ class MariadbCloud(v.Vendor):
         answer = self.client.delete(f"{PROVISIONING}/services/{obj['id']}")
         status = answer.get("status") if isinstance(answer, dict) else None
         return {"id": obj["id"], "status": status or "pending_delete"}
+
+    def _update_managed_mariadb_services(self, obj: dict, settings) -> dict:
+        service = f"{PROVISIONING}/services/{obj['id']}"
+        if "allowed_ips" in settings:
+            self.client.put(f"{service}/security/allowlist", json=_allow_list(settings["allowed_ips"]))
+        if "size" in settings:
+            self.client.post(f"{service}/size", json={"size": str(settings["size"])})
+        if "nodes" in settings:
+            self.client.post(f"{service}/nodes", json={"nodes": settings["nodes"]})
+        if "storage_gb" in settings:
+            self.client.patch(f"{service}/storage", json={"size": settings["storage_gb"]})
+        return self._status_managed_mariadb_services(obj)
 
     def _status_managed_mariadb_services(self, obj: dict) -> dict:
         return self._service(self.client.get(f"{PROVISIONING}/services/{obj['id']}"))

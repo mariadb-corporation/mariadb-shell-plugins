@@ -55,6 +55,7 @@ READ_TOOLS = {
 GUI_TOOLS = READ_TOOLS | {
     "dba.set_api_key",
     "dba.create_vendor_object",
+    "dba.update_vendor_object",
     "dba.delete_vendor_object",
 }
 
@@ -82,6 +83,7 @@ class StubVendor(vendor_lib.Vendor):
     opened_with = []
     deployed = []
     gone = []
+    settings_fields = {"vms": {"labels": {"is_updatable": True}}}
 
     def __init__(self, api_key=None, project=None):
         super().__init__(api_key, project)
@@ -101,6 +103,9 @@ class StubVendor(vendor_lib.Vendor):
         settings = vendor_lib.check_settings("vms", settings)
         StubVendor.deployed.append(settings)
         return vendor_lib.make_object("vms", 2, settings["name"], "starting")
+
+    def _update_vms(self, obj, settings):
+        return {**obj, "labels": settings["labels"]}
 
     def _delete_vms(self, obj):
         StubVendor.gone.append(obj["id"])
@@ -222,6 +227,11 @@ def test_a_refusal_is_a_tool_error(stub_vendor, gui_mode):
         tools["dba.get_vendor_object_status"]("nocloud", "vms", "db1")
     with pytest.raises(ToolError, match="Missing settings for vms: name"):
         tools["dba.create_vendor_object"](STDIO, "stubcloud", "vms", {})
+
+    with pytest.raises(ToolError, match="Stub Cloud cannot change name of vms once created"):
+        tools["dba.update_vendor_object"](STDIO, "stubcloud", "vms", "db1", {"name": "db9"})
+    updated = _ended(tools["dba.update_vendor_object"](STDIO, "stubcloud", "vms", "db1", {"labels": {"env": "dev"}}))
+    assert updated["kind"] == "update_object"
 
     deleted = _ended(tools["dba.delete_vendor_object"](STDIO, "stubcloud", "vms", "db1"))
     assert deleted["result"]["deleted"]["id"] == "1"

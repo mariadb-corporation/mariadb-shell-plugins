@@ -22,15 +22,15 @@ projects do not fall back on it.
 
 ## Object types
 
-| Object type      | Hetzner name  | Operations                          |
-| ---------------- | ------------- | ----------------------------------- |
-| `vms`            | server        | info, list, status, create, delete  |
-| `volumes`        | volume        | info, list, status, create, delete  |
-| `networking`     | network       | info, list, status, create, delete  |
-| `firewalls`      | firewall      | info, list, status, create, delete  |
-| `load_balancers` | load_balancer | info, list, status, create, delete  |
-| `dns`            | zone          | info, list, status, create, delete  |
-| `ssh_keys`       | ssh_key       | list, status, create, delete        |
+| Object type      | Hetzner name  | Operations                                  |
+| ---------------- | ------------- | ------------------------------------------- |
+| `vms`            | server        | info, list, status, create, update, delete  |
+| `volumes`        | volume        | info, list, status, create, update, delete  |
+| `networking`     | network       | info, list, status, create, update, delete  |
+| `firewalls`      | firewall      | info, list, status, create, update, delete  |
+| `load_balancers` | load_balancer | info, list, status, create, update, delete  |
+| `dns`            | zone          | info, list, status, create, update, delete  |
+| `ssh_keys`       | ssh_key       | list, status, create, update, delete        |
 
 Object storage is not supported because it is S3-only and not part of the
 Cloud API. Hetzner offers no managed MariaDB services.
@@ -66,6 +66,13 @@ action is returned in the object's properties.
 - `dns`: `ttl` and `records` (`{name, type, value, ttl}`) are optional.
   Records of the same name and type become one RRSet.
 - `ssh_keys`: `public_key` is required.
+
+## Updates
+
+Every type's `name` and `labels` can change, except a DNS zone's name. New labels
+replace the object's. A volume's `size_gb` only grows, also while attached; grow its
+filesystem yourself afterwards (`resize2fs`, `xfs_growfs`). A DNS zone's `ttl` changes
+for primary zones. The resize and TTL actions are waited for.
 
 ## Tests
 

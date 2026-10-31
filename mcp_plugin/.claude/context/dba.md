@@ -19,10 +19,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   `dba.get_vendor_object_info`, `dba.get_vendor_object_settings_info`,
   `dba.validate_vendor_object_settings` (creates nothing), `dba.list_vendor_objects`,
   `dba.get_vendor_object_status` - with the `MCP:` keys. With `--gui` also
-  `dba.set_api_key`, `dba.create_vendor_object`, `dba.delete_vendor_object`,
+  `dba.set_api_key`, `dba.create_vendor_object`, `dba.update_vendor_object`,
+  `dba.delete_vendor_object`,
   with the `GUI:` keys. Names: `dba.<verb>_<rest>` (`dba.list.vendor.objects`
   -> `dba.list_vendor_objects`).
-- **Create and delete start a task** owned by the client
+- **Create, update and delete start a task** owned by the client
   (`tasks.owner(general.get_client_identity(ctx))`, so both tools take `ctx`)
   and return `{task_id, status}`; `DbaError` -> `tool_error`.
 - **Server instructions** get a rule when dba is served and

@@ -349,6 +349,19 @@ def _label_selector(labels) -> dict:
     }
 
 
+# Where each type is changed: its API path, the key of the answer and the
+# conversion of what it holds.
+_UPDATED = {
+    types.VMS: ("servers", "server", _server),
+    types.VOLUMES: ("volumes", "volume", _volume),
+    types.NETWORKING: ("networks", "network", _network),
+    types.FIREWALLS: ("firewalls", "firewall", _firewall),
+    types.LOAD_BALANCERS: ("load_balancers", "load_balancer", _load_balancer),
+    types.DNS: ("zones", "zone", _zone),
+    types.SSH_KEYS: ("ssh_keys", "ssh_key", _ssh_key),
+}
+
+
 def _body(**fields) -> dict:
     """A request body without the fields that were not given."""
     return {key: value for key, value in fields.items() if value not in (None, "", [], {})}
@@ -648,6 +661,24 @@ class Hetzner(v.Vendor):
             f"is still running after {int(ACTION_TIMEOUT)} seconds. Try again once it finished."
         )
 
+    def _updated(self, object_type: str, obj: dict, settings: dict, actions=()) -> dict:
+        """An object changed: its name and labels with a PUT, the rest with actions.
+
+        Each action - ``(command, body)`` - is waited for. The labels given
+        replace the object's.
+        """
+        path, key, convert = _UPDATED[object_type]
+        done = [
+            self._wait((self.client.post(f"/{path}/{obj['id']}/actions/{command}", json=body) or {}).get("action"))
+            for command, body in actions
+        ]
+        body = {name: settings[name] for name in ("name", "labels") if name in settings}
+        answer = self.client.put(f"/{path}/{obj['id']}", json=body) if body else self.client.get(f"/{path}/{obj['id']}")
+        updated = convert((answer or {}).get(key) or {})
+        if any(done):
+            updated["properties"]["actions"] = [action for action in done if action]
+        return updated
+
     def _deleted(self, answer) -> dict:
         """What a delete reports, once the action it started finished.
 
@@ -757,6 +788,9 @@ class Hetzner(v.Vendor):
         # passed on in any case.
         return _created(_server(answer.get("server") or {}), answer)
 
+    def _update_vms(self, obj: dict, settings) -> dict:
+        return self._updated(types.VMS, obj, settings)
+
     def _delete_vms(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/servers/{obj['id']}"))
 
@@ -798,6 +832,17 @@ class Hetzner(v.Vendor):
 
         answer = self.client.post("/volumes", json=body) or {}
         return _created(_volume(answer.get("volume") or {}), answer)
+
+    def _update_volumes(self, obj: dict, settings) -> dict:
+        actions = []
+        if "size_gb" in settings:
+            size = obj["properties"].get("size_gb")
+            if size is not None and settings["size_gb"] <= size:
+                raise SettingError(
+                    f"{self.display_name} only grows volumes: size_gb must be more than {size}.", "size_gb"
+                )
+            actions.append(("resize", {"size": settings["size_gb"]}))
+        return self._updated(types.VOLUMES, obj, settings, actions)
 
     def _delete_volumes(self, obj: dict) -> dict:
         result = {}
@@ -847,6 +892,9 @@ class Hetzner(v.Vendor):
 
         answer = self.client.post("/networks", json=body) or {}
         return _created(_network(answer.get("network") or {}), answer)
+
+    def _update_networking(self, obj: dict, settings) -> dict:
+        return self._updated(types.NETWORKING, obj, settings)
 
     def _delete_networking(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/networks/{obj['id']}"))
@@ -909,6 +957,9 @@ class Hetzner(v.Vendor):
 
         answer = self.client.post("/firewalls", json=body) or {}
         return _created(_firewall(answer.get("firewall") or {}), answer)
+
+    def _update_firewalls(self, obj: dict, settings) -> dict:
+        return self._updated(types.FIREWALLS, obj, settings)
 
     def _delete_firewalls(self, obj: dict) -> dict:
         result = {}
@@ -1021,6 +1072,9 @@ class Hetzner(v.Vendor):
         answer = self.client.post("/load_balancers", json=body) or {}
         return _created(_load_balancer(answer.get("load_balancer") or {}), answer)
 
+    def _update_load_balancers(self, obj: dict, settings) -> dict:
+        return self._updated(types.LOAD_BALANCERS, obj, settings)
+
     def _delete_load_balancers(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/load_balancers/{obj['id']}"))
 
@@ -1072,6 +1126,10 @@ class Hetzner(v.Vendor):
         answer = self.client.post("/zones", json=body) or {}
         return _created(_zone(answer.get("zone") or {}), answer)
 
+    def _update_dns(self, obj: dict, settings) -> dict:
+        actions = [("change_ttl", {"ttl": settings["ttl"]})] if "ttl" in settings else []
+        return self._updated(types.DNS, obj, settings, actions)
+
     def _delete_dns(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/zones/{obj['id']}"))
 
@@ -1091,6 +1149,9 @@ class Hetzner(v.Vendor):
 
         answer = self.client.post("/ssh_keys", json=body) or {}
         return _ssh_key(answer.get("ssh_key") or {})
+
+    def _update_ssh_keys(self, obj: dict, settings) -> dict:
+        return self._updated(types.SSH_KEYS, obj, settings)
 
     def _delete_ssh_keys(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/ssh_keys/{obj['id']}"))

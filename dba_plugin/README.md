@@ -42,31 +42,34 @@ Objects are named with **standardized object types**, whatever the vendor calls 
 | `dba.list.vendor.objectSupport([vendorName])` | `dba.list_vendor_object_support` | The standardized object types, or what a vendor supports. |
 | `dba.get.vendor.objectInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_info` | What of a type can be created: sizes (architecture, cores, RAM, disk, included traffic, prices), locations, images, versions. |
 | `dba.get.vendor.objectSettingsInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_settings_info` | The settings to create objects of a type with, described for a dialog, with the values the vendor offers to choose from. |
-| `dba.validate.vendor.objectSettings(vendorName, objectType, settings[, project])` | `dba.validate_vendor_object_settings` | Checks the settings to create an object with, against what the vendor offers too, without creating anything. |
+| `dba.validate.vendor.objectSettings(vendorName, objectType, settings[, project, objectName])` | `dba.validate_vendor_object_settings` | Checks the settings to create an object with - or, with `objectName`, to change it with - against what the vendor offers too, without changing anything. |
 | `dba.list.vendor.objects(vendorName, objectType[, tags, project])` | `dba.list_vendor_objects` | The deployed objects of a type, filtered by tags and project. |
 | `dba.get.vendor.objectStatus(vendorName, objectType, objectName[, project])` | `dba.get_vendor_object_status` | The current status of one object. |
 | `dba.create.vendor.object(vendorName, objectType, settings[, project])` | `dba.create_vendor_object` (`--gui`) | Starts a task creating an object with the given settings. |
+| `dba.update.vendor.object(vendorName, objectType, objectName, settings[, project])` | `dba.update_vendor_object` (`--gui`) | Starts a task changing an object, by name or id, with only the settings that change. |
 | `dba.delete.vendor.object(vendorName, objectType, objectName[, project])` | `dba.delete_vendor_object` (`--gui`) | Starts a task deleting an object, by name or id. |
 
 Every vendor object has the same functions without the vendor name:
 `dba.vendor.<name>.featureSet()`, `objectSupport()`, `objectInfo()`,
 `objectSettingsInfo()`, `validateObjectSettings()`, `listObjects()`, `objectStatus()`,
-`createObject()` and `deleteObject()`.
+`createObject()`, `updateObject()` and `deleteObject()`.
 
 An MCP server started without `--gui` - one an agent talks to - offers only the tools that
 read.
 
-### Creating and deleting are background tasks
+### Creating, updating and deleting are background tasks
 
-Creating takes minutes, a managed service far longer, so `dba.create.vendor.object` and
-`dba.delete.vendor.object` do not wait for it. They check what they can at once - the
-vendor, its API key, that it can create or delete the type, that the settings name the
-object - then start a task of the shell's task manager (task type `dba`) and return its
+Creating takes minutes, a managed service far longer, so `dba.create.vendor.object`,
+`dba.update.vendor.object` and `dba.delete.vendor.object` do not wait for it. They check
+what they can at once - the vendor, its API key, that it can create, update or delete the
+type, the settings - then start a task of the shell's task manager (task type `dba`) and return its
 `task_id`. The task:
 
 - **creates** the object and then waits until the vendor reports it ready to use
   (`running`, `started`, `available`, `online`, `active`, `ready`), up to an hour, with
   the object as its result; a status naming a failure or an error fails it;
+- **updates** the object and then waits until it is ready again (or stopped, where it
+  was), up to an hour, with the object as its result;
 - **deletes** the object and then waits until the vendor no longer lists it, up to half
   an hour, with the object as it was and what the vendor reported as its result.
 
@@ -157,7 +160,7 @@ Each setting has:
 | `filter` | Which choices apply with the other settings chosen: a list of `{setting, detail, selected_detail}`. A choice applies when its `details[detail]` is, lists or is listed by the value of `setting` - or, with `selected_detail`, by that detail of the choice selected for `setting`. A choice without the detail always applies. For example a Hetzner size is offered in the locations its `locations` list, and a private network fits when its `location` is the `network_zone` of the location chosen. |
 | `prices` | What the setting itself costs, per location, such as a public IPv4 address. |
 | `display` | How to show the choices: `style` (`select`, `cards`, `table`, `checkboxes`), `columns` of a table (`key`, `caption`, `unit`; `prices.hourly` and `prices.monthly` are the price at the location chosen), `group_by` (details to group the choices by, such as Hetzner's `cpu_type` and `category`, or an image's `os_flavor`) and `item_caption` (the detail to label a choice with, such as an image's `os_version`). |
-| `is_updatable` | Whether it can be changed at the vendor once the object is deployed - for a dialog that changes an object. The dba plugin does not change objects yet. |
+| `is_updatable` | Whether `dba.update.vendor.object` can change it once the object is deployed - for a dialog that changes an object. False for every setting where the vendor does not update the type. |
 | `advanced` | Whether a dialog may tuck it away. |
 | `vendor_specific`, `vendor_key` | Whether it is the vendor's own setting, and where it goes in the vendor's request. |
 
@@ -177,6 +180,24 @@ dba.validate.vendor.object_settings("hetzner", "vms", {
     "name": "galera-1", "size": "cx32", "location": "fsn1", "image": "debian-13",
     "ssh_keys": ["admin"], "enable_ipv4": False, "networks": ["galera-net"],
 }, "prod")
+```
+
+### Changing an object
+
+`dba.update.vendor.object(vendor, type, objectName, settings[, project])` takes only the
+settings that change, each one the settings info marks `is_updatable`; any other is
+refused before the task starts. New `labels` replace the object's labels (`None` or `{}`
+removes them), and a vendor without projects of its own keeps the `dba_project` label.
+What can change depends on the vendor - see its README: a name and labels for most
+objects, a volume's size (it only grows), a DNS zone's TTL, a managed service's size,
+nodes, storage and allowed addresses.
+`dba.validate.vendor.objectSettings(vendor, type, settings, project, objectName)`
+checks the settings to change that object with, its location filtering the choices that
+depend on one, as a dialog's apply button needs it.
+
+```python
+dba.validate.vendor.object_settings("hetzner", "volumes", {"size_gb": 100}, "prod", "data1")
+dba.update.vendor.object("hetzner", "volumes", "data1", {"size_gb": 100}, "prod")
 ```
 
 ## API keys and projects
@@ -203,7 +224,7 @@ A vendor plugin is a folder `dba_vendor_<name>_plugin` with:
   `@dba_plugin.lib.vendors.register`. It names the vendor and its feature sets, creates
   its API client (`dba_plugin.lib.rest_client.RestClient`, the one HTTP client every
   vendor uses), and implements `_list_<type>` for each object type it supports, plus
-  `_info_<type>`, `_create_<type>`, `_delete_<type>` and `_status_<type>` as far as it
+  `_info_<type>`, `_create_<type>`, `_update_<type>`, `_delete_<type>` and `_status_<type>` as far as it
   supports them. The module docstring of `lib/vendor.py` is the contract. The settings
   each type requires and supports go in `create_settings`, rules that span settings and need no request in
   `_check_<type>(settings)` (raising `SettingError` with the keys concerned; a single

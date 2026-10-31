@@ -28,6 +28,12 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   single value is checked by its field, and arrives typed);
   `check_create_settings` runs both before a create task starts and in
   `_create_<type>`. Rules needing a request (a size offered) fail the task.
+- **Update** takes only the settings that change, each `is_updatable`
+  (`fields()` forces it False where the vendor has no `_update_<type>`):
+  `check_update_settings` / `update_problems` (+ optional
+  `_check_update_<type>`), then `_update_<type>(obj, settings)` returns the
+  object; `update_found` keeps `dba_project` in new labels. Validation with
+  an object name checks an update, filtering choices by the object's location.
 - **Settings for a dialog:** every standardized setting is a field in
   `lib/settings_fields.py` (caption, group, type, range, `choices_from`,
   `filter`, `display`); `SETTINGS` descriptions derive from it. A vendor's
@@ -56,7 +62,7 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   ([featureSet])`, `dba.set.apiKey`, `dba.list.vendor.objectSupport`,
   `dba.get.vendor.objectInfo`, `dba.list.vendor.objects([tags, project])`,
   `dba.get.vendor.objectStatus`, `dba.create.vendor.object`,
-  `dba.delete.vendor.object`. Feature sets `ManagedService`, `CoreCompute`;
+  `dba.update.vendor.object`, `dba.delete.vendor.object`. Feature sets `ManagedService`, `CoreCompute`;
   standardized object types in `lib/object_types.py`.
 - **API keys** in the shell secret store: `GUI:DBA_API_KEY:<vendor>:<project>`
   (shell functions, `--gui` MCP) and `MCP:DBA_API_KEY:...` (`mcp setup`). A
@@ -66,14 +72,14 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   refuses registering a function twice, so `__init__.py` files import nothing,
   and a vendor plugin's `init.py` calls `objects.register_vendor_plugin`, which
   creates `dba` / `dba.vendor` if missing (`ensure_parent_objects`).
-- **Create and delete are background tasks** of the shell's
+- **Create, update and delete are background tasks** of the shell's
   `mysqlsh.task_manager` (shipped with the shell, as is the `task` global),
   type `dba` (`lib/operations.py`). The shell and the plugins are released
   together, so the plugin needs no fallback for a shell without it.
   - Checked at once: vendor, key, type support (`vendor.require`), the
     generic settings (`check_settings`: name, known keys). Vendor-specific
     rules (e.g. Hetzner's ssh_keys) fail the task instead.
-  - A create task ends when the status is ready (`READY_STATUSES`) or stopped
+  - A create (or update) task ends when the status is ready (`READY_STATUSES`) or stopped
     (`off`/`stopped`); up to 1 h. A delete ends when the object is gone (404
     or not listed) or `deleted`; up to 30 min. A failed/error status fails it.
   - Polls every 10 s by id (`vendor.current_status`: `_status_<type>`, a 404
@@ -83,7 +89,7 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   - One task per object: claims by name AND id, project None = `default`,
     type normalized; released when the task ends or fails to start.
   - Cancelling stops the waiting, not the vendor.
-- **Command line:** `dba create vendor object` / `dba delete vendor object`
+- **Command line:** `dba create|update|delete vendor object`
   are `cli=True` and return through `task_manager.answer(task, fqn)`
   (`objects.task_answer`): as THE command-line call they follow the task
   (statuses on stderr, result printed, error = exit 1, Ctrl+C cancels, 130);
