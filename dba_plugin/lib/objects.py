@@ -47,7 +47,7 @@ VENDOR_DOC = """The cloud vendor plugins.
     Each installed vendor plugin adds an object here, named after the vendor,
     with the same functions: featureSet, objectSupport, objectInfo,
     objectSettingsInfo, validateObjectSettings, listObjects, objectStatus,
-    deployObject and deleteObject.
+    createObject and deleteObject.
     """
 
 
@@ -111,7 +111,7 @@ def task_answer(started: dict, function: str):
 
     Args:
         started (dict): What the operation that started the task returned.
-        function (str): The shell function, e.g. "dba.deploy.vendor.object".
+        function (str): The shell function, e.g. "dba.create.vendor.object".
     """
     from mysqlsh import task_manager
 
@@ -132,12 +132,12 @@ def register_vendor_plugin(vendor_cls) -> None:
 
     * featureSet() - the feature sets it implements.
     * objectSupport() - the object types it supports, and how.
-    * objectInfo(objectType[, project]) - what of a type can be deployed.
+    * objectInfo(objectType[, project]) - what of a type can be created.
     * objectSettingsInfo(objectType[, project]) - its settings, for a dialog.
     * validateObjectSettings(objectType, settings[, project]) - checks them.
     * listObjects(objectType[, tags, project]) - the deployed objects.
     * objectStatus(objectType, objectName[, project]) - one object's status.
-    * deployObject(objectType, settings[, project]) - starts a task deploying one.
+    * createObject(objectType, settings[, project]) - starts a task creating one.
     * deleteObject(objectType, objectName[, project]) - starts a task deleting one.
 
     Args:
@@ -162,7 +162,7 @@ def register_vendor_plugin(vendor_cls) -> None:
         {
             "__doc__": f"""{display}: {', '.join(vendor_cls.feature_sets)}.
 
-    Deploys and manages {display} objects for MariaDB. The same functions
+    Creates and manages {display} objects for MariaDB. The same functions
     are reached through the dba functions with the vendor name
     '{name}'. {vendor_cls.api_key_help}
     """
@@ -194,7 +194,7 @@ def register_vendor_plugin(vendor_cls) -> None:
             lambda: operations.object_info(name, object_type, project)
         )
 
-    object_info.__doc__ = f"""Returns what of an object type {display} offers to deploy.
+    object_info.__doc__ = f"""Returns what of an object type {display} offers to create.
 
         For VMs the sizes (architecture, cores, RAM, disk, included
         traffic and prices), locations and images; for the other types what
@@ -211,7 +211,7 @@ def register_vendor_plugin(vendor_cls) -> None:
     def object_settings_info(object_type: str, project: str = None) -> dict:
         return shell_call(lambda: operations.settings_info(name, object_type, project))
 
-    object_settings_info.__doc__ = f"""Returns the settings to deploy a {display} object type with, for a dialog.
+    object_settings_info.__doc__ = f"""Returns the settings to create a {display} object type with, for a dialog.
 
         Each setting with its position, section, caption, description,
         type, whether it is required, its range, whether it can be changed
@@ -230,12 +230,12 @@ def register_vendor_plugin(vendor_cls) -> None:
             lambda: operations.validate_settings(name, object_type, plain(settings), project)
         )
 
-    validate_object_settings.__doc__ = f"""Checks the settings of a {display} deployment before it is started.
+    validate_object_settings.__doc__ = f"""Checks the settings to create a {display} object with, before it is created.
 
         Args:
             object_type (str): The standardized object type, e.g. vms.
-            settings (dict): The settings, as deployObject takes them.
-            project (str): The project to deploy in.
+            settings (dict): The settings, as createObject takes them.
+            project (str): The project to create it in.
 
         Returns:
             A dict: valid, errors and warnings, each problem with a message
@@ -275,12 +275,12 @@ def register_vendor_plugin(vendor_cls) -> None:
             The object, with its current status.
         """
 
-    def deploy_object(object_type: str, settings: dict, project: str = None) -> dict:
+    def create_object(object_type: str, settings: dict, project: str = None) -> dict:
         return shell_call(
-            lambda: operations.deploy_object(name, object_type, plain(settings), project)
+            lambda: operations.create_object(name, object_type, plain(settings), project)
         )
 
-    deploy_object.__doc__ = f"""Starts deploying one {display} object as a background task.
+    create_object.__doc__ = f"""Starts creating one {display} object as a background task.
 
         Returns the id of a task at once; follow it with task.get(taskId).
         It ends once the object is ready to use, with the object as its
@@ -290,7 +290,7 @@ def register_vendor_plugin(vendor_cls) -> None:
             object_type (str): The standardized object type, e.g. vms.
             settings (dict): The object's settings, see
                 dba.list.vendor.objectSupport().
-            project (str): The project to deploy it in.
+            project (str): The project to create it in.
 
         Returns:
             The task_id and status of the task.
@@ -323,7 +323,7 @@ def register_vendor_plugin(vendor_cls) -> None:
         ("validateObjectSettings", validate_object_settings),
         ("listObjects", list_objects),
         ("objectStatus", object_status),
-        ("deployObject", deploy_object),
+        ("createObject", create_object),
         ("deleteObject", delete_object),
     ):
         plugin_function(f"{prefix}.{function_name}", shell=True, cli=False)(function)

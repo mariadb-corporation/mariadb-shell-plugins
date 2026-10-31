@@ -194,7 +194,7 @@ def test_object_support():
     support = {entry["object_type"]: entry["operations"] for entry in UpCloud.object_support()}
     assert list(support) == ["vms", "volumes", "networking", "load_balancers", "object_storage"]
     for operations_of_type in support.values():
-        assert operations_of_type == ["info", "list", "status", "deploy", "delete"]
+        assert operations_of_type == ["info", "list", "status", "create", "delete"]
     assert UpCloud.feature_sets == ("CoreCompute",)
     assert UpCloud.native_projects is False
 
@@ -347,7 +347,7 @@ def test_info_vms_without_access_to_the_account_currency(vendor, mock_api):
     assert vendor.object_info("vms")["sizes"][0]["prices"] == []
 
 
-def _deployable(mock_api, created_state="maintenance"):
+def _creatable(mock_api, created_state="maintenance"):
     _catalog(mock_api)
     mock_api.add(
         "GET",
@@ -365,11 +365,11 @@ def _deployable(mock_api, created_state="maintenance"):
     )
 
 
-def test_deploy_vms(mock_api):
-    _deployable(mock_api)
+def test_create_vms(mock_api):
+    _creatable(mock_api)
     instance = UpCloud(api_key=TOKEN, project="shop")
     try:
-        created = instance.deploy_object(
+        created = instance.create_object(
             "vms",
             {
                 "name": "Galera Node 1",
@@ -430,10 +430,10 @@ def test_deploy_vms(mock_api):
         ),
     ],
 )
-def test_deploy_vms_refuses(vendor, mock_api, settings, message):
-    _deployable(mock_api)
+def test_create_vms_refuses(vendor, mock_api, settings, message):
+    _creatable(mock_api)
     with pytest.raises(DbaError, match=message):
-        vendor.deploy_object("vms", settings)
+        vendor.create_object("vms", settings)
     assert not mock_api.requests_to("POST", "/1.3/server")
 
 
@@ -579,7 +579,7 @@ def test_volume_settings_offer_upcloud_storage_tiers(vendor, mock_api):
     assert (tier["vendor_specific"], tier["strict"], tier["default"]) == (True, True, "maxiops")
     assert [c["value"] for c in tier["choices"]] == ["maxiops", "standard", "hdd"]
     assert [c["value"] for c in settings["vm"]["choices"]] == ["db1", "db2"]
-    assert settings["size_gb"]["is_editable"] and settings["name"]["is_editable"]
+    assert settings["size_gb"]["is_updatable"] and settings["name"]["is_updatable"]
 
     result = vendor.validate_settings("volumes", {"name": "data", "size_gb": 10, "location": "de-fra1", "tier": "ssd"})
     assert result["errors"] == [
@@ -598,7 +598,7 @@ def test_vm_settings_take_public_keys(vendor, mock_api):
     assert mock_api.requests == []
 
 
-def test_deploy_a_volume_attached_to_a_vm(mock_api):
+def test_create_a_volume_attached_to_a_vm(mock_api):
     _servers(mock_api)
     mock_api.add(
         "POST",
@@ -608,7 +608,7 @@ def test_deploy_a_volume_attached_to_a_vm(mock_api):
     )
     mock_api.add("POST", f"/1.3/server/{SERVER_A}/storage/attach", json=_server_details(SERVER_A, "db1"))
     instance = UpCloud(api_key=TOKEN, project="shop")
-    created = instance.deploy_object(
+    created = instance.create_object(
         "volumes", {"name": "data", "size_gb": 100, "vm": "db1", "vendor_settings": {"tier": "standard"}}
     )
     instance.close()
@@ -637,9 +637,9 @@ def test_deploy_a_volume_attached_to_a_vm(mock_api):
         ({"name": "data", "size_gb": 10, "location": "de-fra1", "format": "ext4"}, "Unsupported settings for volumes: format"),
     ],
 )
-def test_deploy_volumes_refuses(vendor, mock_api, settings, message):
+def test_create_volumes_refuses(vendor, mock_api, settings, message):
     with pytest.raises(DbaError, match=message):
-        vendor.deploy_object("volumes", settings)
+        vendor.create_object("volumes", settings)
     assert not mock_api.requests_to("POST", "/1.3/storage")
 
 
@@ -702,14 +702,14 @@ def test_list_networking(mock_api):
     assert network["properties"] == {"ip_ranges": ["10.0.0.0/24"], "servers": [SERVER_A]}
 
 
-def test_deploy_networking(vendor, mock_api):
+def test_create_networking(vendor, mock_api):
     mock_api.add(
         "POST",
         "/1.3/network",
         status=201,
         json=lambda request: (201, {"network": {**request["json"]["network"], "uuid": NETWORK, "type": "private"}}),
     )
-    created = vendor.deploy_object(
+    created = vendor.create_object(
         "networking", {"name": "galera", "ip_range": "10.0.0.0/24", "location": "de-fra1", "labels": {"env": "prod"}}
     )
     [request] = mock_api.requests_to("POST", "/1.3/network")
@@ -724,7 +724,7 @@ def test_deploy_networking(vendor, mock_api):
     assert created["id"] == NETWORK and created["labels"] == {"env": "prod"}
 
     with pytest.raises(DbaError, match="Missing settings for networking: ip_range"):
-        vendor.deploy_object("networking", {"name": "x", "location": "de-fra1"})
+        vendor.create_object("networking", {"name": "x", "location": "de-fra1"})
 
 
 def test_info_status_and_delete_networking(vendor, mock_api):
@@ -783,12 +783,12 @@ def test_info_load_balancers(vendor, mock_api):
     ]
 
 
-def test_deploy_load_balancers(vendor, mock_api):
+def test_create_load_balancers(vendor, mock_api):
     _servers(mock_api)
     _networks(mock_api)
     mock_api.add("GET", f"/1.3/server/{SERVER_A}", json=_server_details(SERVER_A, "db1"))
     mock_api.add("POST", "/1.3/load-balancer", status=201, json=lambda request: (201, {**request["json"], "uuid": LB}))
-    created = vendor.deploy_object(
+    created = vendor.create_object(
         "load_balancers",
         {
             "name": "galera-lb",
@@ -813,7 +813,7 @@ def test_deploy_load_balancers(vendor, mock_api):
     assert created["id"] == LB
 
     with pytest.raises(DbaError, match="protocol must be one of: tcp, http; not 'udp'"):
-        vendor.deploy_object(
+        vendor.create_object(
             "load_balancers",
             {"name": "x", "size": "development", "location": "de-fra1", "network": "galera",
              "services": [{"protocol": "udp", "listen_port": 53}]},
@@ -867,16 +867,16 @@ def test_list_info_and_status_object_storage(vendor, mock_api):
     }
 
 
-def test_deploy_and_delete_object_storage(mock_api):
+def test_create_and_delete_object_storage(mock_api):
     mock_api.add("POST", "/1.3/object-storage-2", status=201, json=lambda request: (201, {**request["json"], "uuid": OBJ}))
     mock_api.add("GET", "/1.3/object-storage-2", json=[{**_object_storage(), "labels": _label(dba_project="shop")}])
     mock_api.add("DELETE", f"/1.3/object-storage-2/{OBJ}", status=204)
     instance = UpCloud(api_key=TOKEN, project="shop")
     try:
-        created = instance.deploy_object("object_storage", {"name": "backups", "location": "europe-1"})
+        created = instance.create_object("object_storage", {"name": "backups", "location": "europe-1"})
         assert instance.delete_object("object_storage", "backups")["result"] == {"status": "deleting"}
         with pytest.raises(DbaError, match="Unsupported settings for object_storage: size"):
-            instance.deploy_object("object_storage", {"name": "b", "location": "europe-1", "size": "1TB"})
+            instance.create_object("object_storage", {"name": "b", "location": "europe-1", "size": "1TB"})
     finally:
         instance.close()
 

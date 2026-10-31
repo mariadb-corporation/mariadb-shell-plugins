@@ -23,9 +23,9 @@ implements, per object type it supports, the methods named after it:
   :func:`make_object`. The dba plugin filters by tags and project itself. A
   vendor whose API filters by labels takes ``labels=None`` - a dict of key
   to value, None for any value - and asks for those only.
-* ``_info_<type>()`` - what can be deployed: the sizes, locations, images,
+* ``_info_<type>()`` - what can be created: the sizes, locations, images,
   versions and prices the vendor offers. Returns a dict of lists.
-* ``_deploy_<type>(settings)`` - deploys one object and returns it, made
+* ``_create_<type>(settings)`` - creates one object and returns it, made
   with :func:`make_object`.
 * ``_delete_<type>(obj)`` - deletes the object :meth:`Vendor.find_object`
   found, and returns a dict describing what the vendor did (an action id,
@@ -36,9 +36,9 @@ implements, per object type it supports, the methods named after it:
 
 An operation a vendor does not implement for a type is refused with a
 message naming what it does implement, so a vendor can support listing a
-type without supporting deploying it.
+type without supporting creating it.
 
-The ``settings`` of a deployment use the standardized keys documented with
+The ``settings`` to create an object with use the standardized keys documented with
 :data:`SETTINGS`, plus ``vendor_settings``: a dict passed through into the
 vendor's own request body, for what the standardized keys do not cover.
 """
@@ -54,7 +54,7 @@ from dba_plugin.lib import object_types as types, settings_fields as sf
 from dba_plugin.lib.general import DbaError, SettingError
 from dba_plugin.lib.rest_client import VendorApiError
 
-# The label every object deployed for a named project carries, for vendors
+# The label every object created for a named project carries, for vendors
 # whose API has no projects of its own.
 PROJECT_LABEL = "dba_project"
 
@@ -63,12 +63,12 @@ PROJECT_LABEL = "dba_project"
 STATUS_ACTIVE = "active"
 
 # The statuses, in any vendor's words, of an object that is ready to use: what
-# waiting for a deployment waits for. A status naming a failure or an error
+# waiting for a created object waits for. A status naming a failure or an error
 # ends the wait as failed.
 READY_STATUSES = frozenset(("running", "started", "available", "online", "active", "ready", "ok"))
 FAILED_STATUS_WORDS = ("fail", "error")
-# The statuses of a server deployed not to start - Hetzner's start_after_create
-# false, an UpCloud server created stopped: its deployment is done, too.
+# The statuses of a server created not to start - Hetzner's start_after_create
+# false, an UpCloud server created stopped: its creation is done, too.
 STOPPED_STATUSES = frozenset(("off", "stopped"))
 
 # The state every object reports next to its vendor's status, in the same
@@ -280,13 +280,13 @@ def matches_tags(obj: dict, tags: dict) -> bool:
 
 
 def setting_error(message: str, settings=()) -> dict:
-    """A problem with deployment settings, as a validation reports it:
+    """A problem with the settings to create an object with, as a validation reports it:
     ``message``, and ``settings`` - the keys it is about."""
     return {"settings": [settings] if isinstance(settings, str) else list(settings), "message": message}
 
 
 def settings_problems(object_type: str, settings, required=("name",), supported=None) -> tuple:
-    """What is wrong with a deployment's settings as a whole.
+    """What is wrong with the settings to create an object with as a whole.
 
     The arguments are those of :func:`check_settings`.
 
@@ -330,10 +330,10 @@ def settings_problems(object_type: str, settings, required=("name",), supported=
 
 
 def check_settings(object_type: str, settings, required=("name",), supported=None) -> dict:
-    """Checks a deployment's settings and returns them as a dict.
+    """Checks the settings to create an object with, and returns them as a dict.
 
     Args:
-        object_type (str): The object type being deployed.
+        object_type (str): The object type being created.
         settings (dict): The settings given.
         required (tuple): The keys that must be given.
         supported (tuple): The keys this vendor supports for the type; None
@@ -458,16 +458,16 @@ class Vendor:
       :data:`object_types.FEATURE_SETS`.
     * ``native_projects`` - whether its API has projects, so that the
       project picks the API key and nothing else. Otherwise the dba plugin
-      labels what it deploys for a project with :data:`PROJECT_LABEL`,
+      labels what it creates for a project with :data:`PROJECT_LABEL`,
       filters by that label, and lets one key serve every project.
     * ``api_key_help`` - where the user gets an API key, for messages.
-    * ``deploy_settings`` - the settings each type requires and supports,
-      checked by :meth:`check_deploy_settings` with what ``_check_<type>``
-      adds, before a deployment's task starts.
+    * ``create_settings`` - the settings each type requires and supports,
+      checked by :meth:`check_create_settings` with what ``_check_<type>``
+      adds, before a create task starts.
     * ``settings_fields`` - how the vendor's settings differ from the
       standardized fields of :mod:`settings_fields`, per type: a standardized
       key maps to the attributes it changes - a range, the choices'
-      source, ``is_editable`` - and a new key adds a setting of the vendor's
+      source, ``is_updatable`` - and a new key adds a setting of the vendor's
       own, a :func:`settings_fields.field` that goes into the request at its
       ``vendor_key``.
     * ``settings_order`` - per type, the keys a dialog shows first, in that
@@ -485,10 +485,10 @@ class Vendor:
     feature_sets = ()
     native_projects = False
     api_key_help = ""
-    # The settings each type's deployment requires and supports, beyond the
+    # The settings creating each type requires and supports, beyond the
     # common ones, as {object_type: {"required": (...), "supported": (...)}};
     # a type not named requires a name and takes every standardized setting.
-    deploy_settings = {}
+    create_settings = {}
     settings_fields = {}
     settings_order = {}
     settings_groups = {}
@@ -538,13 +538,13 @@ class Vendor:
         Returns:
             list: One dict per type: ``object_type``, ``description``,
             ``feature_set`` and ``operations`` (from info, list, status,
-            deploy, delete).
+            create, delete).
         """
         support = []
         for object_type in cls.object_types():
             operations = [
                 operation
-                for operation in ("info", "list", "status", "deploy", "delete")
+                for operation in ("info", "list", "status", "create", "delete")
                 if operation == "status"
                 or callable(getattr(cls, f"_{operation}_{object_type}", None))
             ]
@@ -580,7 +580,7 @@ class Vendor:
         """The method implementing an operation for a type, or a refusal naming why not.
 
         Args:
-            operation (str): info, list, status, deploy or delete.
+            operation (str): info, list, status, create or delete.
             object_type (str): The standardized object type.
 
         Raises:
@@ -590,19 +590,19 @@ class Vendor:
 
     @classmethod
     def fields(cls, object_type: str) -> dict:
-        """The fields of a type's deployment settings at this vendor, without a request.
+        """The fields of the settings to create a type's objects with at this vendor, without a request.
 
         Name, the standardized settings the vendor supports, its own, then
         labels and vendor_settings - unless ``settings_order`` puts some
         first. Each field is a :func:`settings_fields.field` with ``key``,
-        ``position`` (from 1), ``required``, ``is_editable``, ``advanced``,
+        ``position`` (from 1), ``required``, ``is_updatable``, ``advanced``,
         ``vendor_specific`` and ``group``; static choices as dicts.
 
         Returns:
             dict: The fields by key, in their order.
         """
         object_type = types.check_object_type(object_type)
-        rules = cls.deploy_settings.get(object_type, {})
+        rules = cls.create_settings.get(object_type, {})
         required = rules.get("required", ("name",))
         supported = rules.get("supported")
         standard = sf.FIELDS.get(object_type, {})
@@ -638,7 +638,7 @@ class Vendor:
         return fields
 
     def settings_problems(self, object_type: str, settings) -> tuple:
-        """What is wrong with a deployment's settings, as far as is known without the vendor's API.
+        """What is wrong with the settings to create an object with, as far as is known without the vendor's API.
 
         The settings as a whole (:func:`settings_problems`), each value by
         its field (:func:`settings_fields.field_errors`), then - when that
@@ -648,13 +648,13 @@ class Vendor:
         ``vendor_key``, as its API takes them.
 
         Returns:
-            tuple: The settings, as :meth:`check_deploy_settings` returns
+            tuple: The settings, as :meth:`check_create_settings` returns
             them, or None if they are no dict; and the problems, each a
             :func:`setting_error`.
         """
         object_type = types.check_object_type(object_type)
         fields = self.fields(object_type)
-        rules = self.deploy_settings.get(object_type, {})
+        rules = self.create_settings.get(object_type, {})
         own = {key: details for key, details in fields.items() if details["vendor_specific"]}
         given = dict(settings) if isinstance(settings, dict) else settings
         moved = {key: given.pop(key) for key in own if key in given} if isinstance(given, dict) else {}
@@ -687,11 +687,11 @@ class Vendor:
                 errors.append(setting_error(str(e)))
         return checked, errors
 
-    def check_deploy_settings(self, object_type: str, settings) -> dict:
-        """Checks a deployment's settings as far as it can without the vendor's API.
+    def check_create_settings(self, object_type: str, settings) -> dict:
+        """Checks the settings to create an object with as far as it can without the vendor's API.
 
-        See :meth:`settings_problems`. Called before a deployment's task
-        starts, so that a mistake fails the call, and by ``_deploy_<type>``
+        See :meth:`settings_problems`. Called before a create task
+        starts, so that a mistake fails the call, and by ``_create_<type>``
         itself.
 
         Returns:
@@ -710,7 +710,7 @@ class Vendor:
     def _fill_choices(self, object_type: str, fields: dict) -> None:
         """Gives the fields - and their items' fields - the choices the vendor offers.
 
-        What the vendor offers to deploy (``_info_<type>``) and what is
+        What the vendor offers to create (``_info_<type>``) and what is
         deployed of each type the choices name are asked for side by side,
         once each. A source the vendor does not have leaves its field
         without choices.
@@ -748,7 +748,7 @@ class Vendor:
                 details["prices"] = info[prices]
 
     def settings_info(self, object_type: str) -> dict:
-        """The settings of a type's deployment, described for a dialog.
+        """The settings to create objects of a type with, described for a dialog.
 
         The fields of :meth:`fields`, with the choices the vendor offers and
         the objects deployed to choose from, and the sections to show them
@@ -761,11 +761,11 @@ class Vendor:
             by key, in order).
 
         Raises:
-            DbaError: The vendor does not deploy the type, or what it offers
+            DbaError: The vendor does not create objects of the type, or what it offers
                 could not be asked for.
         """
         object_type = types.check_object_type(object_type)
-        self.require("deploy", object_type)
+        self.require("create", object_type)
         fields = self.fields(object_type)
         self._fill_choices(object_type, fields)
 
@@ -790,7 +790,7 @@ class Vendor:
         }
 
     def validate_settings(self, object_type: str, settings) -> dict:
-        """Checks a deployment's settings, against what the vendor offers too.
+        """Checks the settings to create an object with, against what the vendor offers too.
 
         What :meth:`settings_problems` finds, and - when that is nothing -
         each value with choices against them: a size, location or version
@@ -806,11 +806,11 @@ class Vendor:
             :func:`setting_error`.
 
         Raises:
-            DbaError: The vendor does not deploy the type, or what it offers
+            DbaError: The vendor does not create objects of the type, or what it offers
                 could not be asked for.
         """
         object_type = types.check_object_type(object_type)
-        self.require("deploy", object_type)
+        self.require("create", object_type)
         checked, errors = self.settings_problems(object_type, settings)
         warnings = []
         if checked is not None and not errors:
@@ -862,14 +862,14 @@ class Vendor:
             else:
                 warnings.append(
                     setting_error(
-                        f"{self.display_name} does not list the {key} '{value}'; the deployment fails "
-                        "if it does not take it.",
+                        f"{self.display_name} does not list the {key} '{value}'; creating the object fails "
+                        "if the vendor does not take it.",
                         key,
                     )
                 )
 
     def object_info(self, object_type: str) -> dict:
-        """What of an object type can be deployed. See ``_info_<type>``."""
+        """What of an object type can be created. See ``_info_<type>``."""
         return self._operation("info", object_type)()
 
     def list_objects(self, object_type: str, tags=None) -> list:
@@ -943,7 +943,7 @@ class Vendor:
 
     @staticmethod
     def has_failed(obj: dict) -> bool:
-        """Whether an object's status says its deployment failed."""
+        """Whether an object's status says its creation failed."""
         return state_of(obj.get("status")) == STATE_FAILED
 
     def object_status(self, object_type: str, object_name: str) -> dict:
@@ -953,20 +953,20 @@ class Vendor:
         method = getattr(self, f"_status_{object_type}", None)
         return method(obj) if callable(method) else obj
 
-    def deploy_object(self, object_type: str, settings) -> dict:
-        """Deploys one object. See ``_deploy_<type>``.
+    def create_object(self, object_type: str, settings) -> dict:
+        """Creates one object. See ``_create_<type>``.
 
-        For a vendor without projects of its own, the object deployed for a
+        For a vendor without projects of its own, the object created for a
         named project is labelled with it, so that listing the project
         finds it.
         """
-        deploy = self._operation("deploy", object_type)
+        create = self._operation("create", object_type)
         settings = dict(settings or {}) if isinstance(settings, dict) else settings
         if isinstance(settings, dict) and self.project and not self.native_projects:
             labels = dict(settings.get("labels") or {})
             labels[PROJECT_LABEL] = self.project
             settings["labels"] = labels
-        return deploy(settings)
+        return create(settings)
 
     def delete_object(self, object_type: str, object_name: str) -> dict:
         """Deletes one object, by its name or id. See ``_delete_<type>``.
@@ -983,10 +983,10 @@ class Vendor:
         return {"deleted": obj, "result": self._operation("delete", object_type)(obj)}
 
     def current_status(self, object_type: str, obj: dict) -> dict:
-        """The current status of an object found or deployed before, by its id.
+        """The current status of an object found or created before, by its id.
 
         Asks for that one object where the vendor answers for one, instead of
-        listing every object of the type, as following a deployment does
+        listing every object of the type, as following a create task does
         every few seconds.
 
         Raises:

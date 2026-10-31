@@ -673,7 +673,7 @@ column in it, so `sql.check` reports an error in a section where it is.
 
 ### Background tasks (`task`)
 
-The tools that start a background task - the `util` tools, and `dba.deploy_vendor_object`
+The tools that start a background task - the `util` tools, and `dba.create_vendor_object`
 and `dba.delete_vendor_object` - return its `task_id` at once. Three tools follow the
 tasks, whichever group started them. They are served with the `util` or the `dba` group,
 not as a group of their own.
@@ -686,7 +686,7 @@ not as a group of their own.
 
 - **`task.get`** returns:
   - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
-  - the `task_type` (`util`, `dba`), `kind` (such as `dump_schemas` or `deploy_object`)
+  - the `task_type` (`util`, `dba`), `kind` (such as `dump_schemas` or `create_object`)
     and `title`, plus what the type adds: a util task's `connection_id`, a dba task's
     `vendor`, `project` and `object_type`;
   - the stages with their state, and the current stage's `progress`: `current`,
@@ -708,14 +708,14 @@ not as a group of their own.
 | MCP tool | Purpose |
 | -------- | ------- |
 | `dba.list_vendors` | Lists the cloud vendors, optionally only those implementing a feature set (`ManagedService`, `CoreCompute`), with the projects an API key is stored for. |
-| `dba.list_vendor_object_support` | Lists the standardized object types (`managed_mariadb_services`, `vms`, `volumes`, `networking`, `firewalls`, `load_balancers`, `dns`, `object_storage`, `ssh_keys`) with their deployment settings, or what one vendor supports. |
+| `dba.list_vendor_object_support` | Lists the standardized object types (`managed_mariadb_services`, `vms`, `volumes`, `networking`, `firewalls`, `load_balancers`, `dns`, `object_storage`, `ssh_keys`) with the settings to create them with, or what one vendor supports. |
 | `dba.get_vendor_object_info` | What of an object type a vendor offers: VM sizes with architecture, cores, RAM, disk, included traffic and prices, locations, images, managed service versions and topologies. |
-| `dba.get_vendor_object_settings_info` | The settings to deploy an object type with at a vendor, described for a dialog: position, section, caption, type, required, range, whether it can be changed once deployed, and the values the vendor offers to choose from. |
-| `dba.validate_vendor_object_settings` | Checks a deployment's settings, against what the vendor offers too, without deploying. |
+| `dba.get_vendor_object_settings_info` | The settings to create objects of a type with at a vendor, described for a dialog: position, section, caption, type, required, range, whether it can be changed once deployed, and the values the vendor offers to choose from. |
+| `dba.validate_vendor_object_settings` | Checks the settings to create an object with, against what the vendor offers too, without creating anything. |
 | `dba.list_vendor_objects` | Lists the deployed objects of a type, filtered by tags and project. |
 | `dba.get_vendor_object_status` | The current status of one deployed object. |
 | `dba.set_api_key` | `--gui` only. Stores a vendor's API key. |
-| `dba.deploy_vendor_object` | `--gui` only. Starts a task deploying an object, such as a VM, with the given settings; it ends once the object is ready to use. |
+| `dba.create_vendor_object` | `--gui` only. Starts a task creating an object, such as a VM, with the given settings; it ends once the object is ready to use. |
 | `dba.delete_vendor_object` | `--gui` only. Starts a task deleting an object; it ends once the object is gone. |
 
 They wrap the [dba plugin](../dba_plugin/README.md) and are registered **only where it is

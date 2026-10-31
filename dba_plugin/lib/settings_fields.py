@@ -13,7 +13,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The deployment settings of every object type, described field by field.
+"""The settings objects are created with, per object type, described field by field.
 
 A dialog creating or changing a vendor object needs more of a setting than
 what it means: a caption, a section to show it in, its type, whether it is
@@ -24,7 +24,7 @@ A vendor adjusts what differs at its API and adds settings of its own with
 with the choices the vendor offers.
 
 The same fields check the values given (:func:`field_errors`), without a
-request, so that what a dialog validates is what a deployment checks.
+request, so that what a dialog validates is what creating an object checks.
 """
 
 # cSpell:ignore mysqlsh MariaDB
@@ -54,7 +54,7 @@ FORMAT_PORT = "port"  # a port, or a range of them: 3306, 4567-4568
 # The defaults of the attributes every field reports.
 DEFAULTS = {
     "required": False,
-    "is_editable": False,
+    "is_updatable": False,
     "advanced": False,
     "vendor_specific": False,
 }
@@ -161,7 +161,7 @@ def field(caption: str, description: str, type: str = STRING, **attributes) -> d
               ``group_by`` (detail keys to group the choices by) and
               ``item_caption`` (the detail to label a choice with within
               its group).
-            * ``is_editable`` - whether the setting of an object already
+            * ``is_updatable`` - whether the setting of an object already
               deployed can be changed at the vendor.
             * ``advanced`` - whether a dialog may tuck it away.
             * ``vendor_key`` - for a vendor's own setting: where it goes in

@@ -17,7 +17,7 @@
 
 ``task.get``, ``task.list`` and ``task.cancel`` follow every task a client
 started, whichever group's tool started it: a dump or load of the util group,
-a deployment of the dba group. They are registered with the first group
+a create or delete of the dba group. They are registered with the first group
 served that starts tasks (see ``general.TASK_FUNCTION_GROUPS``), not as a
 group of their own: a client that can start a task can always follow it.
 """

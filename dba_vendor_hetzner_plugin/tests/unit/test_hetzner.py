@@ -92,8 +92,8 @@ def test_the_vendor_is_registered_with_its_object_support():
     ]
 
     support = {entry["object_type"]: entry["operations"] for entry in Hetzner.object_support()}
-    assert support["vms"] == ["info", "list", "status", "deploy", "delete"]
-    assert support["ssh_keys"] == ["list", "status", "deploy", "delete"]
+    assert support["vms"] == ["info", "list", "status", "create", "delete"]
+    assert support["ssh_keys"] == ["list", "status", "create", "delete"]
     assert "object_storage" not in support
     assert "managed_mariadb_services" not in support
 
@@ -316,8 +316,8 @@ def test_the_vm_settings_are_described_as_the_console_shows_them(vendor, mock_ap
          "details": {"id": 4, "type": "spread"}}
     ]
 
-    assert settings["name"]["is_editable"] and settings["labels"]["is_editable"]
-    assert not settings["size"]["is_editable"]
+    assert settings["name"]["is_updatable"] and settings["labels"]["is_updatable"]
+    assert not settings["size"]["is_updatable"]
     assert settings["labels"]["value_max_length"] == 63
     assert settings["user_data"]["max_bytes"] == 32768
 
@@ -374,8 +374,7 @@ def test_vm_settings_are_validated_against_what_hetzner_offers(vendor, mock_api)
         {"settings": ["size"], "message": "Hetzner Cloud does not offer the size 'cx99'. Choose one of: cx22."}
     ]
     assert result["warnings"] == [
-        {"settings": ["image"], "message": "Hetzner Cloud does not list the image 'my-snapshot'; the "
-         "deployment fails if it does not take it."}
+        {"settings": ["image"], "message": "Hetzner Cloud does not list the image 'my-snapshot'; creating the object fails if the vendor does not take it."}
     ]
 
 
@@ -385,7 +384,7 @@ def test_a_vm_takes_hetzner_settings_of_its_own(vendor, mock_api):
         "POST", "/v1/servers", status=201,
         json={"server": _server(9, "db3", status="initializing")},
     )
-    vendor.deploy_object(
+    vendor.create_object(
         "vms",
         {"name": "db3", "size": "cx22", "image": "ubuntu-24.04", "ssh_keys": ["admin"],
          "networks": ["galera-net"], "enable_ipv4": False, "enable_ipv6": "true",
@@ -400,15 +399,15 @@ def test_a_vm_takes_hetzner_settings_of_its_own(vendor, mock_api):
     }
 
 
-def _deploy_routes(mock_api):
+def _create_routes(mock_api):
     mock_api.add("GET", "/v1/ssh_keys", json=_page("ssh_keys", [{"id": 21, "name": "admin"}, {"id": 22, "name": "ci"}]))
     mock_api.add("GET", "/v1/networks", json=_page("networks", [{"id": 3, "name": "galera-net"}]))
     mock_api.add("GET", "/v1/firewalls", json=_page("firewalls", [{"id": 7, "name": "mariadb"}]))
     mock_api.add("GET", "/v1/servers", json=_page("servers", [_server(1, "db1")]))
 
 
-def test_a_vm_is_deployed_with_names_resolved_to_ids(vendor, mock_api):
-    _deploy_routes(mock_api)
+def test_a_vm_is_created_with_names_resolved_to_ids(vendor, mock_api):
+    _create_routes(mock_api)
     mock_api.add(
         "POST",
         "/v1/servers",
@@ -422,7 +421,7 @@ def test_a_vm_is_deployed_with_names_resolved_to_ids(vendor, mock_api):
         },
     )
 
-    deployed = vendor.deploy_object(
+    created = vendor.create_object(
         "vms",
         {
             "name": "db3",
@@ -451,12 +450,12 @@ def test_a_vm_is_deployed_with_names_resolved_to_ids(vendor, mock_api):
         "labels": {"env": "prod"},
         "start_after_create": True,
     }
-    assert deployed["id"] == "9"
-    assert deployed["status"] == "initializing"
-    assert deployed["properties"]["action"] == {"id": 100, "command": "create_server", "status": "running", "progress": 0}
-    assert deployed["properties"]["next_actions"][0]["command"] == "start_server"
-    assert "pw-must-never-show" not in repr(deployed)
-    assert TOKEN not in repr(deployed)
+    assert created["id"] == "9"
+    assert created["status"] == "initializing"
+    assert created["properties"]["action"] == {"id": 100, "command": "create_server", "status": "running", "progress": 0}
+    assert created["properties"]["next_actions"][0]["command"] == "start_server"
+    assert "pw-must-never-show" not in repr(created)
+    assert TOKEN not in repr(created)
 
 
 @pytest.mark.parametrize(
@@ -472,10 +471,10 @@ def test_a_vm_is_deployed_with_names_resolved_to_ids(vendor, mock_api):
         ({"name": "db", "size": "cx22", "image": "x", "ssh_keys": ["admin"], "labels": "env=prod"}, "labels must be a dict"),
     ],
 )
-def test_a_vm_deployment_is_refused_before_anything_is_created(vendor, mock_api, settings, message):
-    _deploy_routes(mock_api)
+def test_a_vm_creation_is_refused_before_anything_is_created(vendor, mock_api, settings, message):
+    _create_routes(mock_api)
     with pytest.raises(DbaError, match=message):
-        vendor.deploy_object("vms", settings)
+        vendor.create_object("vms", settings)
     assert mock_api.requests_to("POST", "/v1/servers") == []
 
 
@@ -549,18 +548,18 @@ def test_volume_info_reports_locations_and_the_price_per_gb(vendor, mock_api):
     assert [location["name"] for location in info["locations"]] == ["fsn1", "hel1", "ash"]
 
 
-def test_a_volume_is_deployed_attached_to_a_vm(vendor, mock_api):
+def test_a_volume_is_created_attached_to_a_vm(vendor, mock_api):
     mock_api.add("GET", "/v1/servers", json=_page("servers", [_server(1, "db1")]))
     mock_api.add(
         "POST", "/v1/volumes", status=201,
         json={"volume": _volume(13, "data3", server=1), "action": {"id": 1, "command": "create_volume", "status": "running"}, "next_actions": []},
     )
-    deployed = vendor.deploy_object("volumes", {"name": "data3", "size_gb": "50", "vm": "db1", "format": "xfs"})
+    created = vendor.create_object("volumes", {"name": "data3", "size_gb": "50", "vm": "db1", "format": "xfs"})
 
     [request] = mock_api.requests_to("POST", "/v1/volumes")
     assert request["json"] == {"name": "data3", "size": 50, "format": "xfs", "assignee": {"type": "server", "id": 1}}
-    assert deployed["properties"]["server"] == 1
-    assert deployed["properties"]["action"]["command"] == "create_volume"
+    assert created["properties"]["server"] == 1
+    assert created["properties"]["action"]["command"] == "create_volume"
 
 
 @pytest.mark.parametrize(
@@ -571,9 +570,9 @@ def test_a_volume_is_deployed_attached_to_a_vm(vendor, mock_api):
         ({"name": "d", "location": "fsn1"}, "Missing settings for volumes: size_gb"),
     ],
 )
-def test_a_volume_deployment_is_refused(vendor, mock_api, settings, message):
+def test_a_volume_creation_is_refused(vendor, mock_api, settings, message):
     with pytest.raises(DbaError, match=message):
-        vendor.deploy_object("volumes", settings)
+        vendor.create_object("volumes", settings)
     assert mock_api.requests == []
 
 
@@ -667,11 +666,11 @@ def test_network_info_reports_the_network_zones(vendor, mock_api):
 
 
 @pytest.mark.parametrize("location", ["hel1", "eu-central"])
-def test_a_network_is_deployed_with_a_subnet_in_the_locations_zone(vendor, mock_api, location):
+def test_a_network_is_created_with_a_subnet_in_the_locations_zone(vendor, mock_api, location):
     mock_api.add("GET", "/v1/locations", json=_page("locations", LOCATIONS))
     mock_api.add("POST", "/v1/networks", status=201, json={"network": _network(4, "net2")})
 
-    deployed = vendor.deploy_object(
+    created = vendor.create_object(
         "networking", {"name": "net2", "ip_range": "10.0.0.0/16", "location": location, "labels": {"a": "b"}}
     )
     [request] = mock_api.requests_to("POST", "/v1/networks")
@@ -681,13 +680,13 @@ def test_a_network_is_deployed_with_a_subnet_in_the_locations_zone(vendor, mock_
         "subnets": [{"type": "cloud", "ip_range": "10.0.0.0/16", "network_zone": "eu-central"}],
         "labels": {"a": "b"},
     }
-    assert deployed["id"] == "4"
+    assert created["id"] == "4"
 
 
 def test_a_network_in_an_unknown_location_is_refused(vendor, mock_api):
     mock_api.add("GET", "/v1/locations", json=_page("locations", LOCATIONS))
     with pytest.raises(DbaError, match="Unknown location or network zone 'mars1'"):
-        vendor.deploy_object("networking", {"name": "n", "ip_range": "10.0.0.0/16", "location": "mars1"})
+        vendor.create_object("networking", {"name": "n", "ip_range": "10.0.0.0/16", "location": "mars1"})
     assert mock_api.requests_to("POST", "/v1/networks") == []
 
 
@@ -708,7 +707,7 @@ def _firewall(id, name, applied_to=()):
     }
 
 
-def test_a_firewall_is_deployed_with_its_rules_and_vms(vendor, mock_api):
+def test_a_firewall_is_created_with_its_rules_and_vms(vendor, mock_api):
     mock_api.add("GET", "/v1/servers", json=_page("servers", [_server(1, "db1"), _server(2, "db2")]))
     mock_api.add(
         "POST", "/v1/firewalls", status=201,
@@ -718,7 +717,7 @@ def test_a_firewall_is_deployed_with_its_rules_and_vms(vendor, mock_api):
         },
     )
 
-    deployed = vendor.deploy_object(
+    created = vendor.create_object(
         "firewalls",
         {
             "name": "mariadb",
@@ -738,11 +737,11 @@ def test_a_firewall_is_deployed_with_its_rules_and_vms(vendor, mock_api):
         ],
         "apply_to": [{"type": "server", "server": {"id": 1}}, {"type": "server", "server": {"id": 2}}],
     }
-    assert deployed["properties"]["servers"] == [1]
-    assert deployed["properties"]["rules"] == [
+    assert created["properties"]["servers"] == [1]
+    assert created["properties"]["rules"] == [
         {"direction": "in", "protocol": "tcp", "port": "3306", "source_ips": ["10.0.0.0/16"]}
     ]
-    assert deployed["properties"]["actions"][0]["command"] == "apply_firewall"
+    assert created["properties"]["actions"][0]["command"] == "apply_firewall"
 
 
 @pytest.mark.parametrize(
@@ -757,7 +756,7 @@ def test_a_firewall_is_deployed_with_its_rules_and_vms(vendor, mock_api):
 )
 def test_a_bad_firewall_rule_is_refused(vendor, mock_api, rule, message):
     with pytest.raises(DbaError, match=message):
-        vendor.deploy_object("firewalls", {"name": "fw", "rules": [rule]})
+        vendor.create_object("firewalls", {"name": "fw", "rules": [rule]})
     assert mock_api.requests == []
 
 
@@ -831,12 +830,12 @@ def test_load_balancer_info_reports_the_types_with_prices(vendor, mock_api):
     assert size["deprecated"] is False
 
 
-def test_a_load_balancer_is_deployed_with_services_and_private_targets(vendor, mock_api):
+def test_a_load_balancer_is_created_with_services_and_private_targets(vendor, mock_api):
     mock_api.add("GET", "/v1/networks", json=_page("networks", [{"id": 3, "name": "galera-net"}]))
     mock_api.add("GET", "/v1/servers", json=_page("servers", [_server(1, "db1"), _server(2, "db2")]))
     mock_api.add("POST", "/v1/load_balancers", status=201, json={"load_balancer": _load_balancer(30, "galera-lb"), "action": {"id": 80, "command": "create_load_balancer", "status": "running"}})
 
-    vendor.deploy_object(
+    vendor.create_object(
         "load_balancers",
         {
             "name": "galera-lb", "size": "lb11", "location": "fsn1", "network": "galera-net",
@@ -864,7 +863,7 @@ def test_a_load_balancer_is_deployed_with_services_and_private_targets(vendor, m
 
 def test_a_load_balancer_service_without_a_port_is_refused(vendor, mock_api):
     with pytest.raises(DbaError, match=r"services\[0\] needs listen_port"):
-        vendor.deploy_object("load_balancers", {"name": "lb", "size": "lb11", "services": [{"protocol": "tcp"}]})
+        vendor.create_object("load_balancers", {"name": "lb", "size": "lb11", "services": [{"protocol": "tcp"}]})
 
 
 def test_a_load_balancer_status_and_delete(vendor, mock_api):
@@ -894,9 +893,9 @@ def test_zones_are_listed(vendor, mock_api):
     assert zone["properties"] == {"mode": "primary", "ttl": 3600, "record_count": 4, "nameservers": ["hydrogen.ns.hetzner.com."]}
 
 
-def test_a_zone_is_deployed_with_its_records_as_rrsets(vendor, mock_api):
+def test_a_zone_is_created_with_its_records_as_rrsets(vendor, mock_api):
     mock_api.add("POST", "/v1/zones", status=201, json={"zone": _zone(51, "example.org", status="updating"), "action": {"id": 90, "command": "create_zone", "status": "running"}})
-    deployed = vendor.deploy_object(
+    created = vendor.create_object(
         "dns",
         {
             "name": "example.org",
@@ -918,14 +917,14 @@ def test_a_zone_is_deployed_with_its_records_as_rrsets(vendor, mock_api):
             {"name": "@", "type": "TXT", "records": [{"value": "\"v=spf1 -all\""}]},
         ],
     }
-    assert deployed["status"] == "updating"
+    assert created["status"] == "updating"
 
 
 def test_a_bad_dns_record_is_refused(vendor, mock_api):
     with pytest.raises(DbaError, match="Unknown DNS record type 'BOGUS'"):
-        vendor.deploy_object("dns", {"name": "example.org", "records": [{"type": "BOGUS", "value": "x"}]})
+        vendor.create_object("dns", {"name": "example.org", "records": [{"type": "BOGUS", "value": "x"}]})
     with pytest.raises(DbaError, match=r"records\[0\] needs value"):
-        vendor.deploy_object("dns", {"name": "example.org", "records": [{"type": "A"}]})
+        vendor.create_object("dns", {"name": "example.org", "records": [{"type": "A"}]})
 
 
 def test_a_zone_status_and_delete(vendor, mock_api):
@@ -944,21 +943,21 @@ def test_a_zone_status_and_delete(vendor, mock_api):
 # --- ssh_keys -----------------------------------------------------------------
 
 
-def test_an_ssh_key_is_deployed_listed_and_deleted(vendor, mock_api):
+def test_an_ssh_key_is_created_listed_and_deleted(vendor, mock_api):
     key = {"id": 21, "name": "admin", "fingerprint": "b7:2f:30", "public_key": "ssh-ed25519 AAAA admin", "labels": {}, "created": "2026-10-01T10:00:00Z"}
     mock_api.add("POST", "/v1/ssh_keys", status=201, json={"ssh_key": key})
     mock_api.add("GET", "/v1/ssh_keys", json=_page("ssh_keys", [key]))
     mock_api.add("DELETE", "/v1/ssh_keys/21", status=204)
 
-    deployed = vendor.deploy_object("ssh_keys", {"name": "admin", "public_key": " ssh-ed25519 AAAA admin\n"})
+    created = vendor.create_object("ssh_keys", {"name": "admin", "public_key": " ssh-ed25519 AAAA admin\n"})
     assert mock_api.requests_to("POST", "/v1/ssh_keys")[0]["json"] == {"name": "admin", "public_key": "ssh-ed25519 AAAA admin"}
-    assert deployed["properties"] == {"fingerprint": "b7:2f:30"}
+    assert created["properties"] == {"fingerprint": "b7:2f:30"}
 
     assert vendor.list_objects("ssh_keys")[0]["name"] == "admin"
     assert vendor.delete_object("ssh_keys", "admin")["result"] == {"status": "deleted"}
 
     with pytest.raises(DbaError, match="Missing settings for ssh_keys: public_key"):
-        vendor.deploy_object("ssh_keys", {"name": "other"})
+        vendor.create_object("ssh_keys", {"name": "other"})
 
 
 # --- Through the operations and the shell ---------------------------------------
@@ -970,7 +969,7 @@ def test_the_shell_object_reports_the_vendor():
     hetzner_object = globals.dba.vendor.hetzner
     assert list(hetzner_object.feature_set()) == ["CoreCompute"]
     support = {entry["object_type"]: list(entry["operations"]) for entry in hetzner_object.object_support()}
-    assert support["volumes"] == ["info", "list", "status", "deploy", "delete"]
+    assert support["volumes"] == ["info", "list", "status", "create", "delete"]
 
     listed = {entry["name"]: entry for entry in globals.dba.list.vendors()}
     assert list(listed["hetzner"]["feature_sets"]) == ["CoreCompute"]
@@ -1002,7 +1001,7 @@ def test_a_refusal_reaches_the_shell_before_any_task(clean_api_keys, mock_api):
 
     api_keys.store_api_key("hetzner", "hc-default-token")
     with pytest.raises(Exception, match="requires ssh_keys"):
-        globals.dba.vendor.hetzner.deploy_object("vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"})
+        globals.dba.vendor.hetzner.create_object("vms", {"name": "db", "size": "cx22", "image": "ubuntu-24.04"})
     assert mock_api.requests == []
     assert globals.task.list("dba") == []
 

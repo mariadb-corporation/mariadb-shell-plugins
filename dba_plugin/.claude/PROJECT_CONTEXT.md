@@ -23,10 +23,10 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   offering's independent info requests side by side; `state_of(status)` gives
   every object a `state` (ready, pending, stopped, deleting, failed, unknown)
   next to the vendor's `status`, and the task waits use it.
-- **Settings** are declared per vendor and type (`deploy_settings`: required,
+- **Settings** are declared per vendor and type (`create_settings`: required,
   supported) with static rules in `_check_<type>(settings)`;
-  `check_deploy_settings` runs both before a deployment's task starts and in
-  `_deploy_<type>`. Rules needing a request (a size offered) fail the task.
+  `check_create_settings` runs both before a create task starts and in
+  `_create_<type>`. Rules needing a request (a size offered) fail the task.
 - **Settings for a dialog:** every standardized setting is a field in
   `lib/settings_fields.py` (caption, group, type, range, `choices_from`,
   `filter`, `display`); `SETTINGS` descriptions derive from it. A vendor's
@@ -54,7 +54,7 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
 - **Functions** (shell names; MCP: `dba.<verb>_<rest>`): `dba.list.vendors
   ([featureSet])`, `dba.set.apiKey`, `dba.list.vendor.objectSupport`,
   `dba.get.vendor.objectInfo`, `dba.list.vendor.objects([tags, project])`,
-  `dba.get.vendor.objectStatus`, `dba.deploy.vendor.object`,
+  `dba.get.vendor.objectStatus`, `dba.create.vendor.object`,
   `dba.delete.vendor.object`. Feature sets `ManagedService`, `CoreCompute`;
   standardized object types in `lib/object_types.py`.
 - **API keys** in the shell secret store: `GUI:DBA_API_KEY:<vendor>:<project>`
@@ -65,14 +65,14 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   refuses registering a function twice, so `__init__.py` files import nothing,
   and a vendor plugin's `init.py` calls `objects.register_vendor_plugin`, which
   creates `dba` / `dba.vendor` if missing (`ensure_parent_objects`).
-- **Deploy and delete are background tasks** of the shell's
+- **Create and delete are background tasks** of the shell's
   `mysqlsh.task_manager` (shipped with the shell, as is the `task` global),
   type `dba` (`lib/operations.py`). The shell and the plugins are released
   together, so the plugin needs no fallback for a shell without it.
   - Checked at once: vendor, key, type support (`vendor.require`), the
     generic settings (`check_settings`: name, known keys). Vendor-specific
     rules (e.g. Hetzner's ssh_keys) fail the task instead.
-  - A deploy ends when the status is ready (`READY_STATUSES`) or stopped
+  - A create task ends when the status is ready (`READY_STATUSES`) or stopped
     (`off`/`stopped`); up to 1 h. A delete ends when the object is gone (404
     or not listed) or `deleted`; up to 30 min. A failed/error status fails it.
   - Polls every 10 s by id (`vendor.current_status`: `_status_<type>`, a 404
@@ -82,14 +82,14 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   - One task per object: claims by name AND id, project None = `default`,
     type normalized; released when the task ends or fails to start.
   - Cancelling stops the waiting, not the vendor.
-- **Command line:** `dba deploy vendor object` / `dba delete vendor object`
+- **Command line:** `dba create vendor object` / `dba delete vendor object`
   are `cli=True` and return through `task_manager.answer(task, fqn)`
   (`objects.task_answer`): as THE command-line call they follow the task
   (statuses on stderr, result printed, error = exit 1, Ctrl+C cancels, 130);
   anywhere else they return `{task_id, status}`. Scripts wait for running
   tasks at exit; an interactive `\quit` only warns.
 - Vendor objects get the same functions without the vendor name
-  (`dba.vendor.<camel>.deployObject` etc., `cli=False`).
+  (`dba.vendor.<camel>.createObject` etc., `cli=False`).
 - **Architectures** normalized to `x86_64` / `arm64` (`vendor.architecture`).
   Objects without vendor state report `STATUS_ACTIVE` ("active").
 - **Deleting a VM keeps its volumes** (contract in `lib/vendor.py`). UpCloud
@@ -104,12 +104,12 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   -f run_tests.py [--vendors=a,b] [--live] [-k ...]` with a shell build that
   has `mysqlsh.task_manager` first on PATH.
 - Verified live:
-  - Hetzner: every read; deploy and delete of SSH key, network, firewall, VM,
+  - Hetzner: every read; create and delete of SSH key, network, firewall, VM,
     volume (the detach and firewall-removal paths), also as tasks.
   - UpCloud: every read; network, VM, volume, load balancer, object storage;
     the VM delete that keeps its volumes.
   - MariaDB Cloud: every read; a serverless service (`serverless-standalone`)
-    deployed and deleted. Dedicated services need a payment method on the
+    created and deleted. Dedicated services need a payment method on the
     account (HTTP 402 without one).
 
 ## Files that matter
@@ -137,19 +137,19 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
    Cloud services, once their syntax is verified against objects that carry
    labels (their APIs accept `label` / `tags` parameters without an error).
 4. Unverified: UpCloud monthly price = hourly x 672; MariaDB Cloud required
-   create fields beyond the serverless case; Hetzner load balancer deploy live.
+   create fields beyond the serverless case; Hetzner load balancer create live.
 
 ## Gotchas / things not to repeat
 
 - Live test tokens never go into the conversation, a file in the repository or
   a command line: keep them outside the repository, readable only by the
   user, and pass them as `DBA_TEST_<VENDOR>_API_KEY="$(cat <file>)"`. Ask
-  before any live deploy that costs money; use a throwaway vendor project.
+  before any live create that costs money; use a throwaway vendor project.
 - A first `_system_disk` that trusted `boot_disk` alone orphaned an UpCloud
   system disk: after any live UpCloud VM test, list the private storages and
   delete strays.
 - Docstrings are parsed: a line ending in `:` is a section header (also inside
   Args), and every parameter must be documented.
 - Through the shell global a `mysqlsh.Error` arrives as `RuntimeError`.
-- Deploy settings on the CLI: `--name=db1 --size=...` map into the `settings`
+- Create settings on the CLI: `--name=db1 --size=...` map into the `settings`
   dict; an error reads `Error: Shell Error: ...` (the shell's format).

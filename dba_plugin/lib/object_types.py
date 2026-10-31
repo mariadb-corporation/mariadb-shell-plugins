@@ -84,7 +84,7 @@ OBJECT_TYPES = {
         "feature_set": CORE_COMPUTE,
     },
     SSH_KEYS: {
-        "description": "Public SSH keys installed on VMs at deployment.",
+        "description": "Public SSH keys installed on VMs when they are created.",
         "feature_set": CORE_COMPUTE,
     },
 }

@@ -20,12 +20,12 @@ and an MCP server started with ``--gui`` use the GUI keys, any other MCP
 server the MCP keys (see :mod:`dba_plugin.lib.api_keys`). Each raises
 :class:`DbaError` only, which its caller turns into its own kind of error.
 
-Reading - vendors, offerings, objects, a status - answers at once. Deploying
+Reading - vendors, offerings, objects, a status - answers at once. Creating
 and deleting take minutes, a managed service far longer, so they run as
 background tasks of the shell's task manager (``mysqlsh.task_manager``, task
 type ``dba``): the call checks what it can without the vendor, starts the
 task and returns its id, and the caller follows it with ``task.get``. A
-deployment's task ends once the object is ready to use, a deletion's once the
+create task ends once the object is ready to use, a deletion's once the
 object is gone; cancelling one stops the waiting, not what the vendor already
 started. One object is worked on by one task at a time.
 """
@@ -43,10 +43,10 @@ from dba_plugin.lib.general import DbaError
 
 TASK_TYPE = "dba"
 # How many dba tasks one owner may have running at once: a cluster takes a few
-# VMs, volumes and a load balancer, deployed side by side.
+# VMs, volumes and a load balancer, created side by side.
 MAX_RUNNING_TASKS = 16
 # How long a task waits for the vendor, and how often it asks.
-DEPLOY_TIMEOUT = 3600
+CREATE_TIMEOUT = 3600
 DELETE_TIMEOUT = 1800
 POLL_INTERVAL = 10
 # How many asks in a row may fail - an API that answers 502 for a moment, an
@@ -105,7 +105,7 @@ def object_support(vendor_name=None) -> list:
     Returns:
         list: For a vendor, what :meth:`Vendor.object_support` reports. For
         none, one dict per type: ``object_type``, ``description``,
-        ``feature_set``, ``settings`` (the standardized deployment settings)
+        ``feature_set``, ``settings`` (the standardized settings to create objects with)
         and ``vendors``.
     """
     if vendor_name:
@@ -229,12 +229,12 @@ def _with_vendor(vendor_name, project, context, call):
 
 
 def object_info(vendor_name: str, object_type: str, project=None, context=api_keys.CONTEXT_GUI) -> dict:
-    """What of an object type the vendor offers to deploy."""
+    """What of an object type the vendor offers to create."""
     return _with_vendor(vendor_name, project, context, lambda v: v.object_info(object_type))
 
 
 def settings_info(vendor_name: str, object_type: str, project=None, context=api_keys.CONTEXT_GUI) -> dict:
-    """The deployment settings of a type at a vendor, described for a dialog.
+    """The settings to create objects of a type with at a vendor, described for a dialog.
 
     See ``Vendor.settings_info``.
     """
@@ -244,7 +244,7 @@ def settings_info(vendor_name: str, object_type: str, project=None, context=api_
 def validate_settings(
     vendor_name: str, object_type: str, settings, project=None, context=api_keys.CONTEXT_GUI
 ) -> dict:
-    """Checks a deployment's settings, against what the vendor offers too.
+    """Checks the settings to create an object with, against what the vendor offers too.
 
     See ``Vendor.validate_settings``. A setting that is not valid is
     reported, not raised.
@@ -318,7 +318,7 @@ def _start_task(kind, title, owner, vendor, project, object_type, object_name, w
     """Starts a dba task running ``work(task, claim)``, which owns the vendor.
 
     The object, by the name or id given, is claimed for the task, and ``claim``
-    claims it by more of them - its id once deployed, its name once found -
+    claims it by more of them - its id once created, its name once found -
     so that no other task works on it meanwhile. The claims are released and
     the vendor closed when the task ends, or fails to start.
 
@@ -369,7 +369,7 @@ def _wait(task, vendor, describe, poll, done, timeout):
 
     A poll that fails is tried again, :data:`MAX_POLL_ERRORS` times in a row
     at most: one failed request in an hour of asking must not fail a
-    deployment the vendor goes on with.
+    creation the vendor goes on with.
 
     Raises:
         DbaError: The vendor reports a failure, the polls keep failing, or
@@ -405,7 +405,7 @@ def _wait(task, vendor, describe, poll, done, timeout):
         task.sleep(POLL_INTERVAL)
 
 
-def deploy_object(
+def create_object(
     vendor_name: str,
     object_type: str,
     settings,
@@ -413,16 +413,16 @@ def deploy_object(
     context=api_keys.CONTEXT_GUI,
     owner=None,
 ) -> dict:
-    """Starts a task deploying one object, which ends once the object is ready.
+    """Starts a task creating one object, which ends once the object is ready.
 
     The settings are checked at once, as far as the vendor's rules need no
-    request (``Vendor.check_deploy_settings``); what only the vendor's API
+    request (``Vendor.check_create_settings``); what only the vendor's API
     refuses - a size it does not offer - fails the task.
 
     Args:
         vendor_name (str): The vendor.
         object_type (str): The standardized object type.
-        settings (dict): The deployment settings; ``name`` always.
+        settings (dict): The settings to create it with; ``name`` always.
         project (str): The project; None for the default one.
         context (str): Whose API keys to use.
         owner: Who starts the task, as the task manager compares owners;
@@ -430,12 +430,12 @@ def deploy_object(
 
     Returns:
         dict: ``task_id`` and ``status``. The task's result is the object,
-        ready to use - or stopped, where it was deployed not to start.
+        ready to use - or stopped, where it was created not to start.
     """
     object_type = types.check_object_type(object_type)
-    vendor = _open_for("deploy", vendor_name, object_type, project, context)
+    vendor = _open_for("create", vendor_name, object_type, project, context)
     try:
-        vendor.check_deploy_settings(object_type, settings)
+        vendor.check_create_settings(object_type, settings)
     except DbaError:
         vendor.close()
         raise
@@ -443,27 +443,27 @@ def deploy_object(
     describe = f"The {object_type} '{name}'"
 
     def work(task, claim):
-        task.stage_started("Deploying")
-        deployed = vendor.deploy_object(object_type, settings)
-        claim(deployed["id"])
+        task.stage_started("Creating")
+        created = vendor.create_object(object_type, settings)
+        claim(created["id"])
         task.message(
-            f"{vendor.display_name} accepted the {object_type} '{name}' (id {deployed['id']})."
+            f"{vendor.display_name} accepted the {object_type} '{name}' (id {created['id']})."
         )
-        task.stage_finished("Deploying")
+        task.stage_finished("Creating")
 
         task.stage_started("Waiting until it is ready")
         ready = _wait(
             task, vendor, describe,
-            lambda: vendor.current_status(object_type, deployed),
+            lambda: vendor.current_status(object_type, created),
             lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
-            DEPLOY_TIMEOUT,
+            CREATE_TIMEOUT,
         )
         task.stage_finished("Waiting until it is ready")
         return ready
 
     return _start_task(
-        "deploy_object",
-        f"Deploy {object_type} '{name}' on {vendor.display_name}",
+        "create_object",
+        f"Create {object_type} '{name}' on {vendor.display_name}",
         owner, vendor, project, object_type, name, work,
     )
 

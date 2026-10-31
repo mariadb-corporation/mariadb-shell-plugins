@@ -60,7 +60,7 @@ class StubVendor(vendor_lib.Vendor):
     def _list_vms(self):
         return list(StubVendor.objects)
 
-    def _deploy_vms(self, settings):
+    def _create_vms(self, settings):
         settings = vendor_lib.check_settings("vms", settings, supported=("size",))
         StubVendor.deployed.append(settings)
         deployed = vendor_lib.make_object("vms", 9, settings["name"], "starting", labels=settings["labels"])
@@ -173,7 +173,7 @@ def test_settings_are_checked():
 def test_object_support_follows_the_methods_a_vendor_has():
     assert StubVendor.object_types() == ["vms", "volumes"]
     vms, volumes = StubVendor.object_support()
-    assert vms["operations"] == ["info", "list", "status", "deploy", "delete"]
+    assert vms["operations"] == ["info", "list", "status", "create", "delete"]
     assert volumes["operations"] == ["list", "status"]
     assert vms["feature_set"] == object_types.CORE_COMPUTE
 
@@ -184,8 +184,8 @@ def test_an_unsupported_operation_is_refused_with_what_is(stub):
         vendor.list_objects("servers")
     with pytest.raises(DbaError, match="Stub Cloud does not support dns. It supports: vms, volumes"):
         vendor.list_objects("dns")
-    with pytest.raises(DbaError, match="Stub Cloud does not support 'deploy' for volumes"):
-        vendor.deploy_object("volumes", {"name": "v"})
+    with pytest.raises(DbaError, match="Stub Cloud does not support 'create' for volumes"):
+        vendor.create_object("volumes", {"name": "v"})
 
 
 def test_objects_are_found_by_name_then_id(stub):
@@ -204,8 +204,8 @@ def test_a_project_is_a_label_for_a_vendor_without_projects(stub):
         "db1", "db2", "twin", "twin"
     ]
 
-    StubVendor("key", "alpha").deploy_object("vms", {"name": "new", "labels": {"env": "prod"}})
-    NativeVendor("key", "alpha").deploy_object("vms", {"name": "new"})
+    StubVendor("key", "alpha").create_object("vms", {"name": "new", "labels": {"env": "prod"}})
+    NativeVendor("key", "alpha").create_object("vms", {"name": "new"})
     assert [d["labels"] for d in StubVendor.deployed] == [
         {"env": "prod", vendor_lib.PROJECT_LABEL: "alpha"}, {}
     ]
@@ -318,20 +318,20 @@ def test_operations_use_the_stored_key(stub):
 # --- Deploying and deleting as tasks ---------------------------------------------
 
 
-def test_a_deployment_is_a_task_that_ends_once_the_object_is_ready(stub):
+def test_a_creation_is_a_task_that_ends_once_the_object_is_ready(stub):
     operations.set_api_key("stubcloud", "k")
-    started = operations.deploy_object("stubcloud", "vms", {"name": "db9", "size": "small"}, owner="me")
+    started = operations.create_object("stubcloud", "vms", {"name": "db9", "size": "small"}, owner="me")
     assert set(started) == {"task_id", "status"}
 
     ended = _ended(started, "me")
     assert ended["status"] == task_manager.COMPLETED
     assert ended["task_type"] == "dba"
-    assert ended["kind"] == "deploy_object"
-    assert ended["title"] == "Deploy vms 'db9' on Stub Cloud"
+    assert ended["kind"] == "create_object"
+    assert ended["title"] == "Create vms 'db9' on Stub Cloud"
     assert (ended["vendor"], ended["project"], ended["object_type"]) == ("stubcloud", None, "vms")
     assert ended["result"]["name"] == "db9"
     assert ended["result"]["status"] == "running"
-    assert [stage["name"] for stage in ended["stages"]] == ["Deploying", "Waiting until it is ready"]
+    assert [stage["name"] for stage in ended["stages"]] == ["Creating", "Waiting until it is ready"]
     assert [m["text"] for m in ended["messages"]] == [
         "Stub Cloud accepted the vms 'db9' (id 9).",
         "The vms 'db9' is starting.",
@@ -353,11 +353,11 @@ def test_a_deletion_is_a_task_that_ends_once_the_object_is_gone(stub):
 @pytest.mark.parametrize(
     "call, refusal",
     [
-        (lambda: operations.deploy_object("stubcloud", "vms", {"size": "small"}), "Missing settings for vms: name"),
-        (lambda: operations.deploy_object("stubcloud", "vms", {"name": "db9", "color": "red"}), "Unsupported settings for vms: color"),
-        (lambda: operations.deploy_object("stubcloud", "vms", {"name": "db9", "size": "huge"}), "no size 'huge'"),
-        (lambda: operations.deploy_object("stubcloud", "volumes", {"name": "v"}), "does not support 'deploy' for volumes"),
-        (lambda: operations.deploy_object("nocloud", "vms", {"name": "v"}), "Unknown vendor 'nocloud'"),
+        (lambda: operations.create_object("stubcloud", "vms", {"size": "small"}), "Missing settings for vms: name"),
+        (lambda: operations.create_object("stubcloud", "vms", {"name": "db9", "color": "red"}), "Unsupported settings for vms: color"),
+        (lambda: operations.create_object("stubcloud", "vms", {"name": "db9", "size": "huge"}), "no size 'huge'"),
+        (lambda: operations.create_object("stubcloud", "volumes", {"name": "v"}), "does not support 'create' for volumes"),
+        (lambda: operations.create_object("nocloud", "vms", {"name": "v"}), "Unknown vendor 'nocloud'"),
         (lambda: operations.delete_object("stubcloud", "vms", ""), "object_name is empty"),
         (lambda: operations.delete_object("nativecloud", "vms", "db1"), "No Native Cloud API key"),
     ],
@@ -372,7 +372,7 @@ def test_what_can_be_checked_at_once_fails_the_call(stub, call, refusal):
 def test_what_the_vendor_refuses_fails_the_task(stub):
     operations.set_api_key("stubcloud", "k")
     # a standardized setting this vendor does not take
-    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9", "image": "debian-13"}))
+    ended = _ended(operations.create_object("stubcloud", "vms", {"name": "db9", "image": "debian-13"}))
     assert ended["status"] == task_manager.FAILED
     assert "Unsupported settings for vms: image" in ended["error"]
     ended = _ended(operations.delete_object("stubcloud", "vms", "nothere"))
@@ -380,28 +380,28 @@ def test_what_the_vendor_refuses_fails_the_task(stub):
     assert "There is no vms named 'nothere'" in ended["error"]
 
 
-def test_a_few_failed_polls_do_not_fail_the_deployment(stub):
+def test_a_few_failed_polls_do_not_fail_the_creation(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.flaky = operations.MAX_POLL_ERRORS
-    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    ended = _ended(operations.create_object("stubcloud", "vms", {"name": "db9"}))
     assert ended["status"] == task_manager.COMPLETED
     warnings = [m["text"] for m in ended["messages"] if m["level"] == "warning"]
     assert len(warnings) == operations.MAX_POLL_ERRORS
     assert "HTTP 502" in warnings[0]
 
 
-def test_polls_that_keep_failing_fail_the_deployment(stub):
+def test_polls_that_keep_failing_fail_the_creation(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.flaky = operations.MAX_POLL_ERRORS + 1
-    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    ended = _ended(operations.create_object("stubcloud", "vms", {"name": "db9"}))
     assert ended["status"] == task_manager.FAILED
     assert "HTTP 502" in ended["error"]
 
 
-def test_a_server_deployed_stopped_is_deployed(stub):
+def test_a_server_created_stopped_is_created(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.hold = True
-    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    started = operations.create_object("stubcloud", "vms", {"name": "db9"})
     StubVendor.objects[-1]["status"] = "off"
     ended = _ended(started)
     assert ended["status"] == task_manager.COMPLETED
@@ -421,7 +421,7 @@ def test_a_deletion_the_vendor_fails_fails_at_once(stub):
 def test_an_object_is_one_tasks_by_its_id_and_in_the_default_project(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.hold = True
-    first = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    first = operations.create_object("stubcloud", "vms", {"name": "db9"})
     task = task_manager.get(first["task_id"])
     while task.stage != "Waiting until it is ready":
         task.wait_for_change(task.version, 1)
@@ -447,29 +447,29 @@ def test_a_task_that_cannot_start_lets_go_of_its_object(stub, monkeypatch):
 
     monkeypatch.setattr(threading.Thread, "start", no_thread)
     with pytest.raises(DbaError, match="^The task could not start: can't start new thread$"):
-        operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+        operations.create_object("stubcloud", "vms", {"name": "db9"})
     [failed] = task_manager.list_tasks()
     assert failed.status == task_manager.FAILED
 
     # the object is free again for the next task
     monkeypatch.setattr(threading.Thread, "start", start)
-    assert _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))["status"] == "completed"
+    assert _ended(operations.create_object("stubcloud", "vms", {"name": "db9"}))["status"] == "completed"
 
-def test_a_failed_status_fails_the_deployment(stub):
+def test_a_failed_status_fails_the_creation(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.hold = True
-    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    started = operations.create_object("stubcloud", "vms", {"name": "db9"})
     StubVendor.objects[-1]["status"] = "error"
     ended = _ended(started)
     assert ended["status"] == task_manager.FAILED
     assert ended["error"] == "Stub Cloud reports The vms 'db9' as error."
 
 
-def test_a_deployment_waits_only_so_long(stub, monkeypatch):
+def test_a_creation_waits_only_so_long(stub, monkeypatch):
     operations.set_api_key("stubcloud", "k")
-    monkeypatch.setattr(operations, "DEPLOY_TIMEOUT", 0)
+    monkeypatch.setattr(operations, "CREATE_TIMEOUT", 0)
     StubVendor.hold = True
-    ended = _ended(operations.deploy_object("stubcloud", "vms", {"name": "db9"}))
+    ended = _ended(operations.create_object("stubcloud", "vms", {"name": "db9"}))
     assert ended["status"] == task_manager.FAILED
     assert "is still starting after 0 minutes" in ended["error"]
 
@@ -478,7 +478,7 @@ def test_a_cancel_stops_the_waiting_at_once(stub, monkeypatch):
     operations.set_api_key("stubcloud", "k")
     monkeypatch.setattr(operations, "POLL_INTERVAL", 60)
     StubVendor.hold = True
-    started = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    started = operations.create_object("stubcloud", "vms", {"name": "db9"})
     task = task_manager.get(started["task_id"])
     task.wait_for_change(0, 1)
     while task.stage != "Waiting until it is ready":
@@ -493,11 +493,11 @@ def test_a_cancel_stops_the_waiting_at_once(stub, monkeypatch):
 def test_one_object_is_worked_on_by_one_task_at_a_time(stub):
     operations.set_api_key("stubcloud", "k")
     StubVendor.hold = True
-    first = operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+    first = operations.create_object("stubcloud", "vms", {"name": "db9"})
     with pytest.raises(DbaError, match="A task is already working on the vms 'db9'"):
-        operations.deploy_object("stubcloud", "vms", {"name": "db9"})
+        operations.create_object("stubcloud", "vms", {"name": "db9"})
     # another object is fine
-    operations.deploy_object("stubcloud", "vms", {"name": "db10"})
+    operations.create_object("stubcloud", "vms", {"name": "db10"})
 
     task_manager.get(first["task_id"]).cancel()
     _ended(first)
@@ -522,7 +522,7 @@ def test_the_shell_functions_use_the_gui_keys(stub):
     listed = dba.list.vendor.objects("stubcloud", "vms", ["env=prod"], "alpha")
     assert [o["name"] for o in listed] == ["db1"]
 
-    started = dba.deploy.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"}, "alpha")
+    started = dba.create.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"}, "alpha")
     deployed = _ended(started)["result"]
     assert deployed["labels"] == {vendor_lib.PROJECT_LABEL: "alpha"}
     assert dba.get.vendor.object_status("stubcloud", "vms", "db1", "alpha")["status"] == "running"
@@ -532,7 +532,7 @@ def test_the_shell_functions_use_the_gui_keys(stub):
 
     # the task global follows them, as the shell's own tasks
     listed = mysqlsh.globals.task.list("dba")
-    assert [t["kind"] for t in listed] == ["deploy_object", "delete_object"]
+    assert [t["kind"] for t in listed] == ["create_object", "delete_object"]
     assert mysqlsh.globals.task.get(started["task_id"])["status"] == "completed"
 
 
@@ -545,19 +545,19 @@ def test_shell_values_become_plain_python():
     assert objects.plain({"a": [1, {"b": (2,)}]}) == {"a": [1, {"b": [2]}]}
 
 
-def test_on_the_command_line_a_deployment_waits_for_its_task(stub, monkeypatch, capsys):
+def test_on_the_command_line_a_creation_waits_for_its_task(stub, monkeypatch, capsys):
     dba = mysqlsh.globals.dba
     dba.set.api_key("stubcloud", "k")
-    # as the shell runs mariadb-shell -- dba deploy vendor object ...
-    monkeypatch.setattr(task_manager, "cli_function", "dba.deploy.vendor.object")
+    # as the shell runs mariadb-shell -- dba create vendor object ...
+    monkeypatch.setattr(task_manager, "cli_function", "dba.create.vendor.object")
 
-    deployed = dba.deploy.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"})
+    deployed = dba.create.vendor.object("stubcloud", "vms", {"name": "db9", "size": "small"})
     assert deployed["name"] == "db9"
     assert deployed["status"] == "running"
     assert "The vms 'db9' is running." in capsys.readouterr().err
 
     with pytest.raises(RuntimeError, match="color"):
-        dba.deploy.vendor.object("stubcloud", "vms", {"name": "db10", "color": "red"})
+        dba.create.vendor.object("stubcloud", "vms", {"name": "db10", "color": "red"})
     # another function is no command-line call: it returns the task's id
     assert "task_id" in dba.delete.vendor.object("stubcloud", "vms", "db9")
 
@@ -618,12 +618,12 @@ class DialogVendor(StubVendor):
 
     name = "dialogcloud"
     display_name = "Dialog Cloud"
-    deploy_settings = {
+    create_settings = {
         "vms": {"required": ("name", "size"), "supported": ("size", "location", "image", "networks")},
     }
     settings_fields = {
         "vms": {
-            "size": {"is_editable": True},
+            "size": {"is_updatable": True},
             "turbo": sf.field("Turbo", "Runs it faster.", sf.BOOLEAN, default=False,
                               vendor_key="options.turbo"),
             "cores": sf.field("Cores", "How many.", sf.INTEGER, minimum=1, maximum=8),
@@ -645,8 +645,8 @@ class DialogVendor(StubVendor):
     def _list_networking(self):
         return [vendor_lib.make_object("networking", 5, "net-z1", "active", "z1")]
 
-    def _deploy_vms(self, settings):
-        settings = self.check_deploy_settings("vms", settings)
+    def _create_vms(self, settings):
+        settings = self.check_create_settings("vms", settings)
         StubVendor.deployed.append(settings)
         deployed = vendor_lib.make_object("vms", 9, settings["name"], "running")
         StubVendor.objects.append(deployed)
@@ -667,13 +667,13 @@ def test_the_fields_of_a_type_follow_the_vendor():
     ]
     assert [details["position"] for details in fields.values()] == list(range(1, 10))
     assert [key for key, details in fields.items() if details["required"]] == ["size", "name"]
-    assert fields["size"]["is_editable"] and not fields["location"]["is_editable"]
+    assert fields["size"]["is_updatable"] and not fields["location"]["is_updatable"]
     assert fields["turbo"]["vendor_specific"] and fields["turbo"]["vendor_key"] == "options.turbo"
     assert not fields["size"]["vendor_specific"]
     assert "firewalls" not in fields  # not supported
     # every attribute a dialog relies on is there
     assert set(fields["cores"]) >= {
-        "key", "position", "caption", "description", "type", "group", "required", "is_editable",
+        "key", "position", "caption", "description", "type", "group", "required", "is_updatable",
         "advanced", "vendor_specific", "minimum", "maximum",
     }
     # standard choices come as dicts
@@ -702,12 +702,12 @@ def test_settings_problems_are_collected_with_their_keys(dialog):
     assert vendor.settings_problems("vms", "name=x") == (None, [{"settings": [], "message": "settings must be a dict."}])
     # the first problem is what a deployment refuses with
     with pytest.raises(SettingError, match="Unsupported settings for vms: colour") as error:
-        vendor.check_deploy_settings("vms", {"name": "x", "size": "small", "colour": "red"})
+        vendor.check_create_settings("vms", {"name": "x", "size": "small", "colour": "red"})
     assert error.value.settings == ["colour"]
 
 
 def test_a_vendors_own_settings_go_into_its_request(dialog):
-    started = operations.deploy_object(
+    started = operations.create_object(
         "dialogcloud", "vms",
         {"name": "db9", "size": "small", "turbo": "yes", "cores": "4", "vendor_settings": {"zone": "a"}},
     )
@@ -741,7 +741,7 @@ def test_the_settings_info_has_the_choices_the_vendor_offers(dialog):
     assert [c["value"] for c in vendor_lib.applying_choices(settings, "image", {"size": "big"})] == ["linux-arm"]
     assert len(vendor_lib.applying_choices(settings, "image", {"size": "unknown"})) == 2
 
-    with pytest.raises(DbaError, match="does not support 'deploy' for volumes"):
+    with pytest.raises(DbaError, match="does not support 'create' for volumes"):
         operations.settings_info("dialogcloud", "volumes")
 
 
@@ -760,8 +760,7 @@ def test_settings_are_validated_against_what_the_vendor_offers(dialog):
         {"settings": ["size"], "message": "Dialog Cloud does not offer the size 'tiny'. Choose one of: small, big."},
     ]
     assert validate({"name": "db", "size": "small", "image": "my-own"})["warnings"] == [
-        {"settings": ["image"], "message": "Dialog Cloud does not list the image 'my-own'; the deployment "
-         "fails if it does not take it."}
+        {"settings": ["image"], "message": "Dialog Cloud does not list the image 'my-own'; creating the object fails if the vendor does not take it."}
     ]
     # a network not listed is an error, but a warning in a project a vendor
     # without projects may not have labelled it with

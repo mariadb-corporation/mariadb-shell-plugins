@@ -19,12 +19,12 @@ Thin wrappers around ``dba_plugin.lib.operations``, registered only where the
 dba plugin is installed. What a client gets depends on who it is:
 
 * With ``--gui`` (the MariaDB VS Code extension) every tool, working with the
-  GUI API keys: storing a key, deploying and deleting included. Deploying
+  GUI API keys: storing a key, creating and deleting included. Creating
   and deleting start a background task of the client and return its id;
   ``task.get`` follows it (see :mod:`mcp_plugin.lib.task_functions`).
 * Otherwise (an agent) only the tools that read: vendors, object types,
-  offerings, deployment settings and their validation, deployed objects and
-  their status, with the MCP API keys that
+  offerings, the settings to create objects with and their validation,
+  deployed objects and their status, with the MCP API keys that
   ``mcp setup --setDbaApiKey`` stores. An agent can neither store a key nor
   create or delete anything that costs money or holds data.
 
@@ -90,7 +90,7 @@ def register_dba_tools(server, function_groups=()) -> None:
 
         Args:
             vendor_name: A vendor from dba.list_vendors. Without it, every
-                type with its description, feature set, deployment settings
+                type with its description, feature set, settings to create objects with
                 and the vendors supporting it.
 
         Returns:
@@ -102,7 +102,7 @@ def register_dba_tools(server, function_groups=()) -> None:
     def get_vendor_object_info(
         vendor_name: str, object_type: str, project: Optional[str] = None
     ) -> dict:
-        """Returns what of an object type a vendor offers to deploy.
+        """Returns what of an object type a vendor offers to create.
 
         For vms the sizes (architecture, cores, RAM, disk, included traffic,
         prices), locations and images; for managed_mariadb_services sizes,
@@ -121,11 +121,11 @@ def register_dba_tools(server, function_groups=()) -> None:
     def get_vendor_object_settings_info(
         vendor_name: str, object_type: str, project: Optional[str] = None
     ) -> dict:
-        """Returns the settings to deploy an object type with at a vendor, described for a dialog.
+        """Returns the settings to create an object type with at a vendor, described for a dialog.
 
         Every setting the vendor takes, its own included, with its position,
         group (section), caption, description, type, required, default,
-        range and form, is_editable (changeable once deployed), and the
+        range and form, is_updatable (changeable once deployed), and the
         values to choose from: what the vendor offers (sizes with resources
         and prices per location, locations, images) and what is deployed
         (networks, SSH keys, VMs), with the filter rules saying which apply
@@ -148,17 +148,17 @@ def register_dba_tools(server, function_groups=()) -> None:
     def validate_vendor_object_settings(
         vendor_name: str, object_type: str, settings: dict, project: Optional[str] = None
     ) -> dict:
-        """Checks the settings of a deployment, without deploying anything.
+        """Checks the settings to create an object with, without creating anything.
 
-        What deploying checks before its task starts, and whether the
+        What creating an object checks before its task starts, and whether the
         sizes, locations, images and versions named are offered together
         and the objects named are deployed.
 
         Args:
             vendor_name: The vendor.
             object_type: The standardized object type.
-            settings: The settings, as dba.deploy_vendor_object takes them.
-            project: The project to deploy in.
+            settings: The settings, as dba.create_vendor_object takes them.
+            project: The project to create it in.
 
         Returns:
             valid, errors and warnings: each problem a message and the keys
@@ -234,15 +234,15 @@ def register_dba_tools(server, function_groups=()) -> None:
 
     from mcp.server.mcpserver import Context
 
-    @tool(name="dba.deploy_vendor_object")
-    def deploy_vendor_object(
+    @tool(name="dba.create_vendor_object")
+    def create_vendor_object(
         ctx: Context,
         vendor_name: str,
         object_type: str,
         settings: dict,
         project: Optional[str] = None,
     ) -> dict:
-        """Starts deploying an object, such as a VM, at a vendor, as a background task.
+        """Starts creating an object, such as a VM, at a vendor, as a background task.
 
         Args:
             vendor_name: The vendor.
@@ -251,7 +251,7 @@ def register_dba_tools(server, function_groups=()) -> None:
                 dba.list_vendor_object_support; always name, and optionally
                 labels and vendor_settings (merged into the vendor's own
                 request as is).
-            project: The project to deploy it in.
+            project: The project to create it in.
 
         Returns:
             The task_id and status of the task. Follow it with task.get: it
@@ -262,7 +262,7 @@ def register_dba_tools(server, function_groups=()) -> None:
         """
         owner = tasks.owner(general.get_client_identity(ctx))
         return _run(
-            lambda: operations.deploy_object(
+            lambda: operations.create_object(
                 vendor_name, object_type, settings, project, context, owner
             )
         )

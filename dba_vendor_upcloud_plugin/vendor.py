@@ -19,7 +19,7 @@ Managed Object Storage, through the UpCloud API 1.3.
 UpCloud speaks of servers, storages and networks; the dba plugin of vms,
 volumes and networking. What the API made awkward, and how it is handled:
 
-* UpCloud has no projects, so the dba plugin labels what it deploys for a
+* UpCloud has no projects, so the dba plugin labels what it creates for a
   project with ``dba_project`` - and UpCloud labels round-trip as
   ``[{"key", "value"}]`` lists. Servers wrap that list as
   ``{"label": [...]}``, the newer APIs do not; :func:`labels_from_api`
@@ -211,8 +211,8 @@ class UpCloud(v.Vendor):
 
     settings_fields = {
         types.VMS: {
-            "name": {"is_editable": True},
-            "labels": {"is_editable": True},
+            "name": {"is_updatable": True},
+            "labels": {"is_updatable": True},
             "networks": {"filter": [{"setting": "location", "detail": "location"}],
                          "description": "A list of private network names or uuids to attach; only "
                          "networks in the server's zone."},
@@ -228,9 +228,9 @@ class UpCloud(v.Vendor):
             ),
         },
         types.VOLUMES: {
-            "name": {"is_editable": True},
-            "labels": {"is_editable": True},
-            "size_gb": {"is_editable": True,
+            "name": {"is_updatable": True},
+            "labels": {"is_updatable": True},
+            "size_gb": {"is_updatable": True,
                         "description": "The size in GB; it can be grown later."},
             "vm": {"description": "The name or uuid of a server to attach the volume to; its zone "
                    "is the volume's."},
@@ -241,19 +241,19 @@ class UpCloud(v.Vendor):
                 default=DEFAULT_STORAGE_TIER,
             ),
         },
-        types.NETWORKING: {"name": {"is_editable": True}, "labels": {"is_editable": True}},
+        types.NETWORKING: {"name": {"is_updatable": True}, "labels": {"is_updatable": True}},
         types.LOAD_BALANCERS: {
-            "labels": {"is_editable": True},
+            "labels": {"is_updatable": True},
             "services": {"item_fields": {
                 **sf.FIELDS[types.LOAD_BALANCERS]["services"]["item_fields"],
                 "protocol": sf.field("Protocol", "tcp or http.", choices=["tcp", "http"],
                                      strict=True, default="tcp"),
             }},
         },
-        types.OBJECT_STORAGE: {"labels": {"is_editable": True}},
+        types.OBJECT_STORAGE: {"labels": {"is_updatable": True}},
     }
 
-    deploy_settings = {
+    create_settings = {
         types.VMS: {
             "required": ("name", "size", "location", "image", "ssh_keys"),
             "supported": ("size", "location", "image", "ssh_keys", "user_data", "networks"),
@@ -264,7 +264,7 @@ class UpCloud(v.Vendor):
         types.OBJECT_STORAGE: {"required": ("name", "location"), "supported": ("location",)},
     }
 
-    # --- What a deployment's settings must be, before any request ----------
+    # --- What the settings to create an object with must be, before any request ----------
 
     @staticmethod
     def _check_vms(settings) -> None:
@@ -504,8 +504,8 @@ class UpCloud(v.Vendor):
             f"There is no UpCloud template '{image}'. See objectInfo('vms') for the images."
         )
 
-    def _deploy_vms(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.VMS, settings)
+    def _create_vms(self, settings) -> dict:
+        settings = self.check_create_settings(types.VMS, settings)
         ssh_keys = v.as_list(settings["ssh_keys"])
 
         plan = next((p for p in self._plans() if p.get("name") == settings["size"]), None)
@@ -636,8 +636,8 @@ class UpCloud(v.Vendor):
     def _status_volumes(self, obj: dict) -> dict:
         return self._storage_object((self.client.get(f"/storage/{obj['id']}") or {}).get("storage") or {})
 
-    def _deploy_volumes(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.VOLUMES, settings)
+    def _create_volumes(self, settings) -> dict:
+        settings = self.check_create_settings(types.VOLUMES, settings)
         server = self._find_server(settings["vm"]) if settings.get("vm") else None
         zone = settings.get("location") or (server or {}).get("zone")
         if not zone:
@@ -713,8 +713,8 @@ class UpCloud(v.Vendor):
     def _status_networking(self, obj: dict) -> dict:
         return self._network_object((self.client.get(f"/network/{obj['id']}") or {}).get("network") or {})
 
-    def _deploy_networking(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.NETWORKING, settings)
+    def _create_networking(self, settings) -> dict:
+        settings = self.check_create_settings(types.NETWORKING, settings)
         network = {
             "name": settings["name"],
             "zone": settings["location"],
@@ -791,8 +791,8 @@ class UpCloud(v.Vendor):
             f"The UpCloud server '{target}' has no address on the load balancer's private network."
         )
 
-    def _deploy_load_balancers(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.LOAD_BALANCERS, settings)
+    def _create_load_balancers(self, settings) -> dict:
+        settings = self.check_create_settings(types.LOAD_BALANCERS, settings)
         network = self._find_network(settings["network"])
         services = settings["services"]
         targets = v.as_list(settings.get("targets"))
@@ -890,8 +890,8 @@ class UpCloud(v.Vendor):
     def _status_object_storage(self, obj: dict) -> dict:
         return self._object_storage_object(self.client.get(f"/object-storage-2/{obj['id']}") or {})
 
-    def _deploy_object_storage(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.OBJECT_STORAGE, settings)
+    def _create_object_storage(self, settings) -> dict:
+        settings = self.check_create_settings(types.OBJECT_STORAGE, settings)
         service = {
             "name": settings["name"],
             "region": settings["location"],
