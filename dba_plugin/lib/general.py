@@ -30,7 +30,7 @@ class DbaError(Exception):
 
 
 class SettingError(DbaError):
-    """A deployment setting that is not valid, naming the settings it is about.
+    """A setting to create an object with that is not valid, naming the settings it is about.
 
     Args:
         message (str): What is wrong, worded for the user.

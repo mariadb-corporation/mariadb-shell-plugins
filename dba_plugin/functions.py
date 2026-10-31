@@ -68,7 +68,7 @@ def list_object_support(vendor_name: str = None) -> list:
     """Lists the standardized object types the dba plugin supports.
 
     Without a vendor, every object type with its description, feature set,
-    deployment settings and the vendors supporting it. With one, the types
+    settings to create objects with and the vendors supporting it. With one, the types
     that vendor supports and the operations it supports on each.
 
     Args:
@@ -82,7 +82,7 @@ def list_object_support(vendor_name: str = None) -> list:
 
 @plugin_function("dba.get.vendor.objectInfo", shell=True, cli=True, web=True)
 def get_object_info(vendor_name: str, object_type: str, project: str = None) -> dict:
-    """Returns what of an object type a vendor offers to deploy.
+    """Returns what of an object type a vendor offers to create.
 
     For VMs the sizes (architecture, cores, RAM, disk, included traffic
     and prices where the vendor reports them), locations and images; for a
@@ -102,7 +102,7 @@ def get_object_info(vendor_name: str, object_type: str, project: str = None) -> 
 
 @plugin_function("dba.get.vendor.objectSettingsInfo", shell=True, cli=True, web=True)
 def get_object_settings_info(vendor_name: str, object_type: str, project: str = None) -> dict:
-    """Returns the settings to deploy an object type with, described for a dialog.
+    """Returns the settings to create an object type with, described for a dialog.
 
     Every setting the vendor takes for the type, the standardized ones it
     supports and its own, with what a dialog needs to show and check it.
@@ -131,20 +131,20 @@ def get_object_settings_info(vendor_name: str, object_type: str, project: str = 
 def validate_object_settings(
     vendor_name: str, object_type: str, settings: dict, project: str = None
 ) -> dict:
-    """Checks the settings of a deployment before it is started.
+    """Checks the settings to create an object with, before it is created.
 
-    Checks what dba.deploy.vendor.object checks before it starts its task,
+    Checks what dba.create.vendor.object checks before it starts its task,
     which is the settings required and supported, the type, range and form
     of each value and the vendor's own rules. Then it checks them against
     the vendor, that the sizes, locations, images and versions named are
     offered, together, and that the objects named are deployed. Nothing is
-    deployed.
+    created.
 
     Args:
         vendor_name (str): The vendor.
         object_type (str): The standardized object type, e.g. vms.
-        settings (dict): The settings, as dba.deploy.vendor.object takes them.
-        project (str): The project to deploy in.
+        settings (dict): The settings, as dba.create.vendor.object takes them.
+        project (str): The project to create it in.
 
     Returns:
         A dict: valid, errors and warnings. Each problem has a message and
@@ -198,24 +198,24 @@ def list_objects(
     )
 
 
-@plugin_function("dba.deploy.vendor.object", shell=True, cli=True, web=True)
-def deploy_object(
+@plugin_function("dba.create.vendor.object", shell=True, cli=True, web=True)
+def create_object(
     vendor_name: str, object_type: str, settings: dict, project: str = None
 ) -> dict:
-    """Starts deploying a vendor object, such as a VM, as a background task.
+    """Starts creating a vendor object, such as a VM, as a background task.
 
     The settings of each object type are listed by
     dba.list.vendor.objectSupport(). Every type takes name, labels and
     vendor_settings, a dict merged into the vendor's own request as is.
 
-    Deploying takes minutes, a managed service far longer, so this returns
+    Creating takes minutes, a managed service far longer, so this returns
     the id of a task at once. Follow it with task.get(taskId), which reports
     the vendor's status of the object as it changes. The task ends once the
     object is ready to use, with the object as its result. Cancelling it
     with task.cancel(taskId) stops the waiting, not the vendor; delete what
-    was deployed on its own.
+    was created on its own.
 
-    On the command line, mariadb-shell -- dba deploy vendor object ...,
+    On the command line, mariadb-shell -- dba create vendor object ...,
     the call waits for the task instead. It writes the vendor's statuses
     to stderr as they come and returns the object once it is ready, or
     fails with the task's error. Ctrl+C cancels the task.
@@ -224,15 +224,15 @@ def deploy_object(
         vendor_name (str): The vendor.
         object_type (str): The standardized object type, e.g. vms.
         settings (dict): The object's settings.
-        project (str): The project to deploy it in.
+        project (str): The project to create it in.
 
     Returns:
         The task_id and status of the task; on the command line, the object.
     """
     return shell_call(
         lambda: task_answer(
-            operations.deploy_object(vendor_name, object_type, plain(settings), project),
-            "dba.deploy.vendor.object",
+            operations.create_object(vendor_name, object_type, plain(settings), project),
+            "dba.create.vendor.object",
         )
     )
 

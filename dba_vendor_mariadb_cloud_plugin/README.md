@@ -11,7 +11,7 @@ Feature set: `ManagedService`.
 
 | Object type                | Operations                                 |
 | -------------------------- | ------------------------------------------ |
-| `managed_mariadb_services` | info, list, status, deploy, delete         |
+| `managed_mariadb_services` | info, list, status, create, delete         |
 
 - **info** reports the server sizes (CPU, memory, and the providers,
   topologies and architectures each is offered for), versions, topologies,
@@ -20,11 +20,11 @@ Feature set: `ManagedService`.
 - **list** and **status** report each service's topology, version, size,
   nodes, provider, region, storage, endpoints (FQDN, ports, allowed IPs) and
   whether SSL is on. Never credentials.
-- **deploy** requests a service and returns it right away, usually as
+- **create** requests a service and returns it right away, usually as
   `pending_create`; call `objectStatus` until it is `ready`.
 - **delete** deletes the service and all its data.
 
-## Deploy settings
+## Create settings
 
 | Setting        | MariaDB Cloud field | Notes                                            |
 | -------------- | ------------------- | ------------------------------------------------ |
@@ -46,7 +46,7 @@ example `{"service_type": "transactional_serverless"}`,
 or `{"project_id": "<MariaDB Cloud project id>"}`.
 
 ```python
-dba.vendor.mariadb_cloud.deploy_object("managed_mariadb_services", {
+dba.vendor.mariadb_cloud.create_object("managed_mariadb_services", {
     "name": "orders", "provider": "aws", "location": "us-east-1",
     "topology": "es-single", "size": "sky-2x8", "storage_gb": 100,
     "allowed_ips": ["203.0.113.7"]})
@@ -55,7 +55,7 @@ dba.vendor.mariadb_cloud.deploy_object("managed_mariadb_services", {
 ## Projects
 
 A MariaDB Cloud API key belongs to a user and reaches every project of the
-user's organization, so one key serves every dba project: a service deployed
+user's organization, so one key serves every dba project: a service created
 for a dba project carries the tag `dba_project=<project>`, and listing a
 project shows only the services with that tag. Services deployed outside the
 dba plugin appear only when no project is named.
@@ -88,4 +88,4 @@ mariadb-shell --py -f run_tests.py --vendors=mariadb_cloud
 ```
 
 `--live` also runs a read-only test against the real API with the key in
-`DBA_TEST_MARIADB_CLOUD_API_KEY`; it never deploys anything.
+`DBA_TEST_MARIADB_CLOUD_API_KEY`; it never creates anything.

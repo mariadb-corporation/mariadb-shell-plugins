@@ -22,12 +22,12 @@ dba.set.apiKey('upcloud', 'ucat_...')
 dba.set.apiKey('upcloud', 'dba-api-user:password')
 ```
 
-UpCloud has no projects: one key serves every project, and what is deployed
+UpCloud has no projects: one key serves every project, and what is created
 for a project is labelled `dba_project=<project>`.
 
 ## Object types
 
-Every type supports `info`, `list`, `status`, `deploy` and `delete`.
+Every type supports `info`, `list`, `status`, `create` and `delete`.
 `labels` and `vendor_settings` are accepted for every type.
 
 | Type | UpCloud object | Settings |

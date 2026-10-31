@@ -1,6 +1,6 @@
 # Hetzner Cloud vendor plugin for the MariaDB DBA plugin
 
-Adds `dba.vendor.hetzner` to MariaDB Shell. It deploys and manages the
+Adds `dba.vendor.hetzner` to MariaDB Shell. It creates and manages the
 infrastructure for MariaDB Server and Galera Cluster on Hetzner Cloud
 (feature set `CoreCompute`), through the
 [Hetzner Cloud API](https://docs.hetzner.cloud/reference/cloud).
@@ -10,7 +10,7 @@ infrastructure for MariaDB Server and Galera Cluster on Hetzner Cloud
 A Hetzner Cloud API token belongs to one project. Create one in the
 [Hetzner Console](https://console.hetzner.com): open the project, then
 Security > API tokens > Generate API token, with Read & Write permission
-to deploy. Store it once per project:
+to create objects. Store it once per project:
 
 ```python
 dba.set.apiKey('hetzner', '<token>', 'my-project')
@@ -24,28 +24,28 @@ projects do not fall back on it.
 
 | Object type      | Hetzner name  | Operations                          |
 | ---------------- | ------------- | ----------------------------------- |
-| `vms`            | server        | info, list, status, deploy, delete  |
-| `volumes`        | volume        | info, list, status, deploy, delete  |
-| `networking`     | network       | info, list, status, deploy, delete  |
-| `firewalls`      | firewall      | info, list, status, deploy, delete  |
-| `load_balancers` | load_balancer | info, list, status, deploy, delete  |
-| `dns`            | zone          | info, list, status, deploy, delete  |
-| `ssh_keys`       | ssh_key       | list, status, deploy, delete        |
+| `vms`            | server        | info, list, status, create, delete  |
+| `volumes`        | volume        | info, list, status, create, delete  |
+| `networking`     | network       | info, list, status, create, delete  |
+| `firewalls`      | firewall      | info, list, status, create, delete  |
+| `load_balancers` | load_balancer | info, list, status, create, delete  |
+| `dns`            | zone          | info, list, status, create, delete  |
+| `ssh_keys`       | ssh_key       | list, status, create, delete        |
 
 Object storage is not supported because it is S3-only and not part of the
 Cloud API. Hetzner offers no managed MariaDB services.
 
-## Deployment settings
+## Create settings
 
 Every type takes `name` (required), `labels` (a dict, stored as Hetzner
 labels) and `vendor_settings` (a dict merged into the API request body as
 is). Names given for SSH keys, networks, firewalls and VMs are resolved to
-their ids. Deploying does not wait for Hetzner's action to finish; the
+their ids. Creating does not wait for Hetzner's action to finish; the
 action is returned in the object's properties.
 
 - `vms`: `size` (server type, e.g. `cx22`), `image` (e.g. `ubuntu-24.04`)
   and `ssh_keys` are required. `location`, `user_data`, `networks` and
-  `firewalls` are optional. A VM cannot be deployed without SSH keys,
+  `firewalls` are optional. A VM cannot be created without SSH keys,
   because Hetzner would otherwise create a root password and send it back
   in the answer.
 - `volumes`: `size_gb` is required, along with `location` or `vm` (the VM to

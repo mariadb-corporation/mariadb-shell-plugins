@@ -30,7 +30,7 @@ A vendor reports the **feature sets** it implements:
 Objects are named with **standardized object types**, whatever the vendor calls them:
 `managed_mariadb_services`, `vms`, `volumes`, `networking`, `firewalls`,
 `load_balancers`, `dns`, `object_storage` and `ssh_keys`.
-`dba.list.vendor.objectSupport()` lists them with their deployment settings, and
+`dba.list.vendor.objectSupport()` lists them with the settings to create them with, and
 `dba.list.vendor.objectSupport(vendor)` what one vendor supports.
 
 ## Shell functions
@@ -40,31 +40,31 @@ Objects are named with **standardized object types**, whatever the vendor calls 
 | `dba.list.vendors([featureSet])` | `dba.list_vendors` | The vendors, all or those implementing a feature set, with the projects an API key is stored for. |
 | `dba.set.apiKey(vendorName, key[, project])` | `dba.set_api_key` (`--gui`) | Stores a vendor's REST API key in the shell's secret store. |
 | `dba.list.vendor.objectSupport([vendorName])` | `dba.list_vendor_object_support` | The standardized object types, or what a vendor supports. |
-| `dba.get.vendor.objectInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_info` | What of a type can be deployed: sizes (architecture, cores, RAM, disk, included traffic, prices), locations, images, versions. |
-| `dba.get.vendor.objectSettingsInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_settings_info` | The settings to deploy a type with, described for a dialog, with the values the vendor offers to choose from. |
-| `dba.validate.vendor.objectSettings(vendorName, objectType, settings[, project])` | `dba.validate_vendor_object_settings` | Checks a deployment's settings, against what the vendor offers too, without deploying. |
+| `dba.get.vendor.objectInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_info` | What of a type can be created: sizes (architecture, cores, RAM, disk, included traffic, prices), locations, images, versions. |
+| `dba.get.vendor.objectSettingsInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_settings_info` | The settings to create objects of a type with, described for a dialog, with the values the vendor offers to choose from. |
+| `dba.validate.vendor.objectSettings(vendorName, objectType, settings[, project])` | `dba.validate_vendor_object_settings` | Checks the settings to create an object with, against what the vendor offers too, without creating anything. |
 | `dba.list.vendor.objects(vendorName, objectType[, tags, project])` | `dba.list_vendor_objects` | The deployed objects of a type, filtered by tags and project. |
 | `dba.get.vendor.objectStatus(vendorName, objectType, objectName[, project])` | `dba.get_vendor_object_status` | The current status of one object. |
-| `dba.deploy.vendor.object(vendorName, objectType, settings[, project])` | `dba.deploy_vendor_object` (`--gui`) | Starts a task deploying an object with the given settings. |
+| `dba.create.vendor.object(vendorName, objectType, settings[, project])` | `dba.create_vendor_object` (`--gui`) | Starts a task creating an object with the given settings. |
 | `dba.delete.vendor.object(vendorName, objectType, objectName[, project])` | `dba.delete_vendor_object` (`--gui`) | Starts a task deleting an object, by name or id. |
 
 Every vendor object has the same functions without the vendor name:
 `dba.vendor.<name>.featureSet()`, `objectSupport()`, `objectInfo()`,
 `objectSettingsInfo()`, `validateObjectSettings()`, `listObjects()`, `objectStatus()`,
-`deployObject()` and `deleteObject()`.
+`createObject()` and `deleteObject()`.
 
 An MCP server started without `--gui` - one an agent talks to - offers only the tools that
 read.
 
-### Deploying and deleting are background tasks
+### Creating and deleting are background tasks
 
-Deploying takes minutes, a managed service far longer, so `dba.deploy.vendor.object` and
+Creating takes minutes, a managed service far longer, so `dba.create.vendor.object` and
 `dba.delete.vendor.object` do not wait for it. They check what they can at once - the
-vendor, its API key, that it can deploy or delete the type, that the settings name the
+vendor, its API key, that it can create or delete the type, that the settings name the
 object - then start a task of the shell's task manager (task type `dba`) and return its
 `task_id`. The task:
 
-- **deploys** the object and then waits until the vendor reports it ready to use
+- **creates** the object and then waits until the vendor reports it ready to use
   (`running`, `started`, `available`, `online`, `active`, `ready`), up to an hour, with
   the object as its result; a status naming a failure or an error fails it;
 - **deletes** the object and then waits until the vendor no longer lists it, up to half
@@ -78,7 +78,7 @@ what it already started goes on there. One object is worked on by one task at a 
 Tasks live in the process that started them, so the process must not end under them:
 
 - **On the command line** the call waits for its task:
-  `mariadb-shell -- dba deploy vendor object hetzner vms --name=db1 ...` writes the
+  `mariadb-shell -- dba create vendor object hetzner vms --name=db1 ...` writes the
   vendor's statuses to stderr as they come and prints the object once it is ready, or
   fails with the task's error and exit code 1. Ctrl+C cancels the task.
 - **A script** (`-f`, `-e`) that ends with tasks still running waits for them before the
@@ -89,7 +89,7 @@ Tasks live in the process that started them, so the process must not end under t
 dba.set.api_key("hetzner", "<token>", "prod")
 dba.list.vendors("CoreCompute")
 dba.get.vendor.object_info("hetzner", "vms", "prod")["sizes"]
-started = dba.deploy.vendor.object("hetzner", "vms", {
+started = dba.create.vendor.object("hetzner", "vms", {
     "name": "galera-1", "size": "cx32", "location": "fsn1", "image": "debian-13",
     "ssh_keys": ["admin"], "labels": {"cluster": "galera"},
 }, "prod")
@@ -113,13 +113,13 @@ the same.
 
 ### Settings
 
-`dba.deploy.vendor.object` takes standardized settings - `name` always, plus per type,
+`dba.create.vendor.object` takes standardized settings - `name` always, plus per type,
 for example `size`, `location`, `image` and `ssh_keys` for `vms` - and `labels` and
 `vendor_settings`, a dict merged into the vendor's own request as is, for whatever the
 standardized ones do not cover. A setting the vendor does not support is refused rather
 than ignored, and every rule that needs no request to the vendor - a required setting,
-the format of a value - is checked before a deployment's task starts. VMs are only
-deployed with SSH keys, so that no root password is created and handed back.
+the format of a value - is checked before a create task starts. VMs are only
+created with SSH keys, so that no root password is created and handed back.
 
 A vendor may take **settings of its own** next to the standardized ones - Hetzner's
 `enable_ipv4`, `volumes` and `placement_group` for a VM, UpCloud's storage `tier`,
@@ -157,17 +157,17 @@ Each setting has:
 | `filter` | Which choices apply with the other settings chosen: a list of `{setting, detail, selected_detail}`. A choice applies when its `details[detail]` is, lists or is listed by the value of `setting` - or, with `selected_detail`, by that detail of the choice selected for `setting`. A choice without the detail always applies. For example a Hetzner size is offered in the locations its `locations` list, and a private network fits when its `location` is the `network_zone` of the location chosen. |
 | `prices` | What the setting itself costs, per location, such as a public IPv4 address. |
 | `display` | How to show the choices: `style` (`select`, `cards`, `table`, `checkboxes`), `columns` of a table (`key`, `caption`, `unit`; `prices.hourly` and `prices.monthly` are the price at the location chosen), `group_by` (details to group the choices by, such as Hetzner's `cpu_type` and `category`, or an image's `os_flavor`) and `item_caption` (the detail to label a choice with, such as an image's `os_version`). |
-| `is_editable` | Whether it can be changed at the vendor once the object is deployed - for a dialog that changes an object. The dba plugin does not change objects yet. |
+| `is_updatable` | Whether it can be changed at the vendor once the object is deployed - for a dialog that changes an object. The dba plugin does not change objects yet. |
 | `advanced` | Whether a dialog may tuck it away. |
 | `vendor_specific`, `vendor_key` | Whether it is the vendor's own setting, and where it goes in the vendor's request. |
 
 `dba.validate.vendor.objectSettings(vendor, type, settings[, project])` checks settings
-before a dialog lets them be applied. It runs every check a deployment runs before its
+before a dialog lets them be applied. It runs every check creating an object runs before its
 task starts and, when they pass, checks the values against the vendor: a size, location
 or version it does not offer, or not with the other settings given, and an object named
 that is not deployed, are errors; a value of a setting whose choices are suggestions is a
 warning. It answers `valid`, `errors` and `warnings`; each problem has a `message` and
-`settings`, the keys it is about, for the dialog to mark. Nothing is deployed.
+`settings`, the keys it is about, for the dialog to mark. Nothing is created.
 
 ```python
 info = dba.get.vendor.object_settings_info("hetzner", "vms", "prod")
@@ -191,7 +191,7 @@ Keys are kept in the shell's secret store, one per vendor and project:
 
 The project is `default` when none is named. A vendor whose API has projects of its own
 (a Hetzner Cloud token belongs to one project) needs a key per project. For the others the
-project is a label: what is deployed for a project gets the label `dba_project=<project>`,
+project is a label: what is created for a project gets the label `dba_project=<project>`,
 listing a project filters on it, and the `default` key serves every project that has none
 of its own.
 
@@ -203,12 +203,12 @@ A vendor plugin is a folder `dba_vendor_<name>_plugin` with:
   `@dba_plugin.lib.vendors.register`. It names the vendor and its feature sets, creates
   its API client (`dba_plugin.lib.rest_client.RestClient`, the one HTTP client every
   vendor uses), and implements `_list_<type>` for each object type it supports, plus
-  `_info_<type>`, `_deploy_<type>`, `_delete_<type>` and `_status_<type>` as far as it
+  `_info_<type>`, `_create_<type>`, `_delete_<type>` and `_status_<type>` as far as it
   supports them. The module docstring of `lib/vendor.py` is the contract. The settings
-  each type requires and supports go in `deploy_settings`, rules that need no request in
+  each type requires and supports go in `create_settings`, rules that need no request in
   `_check_<type>(settings)` (raising `SettingError` with the keys concerned), and what
   differs from the standardized fields of `lib/settings_fields.py` - a range, the
-  source of the choices, `is_editable`, settings of its own - in `settings_fields`, with
+  source of the choices, `is_updatable`, settings of its own - in `settings_fields`, with
   `settings_order` and `settings_groups` where its own console orders and words them
   differently.
 - `init.py` - `dba_plugin.lib.objects.register_vendor_plugin(<the class>)`, which adds

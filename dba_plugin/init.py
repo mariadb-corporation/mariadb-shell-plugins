@@ -53,16 +53,16 @@ class dba:
         """Sets the dba plugin's configuration."""
 
     class validate:
-        """Validates what vendor objects are deployed with."""
+        """Validates what vendor objects are created with."""
 
         class vendor:
             """Validates the settings of an object at a vendor."""
 
-    class deploy:
-        """Deploys vendor objects."""
+    class create:
+        """Creates vendor objects."""
 
         class vendor:
-            """Deploys an object at a vendor."""
+            """Creates an object at a vendor."""
 
     class delete:
         """Deletes vendor objects."""

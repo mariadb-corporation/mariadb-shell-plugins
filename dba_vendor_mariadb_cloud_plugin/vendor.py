@@ -53,7 +53,7 @@ PROVISIONING = "/provisioning/v1"
 PAGE_TOKEN_HEADER = "X-SkySQL-Page-Token-Next"
 PAGE_SIZE = 100
 
-# The service type a deployment gets unless vendor_settings names another,
+# The service type a new service gets unless vendor_settings names another,
 # e.g. transactional_serverless.
 DEFAULT_SERVICE_TYPE = "transactional"
 
@@ -167,13 +167,13 @@ class MariadbCloud(v.Vendor):
 
     settings_fields = {
         types.MANAGED_MARIADB_SERVICES: {
-            "size": {"is_editable": True},
-            "nodes": {"is_editable": True},
-            "storage_gb": {"is_editable": True,
+            "size": {"is_updatable": True},
+            "nodes": {"is_updatable": True},
+            "storage_gb": {"is_updatable": True,
                            "description": "The storage size in GB, within the provider's "
                            "storage_gb_min and storage_gb_max."},
             "allowed_ips": {
-                "is_editable": True,
+                "is_updatable": True,
                 "description": "The IP addresses or CIDR ranges allowed to connect: a bare "
                 "address is a /32 (or /128) range. An entry may also be {ip, comment}.",
                 "item_fields": {
@@ -195,7 +195,7 @@ class MariadbCloud(v.Vendor):
         ),
     }
 
-    deploy_settings = {
+    create_settings = {
         types.MANAGED_MARIADB_SERVICES: {"required": ("name", "provider", "location", "topology")},
     }
 
@@ -276,7 +276,7 @@ class MariadbCloud(v.Vendor):
         ]
 
     def _info_managed_mariadb_services(self) -> dict:
-        """What can be deployed. MariaDB Cloud prices by billing offering,
+        """What can be created. MariaDB Cloud prices by billing offering,
         not by size, so no prices are reported here."""
         # five independent listings, asked for side by side
         size_list, version_list, topology_list, provider_list, region_list = v.parallel(
@@ -381,10 +381,10 @@ class MariadbCloud(v.Vendor):
             "locations": locations,
         }
 
-    def _deploy_managed_mariadb_services(self, settings) -> dict:
+    def _create_managed_mariadb_services(self, settings) -> dict:
         """Requests a new service and returns it as the API accepted it,
         typically ``pending_create``; it does not wait for it to be ready."""
-        settings = self.check_deploy_settings(types.MANAGED_MARIADB_SERVICES, settings)
+        settings = self.check_create_settings(types.MANAGED_MARIADB_SERVICES, settings)
 
         body = {
             "name": str(settings["name"]),

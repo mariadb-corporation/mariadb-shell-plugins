@@ -28,9 +28,9 @@ What the API makes worth knowing:
 
 * A server created without an SSH key gets a root password, which the API
   answers with - and which would end up wherever the answer goes, an
-  agent's transcript among them. Deploying a VM therefore requires SSH keys,
+  agent's transcript among them. Creating a VM therefore requires SSH keys,
   and the password field is never passed on.
-* Most changes answer with an action that keeps running. Deploying does not
+* Most changes answer with an action that keeps running. Creating does not
   wait for it and reports it instead; deleting waits for it, bounded, as for
   what has to finish first - a volume's detach, a firewall's removal from
   the servers it is applied to.
@@ -84,12 +84,12 @@ _LABELS = {
     "digits, dashes, underscores and dots in between; the value may be empty.",
 }
 # What can be changed on every Hetzner object: its name and labels.
-_RENAMED = {"name": {"is_editable": True}, "labels": {**_LABELS, "is_editable": True}}
+_RENAMED = {"name": {"is_updatable": True}, "labels": {**_LABELS, "is_updatable": True}}
 
 _SSH_KEYS_REQUIRED = (
-    "Deploying a Hetzner Cloud VM requires ssh_keys: without one, Hetzner "
+    "Creating a Hetzner Cloud VM requires ssh_keys: without one, Hetzner "
     "creates a root password and sends it back in the answer. Store a key "
-    "with deployObject('ssh_keys', {name, public_key}) and name it in ssh_keys."
+    "with createObject('ssh_keys', {name, public_key}) and name it in ssh_keys."
 )
 
 
@@ -154,8 +154,8 @@ def _action(action):
     return {key: value for key, value in result.items() if value is not None}
 
 
-def _deployed(obj: dict, answer: dict) -> dict:
-    """A deployed object, with the actions the deployment started."""
+def _created(obj: dict, answer: dict) -> dict:
+    """A created object, with the actions its creation started."""
     action = _action(answer.get("action"))
     if action:
         obj["properties"]["action"] = action
@@ -365,14 +365,14 @@ class Hetzner(v.Vendor):
     api_key_help = (
         "Create an API token in the Hetzner Console (https://console.hetzner.com): "
         "open the project, then Security > API tokens > Generate API token, with "
-        "Read & Write permission to deploy. A token belongs to one project, so "
+        "Read & Write permission to create objects. A token belongs to one project, so "
         "store one per project."
     )
 
     settings_fields = {
         types.VMS: {
             **_RENAMED,
-            "name": {"pattern": _HOSTNAME, "max_length": 63, "is_editable": True,
+            "name": {"pattern": _HOSTNAME, "max_length": 63, "is_updatable": True,
                      "description": "The server's name: its hostname, unique in the project."},
             "size": {"display": {"style": "table", "columns": sf.SIZE_COLUMNS,
                                  "group_by": ["cpu_type", "category", "architecture"]}},
@@ -422,14 +422,14 @@ class Hetzner(v.Vendor):
             ),
             "start_after_create": sf.field(
                 "Start after creation",
-                "Whether the server starts once it is created; one created stopped counts as "
-                "deployed.",
+                "Whether the server starts once it is created; the create task ends for a "
+                "server created stopped too.",
                 sf.BOOLEAN, group="advanced", default=True, advanced=True,
             ),
         },
         types.VOLUMES: {
             **_RENAMED,
-            "size_gb": {"minimum": 10, "maximum": 10240, "is_editable": True,
+            "size_gb": {"minimum": 10, "maximum": 10240, "is_updatable": True,
                         "description": "The size in GB, 10 to 10240; it can be grown later."},
             "automount": sf.field(
                 "Mount automatically",
@@ -458,8 +458,8 @@ class Hetzner(v.Vendor):
             ),
         },
         types.DNS: {
-            "labels": {**_LABELS, "is_editable": True},
-            "ttl": {"minimum": 60, "is_editable": True},
+            "labels": {**_LABELS, "is_updatable": True},
+            "ttl": {"minimum": 60, "is_updatable": True},
         },
         types.SSH_KEYS: dict(_RENAMED),
     }
@@ -471,7 +471,7 @@ class Hetzner(v.Vendor):
         ),
     }
 
-    deploy_settings = {
+    create_settings = {
         types.VMS: {"required": ("name", "size", "image")},
         types.VOLUMES: {
             "required": ("name", "size_gb"),
@@ -482,7 +482,7 @@ class Hetzner(v.Vendor):
         types.SSH_KEYS: {"required": ("name", "public_key")},
     }
 
-    # --- What a deployment's settings must be, before any request ----------
+    # --- What the settings to create an object with must be, before any request ----------
 
     @staticmethod
     def _check_vms(settings) -> None:
@@ -722,8 +722,8 @@ class Hetzner(v.Vendor):
     def _status_vms(self, obj: dict) -> dict:
         return _server((self.client.get(f"/servers/{obj['id']}") or {}).get("server") or {})
 
-    def _deploy_vms(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.VMS, settings)
+    def _create_vms(self, settings) -> dict:
+        settings = self.check_create_settings(types.VMS, settings)
         vendor_settings = dict(settings["vendor_settings"])
         # named as the other settings are: by name or id
         if vendor_settings.get("volumes"):
@@ -755,7 +755,7 @@ class Hetzner(v.Vendor):
         answer = self.client.post("/servers", json=body) or {}
         # The answer's root_password is null with SSH keys, and is never
         # passed on in any case.
-        return _deployed(_server(answer.get("server") or {}), answer)
+        return _created(_server(answer.get("server") or {}), answer)
 
     def _delete_vms(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/servers/{obj['id']}"))
@@ -781,8 +781,8 @@ class Hetzner(v.Vendor):
     def _status_volumes(self, obj: dict) -> dict:
         return _volume((self.client.get(f"/volumes/{obj['id']}") or {}).get("volume") or {})
 
-    def _deploy_volumes(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.VOLUMES, settings)
+    def _create_volumes(self, settings) -> dict:
+        settings = self.check_create_settings(types.VOLUMES, settings)
         size = int(settings["size_gb"])
 
         server_id = self._resolve_id("servers", "VM", settings.get("vm"))
@@ -797,7 +797,7 @@ class Hetzner(v.Vendor):
         body.update(settings["vendor_settings"])
 
         answer = self.client.post("/volumes", json=body) or {}
-        return _deployed(_volume(answer.get("volume") or {}), answer)
+        return _created(_volume(answer.get("volume") or {}), answer)
 
     def _delete_volumes(self, obj: dict) -> dict:
         result = {}
@@ -824,8 +824,8 @@ class Hetzner(v.Vendor):
             ]
         }
 
-    def _deploy_networking(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.NETWORKING, settings)
+    def _create_networking(self, settings) -> dict:
+        settings = self.check_create_settings(types.NETWORKING, settings)
         subnets = None
         if settings.get("location"):
             # One subnet spanning the network, in the location's zone, so
@@ -846,7 +846,7 @@ class Hetzner(v.Vendor):
         body.update(settings["vendor_settings"])
 
         answer = self.client.post("/networks", json=body) or {}
-        return _deployed(_network(answer.get("network") or {}), answer)
+        return _created(_network(answer.get("network") or {}), answer)
 
     def _delete_networking(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/networks/{obj['id']}"))
@@ -893,8 +893,8 @@ class Hetzner(v.Vendor):
             description=rule.get("description"),
         )
 
-    def _deploy_firewalls(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.FIREWALLS, settings)
+    def _create_firewalls(self, settings) -> dict:
+        settings = self.check_create_settings(types.FIREWALLS, settings)
         rules = [self._firewall_rule(rule) for rule in v.as_list(settings.get("rules"))]
         body = _body(
             name=settings["name"],
@@ -908,7 +908,7 @@ class Hetzner(v.Vendor):
         body.update(settings["vendor_settings"])
 
         answer = self.client.post("/firewalls", json=body) or {}
-        return _deployed(_firewall(answer.get("firewall") or {}), answer)
+        return _created(_firewall(answer.get("firewall") or {}), answer)
 
     def _delete_firewalls(self, obj: dict) -> dict:
         result = {}
@@ -999,8 +999,8 @@ class Hetzner(v.Vendor):
             "destination_port": destination_port,
         }
 
-    def _deploy_load_balancers(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.LOAD_BALANCERS, settings)
+    def _create_load_balancers(self, settings) -> dict:
+        settings = self.check_create_settings(types.LOAD_BALANCERS, settings)
         network_id = self._resolve_id("networks", "network", settings.get("network"))
         body = _body(
             name=settings["name"],
@@ -1019,7 +1019,7 @@ class Hetzner(v.Vendor):
         body.update(settings["vendor_settings"])
 
         answer = self.client.post("/load_balancers", json=body) or {}
-        return _deployed(_load_balancer(answer.get("load_balancer") or {}), answer)
+        return _created(_load_balancer(answer.get("load_balancer") or {}), answer)
 
     def _delete_load_balancers(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/load_balancers/{obj['id']}"))
@@ -1058,8 +1058,8 @@ class Hetzner(v.Vendor):
                 rrset["ttl"] = int(record["ttl"])
         return list(rrsets.values())
 
-    def _deploy_dns(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.DNS, settings)
+    def _create_dns(self, settings) -> dict:
+        settings = self.check_create_settings(types.DNS, settings)
         body = _body(
             name=settings["name"],
             mode="primary",
@@ -1070,7 +1070,7 @@ class Hetzner(v.Vendor):
         body.update(settings["vendor_settings"])
 
         answer = self.client.post("/zones", json=body) or {}
-        return _deployed(_zone(answer.get("zone") or {}), answer)
+        return _created(_zone(answer.get("zone") or {}), answer)
 
     def _delete_dns(self, obj: dict) -> dict:
         return self._deleted(self.client.delete(f"/zones/{obj['id']}"))
@@ -1080,8 +1080,8 @@ class Hetzner(v.Vendor):
     def _list_ssh_keys(self, labels=None) -> list:
         return [_ssh_key(ssh_key) for ssh_key in self._all("ssh_keys", **_label_selector(labels))]
 
-    def _deploy_ssh_keys(self, settings) -> dict:
-        settings = self.check_deploy_settings(types.SSH_KEYS, settings)
+    def _create_ssh_keys(self, settings) -> dict:
+        settings = self.check_create_settings(types.SSH_KEYS, settings)
         body = _body(
             name=settings["name"],
             public_key=str(settings["public_key"]).strip(),

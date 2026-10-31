@@ -54,7 +54,7 @@ READ_TOOLS = {
 }
 GUI_TOOLS = READ_TOOLS | {
     "dba.set_api_key",
-    "dba.deploy_vendor_object",
+    "dba.create_vendor_object",
     "dba.delete_vendor_object",
 }
 
@@ -97,7 +97,7 @@ class StubVendor(vendor_lib.Vendor):
             for d in StubVendor.deployed
         ]
 
-    def _deploy_vms(self, settings):
+    def _create_vms(self, settings):
         settings = vendor_lib.check_settings("vms", settings)
         StubVendor.deployed.append(settings)
         return vendor_lib.make_object("vms", 2, settings["name"], "starting")
@@ -203,7 +203,7 @@ def test_the_extension_uses_its_own_keys(stub_vendor, gui_mode):
         "secret": "GUI:DBA_API_KEY:stubcloud:staging",
     }
 
-    started = tools["dba.deploy_vendor_object"](STDIO, "stubcloud", "vms", {"name": "db2"}, "staging")
+    started = tools["dba.create_vendor_object"](STDIO, "stubcloud", "vms", {"name": "db2"}, "staging")
     ended = _ended(started)
     assert ended["status"] == "completed"
     assert ended["result"]["name"] == "db2"
@@ -221,7 +221,7 @@ def test_a_refusal_is_a_tool_error(stub_vendor, gui_mode):
     with pytest.raises(ToolError, match="Unknown vendor 'nocloud'"):
         tools["dba.get_vendor_object_status"]("nocloud", "vms", "db1")
     with pytest.raises(ToolError, match="Missing settings for vms: name"):
-        tools["dba.deploy_vendor_object"](STDIO, "stubcloud", "vms", {})
+        tools["dba.create_vendor_object"](STDIO, "stubcloud", "vms", {})
 
     deleted = _ended(tools["dba.delete_vendor_object"](STDIO, "stubcloud", "vms", "db1"))
     assert deleted["result"]["deleted"]["id"] == "1"

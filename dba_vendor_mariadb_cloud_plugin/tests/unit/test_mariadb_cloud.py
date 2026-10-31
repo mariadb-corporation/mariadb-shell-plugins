@@ -81,7 +81,7 @@ def test_the_vendor_describes_itself():
             "object_type": TYPE,
             "description": types.OBJECT_TYPES[TYPE]["description"],
             "feature_set": types.MANAGED_SERVICE,
-            "operations": ["info", "list", "status", "deploy", "delete"],
+            "operations": ["info", "list", "status", "create", "delete"],
         }
     ]
 
@@ -227,7 +227,7 @@ def _info_routes(mock_api):
     )
 
 
-def test_the_info_lists_what_can_be_deployed(mock_api, cloud):
+def test_the_info_lists_what_can_be_created(mock_api, cloud):
     _info_routes(mock_api)
     info = cloud.object_info(TYPE)
 
@@ -253,11 +253,11 @@ def test_the_info_lists_what_can_be_deployed(mock_api, cloud):
     assert mock_api.requests_to("GET", "/provisioning/v1/topologies")[0]["params"]["service_type"] == "transactional"
 
 
-def test_a_deployment_maps_the_standard_settings(mock_api):
+def test_a_creation_maps_the_standard_settings(mock_api):
     mock_api.add("POST", SERVICES, json=_service("dbnew", "orders", status="pending_create"), status=202)
 
     vendor = MariadbCloud(api_key=KEY, project="shop")
-    created = vendor.deploy_object(
+    created = vendor.create_object(
         TYPE,
         {
             "name": "orders",
@@ -297,9 +297,9 @@ def test_a_deployment_maps_the_standard_settings(mock_api):
     assert mock_api.requests_to("GET", r".*/security/credentials") == []
 
 
-def test_a_minimal_deployment_sends_only_what_was_given(mock_api, cloud):
+def test_a_minimal_creation_sends_only_what_was_given(mock_api, cloud):
     mock_api.add("POST", SERVICES, json=_service("dbnew", "small"), status=202)
-    cloud.deploy_object(TYPE, {"name": "small", "provider": "gcp", "location": "us-central1", "topology": "es-single"})
+    cloud.create_object(TYPE, {"name": "small", "provider": "gcp", "location": "us-central1", "topology": "es-single"})
     [request] = mock_api.requests_to("POST", SERVICES)
     assert request["json"] == {
         "name": "small",
@@ -326,7 +326,7 @@ def test_a_minimal_deployment_sends_only_what_was_given(mock_api, cloud):
 )
 def test_invalid_settings_are_refused_before_any_request(mock_api, cloud, settings, message):
     with pytest.raises(DbaError, match=message):
-        cloud.deploy_object(TYPE, settings)
+        cloud.create_object(TYPE, settings)
     assert mock_api.requests == []
 
 
@@ -341,7 +341,7 @@ def test_the_service_settings_are_described_for_a_dialog(mock_api, cloud):
     assert [key for key, details in settings.items() if details["required"]] == [
         "name", "provider", "location", "topology",
     ]
-    assert [key for key, details in settings.items() if details["is_editable"]] == [
+    assert [key for key, details in settings.items() if details["is_updatable"]] == [
         "size", "nodes", "storage_gb", "allowed_ips",
     ]
     assert settings["provider"]["choices"][0]["details"] == {
@@ -379,7 +379,7 @@ def test_a_size_is_validated_with_the_provider_and_topology_chosen(mock_api, clo
 
 def test_the_vendors_own_settings_reach_the_request(mock_api):
     mock_api.add("POST", SERVICES, json=_service("dbnew", "orders", status="pending_create"), status=202)
-    MariadbCloud(api_key=KEY).deploy_object(
+    MariadbCloud(api_key=KEY).create_object(
         TYPE,
         {"name": "orders", "provider": "aws", "location": "us-east-1", "topology": "es-single",
          "ssl_enabled": "no"},
@@ -388,10 +388,10 @@ def test_the_vendors_own_settings_reach_the_request(mock_api):
     assert request["json"]["ssl_enabled"] is False
 
 
-def test_a_deployment_the_api_does_not_report_is_refused(mock_api, cloud):
+def test_a_creation_the_api_does_not_report_is_refused(mock_api, cloud):
     mock_api.add("POST", SERVICES, json=None, status=202)
     with pytest.raises(DbaError, match="did not report it"):
-        cloud.deploy_object(TYPE, {"name": "a", "provider": "aws", "location": "x", "topology": "t"})
+        cloud.create_object(TYPE, {"name": "a", "provider": "aws", "location": "x", "topology": "t"})
 
 
 def test_a_service_is_deleted_by_name(mock_api, cloud):
@@ -439,7 +439,7 @@ def test_the_status_is_read_fresh(mock_api, cloud):
 def test_the_apis_errors_are_reported(mock_api, cloud, status, body, expected):
     mock_api.add("POST", SERVICES, json=body, status=status)
     with pytest.raises(VendorApiError) as error:
-        cloud.deploy_object(TYPE, {"name": "a", "provider": "aws", "location": "x", "topology": "t"})
+        cloud.create_object(TYPE, {"name": "a", "provider": "aws", "location": "x", "topology": "t"})
     assert str(error.value) == f"The MariaDB Cloud API refused POST {SERVICES} with {expected}"
     assert error.value.status == status
     assert KEY not in str(error.value)
