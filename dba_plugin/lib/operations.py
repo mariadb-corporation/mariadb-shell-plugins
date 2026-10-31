@@ -305,15 +305,21 @@ def _release(claim) -> None:
             del _busy[key]
 
 
-def _open_for(operation, vendor_name, object_type, project, context):
+def _open_for(operation, vendor_name, object_type, project, context, check=None):
     """A vendor with the API key, that supports the operation for the type.
 
+    ``check(vendor)``, where given, checks what the operation is given -
+    its settings - with the vendor, before any task starts.
+
     Raises:
-        DbaError: There is no such vendor, no key, or no such support.
+        DbaError: There is no such vendor, no key, or no such support, or
+            the check failed.
     """
     vendor = open_vendor(vendor_name, project, context)
     try:
         vendor.require(operation, object_type)
+        if check:
+            check(vendor)
     except DbaError:
         vendor.close()
         raise
@@ -368,6 +374,19 @@ def _start_task(kind, title, owner, vendor, project, object_type, object_name, w
             raise DbaError(str(e)) from e
         raise
     return {"task_id": task.id, "status": task.status}
+
+
+def _wait_ready(task, vendor, object_type, describe, obj, timeout):
+    """The stage waiting until an object is ready to use - or stopped, where it is kept so."""
+    task.stage_started("Waiting until it is ready")
+    ready = _wait(
+        task, vendor, describe,
+        lambda: vendor.current_status(object_type, obj),
+        lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
+        timeout,
+    )
+    task.stage_finished("Waiting until it is ready")
+    return ready
 
 
 def _wait(task, vendor, describe, poll, done, timeout):
@@ -439,12 +458,10 @@ def create_object(
         ready to use - or stopped, where it was created not to start.
     """
     object_type = types.check_object_type(object_type)
-    vendor = _open_for("create", vendor_name, object_type, project, context)
-    try:
-        vendor.check_create_settings(object_type, settings)
-    except DbaError:
-        vendor.close()
-        raise
+    vendor = _open_for(
+        "create", vendor_name, object_type, project, context,
+        lambda v: v.check_create_settings(object_type, settings),
+    )
     name = str(settings["name"])
     describe = f"The {object_type} '{name}'"
 
@@ -456,16 +473,7 @@ def create_object(
             f"{vendor.display_name} accepted the {object_type} '{name}' (id {created['id']})."
         )
         task.stage_finished("Creating")
-
-        task.stage_started("Waiting until it is ready")
-        ready = _wait(
-            task, vendor, describe,
-            lambda: vendor.current_status(object_type, created),
-            lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
-            CREATE_TIMEOUT,
-        )
-        task.stage_finished("Waiting until it is ready")
-        return ready
+        return _wait_ready(task, vendor, object_type, describe, created, CREATE_TIMEOUT)
 
     return _start_task(
         "create_object",
@@ -506,31 +514,20 @@ def update_object(
     if object_name in (None, ""):
         raise DbaError("object_name is empty.")
     object_type = types.check_object_type(object_type)
-    vendor = _open_for("update", vendor_name, object_type, project, context)
-    try:
-        vendor.check_update_settings(object_type, settings)
-    except DbaError:
-        vendor.close()
-        raise
+    vendor = _open_for(
+        "update", vendor_name, object_type, project, context,
+        lambda v: v.check_update_settings(object_type, settings),
+    )
     describe = f"The {object_type} '{object_name}'"
 
     def work(task, claim):
         task.stage_started("Updating")
         found = vendor.find_object(object_type, object_name)
-        claim(found["name"], found["id"], *([settings["name"]] if settings.get("name") else []))
+        claim(*filter(None, (found["name"], found["id"], settings.get("name"))))
         updated = vendor.update_found(object_type, found, settings)
-        task.message(f"{vendor.display_name} accepted the change of {describe[4:]}.")
+        task.message(f"{vendor.display_name} accepted the change of the {object_type} '{object_name}'.")
         task.stage_finished("Updating")
-
-        task.stage_started("Waiting until it is ready")
-        ready = _wait(
-            task, vendor, describe,
-            lambda: vendor.current_status(object_type, updated),
-            lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
-            UPDATE_TIMEOUT,
-        )
-        task.stage_finished("Waiting until it is ready")
-        return ready
+        return _wait_ready(task, vendor, object_type, describe, updated, UPDATE_TIMEOUT)
 
     return _start_task(
         "update_object",
