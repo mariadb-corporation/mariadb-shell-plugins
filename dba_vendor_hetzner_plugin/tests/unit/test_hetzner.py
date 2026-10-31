@@ -20,7 +20,7 @@
 import pytest
 
 from dba_plugin.lib import api_keys, object_types as types, operations, vendors
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib.general import DbaError, SettingError
 from dba_vendor_hetzner_plugin import vendor as hetzner
 from dba_vendor_hetzner_plugin.vendor import Hetzner
 
@@ -925,6 +925,12 @@ def test_a_bad_dns_record_is_refused(vendor, mock_api):
         vendor.create_object("dns", {"name": "example.org", "records": [{"type": "BOGUS", "value": "x"}]})
     with pytest.raises(DbaError, match=r"records\[0\] needs value"):
         vendor.create_object("dns", {"name": "example.org", "records": [{"type": "A"}]})
+
+
+def test_dns_records_are_checked_before_a_create_task(vendor):
+    with pytest.raises(SettingError, match="Unknown DNS record type 'BOGUS'") as refused:
+        vendor.check_create_settings("dns", {"name": "example.org", "records": [{"type": "BOGUS", "value": "x"}]})
+    assert refused.value.settings == ["records"]
 
 
 def test_a_zone_status_and_delete(vendor, mock_api):
