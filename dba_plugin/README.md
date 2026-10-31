@@ -205,8 +205,10 @@ A vendor plugin is a folder `dba_vendor_<name>_plugin` with:
   vendor uses), and implements `_list_<type>` for each object type it supports, plus
   `_info_<type>`, `_create_<type>`, `_delete_<type>` and `_status_<type>` as far as it
   supports them. The module docstring of `lib/vendor.py` is the contract. The settings
-  each type requires and supports go in `create_settings`, rules that need no request in
-  `_check_<type>(settings)` (raising `SettingError` with the keys concerned), and what
+  each type requires and supports go in `create_settings`, rules that span settings and need no request in
+  `_check_<type>(settings)` (raising `SettingError` with the keys concerned; a single
+  value's range, form or choices belong in its field, and whole numbers and booleans
+  arrive typed), and what
   differs from the standardized fields of `lib/settings_fields.py` - a range, the
   source of the choices, `is_updatable`, settings of its own - in `settings_fields`, with
   `settings_order` and `settings_groups` where its own console orders and words them

@@ -41,3 +41,7 @@ class SettingError(DbaError):
     def __init__(self, message: str, settings=()):
         super().__init__(message)
         self.settings = [settings] if isinstance(settings, str) else list(settings or ())
+
+    def as_dict(self) -> dict:
+        """The problem as a validation reports it: ``settings`` and ``message``."""
+        return {"settings": self.settings, "message": str(self)}

@@ -201,11 +201,7 @@ class MariadbCloud(v.Vendor):
 
     @staticmethod
     def _check_managed_mariadb_services(settings) -> None:
-        """What a service's settings must be, before any request."""
-        _positive_int(settings, "nodes")
-        _positive_int(settings, "storage_gb")
-        if settings.get("allowed_ips") not in (None, "", []):
-            _allow_list(settings["allowed_ips"])
+        """What a service's settings must be, before any request, beyond their fields."""
         if not isinstance(settings["vendor_settings"].get("tags") or {}, dict):
             raise SettingError("vendor_settings tags must be a dict.", "vendor_settings")
 
