@@ -115,13 +115,8 @@ def _allow_list(allowed_ips) -> list:
     list takes CIDR ranges; an entry may also be the API's own
     ``{"ip", "comment"}`` dict.
     """
-    if isinstance(allowed_ips, str):
-        allowed_ips = allowed_ips.split(",")
-    if not isinstance(allowed_ips, (list, tuple)):
-        raise SettingError("The setting allowed_ips must be a list of IP addresses or CIDR ranges.", "allowed_ips")
-
     allow_list = []
-    for item in allowed_ips:
+    for item in v.as_list(allowed_ips):
         if isinstance(item, dict):
             ip, comment = str(item.get("ip") or "").strip(), item.get("comment")
         else:
@@ -137,16 +132,6 @@ def _allow_list(allowed_ips) -> list:
             entry["comment"] = str(comment)
         allow_list.append(entry)
     return allow_list
-
-
-def _positive_int(settings: dict, key: str):
-    """A setting that must be a positive whole number, or None if not given."""
-    value = settings.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value) or value < 1:
-        raise SettingError(f"The setting {key} must be a positive whole number.", key)
-    return int(value)
 
 
 @vendors.register
@@ -393,12 +378,11 @@ class MariadbCloud(v.Vendor):
         for key in ("version", "size"):
             if settings.get(key) not in (None, ""):
                 body[key] = str(settings[key])
-        nodes = _positive_int(settings, "nodes")
-        if nodes is not None:
-            body["nodes"] = nodes
-        storage = _positive_int(settings, "storage_gb")
-        if storage is not None:
-            body["storage"] = storage
+        # checked and made whole numbers by their fields
+        if settings.get("nodes") is not None:
+            body["nodes"] = settings["nodes"]
+        if settings.get("storage_gb") is not None:
+            body["storage"] = settings["storage_gb"]
         if settings.get("allowed_ips") not in (None, "", []):
             body["allow_list"] = _allow_list(settings["allowed_ips"])
         vendor_settings = dict(settings["vendor_settings"])

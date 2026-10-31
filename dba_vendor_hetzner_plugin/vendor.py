@@ -508,15 +508,26 @@ class Hetzner(v.Vendor):
         if settings["vendor_settings"].get("automount") and not settings.get("vm"):
             raise SettingError("automount mounts the volume on its VM: name one in vm.", ("automount", "vm"))
 
+    @staticmethod
+    def _check_setting(key: str, check) -> None:
+        """Runs a converter as a check, naming the setting it refuses."""
+        try:
+            check()
+        except SettingError:
+            raise
+        except DbaError as e:
+            raise SettingError(str(e), key) from e
+
     def _check_firewalls(self, settings) -> None:
         for rule in v.as_list(settings.get("rules")):
-            self._firewall_rule(rule)
+            self._check_setting("rules", lambda rule=rule: self._firewall_rule(rule))
 
     def _check_load_balancers(self, settings) -> None:
         for service in v.as_list(settings.get("services")):
-            self._lb_service(service)
+            self._check_setting("services", lambda service=service: self._lb_service(service))
 
-        self._rrsets(settings.get("records"))
+    def _check_dns(self, settings) -> None:
+        self._check_setting("records", lambda: self._rrsets(settings.get("records")))
 
     def create_client(self):
         return rest_client.RestClient(
