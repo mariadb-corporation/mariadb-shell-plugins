@@ -48,6 +48,9 @@ MAX_RUNNING_TASKS = 16
 # How long a task waits for the vendor, and how often it asks.
 CREATE_TIMEOUT = 3600
 UPDATE_TIMEOUT = 3600
+# How many polls an update a vendor goes on with may still find the object as
+# it was - ready - before that counts as done: the vendor may not have started.
+UPDATE_SETTLE_POLLS = 6
 DELETE_TIMEOUT = 1800
 POLL_INTERVAL = 10
 # How many asks in a row may fail - an API that answers 502 for a moment, an
@@ -376,15 +379,26 @@ def _start_task(kind, title, owner, vendor, project, object_type, object_name, w
     return {"task_id": task.id, "status": task.status}
 
 
-def _wait_ready(task, vendor, object_type, describe, obj, timeout):
-    """The stage waiting until an object is ready to use - or stopped, where it is kept so."""
+def _wait_ready(task, vendor, object_type, describe, obj, timeout, settle=0):
+    """The stage waiting until an object is ready to use - or stopped, where it is kept so.
+
+    With ``settle``, a ready object counts only once the vendor reported it
+    otherwise - working on it - or after that many polls: an object the
+    vendor goes on changing may look as it was for a while.
+    """
+    polls = []
+
+    def poll():
+        answer = vendor.current_status(object_type, obj)
+        polls.append(answer is None or vendor.is_ready(answer) or vendor.is_stopped(answer))
+        return answer
+
+    def done(answer):
+        settled = not all(polls) or len(polls) > settle
+        return (vendor.is_ready(answer) or vendor.is_stopped(answer)) and settled
+
     task.stage_started("Waiting until it is ready")
-    ready = _wait(
-        task, vendor, describe,
-        lambda: vendor.current_status(object_type, obj),
-        lambda answer: vendor.is_ready(answer) or vendor.is_stopped(answer),
-        timeout,
-    )
+    ready = _wait(task, vendor, describe, poll, done, timeout)
     task.stage_finished("Waiting until it is ready")
     return ready
 
@@ -527,7 +541,12 @@ def update_object(
         updated = vendor.update_found(object_type, found, settings)
         task.message(f"{vendor.display_name} accepted the change of the {object_type} '{object_name}'.")
         task.stage_finished("Updating")
-        return _wait_ready(task, vendor, object_type, describe, updated, UPDATE_TIMEOUT)
+        # an object the vendor reports as being changed is waited for until it is done
+        changing = not (vendor.is_ready(updated) or vendor.is_stopped(updated))
+        return _wait_ready(
+            task, vendor, object_type, f"The {object_type} '{updated.get('name') or object_name}'",
+            updated, UPDATE_TIMEOUT, UPDATE_SETTLE_POLLS if changing else 0,
+        )
 
     return _start_task(
         "update_object",

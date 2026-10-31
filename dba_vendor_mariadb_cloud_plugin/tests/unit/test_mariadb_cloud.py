@@ -525,8 +525,8 @@ def test_a_service_is_resized_and_its_allow_list_replaced(mock_api, cloud):
     assert mock_api.requests_to("PUT", f"{SERVICES}/dbpgf1/security/allowlist")[0]["json"] == [
         {"ip": "198.51.100.1/32"}, {"ip": "10.0.0.0/8", "comment": "vpn"},
     ]
-    # the service as found: the update task follows its status
-    assert updated["id"] == "dbpgf1"
+    # the service as found, being scaled: the update task waits until it was, and is ready
+    assert (updated["id"], updated["status"]) == ("dbpgf1", "pending_scale")
 
 
 def test_storage_and_nodes_change_one_at_a_time(mock_api, cloud):
