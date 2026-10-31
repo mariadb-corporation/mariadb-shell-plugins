@@ -163,9 +163,21 @@ def test_vms_are_listed_through_every_page_and_filtered_by_labels(vendor, mock_a
     assert vendor.list_objects("vms", tags=["env=staging"]) == []
 
 
-def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
-    mock_api.add("GET", "/v1/pricing", json=PRICING)
+def _vm_info_routes(mock_api):
+    pricing = {"pricing": {
+        **PRICING["pricing"],
+        "primary_ips": [
+            {"type": "ipv6", "prices": []},
+            {"type": "ipv4", "prices": [_price("fsn1", "0.0008", "0.50")]},
+        ],
+    }}
+    mock_api.add("GET", "/v1/pricing", json=pricing)
     mock_api.add("GET", "/v1/locations", json=_page("locations", LOCATIONS))
+    mock_api.add(
+        "GET",
+        "/v1/placement_groups",
+        json=_page("placement_groups", [{"id": 4, "name": "galera-spread", "type": "spread"}]),
+    )
     mock_api.add(
         "GET",
         "/v1/server_types",
@@ -175,7 +187,7 @@ def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
                 {
                     "id": 1, "name": "cx22", "description": "CX22", "cores": 2, "memory": 4.0,
                     "disk": 40, "deprecated": False, "cpu_type": "shared", "architecture": "x86",
-                    "storage_type": "local",
+                    "storage_type": "local", "category": "cost_optimized",
                     "prices": [_price("fsn1", "0.0060", "3.79"), _price("hel1", "0.0060", "3.79")],
                 }
             ],
@@ -186,10 +198,18 @@ def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
         "/v1/images",
         json=_page(
             "images",
-            [{"id": 5, "name": "ubuntu-24.04", "description": "Ubuntu 24.04", "type": "system", "architecture": "x86", "os_flavor": "ubuntu"}],
+            [
+                {"id": 5, "name": "ubuntu-24.04", "description": "Ubuntu 24.04", "type": "system",
+                 "architecture": "x86", "os_flavor": "ubuntu", "os_version": "24.04"},
+                {"id": 6, "name": "debian-13", "description": "Debian 13", "type": "system",
+                 "architecture": "arm", "os_flavor": "debian", "os_version": "13"},
+            ],
         ),
     )
 
+
+def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
+    _vm_info_routes(mock_api)
     info = vendor.object_info("vms")
     assert info["sizes"] == [
         {
@@ -197,6 +217,7 @@ def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
             "description": "CX22",
             "architecture": "x86_64",
             "cpu_type": "shared",
+            "category": "cost_optimized",
             "cores": 2,
             "memory_gb": 4.0,
             "disk_gb": 40,
@@ -205,6 +226,7 @@ def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
                 {"location": "fsn1", "hourly": 0.006, "monthly": 3.79, "currency": "EUR"},
                 {"location": "hel1", "hourly": 0.006, "monthly": 3.79, "currency": "EUR"},
             ],
+            "locations": ["fsn1", "hel1"],
             "deprecated": False,
         }
     ]
@@ -212,11 +234,170 @@ def test_vm_info_reports_sizes_locations_and_system_images(vendor, mock_api):
         "name": "fsn1", "description": "Falkenstein DC Park 1", "country": "DE",
         "city": "Falkenstein", "network_zone": "eu-central",
     }
-    assert info["images"] == [
-        {"name": "ubuntu-24.04", "description": "Ubuntu 24.04", "architecture": "x86_64", "os_flavor": "ubuntu"}
-    ]
+    assert info["images"][0] == {
+        "name": "ubuntu-24.04", "description": "Ubuntu 24.04", "architecture": "x86_64",
+        "os_flavor": "ubuntu", "os_version": "24.04",
+    }
+    assert info["ipv4_prices"] == [{"location": "fsn1", "hourly": 0.0008, "monthly": 0.5, "currency": "EUR"}]
+    assert info["placement_groups"] == [{"name": "galera-spread", "id": 4, "type": "spread"}]
     [images] = mock_api.requests_to("GET", "/v1/images")
     assert images["params"]["type"] == "system"
+
+
+def _settings_routes(mock_api):
+    _vm_info_routes(mock_api)
+    mock_api.add("GET", "/v1/ssh_keys", json=_page("ssh_keys", [{"id": 21, "name": "admin"}, {"id": 22, "name": "ci"}]))
+    mock_api.add(
+        "GET",
+        "/v1/networks",
+        json=_page("networks", [
+            {"id": 3, "name": "galera-net", "subnets": [{"network_zone": "eu-central"}]},
+            {"id": 4, "name": "us-net", "subnets": [{"network_zone": "us-east"}]},
+        ]),
+    )
+    mock_api.add("GET", "/v1/firewalls", json=_page("firewalls", [{"id": 7, "name": "mariadb"}]))
+    mock_api.add("GET", "/v1/volumes", json=_page("volumes", [_volume(11, "data1"), _volume(12, "data2")]))
+
+
+def test_the_vm_settings_are_described_as_the_console_shows_them(vendor, mock_api):
+    _settings_routes(mock_api)
+    info = vendor.settings_info("vms")
+    settings = info["settings"]
+
+    # Hetzner's console order: the type first, the name last
+    assert list(settings) == [
+        "size", "location", "image", "enable_ipv4", "enable_ipv6", "networks", "ssh_keys",
+        "volumes", "automount", "firewalls", "placement_group", "labels", "user_data", "name",
+        "start_after_create", "vendor_settings",
+    ]
+    assert [details["position"] for details in settings.values()] == list(range(1, 17))
+    assert [group["key"] for group in info["groups"]] == [
+        "size", "location", "image", "networking", "ssh_keys", "storage", "security",
+        "placement", "labels", "advanced", "general",
+    ]
+    assert info["groups"][0] == {
+        "key": "size", "caption": "Type",
+        "description": "The size of the object: its resources, and what it costs.", "position": 1,
+    }
+
+    size = settings["size"]
+    assert (size["required"], size["strict"], size["type"]) == (True, True, "string")
+    assert size["display"]["style"] == "table"
+    assert size["display"]["group_by"] == ["cpu_type", "category", "architecture"]
+    [cx22] = size["choices"]
+    assert cx22["value"] == "cx22" and cx22["description"] == "CX22"
+    assert cx22["details"]["locations"] == ["fsn1", "hel1"]
+    assert cx22["details"]["prices"][0] == {"location": "fsn1", "hourly": 0.006, "monthly": 3.79, "currency": "EUR"}
+    assert size["filter"] == [{"setting": "location", "detail": "locations"}]
+
+    assert [c["details"]["city"] for c in settings["location"]["choices"]] == ["Falkenstein", "Helsinki", "Ashburn, VA"]
+    assert settings["image"]["display"] == {"style": "cards", "group_by": ["os_flavor"], "item_caption": "os_version"}
+    assert not settings["image"].get("strict")
+
+    ipv4 = settings["enable_ipv4"]
+    assert (ipv4["type"], ipv4["default"], ipv4["vendor_specific"], ipv4["vendor_key"]) == (
+        "boolean", True, True, "public_net.enable_ipv4"
+    )
+    assert ipv4["prices"] == [{"location": "fsn1", "hourly": 0.0008, "monthly": 0.5, "currency": "EUR"}]
+    assert settings["enable_ipv6"].get("prices") is None
+
+    # what is deployed in the project, to choose from
+    assert [c["value"] for c in settings["ssh_keys"]["choices"]] == ["admin", "ci"]
+    assert [(c["value"], c["details"]["location"]) for c in settings["networks"]["choices"]] == [
+        ("galera-net", "eu-central"), ("us-net", "us-east"),
+    ]
+    assert settings["networks"]["filter"] == [
+        {"setting": "location", "detail": "location", "selected_detail": "network_zone"}
+    ]
+    assert [c["value"] for c in settings["volumes"]["choices"]] == ["data1", "data2"]
+    assert [c["value"] for c in settings["firewalls"]["choices"]] == ["mariadb"]
+    assert settings["placement_group"]["choices"] == [
+        {"value": "galera-spread", "caption": "galera-spread", "description": None,
+         "details": {"id": 4, "type": "spread"}}
+    ]
+
+    assert settings["name"]["is_editable"] and settings["labels"]["is_editable"]
+    assert not settings["size"]["is_editable"]
+    assert settings["labels"]["value_max_length"] == 63
+    assert settings["user_data"]["max_bytes"] == 32768
+
+
+def test_vm_settings_are_validated_without_a_request_first(vendor, mock_api):
+    result = vendor.validate_settings(
+        "vms",
+        {"name": "db 1", "size": "cx22", "image": "ubuntu-24.04", "ssh_keys": ["admin"],
+         "enable_ipv4": "maybe", "labels": {"-bad": "x"}},
+    )
+    assert result["valid"] is False and result["warnings"] == []
+    assert [error["settings"] for error in result["errors"]] == [["name"], ["labels"], ["enable_ipv4"]]
+    assert result["errors"][2]["message"] == "The setting enable_ipv4 must be true or false, not 'maybe'."
+    assert mock_api.requests == []
+
+    result = vendor.validate_settings(
+        "vms",
+        {"name": "db1", "size": "cx22", "image": "ubuntu-24.04", "ssh_keys": ["admin"],
+         "enable_ipv4": False, "enable_ipv6": "no"},
+    )
+    assert result["errors"] == [
+        {"settings": ["enable_ipv4", "enable_ipv6", "networks"],
+         "message": "A server without public addresses needs a private network: name one in networks."}
+    ]
+    assert mock_api.requests == []
+
+
+def test_vm_settings_are_validated_against_what_hetzner_offers(vendor, mock_api):
+    _settings_routes(mock_api)
+    valid = {"name": "db1", "size": "cx22", "location": "fsn1", "image": "ubuntu-24.04",
+             "ssh_keys": ["admin"], "networks": ["galera-net"], "volumes": ["data1"]}
+    assert vendor.validate_settings("vms", valid) == {"valid": True, "errors": [], "warnings": []}
+
+    result = vendor.validate_settings(
+        "vms",
+        {"name": "db1", "size": "cx22", "location": "ash", "image": "debian-13",
+         "ssh_keys": ["admin", "nobody"], "networks": ["galera-net"], "volumes": ["data1"],
+         "placement_group": "galera-spread"},
+    )
+    assert result["valid"] is False
+    assert result["errors"] == [
+        {"settings": ["size", "location"],
+         "message": "Hetzner Cloud does not offer the size 'cx22' with location 'ash'."},
+        {"settings": ["image", "size"],
+         "message": "Hetzner Cloud does not offer the image 'debian-13' with size 'cx22'."},
+        {"settings": ["networks", "location"],
+         "message": "The networks 'galera-net' cannot be used with location 'ash'."},
+        {"settings": ["ssh_keys"], "message": "There is no ssh_keys named 'nobody' at Hetzner Cloud in project 'prod'."},
+        {"settings": ["volumes", "location"], "message": "The volumes 'data1' cannot be used with location 'ash'."},
+    ]
+
+    result = vendor.validate_settings("vms", {**valid, "size": "cx99", "image": "my-snapshot"})
+    assert result["errors"] == [
+        {"settings": ["size"], "message": "Hetzner Cloud does not offer the size 'cx99'. Choose one of: cx22."}
+    ]
+    assert result["warnings"] == [
+        {"settings": ["image"], "message": "Hetzner Cloud does not list the image 'my-snapshot'; the "
+         "deployment fails if it does not take it."}
+    ]
+
+
+def test_a_vm_takes_hetzner_settings_of_its_own(vendor, mock_api):
+    _settings_routes(mock_api)
+    mock_api.add(
+        "POST", "/v1/servers", status=201,
+        json={"server": _server(9, "db3", status="initializing")},
+    )
+    vendor.deploy_object(
+        "vms",
+        {"name": "db3", "size": "cx22", "image": "ubuntu-24.04", "ssh_keys": ["admin"],
+         "networks": ["galera-net"], "enable_ipv4": False, "enable_ipv6": "true",
+         "volumes": ["data2"], "automount": "yes", "placement_group": "galera-spread",
+         "start_after_create": False},
+    )
+    [request] = mock_api.requests_to("POST", "/v1/servers")
+    assert request["json"] == {
+        "name": "db3", "server_type": "cx22", "image": "ubuntu-24.04", "ssh_keys": [21],
+        "networks": [3], "public_net": {"enable_ipv4": False, "enable_ipv6": True},
+        "volumes": [12], "automount": True, "placement_group": 4, "start_after_create": False,
+    }
 
 
 def _deploy_routes(mock_api):
@@ -569,7 +750,7 @@ def test_a_firewall_is_deployed_with_its_rules_and_vms(vendor, mock_api):
     [
         ({"protocol": "tcp", "port": 22}, "needs source_ips"),
         ({"protocol": "sctp", "source_ips": ["0.0.0.0/0"]}, "protocol is one of"),
-        ({"direction": "sideways", "protocol": "tcp", "source_ips": ["0.0.0.0/0"]}, "direction is 'in' or 'out'"),
+        ({"direction": "sideways", "protocol": "tcp", "source_ips": ["0.0.0.0/0"]}, "direction must be one of: in, out"),
         ({"protocol": "tcp", "source_ips": ["0.0.0.0/0"], "action": "drop"}, "Unsupported firewall rule keys: action"),
         ("tcp/3306", "must be a dict"),
     ],
@@ -682,7 +863,7 @@ def test_a_load_balancer_is_deployed_with_services_and_private_targets(vendor, m
 
 
 def test_a_load_balancer_service_without_a_port_is_refused(vendor, mock_api):
-    with pytest.raises(DbaError, match="with a listen_port"):
+    with pytest.raises(DbaError, match=r"services\[0\] needs listen_port"):
         vendor.deploy_object("load_balancers", {"name": "lb", "size": "lb11", "services": [{"protocol": "tcp"}]})
 
 
@@ -743,7 +924,7 @@ def test_a_zone_is_deployed_with_its_records_as_rrsets(vendor, mock_api):
 def test_a_bad_dns_record_is_refused(vendor, mock_api):
     with pytest.raises(DbaError, match="Unknown DNS record type 'BOGUS'"):
         vendor.deploy_object("dns", {"name": "example.org", "records": [{"type": "BOGUS", "value": "x"}]})
-    with pytest.raises(DbaError, match="with a type and a value"):
+    with pytest.raises(DbaError, match=r"records\[0\] needs value"):
         vendor.deploy_object("dns", {"name": "example.org", "records": [{"type": "A"}]})
 
 
@@ -837,5 +1018,8 @@ def test_live_read_only(live_api_key):
         info = vendor.object_info("vms")
         assert info["sizes"] and info["locations"] and info["images"]
         assert all(price["currency"] for size in info["sizes"] for price in size["prices"])
+        settings = vendor.settings_info("vms")["settings"]
+        assert settings["size"]["choices"] and settings["location"]["choices"]
+        assert all(choice["details"]["locations"] for choice in settings["size"]["choices"])
     finally:
         vendor.close()

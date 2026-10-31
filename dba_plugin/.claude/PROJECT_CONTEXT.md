@@ -27,6 +27,21 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   supported) with static rules in `_check_<type>(settings)`;
   `check_deploy_settings` runs both before a deployment's task starts and in
   `_deploy_<type>`. Rules needing a request (a size offered) fail the task.
+- **Settings for a dialog:** every standardized setting is a field in
+  `lib/settings_fields.py` (caption, group, type, range, `choices_from`,
+  `filter`, `display`); `SETTINGS` descriptions derive from it. A vendor's
+  `settings_fields` changes attributes of standardized keys and adds its own
+  settings (`vendor_specific`, moved into `vendor_settings` at `vendor_key`
+  by `settings_problems`); `settings_order`/`settings_groups` follow its
+  console. `Vendor.settings_info` fills choices from `_info_<type>` and the
+  deployed objects (side by side); `Vendor.validate_settings` collects
+  every request-free problem (`settings_problems`, keys from `SettingError`),
+  then checks values against the choices, honouring `filter`. The shell sorts
+  dict keys, so clients order settings by `position`. Hetzner's VM dialog
+  mirrors its console (sizes table grouped by cpu_type/category, per-location
+  prices and availability, images by os_flavor/os_version, IPv4/IPv6,
+  networks by network zone, volumes, placement group, label rules,
+  32 KiB cloud-init).
 - **Label filters on the vendor's side** where verified: a `_list_<type>`
   taking `labels=` gets the tag and project filter (Hetzner `label_selector`
   everywhere; UpCloud `label` on servers, storages, networks). The core
@@ -100,8 +115,11 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
 ## Files that matter
 
 - `lib/vendor.py`: the vendor contract (module docstring), `Vendor`,
-  `make_object`, `check_settings`, `SETTINGS`, `READY_STATUSES`,
+  `make_object`, `check_settings`, `settings_problems`, `applying_choices`,
+  `SETTINGS`, `READY_STATUSES`,
   `ObjectNotFound`, `current_status`, `delete_found`, `require`.
+- `lib/settings_fields.py`: the fields of the standardized settings, their
+  groups, and the request-free value checks (`field_errors`).
 - `lib/operations.py`: shared by shell and MCP; the task machinery.
 - `lib/objects.py`: shell object registration, `shell_call`, `task_answer`.
 - `lib/api_keys.py`, `lib/vendors.py` (discovery of `dba_vendor_*_plugin`),

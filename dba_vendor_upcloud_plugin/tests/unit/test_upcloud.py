@@ -569,6 +569,35 @@ def test_info_volumes(vendor, mock_api):
     assert [zone["name"] for zone in info["locations"]] == ["de-fra1"]
 
 
+def test_volume_settings_offer_upcloud_storage_tiers(vendor, mock_api):
+    _catalog(mock_api)
+    _servers(mock_api)
+    settings = vendor.settings_info("volumes")["settings"]
+    assert list(settings) == ["name", "size_gb", "location", "vm", "tier", "labels", "vendor_settings"]
+    assert "format" not in settings  # UpCloud does not format volumes
+    tier = settings["tier"]
+    assert (tier["vendor_specific"], tier["strict"], tier["default"]) == (True, True, "maxiops")
+    assert [c["value"] for c in tier["choices"]] == ["maxiops", "standard", "hdd"]
+    assert [c["value"] for c in settings["vm"]["choices"]] == ["db1", "db2"]
+    assert settings["size_gb"]["is_editable"] and settings["name"]["is_editable"]
+
+    result = vendor.validate_settings("volumes", {"name": "data", "size_gb": 10, "location": "de-fra1", "tier": "ssd"})
+    assert result["errors"] == [
+        {"settings": ["tier"], "message": "UpCloud does not offer the tier 'ssd'. Choose one of: maxiops, standard, hdd."}
+    ]
+
+
+def test_vm_settings_take_public_keys(vendor, mock_api):
+    settings = UpCloud.fields("vms")
+    assert settings["ssh_keys"]["item_type"] == "text" and "choices_from" not in settings["ssh_keys"]
+    assert "firewalls" not in settings
+    result = vendor.validate_settings(
+        "vms", {"name": "db", "size": "2xCPU-4GB", "location": "de-fra1", "image": TEMPLATE, "ssh_keys": ["admin"]}
+    )
+    assert result["errors"][0]["settings"] == ["ssh_keys"]
+    assert mock_api.requests == []
+
+
 def test_deploy_a_volume_attached_to_a_vm(mock_api):
     _servers(mock_api)
     mock_api.add(
@@ -783,7 +812,7 @@ def test_deploy_load_balancers(vendor, mock_api):
     assert body["labels"] == []
     assert created["id"] == LB
 
-    with pytest.raises(DbaError, match="tcp or http, not 'udp'"):
+    with pytest.raises(DbaError, match="protocol must be one of: tcp, http; not 'udp'"):
         vendor.deploy_object(
             "load_balancers",
             {"name": "x", "size": "development", "location": "de-fra1", "network": "galera",

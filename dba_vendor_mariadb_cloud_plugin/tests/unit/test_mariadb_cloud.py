@@ -172,7 +172,7 @@ def test_a_listing_is_filtered_by_tags_and_by_the_project_label(mock_api):
     vendor.close()
 
 
-def test_the_info_lists_what_can_be_deployed(mock_api, cloud):
+def _info_routes(mock_api):
     mock_api.add(
         "GET",
         "/provisioning/v1/sizes",
@@ -226,6 +226,9 @@ def test_the_info_lists_what_can_be_deployed(mock_api, cloud):
         ],
     )
 
+
+def test_the_info_lists_what_can_be_deployed(mock_api, cloud):
+    _info_routes(mock_api)
     info = cloud.object_info(TYPE)
 
     assert info["sizes"] == [
@@ -314,9 +317,9 @@ def test_a_minimal_deployment_sends_only_what_was_given(mock_api, cloud):
         ({"provider": "aws", "location": "x", "topology": "es-single"}, "Missing settings .*: name"),
         ({"name": "a", "provider": "aws", "topology": "es-single"}, "Missing settings .*: location"),
         ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "image": "x"}, "Unsupported settings .*: image"),
-        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "nodes": 0}, "nodes must be a positive"),
-        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "storage_gb": "lots"}, "storage_gb must be a positive"),
-        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "allowed_ips": ["nope"]}, "'nope' is no IP"),
+        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "nodes": 0}, "nodes must be at least 1"),
+        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "storage_gb": "lots"}, "storage_gb must be a whole number"),
+        ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "allowed_ips": ["nope"]}, "must be an IP address or CIDR range, not 'nope'"),
         ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "labels": "x"}, "labels must be a dict"),
         ({"name": "a", "provider": "aws", "location": "x", "topology": "t", "vendor_settings": {"tags": "x"}}, "tags must be a dict"),
     ],
@@ -325,6 +328,64 @@ def test_invalid_settings_are_refused_before_any_request(mock_api, cloud, settin
     with pytest.raises(DbaError, match=message):
         cloud.deploy_object(TYPE, settings)
     assert mock_api.requests == []
+
+
+def test_the_service_settings_are_described_for_a_dialog(mock_api, cloud):
+    _info_routes(mock_api)
+    info = cloud.settings_info(TYPE)
+    settings = info["settings"]
+    assert list(settings) == [
+        "name", "provider", "location", "topology", "version", "size", "nodes", "storage_gb",
+        "allowed_ips", "ssl_enabled", "labels", "vendor_settings",
+    ]
+    assert [key for key, details in settings.items() if details["required"]] == [
+        "name", "provider", "location", "topology",
+    ]
+    assert [key for key, details in settings.items() if details["is_editable"]] == [
+        "size", "nodes", "storage_gb", "allowed_ips",
+    ]
+    assert settings["provider"]["choices"][0]["details"] == {
+        "default": True, "storage_gb_min": 10, "storage_gb_max": 16000,
+    }
+    assert settings["ssl_enabled"]["vendor_specific"] and settings["ssl_enabled"]["default"] is True
+    assert [c["value"] for c in v.applying_choices(settings, "size", {"provider": "aws", "topology": "galera"})] == [
+        "sky-4x16"
+    ]
+
+
+def test_service_settings_are_validated_against_what_mariadb_cloud_offers(mock_api, cloud):
+    _info_routes(mock_api)
+    base = {"name": "orders", "provider": "aws", "location": "us-east-1", "topology": "es-single"}
+    assert cloud.validate_settings(TYPE, {**base, "size": "sky-2x8", "version": "11.4.5-3"})["valid"] is True
+
+
+def test_a_size_is_validated_with_the_provider_and_topology_chosen(mock_api, cloud):
+    # one test per validation: the first page of the sizes is answered once
+    _info_routes(mock_api)
+    base = {"name": "orders", "provider": "aws", "location": "us-east-1", "topology": "es-single"}
+    result = cloud.validate_settings(
+        TYPE,
+        {**base, "topology": "galera", "size": "sky-2x8",
+         "allowed_ips": ["10.0.0.0/8", {"ip": "192.0.2.1", "comment": "office"}], "ssl_enabled": "false"},
+    )
+    assert result["errors"] == [
+        {"settings": ["size", "provider", "topology"],
+         "message": "MariaDB Cloud does not offer the size 'sky-2x8' with provider 'aws' and topology 'galera'."}
+    ]
+
+    refused = cloud.validate_settings(TYPE, {**base, "allowed_ips": [{"comment": "no ip"}]})
+    assert refused["errors"] == [{"settings": ["allowed_ips"], "message": "The setting allowed_ips[0] needs ip."}]
+
+
+def test_the_vendors_own_settings_reach_the_request(mock_api):
+    mock_api.add("POST", SERVICES, json=_service("dbnew", "orders", status="pending_create"), status=202)
+    MariadbCloud(api_key=KEY).deploy_object(
+        TYPE,
+        {"name": "orders", "provider": "aws", "location": "us-east-1", "topology": "es-single",
+         "ssl_enabled": "no"},
+    )
+    [request] = mock_api.requests_to("POST", SERVICES)
+    assert request["json"]["ssl_enabled"] is False
 
 
 def test_a_deployment_the_api_does_not_report_is_refused(mock_api, cloud):

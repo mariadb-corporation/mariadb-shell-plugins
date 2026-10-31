@@ -41,14 +41,17 @@ Objects are named with **standardized object types**, whatever the vendor calls 
 | `dba.set.apiKey(vendorName, key[, project])` | `dba.set_api_key` (`--gui`) | Stores a vendor's REST API key in the shell's secret store. |
 | `dba.list.vendor.objectSupport([vendorName])` | `dba.list_vendor_object_support` | The standardized object types, or what a vendor supports. |
 | `dba.get.vendor.objectInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_info` | What of a type can be deployed: sizes (architecture, cores, RAM, disk, included traffic, prices), locations, images, versions. |
+| `dba.get.vendor.objectSettingsInfo(vendorName, objectType[, project])` | `dba.get_vendor_object_settings_info` | The settings to deploy a type with, described for a dialog, with the values the vendor offers to choose from. |
+| `dba.validate.vendor.objectSettings(vendorName, objectType, settings[, project])` | `dba.validate_vendor_object_settings` | Checks a deployment's settings, against what the vendor offers too, without deploying. |
 | `dba.list.vendor.objects(vendorName, objectType[, tags, project])` | `dba.list_vendor_objects` | The deployed objects of a type, filtered by tags and project. |
 | `dba.get.vendor.objectStatus(vendorName, objectType, objectName[, project])` | `dba.get_vendor_object_status` | The current status of one object. |
 | `dba.deploy.vendor.object(vendorName, objectType, settings[, project])` | `dba.deploy_vendor_object` (`--gui`) | Starts a task deploying an object with the given settings. |
 | `dba.delete.vendor.object(vendorName, objectType, objectName[, project])` | `dba.delete_vendor_object` (`--gui`) | Starts a task deleting an object, by name or id. |
 
 Every vendor object has the same functions without the vendor name:
-`dba.vendor.<name>.featureSet()`, `objectSupport()`, `objectInfo()`, `listObjects()`,
-`objectStatus()`, `deployObject()` and `deleteObject()`.
+`dba.vendor.<name>.featureSet()`, `objectSupport()`, `objectInfo()`,
+`objectSettingsInfo()`, `validateObjectSettings()`, `listObjects()`, `objectStatus()`,
+`deployObject()` and `deleteObject()`.
 
 An MCP server started without `--gui` - one an agent talks to - offers only the tools that
 read.
@@ -118,6 +121,64 @@ than ignored, and every rule that needs no request to the vendor - a required se
 the format of a value - is checked before a deployment's task starts. VMs are only
 deployed with SSH keys, so that no root password is created and handed back.
 
+A vendor may take **settings of its own** next to the standardized ones - Hetzner's
+`enable_ipv4`, `volumes` and `placement_group` for a VM, UpCloud's storage `tier`,
+MariaDB Cloud's `ssl_enabled`. They are given like any other setting and go into the
+vendor's request where the vendor takes them (`enable_ipv4` as `public_net.enable_ipv4`).
+
+### Settings for a dialog
+
+`dba.get.vendor.objectSettingsInfo(vendor, type[, project])` describes every setting a
+vendor takes for a type, so that a client - the VS Code extension - can render a dialog to
+create an object without knowing the vendor. It answers:
+
+- `vendor`, `display_name`, `object_type`;
+- `groups` - the dialog's sections, in order: `key`, `caption`, `description` (help text
+  for the section) and `position`;
+- `settings` - each setting by its key. **Order them by `position`**: the shell hands a
+  dict over with its keys sorted.
+
+Each setting has:
+
+| Attribute | Meaning |
+| --- | --- |
+| `key`, `position` | Its key in the settings, and its place in the dialog (from 1). |
+| `group` | The section it is shown in, a key of `groups`. |
+| `caption`, `description` | Its label and its help text. |
+| `type` | `string`, `text` (several lines), `integer`, `boolean`, `list`, `dict` (key/value pairs) or `object_list` (a list of dicts, each described by `item_fields`). |
+| `required`, `default` | Whether it must be given; the value the vendor uses when it is not. |
+| `minimum`, `maximum` | The range of an integer. |
+| `min_length`, `max_length`, `max_bytes`, `pattern`, `format` | What text must be: `pattern` is a regular expression the whole value matches, `format` one of `cidr`, `ip_or_cidr`, `port`. For a `list`, they apply to each item. |
+| `key_pattern`, `value_pattern`, `value_max_length` | What the keys and values of a `dict`, such as labels, must be. |
+| `item_type`, `item_fields` | The type of a list's items; the fields of an `object_list`'s dicts (a firewall's rules, a load balancer's services) or of the dicts a list's items may be. |
+| `choices` | The values to choose from: `value`, `caption`, `description` and `details` - all else the vendor says about it, such as a size's `cores`, `memory_gb`, `disk_gb`, `architecture`, `category`, `prices` per location and the `locations` it is offered in, or a deployed object's `id`, `location` and `state`. |
+| `choices_from` | Where the choices come from: `{"info": key}` - what the vendor offers (`objectInfo`) - or `{"objects": type}` - what is deployed, which a dialog can offer to create with that type's own settings info. |
+| `strict` | Whether the value must be one of the choices; otherwise they are suggestions (an image may be given by its id). |
+| `filter` | Which choices apply with the other settings chosen: a list of `{setting, detail, selected_detail}`. A choice applies when its `details[detail]` is, lists or is listed by the value of `setting` - or, with `selected_detail`, by that detail of the choice selected for `setting`. A choice without the detail always applies. For example a Hetzner size is offered in the locations its `locations` list, and a private network fits when its `location` is the `network_zone` of the location chosen. |
+| `prices` | What the setting itself costs, per location, such as a public IPv4 address. |
+| `display` | How to show the choices: `style` (`select`, `cards`, `table`, `checkboxes`), `columns` of a table (`key`, `caption`, `unit`; `prices.hourly` and `prices.monthly` are the price at the location chosen), `group_by` (details to group the choices by, such as Hetzner's `cpu_type` and `category`, or an image's `os_flavor`) and `item_caption` (the detail to label a choice with, such as an image's `os_version`). |
+| `is_editable` | Whether it can be changed at the vendor once the object is deployed - for a dialog that changes an object. The dba plugin does not change objects yet. |
+| `advanced` | Whether a dialog may tuck it away. |
+| `vendor_specific`, `vendor_key` | Whether it is the vendor's own setting, and where it goes in the vendor's request. |
+
+`dba.validate.vendor.objectSettings(vendor, type, settings[, project])` checks settings
+before a dialog lets them be applied. It runs every check a deployment runs before its
+task starts and, when they pass, checks the values against the vendor: a size, location
+or version it does not offer, or not with the other settings given, and an object named
+that is not deployed, are errors; a value of a setting whose choices are suggestions is a
+warning. It answers `valid`, `errors` and `warnings`; each problem has a `message` and
+`settings`, the keys it is about, for the dialog to mark. Nothing is deployed.
+
+```python
+info = dba.get.vendor.object_settings_info("hetzner", "vms", "prod")
+for setting in sorted(info["settings"].values(), key=lambda s: s["position"]):
+    print(setting["position"], setting["group"], setting["caption"], setting["type"])
+dba.validate.vendor.object_settings("hetzner", "vms", {
+    "name": "galera-1", "size": "cx32", "location": "fsn1", "image": "debian-13",
+    "ssh_keys": ["admin"], "enable_ipv4": False, "networks": ["galera-net"],
+}, "prod")
+```
+
 ## API keys and projects
 
 Keys are kept in the shell's secret store, one per vendor and project:
@@ -143,7 +204,13 @@ A vendor plugin is a folder `dba_vendor_<name>_plugin` with:
   its API client (`dba_plugin.lib.rest_client.RestClient`, the one HTTP client every
   vendor uses), and implements `_list_<type>` for each object type it supports, plus
   `_info_<type>`, `_deploy_<type>`, `_delete_<type>` and `_status_<type>` as far as it
-  supports them. The module docstring of `lib/vendor.py` is the contract.
+  supports them. The module docstring of `lib/vendor.py` is the contract. The settings
+  each type requires and supports go in `deploy_settings`, rules that need no request in
+  `_check_<type>(settings)` (raising `SettingError` with the keys concerned), and what
+  differs from the standardized fields of `lib/settings_fields.py` - a range, the
+  source of the choices, `is_editable`, settings of its own - in `settings_fields`, with
+  `settings_order` and `settings_groups` where its own console orders and words them
+  differently.
 - `init.py` - `dba_plugin.lib.objects.register_vendor_plugin(<the class>)`, which adds
   `dba.vendor.<name>` and its functions.
 - `__init__.py` - importing nothing. The shell refuses to register a function twice, so

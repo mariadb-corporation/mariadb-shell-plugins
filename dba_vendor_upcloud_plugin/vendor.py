@@ -52,8 +52,9 @@ from datetime import datetime, timezone
 
 from dba_plugin.lib import object_types as types, rest_client
 from dba_plugin.lib import vendor as v
+from dba_plugin.lib import settings_fields as sf
 from dba_plugin.lib import vendors
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib.general import DbaError, SettingError
 
 BASE_URL = "https://api.upcloud.com/1.3"
 
@@ -208,6 +209,50 @@ class UpCloud(v.Vendor):
         "upctl, or store an API sub-account's credentials as 'username:password'."
     )
 
+    settings_fields = {
+        types.VMS: {
+            "name": {"is_editable": True},
+            "labels": {"is_editable": True},
+            "networks": {"filter": [{"setting": "location", "detail": "location"}],
+                         "description": "A list of private network names or uuids to attach; only "
+                         "networks in the server's zone."},
+            "ssh_keys": {"caption": "SSH public keys", "item_type": sf.TEXT,
+                         "description": "The public keys to install, in OpenSSH format, e.g. "
+                         f"'ssh-ed25519 AAAA... user@host', for the user {DEFAULT_LOGIN_USER}. "
+                         "UpCloud stores no keys. Required."},
+            "hostname": sf.field(
+                "Hostname",
+                "The server's hostname; made of its name by default.",
+                group="networking", pattern=r"[A-Za-z0-9]([A-Za-z0-9.-]{0,126}[A-Za-z0-9])?",
+                advanced=True,
+            ),
+        },
+        types.VOLUMES: {
+            "name": {"is_editable": True},
+            "labels": {"is_editable": True},
+            "size_gb": {"is_editable": True,
+                        "description": "The size in GB; it can be grown later."},
+            "vm": {"description": "The name or uuid of a server to attach the volume to; its zone "
+                   "is the volume's."},
+            "tier": sf.field(
+                "Storage tier",
+                "The storage tier: maxiops (fastest), standard or hdd.",
+                group="storage", choices_from={"info": "tiers"}, strict=True,
+                default=DEFAULT_STORAGE_TIER,
+            ),
+        },
+        types.NETWORKING: {"name": {"is_editable": True}, "labels": {"is_editable": True}},
+        types.LOAD_BALANCERS: {
+            "labels": {"is_editable": True},
+            "services": {"item_fields": {
+                **sf.FIELDS[types.LOAD_BALANCERS]["services"]["item_fields"],
+                "protocol": sf.field("Protocol", "tcp or http.", choices=["tcp", "http"],
+                                     strict=True, default="tcp"),
+            }},
+        },
+        types.OBJECT_STORAGE: {"labels": {"is_editable": True}},
+    }
+
     deploy_settings = {
         types.VMS: {
             "required": ("name", "size", "location", "image", "ssh_keys"),
@@ -227,27 +272,30 @@ class UpCloud(v.Vendor):
         if not ssh_keys or not all(
             isinstance(key, str) and key.strip().startswith(("ssh-", "ecdsa-", "sk-")) for key in ssh_keys
         ):
-            raise DbaError(
+            raise SettingError(
                 "UpCloud has no SSH key store: ssh_keys must be a list of public keys in "
-                "OpenSSH format, e.g. 'ssh-ed25519 AAAA... user@host'."
+                "OpenSSH format, e.g. 'ssh-ed25519 AAAA... user@host'.",
+                "ssh_keys",
             )
 
     @staticmethod
     def _check_volumes(settings) -> None:
         if not settings.get("location") and not settings.get("vm"):
-            raise DbaError("Missing settings for volumes: location, or a vm to attach it to.")
+            raise SettingError(
+                "Missing settings for volumes: location, or a vm to attach it to.", ("location", "vm")
+            )
 
     @staticmethod
     def _check_load_balancers(settings) -> None:
         services = settings["services"]
         if not isinstance(services, list) or not all(isinstance(s, dict) for s in services):
-            raise DbaError("services must be a list of {protocol, listen_port, destination_port}.")
+            raise SettingError("services must be a list of {protocol, listen_port, destination_port}.", "services")
         for service in services:
             protocol = str(service.get("protocol") or "tcp").lower()
             if protocol not in ("tcp", "http"):
-                raise DbaError(f"UpCloud load balancers balance tcp or http, not '{protocol}'.")
+                raise SettingError(f"UpCloud load balancers balance tcp or http, not '{protocol}'.", "services")
             if not _int(service.get("listen_port")):
-                raise DbaError("Every service needs a listen_port.")
+                raise SettingError("Every service needs a listen_port.", "services")
 
     def create_client(self):
         """The API client: a token is sent as a Bearer token, a

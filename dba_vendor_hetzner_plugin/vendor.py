@@ -43,7 +43,8 @@ What the API makes worth knowing:
 import time
 
 from dba_plugin.lib import object_types as types, rest_client, vendor as v, vendors
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib import settings_fields as sf
+from dba_plugin.lib.general import DbaError, SettingError
 
 BASE_URL = "https://api.hetzner.cloud/v1"
 
@@ -67,6 +68,23 @@ DNS_RECORD_TYPES = (
 # The keys of a firewall rule in the standardized settings.
 FIREWALL_RULE_KEYS = ("direction", "protocol", "port", "source_ips", "destination_ips", "description")
 FIREWALL_PROTOCOLS = ("tcp", "udp", "icmp", "esp", "gre")
+
+# A server's name is its hostname (RFC 1123).
+_HOSTNAME = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
+# A label's key: an optional prefix and a slash, and a name of up to 63
+# characters beginning and ending with an alphanumeric character; its value
+# such a name, or empty.
+_LABEL_NAME = r"[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?"
+_LABELS = {
+    "key_pattern": rf"({_HOSTNAME}/)?{_LABEL_NAME}",
+    "value_pattern": rf"({_LABEL_NAME})?",
+    "value_max_length": 63,
+    "description": "Key/value pairs to organize and find the object by. A key and a value "
+    "have at most 63 characters, begin and end with a letter or digit, and have letters, "
+    "digits, dashes, underscores and dots in between; the value may be empty.",
+}
+# What can be changed on every Hetzner object: its name and labels.
+_RENAMED = {"name": {"is_editable": True}, "labels": {**_LABELS, "is_editable": True}}
 
 _SSH_KEYS_REQUIRED = (
     "Deploying a Hetzner Cloud VM requires ssh_keys: without one, Hetzner "
@@ -97,6 +115,11 @@ def _prices(prices, currency) -> list:
         }
         for price in prices or []
     ]
+
+
+def _offered_in(prices) -> list:
+    """The locations a type is offered in: those it has a price in."""
+    return [price.get("location") for price in prices or [] if price.get("location")]
 
 
 def _included_traffic_tb(prices):
@@ -346,6 +369,108 @@ class Hetzner(v.Vendor):
         "store one per project."
     )
 
+    settings_fields = {
+        types.VMS: {
+            **_RENAMED,
+            "name": {"pattern": _HOSTNAME, "max_length": 63, "is_editable": True,
+                     "description": "The server's name: its hostname, unique in the project."},
+            "size": {"display": {"style": "table", "columns": sf.SIZE_COLUMNS,
+                                 "group_by": ["cpu_type", "category", "architecture"]}},
+            "location": {"display": {"style": "cards", "item_caption": "city",
+                                     "group_by": ["network_zone"]}},
+            "image": {"display": {"style": "cards", "group_by": ["os_flavor"],
+                                  "item_caption": "os_version"}},
+            "networks": {"filter": [{"setting": "location", "detail": "location",
+                                     "selected_detail": "network_zone"}],
+                         "description": "A list of private network names or ids to attach; only "
+                         "networks in the network zone of the location."},
+            "ssh_keys": {"choices_from": {"objects": types.SSH_KEYS},
+                         "display": {"style": "checkboxes"},
+                         "description": "The names or ids of the SSH keys stored in the project to "
+                         "install. Required: with a key, no root password is set."},
+            "user_data": {"max_bytes": 32768,
+                          "description": "Cloud-init user data, up to 32 KiB."},
+            "enable_ipv4": sf.field(
+                "Public IPv4",
+                "Whether the server gets a public IPv4 address, which is charged for. A server "
+                "without public addresses needs a private network.",
+                sf.BOOLEAN, group="networking", default=True, vendor_key="public_net.enable_ipv4",
+                prices_from={"info": "ipv4_prices"},
+            ),
+            "enable_ipv6": sf.field(
+                "Public IPv6",
+                "Whether the server gets a public IPv6 address, free of charge.",
+                sf.BOOLEAN, group="networking", default=True, vendor_key="public_net.enable_ipv6",
+            ),
+            "volumes": sf.field(
+                "Volumes",
+                "The names or ids of the volumes to attach, in the server's location.",
+                sf.LIST, group="storage", choices_from={"objects": types.VOLUMES},
+                filter=[{"setting": "location", "detail": "location"}],
+                display={"style": "checkboxes"},
+            ),
+            "automount": sf.field(
+                "Mount volumes automatically",
+                "Whether the volumes attached are mounted on the server.",
+                sf.BOOLEAN, group="storage", default=False,
+            ),
+            "placement_group": sf.field(
+                "Placement group",
+                "The name or id of the placement group to put the server in: a spread group's "
+                "servers run on different hosts.",
+                group="placement", choices_from={"info": "placement_groups"}, advanced=True,
+            ),
+            "start_after_create": sf.field(
+                "Start after creation",
+                "Whether the server starts once it is created; one created stopped counts as "
+                "deployed.",
+                sf.BOOLEAN, group="advanced", default=True, advanced=True,
+            ),
+        },
+        types.VOLUMES: {
+            **_RENAMED,
+            "size_gb": {"minimum": 10, "maximum": 10240, "is_editable": True,
+                        "description": "The size in GB, 10 to 10240; it can be grown later."},
+            "automount": sf.field(
+                "Mount automatically",
+                "Whether the volume is mounted on the VM it is attached to.",
+                sf.BOOLEAN, group="storage", default=False,
+            ),
+        },
+        types.NETWORKING: {
+            **_RENAMED,
+            "location": {"caption": "Network zone", "choices_from": {"info": "network_zones"},
+                         "strict": False},
+        },
+        types.FIREWALLS: dict(_RENAMED),
+        types.LOAD_BALANCERS: {
+            **_RENAMED,
+            "algorithm": sf.field(
+                "Algorithm",
+                "How connections are distributed across the targets.",
+                group="rules", choices_from={"info": "algorithms"}, strict=True,
+                default="round_robin", vendor_key="algorithm.type",
+            ),
+            "public_interface": sf.field(
+                "Public interface",
+                "Whether the load balancer has public addresses.",
+                sf.BOOLEAN, group="networking", default=True,
+            ),
+        },
+        types.DNS: {
+            "labels": {**_LABELS, "is_editable": True},
+            "ttl": {"minimum": 60, "is_editable": True},
+        },
+        types.SSH_KEYS: dict(_RENAMED),
+    }
+    # The order of Hetzner's own console.
+    settings_order = {
+        types.VMS: (
+            "size", "location", "image", "enable_ipv4", "enable_ipv6", "networks", "ssh_keys",
+            "volumes", "automount", "firewalls", "placement_group", "labels", "user_data", "name",
+        ),
+    }
+
     deploy_settings = {
         types.VMS: {"required": ("name", "size", "image")},
         types.VOLUMES: {
@@ -362,16 +487,32 @@ class Hetzner(v.Vendor):
     @staticmethod
     def _check_vms(settings) -> None:
         if not settings.get("ssh_keys") and not settings["vendor_settings"].get("ssh_keys"):
-            raise DbaError(_SSH_KEYS_REQUIRED)
+            raise SettingError(_SSH_KEYS_REQUIRED, "ssh_keys")
+        public_net = settings["vendor_settings"].get("public_net") or {}
+        if (
+            public_net.get("enable_ipv4") is False
+            and public_net.get("enable_ipv6") is False
+            and not settings.get("networks")
+        ):
+            raise SettingError(
+                "A server without public addresses needs a private network: name one in networks.",
+                ("enable_ipv4", "enable_ipv6", "networks"),
+            )
+        if settings["vendor_settings"].get("automount") and not settings["vendor_settings"].get("volumes"):
+            raise SettingError("automount mounts the volumes attached: name them in volumes.", "automount")
 
     @staticmethod
     def _check_volumes(settings) -> None:
         if not settings.get("location") and not settings.get("vm"):
-            raise DbaError("A volume needs a location, or a vm to attach it to.")
+            raise SettingError("A volume needs a location, or a vm to attach it to.", ("location", "vm"))
         try:
             int(settings["size_gb"])
         except (TypeError, ValueError) as e:
-            raise DbaError(f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.") from e
+            raise SettingError(
+                f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.", "size_gb"
+            ) from e
+        if settings["vendor_settings"].get("automount") and not settings.get("vm"):
+            raise SettingError("automount mounts the volume on its VM: name one in vm.", ("automount", "vm"))
 
     def _check_firewalls(self, settings) -> None:
         for rule in v.as_list(settings.get("rules")):
@@ -524,11 +665,12 @@ class Hetzner(v.Vendor):
 
     def _info_vms(self) -> dict:
         # independent listings, asked for side by side
-        pricing, server_types, image_list, locations = v.parallel(
+        pricing, server_types, image_list, locations, placement_groups = v.parallel(
             self._pricing,
             lambda: self._all("server_types"),
             lambda: self._all("images", type="system", status="available"),
             self._locations,
+            lambda: self._all("placement_groups"),
         )
         currency = pricing.get("currency")
         sizes = [
@@ -537,11 +679,13 @@ class Hetzner(v.Vendor):
                 "description": server_type.get("description"),
                 "architecture": v.architecture(server_type.get("architecture")),
                 "cpu_type": server_type.get("cpu_type"),
+                "category": server_type.get("category"),
                 "cores": server_type.get("cores"),
                 "memory_gb": server_type.get("memory"),
                 "disk_gb": server_type.get("disk"),
                 "included_traffic_tb": _included_traffic_tb(server_type.get("prices")),
                 "prices": _prices(server_type.get("prices"), currency),
+                "locations": _offered_in(server_type.get("prices")),
                 "deprecated": bool(server_type.get("deprecated")),
             }
             for server_type in server_types
@@ -552,17 +696,42 @@ class Hetzner(v.Vendor):
                 "description": image.get("description"),
                 "architecture": v.architecture(image.get("architecture")),
                 "os_flavor": image.get("os_flavor"),
+                "os_version": image.get("os_version"),
             }
             for image in image_list
         ]
-        return {"sizes": sizes, "locations": locations, "images": images}
+        ipv4_prices = next(
+            (
+                _prices(item.get("prices"), currency)
+                for item in pricing.get("primary_ips") or []
+                if item.get("type") == "ipv4"
+            ),
+            [],
+        )
+        return {
+            "sizes": sizes,
+            "locations": locations,
+            "images": images,
+            "ipv4_prices": ipv4_prices,
+            "placement_groups": [
+                {"name": group.get("name"), "id": group.get("id"), "type": group.get("type")}
+                for group in placement_groups
+            ],
+        }
 
     def _status_vms(self, obj: dict) -> dict:
         return _server((self.client.get(f"/servers/{obj['id']}") or {}).get("server") or {})
 
     def _deploy_vms(self, settings) -> dict:
         settings = self.check_deploy_settings(types.VMS, settings)
-        vendor_settings = settings["vendor_settings"]
+        vendor_settings = dict(settings["vendor_settings"])
+        # named as the other settings are: by name or id
+        if vendor_settings.get("volumes"):
+            vendor_settings["volumes"] = self._resolve_ids("volumes", "volume", vendor_settings["volumes"])
+        if vendor_settings.get("placement_group") not in (None, ""):
+            vendor_settings["placement_group"] = self._resolve_id(
+                "placement_groups", "placement group", vendor_settings["placement_group"]
+            )
 
         body = _body(
             name=settings["name"],

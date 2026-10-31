@@ -27,7 +27,8 @@ import mysqlsh
 from mysqlsh import task_manager
 
 from dba_plugin.lib import api_keys, object_types, objects, operations, vendor as vendor_lib, vendors
-from dba_plugin.lib.general import DbaError
+from dba_plugin.lib import settings_fields as sf
+from dba_plugin.lib.general import DbaError, SettingError
 from dba_plugin.lib.rest_client import VendorApiError
 
 
@@ -607,3 +608,194 @@ def test_reading_calls_share_one_vendor_per_api_key(stub):
     operations.set_api_key("stubcloud", "k2")
     operations.list_objects("stubcloud", "vms")
     assert StubVendor.keys == ["k1", "k2"]
+
+
+# --- Settings described for a dialog, and validated ------------------------------
+
+
+class DialogVendor(StubVendor):
+    """A vendor whose settings differ from the standardized ones."""
+
+    name = "dialogcloud"
+    display_name = "Dialog Cloud"
+    deploy_settings = {
+        "vms": {"required": ("name", "size"), "supported": ("size", "location", "image", "networks")},
+    }
+    settings_fields = {
+        "vms": {
+            "size": {"is_editable": True},
+            "turbo": sf.field("Turbo", "Runs it faster.", sf.BOOLEAN, default=False,
+                              vendor_key="options.turbo"),
+            "cores": sf.field("Cores", "How many.", sf.INTEGER, minimum=1, maximum=8),
+        }
+    }
+    settings_order = {"vms": ("location", "size")}
+    settings_groups = {"size": {"caption": "Plan"}}
+
+    def _info_vms(self):
+        return {
+            "sizes": [
+                {"name": "small", "description": "1 vCPU", "locations": ["z1"], "architecture": "x86_64"},
+                {"name": "big", "description": "8 vCPU", "locations": ["z1", "z2"], "architecture": "arm64"},
+            ],
+            "locations": [{"name": "z1", "city": "Here"}, {"name": "z2", "city": "There"}],
+            "images": [{"name": "linux-x86", "architecture": "x86_64"}, {"name": "linux-arm", "architecture": "arm64"}],
+        }
+
+    def _list_networking(self):
+        return [vendor_lib.make_object("networking", 5, "net-z1", "active", "z1")]
+
+    def _deploy_vms(self, settings):
+        settings = self.check_deploy_settings("vms", settings)
+        StubVendor.deployed.append(settings)
+        deployed = vendor_lib.make_object("vms", 9, settings["name"], "running")
+        StubVendor.objects.append(deployed)
+        return dict(deployed)
+
+
+@pytest.fixture
+def dialog(stub, monkeypatch):
+    monkeypatch.setitem(vendors._vendors, DialogVendor.name, DialogVendor)
+    operations.set_api_key("dialogcloud", "k")
+    return DialogVendor
+
+
+def test_the_fields_of_a_type_follow_the_vendor():
+    fields = DialogVendor.fields("vms")
+    assert list(fields) == [
+        "location", "size", "name", "image", "networks", "turbo", "cores", "labels", "vendor_settings",
+    ]
+    assert [details["position"] for details in fields.values()] == list(range(1, 10))
+    assert [key for key, details in fields.items() if details["required"]] == ["size", "name"]
+    assert fields["size"]["is_editable"] and not fields["location"]["is_editable"]
+    assert fields["turbo"]["vendor_specific"] and fields["turbo"]["vendor_key"] == "options.turbo"
+    assert not fields["size"]["vendor_specific"]
+    assert "firewalls" not in fields  # not supported
+    # every attribute a dialog relies on is there
+    assert set(fields["cores"]) >= {
+        "key", "position", "caption", "description", "type", "group", "required", "is_editable",
+        "advanced", "vendor_specific", "minimum", "maximum",
+    }
+    # standard choices come as dicts
+    rules = StubVendor.fields("firewalls")["rules"]["item_fields"]["direction"]
+    assert rules["choices"] == [
+        {"value": "in", "caption": "in", "description": None, "details": {}},
+        {"value": "out", "caption": "out", "description": None, "details": {}},
+    ]
+    # the descriptions object_support reports are those of the fields
+    assert vendor_lib.settings_keys("vms")["size"] == sf.FIELDS["vms"]["size"]["description"]
+
+
+def test_settings_problems_are_collected_with_their_keys(dialog):
+    vendor = DialogVendor(api_key="k")
+    checked, errors = vendor.settings_problems(
+        "vms", {"name": "", "cores": 9, "turbo": "sometimes", "colour": "red", "labels": []}
+    )
+    assert errors == [
+        {"settings": ["colour"], "message": "Unsupported settings for vms: colour. Supported: image, "
+         "labels, location, name, networks, size, vendor_settings."},
+        {"settings": ["name", "size"], "message": "Missing settings for vms: name, size."},
+        {"settings": ["labels"], "message": "The setting labels must be a dict."},
+        {"settings": ["turbo"], "message": "The setting turbo must be true or false, not 'sometimes'."},
+        {"settings": ["cores"], "message": "The setting cores must be at most 8."},
+    ]
+    assert vendor.settings_problems("vms", "name=x") == (None, [{"settings": [], "message": "settings must be a dict."}])
+    # the first problem is what a deployment refuses with
+    with pytest.raises(SettingError, match="Unsupported settings for vms: colour") as error:
+        vendor.check_deploy_settings("vms", {"name": "x", "size": "small", "colour": "red"})
+    assert error.value.settings == ["colour"]
+
+
+def test_a_vendors_own_settings_go_into_its_request(dialog):
+    started = operations.deploy_object(
+        "dialogcloud", "vms",
+        {"name": "db9", "size": "small", "turbo": "yes", "cores": "4", "vendor_settings": {"zone": "a"}},
+    )
+    assert _ended(started)["status"] == task_manager.COMPLETED
+    [deployed] = StubVendor.deployed
+    assert "turbo" not in deployed and "cores" not in deployed
+    assert deployed["vendor_settings"] == {"zone": "a", "options": {"turbo": True}, "cores": 4}
+
+
+def test_the_settings_info_has_the_choices_the_vendor_offers(dialog):
+    info = operations.settings_info("dialogcloud", "VMS")
+    assert (info["vendor"], info["display_name"], info["object_type"]) == ("dialogcloud", "Dialog Cloud", "vms")
+    assert [group["key"] for group in info["groups"]] == ["location", "size", "general", "image", "networking", "labels", "advanced"]
+    assert info["groups"][1]["caption"] == "Plan"
+    assert info["groups"][1]["description"] == sf.GROUPS["size"]["description"]
+
+    settings = info["settings"]
+    assert settings["size"]["choices"][1] == {
+        "value": "big", "caption": "big", "description": "8 vCPU",
+        "details": {"locations": ["z1", "z2"], "architecture": "arm64"},
+    }
+    assert [c["value"] for c in settings["location"]["choices"]] == ["z1", "z2"]
+    assert settings["networks"]["choices"] == [
+        {"value": "net-z1", "caption": "net-z1", "description": None,
+         "details": {"id": "5", "location": "z1", "status": "active", "state": "ready", "labels": {}}}
+    ]
+    assert "choices" not in settings["turbo"]
+
+    # the choices that apply with what is chosen already
+    assert [c["value"] for c in vendor_lib.applying_choices(settings, "size", {"location": "z2"})] == ["big"]
+    assert [c["value"] for c in vendor_lib.applying_choices(settings, "image", {"size": "big"})] == ["linux-arm"]
+    assert len(vendor_lib.applying_choices(settings, "image", {"size": "unknown"})) == 2
+
+    with pytest.raises(DbaError, match="does not support 'deploy' for volumes"):
+        operations.settings_info("dialogcloud", "volumes")
+
+
+def test_settings_are_validated_against_what_the_vendor_offers(dialog):
+    def validate(settings, project=None):
+        return operations.validate_settings("dialogcloud", "vms", settings, project)
+
+    assert validate({"name": "db", "size": "big", "location": "z2", "image": "linux-arm"}) == {
+        "valid": True, "errors": [], "warnings": [],
+    }
+    assert validate({"name": "db", "size": "small", "location": "z2"})["errors"] == [
+        {"settings": ["size", "location"], "message": "Dialog Cloud does not offer the size 'small' with location 'z2'."}
+    ]
+    assert validate({"name": "db", "size": "tiny", "location": "z9"})["errors"] == [
+        {"settings": ["location"], "message": "Dialog Cloud does not offer the location 'z9'. Choose one of: z1, z2."},
+        {"settings": ["size"], "message": "Dialog Cloud does not offer the size 'tiny'. Choose one of: small, big."},
+    ]
+    assert validate({"name": "db", "size": "small", "image": "my-own"})["warnings"] == [
+        {"settings": ["image"], "message": "Dialog Cloud does not list the image 'my-own'; the deployment "
+         "fails if it does not take it."}
+    ]
+    # a network not listed is an error, but a warning in a project a vendor
+    # without projects may not have labelled it with
+    assert validate({"name": "db", "size": "small", "networks": "net-x"})["errors"] == [
+        {"settings": ["networks"], "message": "There is no networking named 'net-x' at Dialog Cloud."}
+    ]
+    in_project = validate({"name": "db", "size": "small", "networks": ["net-x"]}, "alpha")
+    assert in_project["valid"] is True
+    assert in_project["warnings"][0]["message"] == "There is no networking named 'net-x' at Dialog Cloud in project 'alpha'."
+
+    # a setting refused before any offer is asked for, by the vendor's own rule too
+    refused = validate({"name": "db", "size": "huge", "cores": 0})
+    assert refused["errors"] == [{"settings": ["cores"], "message": "The setting cores must be at least 1."}]
+    assert validate({"name": "db", "size": "huge", "location": "z1"})["errors"] == [
+        {"settings": [], "message": "Stub Cloud has no size 'huge'."}
+    ]
+    with pytest.raises(DbaError, match="Unknown vendor"):
+        operations.validate_settings("nocloud", "vms", {})
+
+
+def test_the_stub_vendors_own_rule_is_a_validation_error(dialog):
+    operations.set_api_key("stubcloud", "k")
+    result = operations.validate_settings("stubcloud", "vms", {"name": "db", "size": "huge"})
+    assert result == {"valid": False, "errors": [{"settings": [], "message": "Stub Cloud has no size 'huge'."}], "warnings": []}
+
+
+def test_the_shell_functions_describe_and_validate_settings(dialog):
+    dba = mysqlsh.globals.dba
+    info = dba.get.vendor.object_settings_info("dialogcloud", "vms")
+    # the shell sorts a dict's keys: the position keeps the order
+    by_position = sorted(info["settings"].values(), key=lambda details: details["position"])
+    assert [details["key"] for details in by_position][:2] == ["location", "size"]
+    assert [group["key"] for group in info["groups"]][:2] == ["location", "size"]
+    result = dba.validate.vendor.object_settings("dialogcloud", "vms", {"name": "db", "size": "big", "turbo": True})
+    assert result["valid"] is True
+    with pytest.raises(RuntimeError, match="Unknown vendor 'nocloud'"):
+        dba.validate.vendor.object_settings("nocloud", "vms", {})

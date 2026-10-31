@@ -710,6 +710,8 @@ not as a group of their own.
 | `dba.list_vendors` | Lists the cloud vendors, optionally only those implementing a feature set (`ManagedService`, `CoreCompute`), with the projects an API key is stored for. |
 | `dba.list_vendor_object_support` | Lists the standardized object types (`managed_mariadb_services`, `vms`, `volumes`, `networking`, `firewalls`, `load_balancers`, `dns`, `object_storage`, `ssh_keys`) with their deployment settings, or what one vendor supports. |
 | `dba.get_vendor_object_info` | What of an object type a vendor offers: VM sizes with architecture, cores, RAM, disk, included traffic and prices, locations, images, managed service versions and topologies. |
+| `dba.get_vendor_object_settings_info` | The settings to deploy an object type with at a vendor, described for a dialog: position, section, caption, type, required, range, whether it can be changed once deployed, and the values the vendor offers to choose from. |
+| `dba.validate_vendor_object_settings` | Checks a deployment's settings, against what the vendor offers too, without deploying. |
 | `dba.list_vendor_objects` | Lists the deployed objects of a type, filtered by tags and project. |
 | `dba.get_vendor_object_status` | The current status of one deployed object. |
 | `dba.set_api_key` | `--gui` only. Stores a vendor's API key. |
@@ -719,7 +721,7 @@ not as a group of their own.
 They wrap the [dba plugin](../dba_plugin/README.md) and are registered **only where it is
 installed**; the vendors are its vendor plugins (Hetzner, UpCloud, MariaDB Cloud).
 
-An agent - a server started without `--gui` - gets the five tools that **read**: it can
+An agent - a server started without `--gui` - gets the seven tools that **read**: it can
 neither store a key nor create or delete anything that costs money or holds data. It works
 with the API keys stored by `mcp setup` (`MCP:DBA_API_KEY:<vendor>:<project>` secrets),
 which the server instructions tell it to ask the user to store rather than ask for:
