@@ -69,8 +69,8 @@ DNS_RECORD_TYPES = (
 FIREWALL_RULE_KEYS = ("direction", "protocol", "port", "source_ips", "destination_ips", "description")
 FIREWALL_PROTOCOLS = ("tcp", "udp", "icmp", "esp", "gre")
 
-# A server's name is its hostname (RFC 1123).
-_HOSTNAME = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
+# A server's name is its hostname.
+_HOSTNAME = sf.HOSTNAME_PATTERN
 # A label's key: an optional prefix and a slash, and a name of up to 63
 # characters beginning and ending with an alphanumeric character; its value
 # such a name, or empty.
@@ -458,7 +458,7 @@ class Hetzner(v.Vendor):
             ),
         },
         types.DNS: {
-            "labels": {**_LABELS, "is_updatable": True},
+            "labels": _RENAMED["labels"],
             "ttl": {"minimum": 60, "is_updatable": True},
         },
         types.SSH_KEYS: dict(_RENAMED),
@@ -505,12 +505,6 @@ class Hetzner(v.Vendor):
     def _check_volumes(settings) -> None:
         if not settings.get("location") and not settings.get("vm"):
             raise SettingError("A volume needs a location, or a vm to attach it to.", ("location", "vm"))
-        try:
-            int(settings["size_gb"])
-        except (TypeError, ValueError) as e:
-            raise SettingError(
-                f"size_gb must be a whole number of GB, not '{settings['size_gb']}'.", "size_gb"
-            ) from e
         if settings["vendor_settings"].get("automount") and not settings.get("vm"):
             raise SettingError("automount mounts the volume on its VM: name one in vm.", ("automount", "vm"))
 
@@ -522,12 +516,6 @@ class Hetzner(v.Vendor):
         for service in v.as_list(settings.get("services")):
             self._lb_service(service)
 
-    def _check_dns(self, settings) -> None:
-        if settings.get("ttl") is not None:
-            try:
-                int(settings["ttl"])
-            except (TypeError, ValueError) as e:
-                raise DbaError(f"ttl must be a whole number of seconds, not '{settings['ttl']}'.") from e
         self._rrsets(settings.get("records"))
 
     def create_client(self):
@@ -725,26 +713,27 @@ class Hetzner(v.Vendor):
     def _create_vms(self, settings) -> dict:
         settings = self.check_create_settings(types.VMS, settings)
         vendor_settings = dict(settings["vendor_settings"])
-        # named as the other settings are: by name or id
+        # every object named by name or id, each listing asked for side by side
+        volumes, placement_group, ssh_keys, networks, firewalls = v.parallel(
+            lambda: self._resolve_ids("volumes", "volume", vendor_settings.get("volumes")),
+            lambda: self._resolve_id("placement_groups", "placement group", vendor_settings.get("placement_group")),
+            lambda: self._resolve_ids("ssh_keys", "SSH key", settings.get("ssh_keys")),
+            lambda: self._resolve_ids("networks", "network", settings.get("networks")),
+            lambda: self._resolve_ids("firewalls", "firewall", settings.get("firewalls")),
+        )
         if vendor_settings.get("volumes"):
-            vendor_settings["volumes"] = self._resolve_ids("volumes", "volume", vendor_settings["volumes"])
+            vendor_settings["volumes"] = volumes
         if vendor_settings.get("placement_group") not in (None, ""):
-            vendor_settings["placement_group"] = self._resolve_id(
-                "placement_groups", "placement group", vendor_settings["placement_group"]
-            )
+            vendor_settings["placement_group"] = placement_group
 
         body = _body(
             name=settings["name"],
             server_type=settings["size"],
             image=settings["image"],
             location=settings.get("location"),
-            ssh_keys=self._resolve_ids("ssh_keys", "SSH key", settings.get("ssh_keys")),
-            networks=self._resolve_ids("networks", "network", settings.get("networks")),
-            firewalls=[
-                {"firewall": firewall_id}
-                for firewall_id in self._resolve_ids("firewalls", "firewall", settings.get("firewalls")
-                )
-            ],
+            ssh_keys=ssh_keys,
+            networks=networks,
+            firewalls=[{"firewall": firewall_id} for firewall_id in firewalls],
             user_data=settings.get("user_data"),
             labels=settings["labels"],
         )

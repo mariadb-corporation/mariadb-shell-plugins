@@ -24,7 +24,8 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   every object a `state` (ready, pending, stopped, deleting, failed, unknown)
   next to the vendor's `status`, and the task waits use it.
 - **Settings** are declared per vendor and type (`create_settings`: required,
-  supported) with static rules in `_check_<type>(settings)`;
+  supported) with static rules spanning settings in `_check_<type>(settings)` (a
+  single value is checked by its field, and arrives typed);
   `check_create_settings` runs both before a create task starts and in
   `_create_<type>`. Rules needing a request (a size offered) fail the task.
 - **Settings for a dialog:** every standardized setting is a field in

@@ -130,6 +130,10 @@ def _int(value):
         return None
 
 
+# What can be changed on the objects that have them: their name and labels.
+_RENAMED = {"name": {"is_updatable": True}, "labels": {"is_updatable": True}}
+
+
 def _hostname(name: str) -> str:
     """A valid hostname made of an object name."""
     hostname = re.sub(r"[^a-z0-9.-]+", "-", str(name).lower()).strip("-.")
@@ -211,8 +215,7 @@ class UpCloud(v.Vendor):
 
     settings_fields = {
         types.VMS: {
-            "name": {"is_updatable": True},
-            "labels": {"is_updatable": True},
+            **_RENAMED,
             "networks": {"filter": [{"setting": "location", "detail": "location"}],
                          "description": "A list of private network names or uuids to attach; only "
                          "networks in the server's zone."},
@@ -223,13 +226,11 @@ class UpCloud(v.Vendor):
             "hostname": sf.field(
                 "Hostname",
                 "The server's hostname; made of its name by default.",
-                group="networking", pattern=r"[A-Za-z0-9]([A-Za-z0-9.-]{0,126}[A-Za-z0-9])?",
-                advanced=True,
+                group="networking", pattern=sf.HOSTNAME_PATTERN, max_length=128, advanced=True,
             ),
         },
         types.VOLUMES: {
-            "name": {"is_updatable": True},
-            "labels": {"is_updatable": True},
+            **_RENAMED,
             "size_gb": {"is_updatable": True,
                         "description": "The size in GB; it can be grown later."},
             "vm": {"description": "The name or uuid of a server to attach the volume to; its zone "
@@ -241,16 +242,16 @@ class UpCloud(v.Vendor):
                 default=DEFAULT_STORAGE_TIER,
             ),
         },
-        types.NETWORKING: {"name": {"is_updatable": True}, "labels": {"is_updatable": True}},
+        types.NETWORKING: dict(_RENAMED),
         types.LOAD_BALANCERS: {
-            "labels": {"is_updatable": True},
+            "labels": _RENAMED["labels"],
             "services": {"item_fields": {
                 **sf.FIELDS[types.LOAD_BALANCERS]["services"]["item_fields"],
                 "protocol": sf.field("Protocol", "tcp or http.", choices=["tcp", "http"],
                                      strict=True, default="tcp"),
             }},
         },
-        types.OBJECT_STORAGE: {"labels": {"is_updatable": True}},
+        types.OBJECT_STORAGE: {"labels": _RENAMED["labels"]},
     }
 
     create_settings = {
@@ -284,18 +285,6 @@ class UpCloud(v.Vendor):
             raise SettingError(
                 "Missing settings for volumes: location, or a vm to attach it to.", ("location", "vm")
             )
-
-    @staticmethod
-    def _check_load_balancers(settings) -> None:
-        services = settings["services"]
-        if not isinstance(services, list) or not all(isinstance(s, dict) for s in services):
-            raise SettingError("services must be a list of {protocol, listen_port, destination_port}.", "services")
-        for service in services:
-            protocol = str(service.get("protocol") or "tcp").lower()
-            if protocol not in ("tcp", "http"):
-                raise SettingError(f"UpCloud load balancers balance tcp or http, not '{protocol}'.", "services")
-            if not _int(service.get("listen_port")):
-                raise SettingError("Every service needs a listen_port.", "services")
 
     def create_client(self):
         """The API client: a token is sent as a Bearer token, a

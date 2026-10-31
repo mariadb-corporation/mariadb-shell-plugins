@@ -282,7 +282,7 @@ def matches_tags(obj: dict, tags: dict) -> bool:
 def setting_error(message: str, settings=()) -> dict:
     """A problem with the settings to create an object with, as a validation reports it:
     ``message``, and ``settings`` - the keys it is about."""
-    return {"settings": [settings] if isinstance(settings, str) else list(settings), "message": message}
+    return SettingError(message, settings).as_dict()
 
 
 def settings_problems(object_type: str, settings, required=("name",), supported=None) -> tuple:
@@ -348,7 +348,7 @@ def check_settings(object_type: str, settings, required=("name",), supported=Non
     """
     settings, errors = settings_problems(object_type, settings, required, supported)
     if errors:
-        raise SettingError(errors[0]["message"], errors[0]["settings"])
+        raise SettingError(**errors[0])
     return settings
 
 
@@ -625,25 +625,22 @@ class Vendor:
 
         fields = {}
         for position, key in enumerate(keys, 1):
-            details = copy.deepcopy(
-                {**sf.DEFAULTS, "group": "general", **ordered[key], **({} if key in own else changes.get(key, {}))}
-            )
+            details = copy.deepcopy({**sf.DEFAULTS, "group": "general", **ordered[key], **changes.get(key, {})})
             details["required"] = key in required or bool(details["required"])
-            if details.get("choices"):
-                details["choices"] = [_choice(choice) for choice in details["choices"]]
-            for item in (details.get("item_fields") or {}).values():
-                if item.get("choices"):
-                    item["choices"] = [_choice(choice) for choice in item["choices"]]
+            for described in [details, *(details.get("item_fields") or {}).values()]:
+                if described.get("choices"):
+                    described["choices"] = [_choice(choice) for choice in described["choices"]]
             fields[key] = {"key": key, "position": position, **details}
         return fields
 
-    def settings_problems(self, object_type: str, settings) -> tuple:
+    def settings_problems(self, object_type: str, settings, fields: Optional[dict] = None) -> tuple:
         """What is wrong with the settings to create an object with, as far as is known without the vendor's API.
 
         The settings as a whole (:func:`settings_problems`), each value by
         its field (:func:`settings_fields.field_errors`), then - when that
         found nothing - ``_check_<type>(settings)``, where the vendor has
-        more rules that need no request: a combination, a format. The
+        more rules that need no request: a combination of settings. Whole
+        numbers and booleans given as text become numbers and booleans. The
         vendor's own settings are moved into ``vendor_settings`` at their
         ``vendor_key``, as its API takes them.
 
@@ -653,7 +650,7 @@ class Vendor:
             :func:`setting_error`.
         """
         object_type = types.check_object_type(object_type)
-        fields = self.fields(object_type)
+        fields = fields or self.fields(object_type)
         rules = self.create_settings.get(object_type, {})
         own = {key: details for key, details in fields.items() if details["vendor_specific"]}
         given = dict(settings) if isinstance(settings, dict) else settings
@@ -670,6 +667,8 @@ class Vendor:
                 errors.extend(
                     setting_error(message, key) for message in sf.field_errors(key, fields[key], value)
                 )
+        # typed as the fields say, so that a vendor gets 10, not "10"
+        checked.update((key, sf.converted(fields[key], value)) for key, value in checked.items() if key in fields)
         if moved and isinstance(checked["vendor_settings"], dict):
             vendor_settings = dict(checked["vendor_settings"])
             for key, value in moved.items():
@@ -682,7 +681,7 @@ class Vendor:
             try:
                 more(checked)
             except SettingError as e:
-                errors.append(setting_error(str(e), e.settings))
+                errors.append(e.as_dict())
             except DbaError as e:
                 errors.append(setting_error(str(e)))
         return checked, errors
@@ -704,7 +703,7 @@ class Vendor:
         """
         settings, errors = self.settings_problems(object_type, settings)
         if errors:
-            raise SettingError(errors[0]["message"], errors[0]["settings"])
+            raise SettingError(**errors[0])
         return settings
 
     def _fill_choices(self, object_type: str, fields: dict) -> None:
@@ -729,22 +728,22 @@ class Vendor:
             }
             & set(self.object_types())
         )
-        calls = []
-        if wants_info and callable(getattr(self, f"_info_{object_type}", None)):
-            calls.append(lambda: self.object_info(object_type))
-        calls += [lambda listed_type=listed_type: self.list_objects(listed_type) for listed_type in listed]
+        wants_info = wants_info and callable(getattr(self, f"_info_{object_type}", None))
+        calls = [lambda listed_type=listed_type: self.list_objects(listed_type) for listed_type in listed]
+        if wants_info:
+            calls.insert(0, lambda: self.object_info(object_type))
         answers = parallel(*calls) if calls else []
-        info = answers.pop(0) if len(calls) > len(listed) else {}
+        info = answers.pop(0) if wants_info else {}
         deployed = dict(zip(listed, answers))
 
         for details in everything:
             source = details.get("choices_from") or {}
-            if source.get("info") in (info or {}):
+            if source.get("info") in info:
                 details["choices"] = [_choice(item) for item in as_list(info[source["info"]])]
             elif source.get("objects") in deployed:
                 details["choices"] = [_object_choice(obj) for obj in deployed[source["objects"]]]
             prices = (details.get("prices_from") or {}).get("info")
-            if prices in (info or {}):
+            if prices in info:
                 details["prices"] = info[prices]
 
     def settings_info(self, object_type: str) -> dict:
@@ -770,17 +769,16 @@ class Vendor:
         self._fill_choices(object_type, fields)
 
         groups = []
-        for details in fields.values():
-            if details["group"] not in [group["key"] for group in groups]:
-                wording = {**sf.GROUPS.get(details["group"], {}), **self.settings_groups.get(details["group"], {})}
-                groups.append(
-                    {
-                        "key": details["group"],
-                        "caption": wording.get("caption", details["group"]),
-                        "description": wording.get("description"),
-                        "position": len(groups) + 1,
-                    }
-                )
+        for position, group in enumerate(dict.fromkeys(details["group"] for details in fields.values()), 1):
+            wording = {**sf.GROUPS.get(group, {}), **self.settings_groups.get(group, {})}
+            groups.append(
+                {
+                    "key": group,
+                    "caption": wording.get("caption", group),
+                    "description": wording.get("description"),
+                    "position": position,
+                }
+            )
         return {
             "vendor": self.name,
             "display_name": self.display_name,
@@ -811,18 +809,19 @@ class Vendor:
         """
         object_type = types.check_object_type(object_type)
         self.require("create", object_type)
-        checked, errors = self.settings_problems(object_type, settings)
+        fields = self.fields(object_type)
+        checked, errors = self.settings_problems(object_type, settings, fields)
         warnings = []
         if checked is not None and not errors:
-            fields = {
-                key: details
-                for key, details in self.fields(object_type).items()
-                if details.get("choices_from") or details.get("choices")
-            }
             given = {key: value for key, value in settings.items() if value not in (None, "", [])}
-            self._fill_choices(object_type, {key: details for key, details in fields.items() if key in given})
-            for key in [key for key in fields if key in given and fields[key].get("choices") is not None]:
-                self._check_choices(fields, key, given, errors, warnings)
+            offered = {
+                key: details
+                for key, details in fields.items()
+                if key in given and (details.get("choices_from") or details.get("choices"))
+            }
+            self._fill_choices(object_type, offered)
+            for key in [key for key, details in offered.items() if details.get("choices") is not None]:
+                self._check_choices(offered, key, given, errors, warnings)
         return {"valid": not errors, "errors": errors, "warnings": warnings}
 
     def _check_choices(self, fields, key, given, errors, warnings) -> None:

@@ -520,12 +520,9 @@ FIELDS = {
 }
 
 
-def descriptions(object_type: str) -> dict:
-    """The standardized settings of a type, each with what it means."""
-    return {
-        key: details["description"]
-        for key, details in {**COMMON_FIELDS, **FIELDS.get(object_type, {})}.items()
-    }
+# A hostname (RFC 1123): dot-separated labels of up to 63 letters, digits
+# and dashes, each beginning and ending with a letter or digit.
+HOSTNAME_PATTERN = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
 
 
 # --- Checking values ---------------------------------------------------------------
@@ -559,12 +556,9 @@ def as_bool(value):
 
 def converted(details: dict, value):
     """A value as the vendor's API takes it: a whole number or a boolean as one."""
-    kind = details.get("type", STRING)
-    if kind == INTEGER and as_int(value) is not None:
-        return as_int(value)
-    if kind == BOOLEAN and as_bool(value) is not None:
-        return as_bool(value)
-    return value
+    parse = {INTEGER: as_int, BOOLEAN: as_bool}.get(details.get("type", STRING))
+    parsed = parse(value) if parse else None
+    return value if parsed is None else parsed
 
 
 def choice_values(choices) -> list:
@@ -668,28 +662,19 @@ def field_errors(name: str, details: dict, value) -> list:
     if kind == DICT:
         return _dict_errors(name, details, value)
 
-    if kind == LIST:
-        if isinstance(value, dict):
+    if kind in (LIST, OBJECT_LIST):
+        if isinstance(value, dict) or (kind == OBJECT_LIST and not isinstance(value, (list, tuple))):
             return [f"The setting {name} must be a list."]
         items = list(value) if isinstance(value, (list, tuple)) else [value]
-        item_kind = details.get("item_type", STRING)
         errors = []
         for index, item in enumerate(items):
-            if isinstance(item, dict) and details.get("item_fields"):
-                errors.extend(_item_errors(f"{name}[{index}]", details, item))
+            item_name = f"{name}[{index}]"
+            if isinstance(item, dict) and (kind == OBJECT_LIST or details.get("item_fields")):
+                errors.extend(_item_errors(item_name, details, item))
+            elif kind == OBJECT_LIST:
+                errors.append(f"The setting {item_name} must be a dict.")
             else:
-                errors.extend(_scalar_errors(f"{name}[{index}]", details, item, item_kind))
-        return errors
-
-    if kind == OBJECT_LIST:
-        if not isinstance(value, (list, tuple)):
-            return [f"The setting {name} must be a list."]
-        errors = []
-        for index, item in enumerate(value):
-            if not isinstance(item, dict):
-                errors.append(f"The setting {name}[{index}] must be a dict.")
-            else:
-                errors.extend(_item_errors(f"{name}[{index}]", details, item))
+                errors.extend(_scalar_errors(item_name, details, item, details.get("item_type", STRING)))
         return errors
 
     return _scalar_errors(name, details, value, kind)
