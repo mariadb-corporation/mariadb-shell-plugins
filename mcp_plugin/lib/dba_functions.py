@@ -19,14 +19,15 @@ Thin wrappers around ``dba_plugin.lib.operations``, registered only where the
 dba plugin is installed. What a client gets depends on who it is:
 
 * With ``--gui`` (the MariaDB VS Code extension) every tool, working with the
-  GUI API keys: storing a key, creating and deleting included. Creating
-  and deleting start a background task of the client and return its id;
+  GUI API keys: storing a key, creating, updating and deleting included.
+  Creating, updating and deleting start a background task of the client and
+  return its id;
   ``task.get`` follows it (see :mod:`mcp_plugin.lib.task_functions`).
 * Otherwise (an agent) only the tools that read: vendors, object types,
   offerings, the settings to create objects with and their validation,
   deployed objects and their status, with the MCP API keys that
   ``mcp setup --setDbaApiKey`` stores. An agent can neither store a key nor
-  create or delete anything that costs money or holds data.
+  create, update or delete anything that costs money or holds data.
 
 A multi-tenant server does not serve this group (see
 ``general.MULTI_TENANT_FUNCTION_GROUPS``): the keys are the server's, not a

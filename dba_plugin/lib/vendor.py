@@ -31,7 +31,10 @@ implements, per object type it supports, the methods named after it:
   :meth:`Vendor.find_object` found, with only the settings that change -
   each one whose field ``is_updatable`` - and returns it, made with
   :func:`make_object`, as the vendor answers the change; the object as
-  found where the answer holds none. An update task follows its status.
+  found where the answer holds none. An update task follows its status:
+  where the vendor goes on changing the object after it answered, it
+  reports a status that is not ready - e.g. ``pending_scale`` - and the task
+  waits until the vendor took it up and is done.
 * ``_delete_<type>(obj)`` - deletes the object :meth:`Vendor.find_object`
   found, and returns a dict describing what the vendor did (an action id,
   a status), or None. Deleting a VM deletes its system disk only: volumes
@@ -757,7 +760,16 @@ class Vendor:
 
         errors = []
         updatable = [key for key, details in fields.items() if details["is_updatable"]]
-        fixed = sorted(set(settings) - set(updatable))
+        unknown = sorted(set(settings) - set(fields))
+        if unknown:
+            errors.append(
+                setting_error(
+                    f"Unknown settings for {object_type} at {self.display_name}: {', '.join(unknown)}. "
+                    f"It can change: {', '.join(updatable) or 'nothing'}.",
+                    unknown,
+                )
+            )
+        fixed = sorted(set(settings) - set(updatable) - set(unknown))
         if fixed:
             errors.append(
                 setting_error(
@@ -768,11 +780,14 @@ class Vendor:
             )
 
         checked = {}
-        for key in [key for key in settings if key not in fixed]:
+        for key in [key for key in settings if key in updatable]:
             details, value = fields[key], settings[key]
             if value is None and details["type"] == sf.DICT:
                 value = {}
-            if value in (None, "", []) and details["required"]:
+            # a list may be emptied and labels cleared; a single value has no
+            # "none" to change to - a vendor would be sent null
+            emptied = details["required"] or details["type"] not in (sf.LIST, sf.OBJECT_LIST, sf.DICT)
+            if value in (None, "", []) and emptied:
                 errors.append(setting_error(f"The setting {key} cannot be emptied.", key))
                 continue
             errors.extend(setting_error(message, key) for message in sf.field_errors(key, details, value))
@@ -930,6 +945,8 @@ class Vendor:
             except ObjectNotFound as e:
                 errors.insert(0, setting_error(str(e)))
             else:
+                if checked is None:
+                    return {"valid": False, "errors": errors, "warnings": []}
                 if not errors:
                     errors.extend(self.growth_problems(object_type, found, checked, fields))
                 # what the choices of the settings changed depend on, as the object has it

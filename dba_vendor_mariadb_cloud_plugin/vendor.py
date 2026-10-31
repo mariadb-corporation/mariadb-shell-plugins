@@ -428,7 +428,10 @@ class MariadbCloud(v.Vendor):
             self.client.post(f"{service}/nodes", json={"nodes": settings["nodes"]})
         if "storage_gb" in settings:
             self.client.patch(f"{service}/storage", json={"size": settings["storage_gb"]})
-        return obj
+        # scaling goes on after the answer, and the service may look ready
+        # for a while before it starts
+        scaling = any(key in settings for key in ("size", "nodes", "storage_gb"))
+        return {**obj, "status": "pending_scale"} if scaling else obj
 
     def _status_managed_mariadb_services(self, obj: dict) -> dict:
         return self._service(self.client.get(f"{PROVISIONING}/services/{obj['id']}"))

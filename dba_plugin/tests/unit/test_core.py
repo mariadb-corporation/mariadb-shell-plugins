@@ -44,6 +44,8 @@ class StubVendor(vendor_lib.Vendor):
     deleted = []
     updated = []
     keys = []
+    asked = 0
+    update_pending = False
     hold = False
     flaky = 0
     delete_fails = False
@@ -83,6 +85,7 @@ class StubVendor(vendor_lib.Vendor):
         if StubVendor.flaky:
             StubVendor.flaky -= 1
             raise VendorApiError("The Stub Cloud API refused GET with HTTP 502: bad gateway", 502)
+        StubVendor.asked += 1
         stored = next((o for o in StubVendor.objects if o["id"] == obj["id"]), None)
         if stored is None:
             raise VendorApiError("The Stub Cloud API refused GET with HTTP 404: not found", 404)
@@ -106,7 +109,8 @@ class StubVendor(vendor_lib.Vendor):
         if "size" in settings:
             stored["status"] = "starting"
         StubVendor.updated.append(settings)
-        return dict(stored)
+        # a vendor going on with the change after it answered, still looking ready
+        return {**stored, "status": "pending_scale"} if StubVendor.update_pending else dict(stored)
 
     def _list_volumes(self):
         return []
@@ -133,6 +137,7 @@ def stub(monkeypatch, clean_api_keys):
     ]
     StubVendor.deployed, StubVendor.deleted, StubVendor.updated, StubVendor.keys = [], [], [], []
     StubVendor.hold, StubVendor.flaky, StubVendor.delete_fails = False, 0, False
+    StubVendor.asked, StubVendor.update_pending = 0, False
     monkeypatch.setattr(operations, "POLL_INTERVAL", 0.01)
     task_manager.clear()
     yield StubVendor
@@ -373,6 +378,24 @@ def test_an_update_is_a_task_that_ends_once_the_object_is_ready_again(stub):
     assert ended["result"]["status"] == "running"
     # only what changes is passed on; no labels are an empty dict
     assert StubVendor.updated == [{"size": "big", "labels": {}}]
+
+
+def test_an_update_the_vendor_goes_on_with_is_not_done_while_it_looks_unchanged(stub, monkeypatch):
+    monkeypatch.setattr(operations, "UPDATE_SETTLE_POLLS", 3)
+    operations.set_api_key("stubcloud", "k")
+    StubVendor.update_pending = True
+    ended = _ended(operations.update_object("stubcloud", "vms", "db1", {"name": "db1b"}))
+    assert ended["status"] == task_manager.COMPLETED
+    # the vendor never reported it as being changed: done after the settling polls
+    assert StubVendor.asked == 4
+    assert ended["messages"][0]["text"] == "Stub Cloud accepted the change of the vms 'db1'."
+    assert ended["messages"][-1]["text"] == "The vms 'db1b' is running."
+
+
+def test_an_update_that_takes_effect_at_once_is_done_at_once(stub):
+    operations.set_api_key("stubcloud", "k")
+    _ended(operations.update_object("stubcloud", "vms", "db1", {"name": "db1b"}))
+    assert StubVendor.asked == 1
 
 
 def test_new_labels_keep_the_project_at_a_vendor_without_projects(stub):
