@@ -71,7 +71,7 @@ def register_task_tools(server) -> None:
         task = tasks.get(task_id, general.get_client_identity(ctx))
 
         if wait_ms > 0:
-            return task.wait_for_news(since, min(wait_ms, tasks.MAX_WAIT_MS) / 1000.0)
+            return task.wait_for_news(since, wait_ms / 1000.0)
 
         return task.snapshot(since)
 

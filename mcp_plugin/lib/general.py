@@ -16,7 +16,6 @@
 # cSpell:ignore mysqlsh MariaDB pydantic elicit uvicorn
 
 # Define plugin version
-import datetime
 import ipaddress
 import os
 import pathlib
@@ -25,6 +24,7 @@ import time
 from typing import NamedTuple, Optional
 
 import mysqlsh
+from mysqlsh import task_manager
 
 from mcp_plugin.lib.tool_registrar import tool_error
 
@@ -193,14 +193,9 @@ def served_function_groups(function_groups) -> set:
 # of them are offered to tenants.
 MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB,)
 
-def utc_timestamp() -> str:
-    """Returns the current time as the files record it: ISO 8601, UTC, seconds."""
-    return (
-        datetime.datetime.now(datetime.timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+# The current time as the files record it: ISO 8601, UTC, seconds - the same
+# as the shell's tasks report theirs.
+utc_timestamp = task_manager.utc_timestamp
 
 
 def get_plugin_data_path() -> str:

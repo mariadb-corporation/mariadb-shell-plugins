@@ -36,7 +36,6 @@ from mysqlsh.task_manager import (  # noqa: F401 - the states, for callers
     COMPLETED,
     FAILED,
     FINISHED_STATES,
-    MAX_WAIT_MS,
     PENDING,
     RUNNING,
     TaskError,
