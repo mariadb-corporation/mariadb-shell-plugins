@@ -14,14 +14,46 @@ on:
         default: false
 
 jobs:
-  # [bypass-ci] in a PR's title - or, for a push, which has no PR title, in
-  # the pushed commit's message - skips the run, as it does in mariadb-shell.
+  # Whether to bypass the run, as [bypass-ci] does in mariadb-shell: in a
+  # PR's title, or for a push, which has no PR title, in the pushed commit's
+  # message or the title of the branch's open PR - updating a PR's branch
+  # pushes commits that do not carry the tag, a merge of main among them.
+  # On a hosted runner, so deciding never starts the VM.
+  bypass:
+    name: Check for [bypass-ci]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      bypass: ${{ steps.check.outputs.bypass }}
+    steps:
+      - name: Look for the tag
+        id: check
+        run: |
+          bypass=false
+          if [[ "$PR_TITLE" == *"[bypass-ci]"* || "$COMMIT_MESSAGE" == *"[bypass-ci]"* ]]; then
+            bypass=true
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # A failed lookup runs the CI rather than skipping it.
+            titles="$(gh pr list -R "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" \
+              --state open --json title --jq '.[].title' || true)"
+            if [[ "$titles" == *"[bypass-ci]"* ]]; then
+              bypass=true
+            fi
+          fi
+          echo "bypass: $bypass"
+          echo "bypass=$bypass" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+
   # Skipping this job skips the two that need it, so the VM is not started
   # and Shell-Plugins-CI-Verification reports as skipped, as it does when no
   # plugin changed.
   ensure-runner:
-      if: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
-        && !contains(github.event.head_commit.message, '[bypass-ci]') }}
+      needs: bypass
+      if: ${{ needs.bypass.outputs.bypass != 'true' }}
       uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
 
