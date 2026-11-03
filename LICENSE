@@ -10,20 +10,21 @@ Introduction
    third-party software which may be included in this distribution of
    MariaDB Shell.
 
-   Last updated: October 2026
+   Last updated: November 2026
 
 Licensing Information
 
-   This release of MariaDB Shell, is brought to you by the team at MariaDB
+   This release of MariaDB Shell is brought to you by the team at MariaDB
    as a fork of the MySQL Shell by Oracle. This software is released under
    version 2 of the GNU General Public License (GPLv2), as set forth
    below, with the following additional permissions:
 
-   This distribution of MariaDB Shell, a fork of MySQL Shell, is
+   This distribution of MariaDB Shell, a fork of MySQL Shell by Oracle, is
    designed to work with certain software (including but not limited to
    OpenSSL) that is licensed under separate terms, as designated in a
    particular file or component or in the license documentation. Without
-   limiting your rights under the GPLv2, the authors of MySQL hereby grant
+   limiting your rights under the GPLv2, the authors of MySQL and, with
+   respect to its modifications and additions, MariaDB plc hereby grant
    you an additional permission to link the program and your derivative
    works with the separately licensed software that they have either
    included with the program or referenced in the documentation.
@@ -360,7 +361,6 @@ the "copyright" line and a pointer to where the full notice is found.
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License as
     published by the Free Software Foundation; either version 2 of
-
     the License, or (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
@@ -3253,7 +3253,14 @@ MIT License
 The following packages are licensed under the MIT License, whose text is
 reproduced below. The copyright notice for each is given beside its name:
 
+  @jridgewell/gen-mapping    Copyright 2024 Justin Ridgewell
+                             <justin@ridgewell.name>
+  @jridgewell/sourcemap-codec
+                             Copyright 2024 Justin Ridgewell
+                             <justin@ridgewell.name>
   @modelcontextprotocol/sdk  Copyright (c) 2024 Anthropic, PBC
+  acorn                      Copyright (C) 2012-2022 by various contributors
+                             (see AUTHORS)
   ajv                        Copyright (c) 2015-2021 Evgeny Poberezkin
   ajv-formats                Copyright (c) 2020 Evgeny Poberezkin
   balanced-match             Original code Copyright Julian Gruber
@@ -3267,6 +3274,7 @@ reproduced below. The copyright notice for each is given beside its name:
                              <hello@moxy.studio>
   fast-deep-equal            Copyright (c) 2017 Evgeny Poberezkin
   json-schema-traverse       Copyright (c) 2017 Evgeny Poberezkin
+  lines-and-columns          Copyright (c) 2015 Brian Donovan
   path-key                   Copyright (c) Sindre Sorhus
                              <sindresorhus@gmail.com> (sindresorhus.com)
   preact                     Copyright (c) 2015-present Jason Miller
@@ -3274,6 +3282,8 @@ reproduced below. The copyright notice for each is given beside its name:
                              <kevinmartensson@gmail.com> (github.com/kevva)
   shebang-regex              Copyright (c) Sindre Sorhus
                              <sindresorhus@gmail.com> (sindresorhus.com)
+  sucrase                    Copyright (c) 2012-2018 various contributors
+                             (see AUTHORS)
   tabulator-tables           Copyright (c) 2015-2025 Oli Folkerd
   three                      Copyright © 2010-2026 three.js authors
   vscode-jsonrpc             Copyright (c) Microsoft Corporation
@@ -3425,6 +3435,13 @@ No contributor can revoke this license.
 without any warranty or condition, and no contributor
 will be liable to anyone for any damages related to this
 software or this license, under any kind of legal claim._**
+
+Apache License 2.0
+------------------
+The following package is licensed under the Apache License, Version 2.0. A
+copy of that license can be found in the 'Standard Licenses' section:
+
+  ts-interface-checker       Dmitry S, Grist Labs
 
 Creative Commons Attribution 4.0 International
 ----------------------------------------------
