@@ -14,7 +14,14 @@ on:
         default: false
 
 jobs:
+  # [bypass-ci] in a PR's title - or, for a push, which has no PR title, in
+  # the pushed commit's message - skips the run, as it does in mariadb-shell.
+  # Skipping this job skips the two that need it, so the VM is not started
+  # and Shell-Plugins-CI-Verification reports as skipped, as it does when no
+  # plugin changed.
   ensure-runner:
+      if: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
+        && !contains(github.event.head_commit.message, '[bypass-ci]') }}
       uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
 
