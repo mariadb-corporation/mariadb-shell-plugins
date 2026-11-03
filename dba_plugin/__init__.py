@@ -13,11 +13,11 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The MariaDB DBA Plugin.
+"""The MariaDB DBA Plugin, a plugin group.
 
-Deliberately empty: ``init.py`` registers the plugin's shell objects and
-functions, and it may run only once. A vendor plugin imports
-``dba_plugin.lib`` to attach itself to ``dba.vendor``, and that import must
-not run ``init.py`` a second time - the shell refuses to register a function
-twice, and the vendor plugin would then fail to load.
+The shell loads a plugin folder without an ``init.py`` as a group of
+plugins one level down: ``dba_core`` creates the ``dba`` object, and each
+``vendor_<name>`` adds ``dba.vendor.<name>``. This file makes the group a
+regular package, so ``dba_plugin.dba_core`` and the vendors stay importable
+after the shell takes the plugin directory back off ``sys.path``.
 """

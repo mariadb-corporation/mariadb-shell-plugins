@@ -187,7 +187,8 @@ def main() -> int:
     # user config home, so this plugin and the sibling plugins it relies on must
     # be available there: msm_plugin (wrapped by the msm.* tools), rest_plugin
     # (registers the REST SQL handler exercised by test_rest_sql.py) and
-    # dba_plugin (wrapped by the dba.* tools).
+    # the dba_plugin group, its core and vendor plugins (wrapped by the dba.*
+    # tools).
     _create_symlink(plugin_dir, plugins_dir / "mcp_plugin")
     for sibling in ("msm_plugin", "rest_plugin", "dba_plugin"):
         sibling_source = source_root / sibling

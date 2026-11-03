@@ -13,7 +13,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
 - `lib/dba_functions.py` (`FUNCTION_GROUP_DBA = "dba"`, in
   `SUPPORTED_FUNCTION_GROUPS`, not in `MULTI_TENANT_FUNCTION_GROUPS`: the keys
   are the server's, so every tenant would reach the same vendor accounts).
-  Registers nothing (a `log_event`) where `dba_plugin.lib` does not import.
+  Registers nothing (a `log_event`) where `dba_plugin.dba_core.lib` does not
+  import. The dba plugin is a shell plugin group (`dba_plugin/dba_core`,
+  `dba_plugin/vendor_<name>`), so its modules are `dba_plugin.dba_core.*`;
+  `setup_dba.is_available()` asks `find_spec("dba_plugin.dba_core")`, which
+  imports the group package and raises `ImportError` without it (-> False).
+  `run_tests.py` links the whole group folder into the config home's
+  `plugins/`, so the real vendor plugins load next to the tests' stub vendor.
 - **Who gets what:** without `--gui` (an agent) only the reading tools -
   `dba.list_vendors`, `dba.list_vendor_object_support`,
   `dba.get_vendor_object_info`, `dba.get_vendor_object_settings_info`,

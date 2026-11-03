@@ -3,11 +3,14 @@
 ## Project
 
 `dba_plugin` registers the shell global `dba`: deploy and manage MariaDB Server
-and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
-`dba_vendor_<name>_plugin` (siblings in this repo: `hetzner`, `upcloud`,
+and Galera Cluster deployments on cloud vendors. It is a shell **plugin group**
+(a folder without `init.py`; the shell loads its subfolders as plugins):
+`dba_core/` creates `dba` / `dba.vendor` and holds the library, and each vendor
+is its own member plugin `vendor_<name>/` (`hetzner`, `upcloud`,
 `mariadb_cloud`), adding `dba.vendor.<name>` and implementing the interface in
-`lib/vendor.py`. The MCP plugin serves the functions as the `dba` group (see
-[`mcp_plugin/.claude/context/dba.md`](../../mcp_plugin/.claude/context/dba.md)).
+`dba_core/lib/vendor.py`. Paths below are relative to `dba_core/` unless they
+name a vendor folder. The MCP plugin serves the functions as the `dba` group
+(see [`mcp_plugin/.claude/context/dba.md`](../../mcp_plugin/.claude/context/dba.md)).
 
 ## Architecture / key decisions
 
@@ -71,10 +74,24 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   (shell functions, `--gui` MCP) and `MCP:DBA_API_KEY:...` (`mcp setup`). A
   project is native for Hetzner (one token per project); for the others it is
   the label `dba_project=<project>`, and the `default` key serves every project.
-- **Load order:** the shell loads plugin folders in unspecified order and
-  refuses registering a function twice, so `__init__.py` files import nothing,
-  and a vendor plugin's `init.py` calls `objects.register_vendor_plugin`, which
-  creates `dba` / `dba.vendor` if missing (`ensure_parent_objects`).
+- **Plugin group and load order** (Rennox's review of #74; shell design
+  "Plugin Dependencies", mariadb-shell #118):
+  - Each vendor folder has `plugin.json` `{"requires": ["dba.vendor"]}`; a
+    shell with manifest support loads it only after `dba_core` made
+    `dba.vendor`, and names it in an error when `dba_core` is missing.
+    `register_vendor_plugin` no longer creates the parents. A shell without
+    manifest support loads in directory order: alphabetical on APFS/NTFS
+    (`dba_core` first by luck), unsorted on ext4/XFS (a vendor can fail).
+  - Module paths: `dba_plugin.dba_core.lib.*`, `dba_plugin.vendor_<name>.vendor`.
+    For a group member the shell puts the folder ABOVE the group on
+    `sys.path`, only while that `init.py` runs; `dba_plugin/__init__.py`
+    makes the group a regular package so later imports still resolve.
+  - The shell refuses registering a function twice, so `__init__.py` files
+    import nothing; a vendor's `init.py` calls
+    `objects.register_vendor_plugin`.
+  - `vendors.discover()` imports `vendor_<name>.vendor` from the group's
+    `__path__` (`VENDOR_PLUGIN_PATTERN`), for processes and tests that ask
+    before every vendor plugin's `init.py` ran.
 - **Create, update and delete are background tasks** of the shell's
   `mysqlsh.task_manager` (shipped with the shell, as is the `task` global),
   type `dba` (`lib/operations.py`). The shell and the plugins are released
@@ -110,9 +127,12 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
 ## Current state
 
 - Core and three vendors built, with mock-API unit tests per vendor and
-  read-only live tests (`--live`). Run: `cd dba_plugin && mariadb-shell --py
-  -f run_tests.py [--vendors=a,b] [--live] [-k ...]` with a shell build that
-  has `mysqlsh.task_manager` first on PATH.
+  read-only live tests (`--live`). Run: `cd dba_plugin/dba_core &&
+  mariadb-shell --py -f run_tests.py [--vendors=a,b] [--live] [-k ...]` with a
+  shell build that has `mysqlsh.task_manager` first on PATH. The runner builds
+  `plugins/dba_plugin/` in its config home as a real folder (a copy of the
+  group's `__init__.py`, links to `dba_core` and the chosen vendors), so
+  `--vendors` keeps the others out of the shell.
 - Verified live:
   - Hetzner: every read; create and delete of SSH key, network, firewall, VM,
     volume (the detach and firewall-removal paths), also as tasks.
@@ -132,21 +152,28 @@ and Galera Cluster deployments on cloud vendors. Each vendor is its own plugin,
   groups, and the request-free value checks (`field_errors`).
 - `lib/operations.py`: shared by shell and MCP; the task machinery.
 - `lib/objects.py`: shell object registration, `shell_call`, `task_answer`.
-- `lib/api_keys.py`, `lib/vendors.py` (discovery of `dba_vendor_*_plugin`),
+- `lib/api_keys.py`, `lib/vendors.py` (discovery of the group's `vendor_*`),
   `lib/rest_client.py`, `functions.py`, `init.py`.
 - `run_tests.py`, `tests/fixtures.py` (`MockApi`, `mock_api`, `--live`,
   `DBA_TEST_<VENDOR>_API_KEY`), `tests/unit/test_core.py`.
-- `../dba_vendor_<name>_plugin/vendor.py` + `tests/unit/test_<name>.py`.
+- `../vendor_<name>/vendor.py`, `plugin.json` + `tests/unit/test_<name>.py`.
+- `../__init__.py`: the group package. `tools/update_version/update_version.py`
+  (repo root) lists the group's `general.py` and `package.json` paths.
 
 ## Next steps
 
 1. The vscode-extension: move from `util.*` to the `task.*` tools (see the MCP
    plugin's `context/dba.md`), then a dba UI on top of them.
-2. The mariadb-shell release workflow must bundle the four new plugins.
-3. Label filters on UpCloud load balancers and object storage and on MariaDB
+2. The mariadb-shell release workflows (`shell-release.yml`, `rocky-linux.yml`)
+   must bundle the `dba_plugin` group folder, and `scripts/verify_package.sh`
+   must find the group's members (`vendor_<name>` -> `dba.vendor.<camel>`)
+   one level down.
+3. Run the plugins against a shell with `plugin.json` support: the vendors
+   load after `dba_core`, and without `dba_core` each is reported by name.
+4. Label filters on UpCloud load balancers and object storage and on MariaDB
    Cloud services, once their syntax is verified against objects that carry
    labels (their APIs accept `label` / `tags` parameters without an error).
-4. Unverified: UpCloud monthly price = hourly x 672; MariaDB Cloud required
+5. Unverified: UpCloud monthly price = hourly x 672; MariaDB Cloud required
    create fields beyond the serverless case; Hetzner load balancer create live.
 
 ## Gotchas / things not to repeat

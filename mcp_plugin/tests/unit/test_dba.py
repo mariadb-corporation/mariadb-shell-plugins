@@ -32,11 +32,11 @@ import pytest
 import mysqlsh
 
 pytest.importorskip("mcp")
-pytest.importorskip("dba_plugin")
+pytest.importorskip("dba_plugin.dba_core")
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from dba_plugin.lib import api_keys, object_types, operations, vendor as vendor_lib, vendors
+from dba_plugin.dba_core.lib import api_keys, object_types, operations, vendor as vendor_lib, vendors
 
 from mysqlsh import task_manager
 
@@ -157,7 +157,7 @@ def test_the_extension_gets_every_tool(stub_vendor, gui_mode):
 
 def test_no_tools_without_the_dba_plugin(monkeypatch):
     # A None entry in sys.modules makes the import fail as a missing package does.
-    monkeypatch.setitem(sys.modules, "dba_plugin.lib", None)
+    monkeypatch.setitem(sys.modules, "dba_plugin.dba_core.lib", None)
     assert _tools() == {}
 
 

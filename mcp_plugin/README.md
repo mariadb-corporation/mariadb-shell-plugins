@@ -719,7 +719,7 @@ not as a group of their own.
 | `dba.update_vendor_object` | `--gui` only. Starts a task changing an object with only the settings that change, each one the settings info marks `is_updatable`; it ends once the object is ready again. |
 | `dba.delete_vendor_object` | `--gui` only. Starts a task deleting an object; it ends once the object is gone. |
 
-They wrap the [dba plugin](../dba_plugin/README.md) and are registered **only where it is
+They wrap the [dba plugin](../dba_plugin/dba_core/README.md) and are registered **only where it is
 installed**; the vendors are its vendor plugins (Hetzner, UpCloud, MariaDB Cloud).
 
 An agent - a server started without `--gui` - gets the seven tools that **read**: it can

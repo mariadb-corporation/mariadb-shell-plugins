@@ -15,7 +15,7 @@
 
 """MCP tools for the dba plugin: MariaDB deployments on cloud vendors.
 
-Thin wrappers around ``dba_plugin.lib.operations``, registered only where the
+Thin wrappers around ``dba_plugin.dba_core.lib.operations``, registered only where the
 dba plugin is installed. What a client gets depends on who it is:
 
 * With ``--gui`` (the MariaDB VS Code extension) every tool, working with the
@@ -53,8 +53,8 @@ def register_dba_tools(server, function_groups=()) -> None:
         None
     """
     try:
-        from dba_plugin.lib import api_keys, operations
-        from dba_plugin.lib.general import DbaError
+        from dba_plugin.dba_core.lib import api_keys, operations
+        from dba_plugin.dba_core.lib.general import DbaError
     except ImportError:
         general.log_event("dba tools not registered: the dba plugin is not installed")
         return

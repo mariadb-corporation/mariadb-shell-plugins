@@ -35,7 +35,11 @@ from mcp_plugin.lib import setup_prompts as prompts
 
 def is_available() -> bool:
     """Whether the dba plugin is installed."""
-    return importlib.util.find_spec("dba_plugin") is not None
+    try:
+        return importlib.util.find_spec("dba_plugin.dba_core") is not None
+    except ImportError:
+        # find_spec imports the parent package, the dba_plugin group.
+        return False
 
 
 def _dba():
@@ -45,8 +49,8 @@ def _dba():
             "The dba plugin is not installed, so there are no cloud vendors to "
             "store an API key for."
         )
-    from dba_plugin.lib import api_keys, operations
-    from dba_plugin.lib.general import DbaError
+    from dba_plugin.dba_core.lib import api_keys, operations
+    from dba_plugin.dba_core.lib.general import DbaError
 
     return api_keys, operations, DbaError
 
@@ -99,7 +103,7 @@ def list_api_keys():
     """
     if not is_available():
         return None
-    from dba_plugin.lib import api_keys
+    from dba_plugin.dba_core.lib import api_keys
 
     return api_keys.list_api_keys(api_keys.CONTEXT_MCP)
 
