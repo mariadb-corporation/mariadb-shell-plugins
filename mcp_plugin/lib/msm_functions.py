@@ -24,6 +24,13 @@ The tools run while the shell is in non-interactive mode, so the wrapped
 Path arguments are authorized through
 :func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
 MCP elicitation - to trust a path that is not yet allowed.
+
+The project list tools (``msm.list_projects`` and the three that change the
+list) go to :mod:`msm_plugin.lib.projects` directly rather than through the
+shell-facing wrappers: in multi-tenant mode every user has a list of their
+own, selected by the ``owner`` those functions take, and the shell functions -
+which serve the shell user's one list - have no business taking it. The owner
+is the calling user's ``mcp_user_id`` there and None otherwise.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver
@@ -32,6 +39,11 @@ from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
 from mcp_plugin.lib.tool_registrar import tool_registrar
+
+
+def _project_list_owner(ctx):
+    """Returns whose project list a request works on: the user's, or None."""
+    return general.get_client_identity(ctx).user
 
 
 def register_msm_tools(server, function_groups=()) -> None:
@@ -52,6 +64,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     import anyio.to_thread
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
+    from msm_plugin.lib import projects as msm_projects
 
     tool = tool_registrar(server)
 
@@ -88,13 +101,18 @@ def register_msm_tools(server, function_groups=()) -> None:
                 When given, it takes the place of copyright_holder.
 
         Returns:
-            The path of the created project folder.
+            The path of the created project folder. The project is added to
+            the project list (see msm.list_projects) at the top level.
         """
         await general.require_allowed_path(ctx, target_path)
-        return msm.create_new_project_folder(
+        # Read before anything else: the caller's list is where the project
+        # goes, not the shell user's, which the wrapper would add it to.
+        owner = _project_list_owner(ctx)
+        project_path = msm.create_new_project_folder(
             schema_name=schema_name,
             target_path=target_path,
             copyright_holder=copyright_holder,
+            add_to_project_list=False,
             **_kwargs(
                 license=license,
                 overwrite_existing=overwrite_existing,
@@ -103,6 +121,110 @@ def register_msm_tools(server, function_groups=()) -> None:
                 copyrights=copyrights,
             ),
         )
+        msm_projects.add_project(project_path, owner=owner)
+
+        return project_path
+
+    @tool(name="msm.list_projects")
+    async def list_projects(ctx: Context) -> list:
+        """Lists the schema projects in the project list.
+
+        The project list holds the schema projects the user works with, so a
+        client can show them without searching the disk. Each is filed in a
+        folder of the list and may carry a caption and a color. A project
+        enters the list through msm.add_project, or when msm.create_project
+        creates it.
+
+        Returns:
+            One entry per project, sorted by path: its "project_path", the
+            "folder" of the list it is filed in ("/" for the top level, for
+            example "/Shop/Production" for a nested folder), the "caption"
+            and "color" to show it with (each "" for none), the "schema_name"
+            its settings file states (null where that cannot be read) and
+            whether the folder still "exists" as a project - one that was
+            moved or deleted stays listed, so it can be shown as missing and
+            removed.
+        """
+        return msm_projects.list_projects(_project_list_owner(ctx))
+
+    @tool(name="msm.add_project")
+    async def add_project(
+        ctx: Context,
+        project_path: str,
+        folder: Optional[str] = None,
+        caption: Optional[str] = None,
+        color: Optional[str] = None,
+    ) -> dict:
+        """Adds an existing schema project to the project list.
+
+        Adding a project that is listed already changes the details given
+        and keeps the others, so this is safe to call again.
+
+        Args:
+            project_path: The path of the schema project folder, which has to
+                hold a msm.project.json.
+            folder: The folder of the list to file it in, such as "/Shop";
+                "/" is the top level. Left out, a new entry goes to the top
+                level and a listed one stays where it is.
+            caption: The caption to show it with; "" removes it. Left out, a
+                listed project keeps its caption.
+            color: The color to show it in (red, orange, yellow, green, blue
+                or purple); "" removes it. Left out, a listed project keeps
+                its color.
+
+        Returns:
+            The project as msm.list_projects reports it.
+        """
+        await general.require_allowed_path(ctx, project_path)
+        return msm_projects.add_project(
+            project_path, folder, caption, color, owner=_project_list_owner(ctx)
+        )
+
+    @tool(name="msm.update_project")
+    async def update_project(
+        ctx: Context,
+        project_path: str,
+        new_folder: Optional[str] = None,
+        new_caption: Optional[str] = None,
+        new_color: Optional[str] = None,
+    ) -> dict:
+        """Changes how a listed schema project is filed and shown.
+
+        Args:
+            project_path: The project, as msm.list_projects reports it. It
+                does not have to exist on disk any more.
+            new_folder: The folder of the list to move it to, such as
+                "/Archive"; "/" is the top level. Left out, it stays where it
+                is.
+            new_caption: The caption to show it with; "" removes it. Left
+                out, it keeps its caption.
+            new_color: The color to show it in (red, orange, yellow, green,
+                blue or purple); "" removes it. Left out, it keeps its color.
+
+        Returns:
+            The project as msm.list_projects reports it.
+        """
+        return msm_projects.update_project(
+            project_path,
+            new_folder,
+            new_caption,
+            new_color,
+            owner=_project_list_owner(ctx),
+        )
+
+    @tool(name="msm.remove_project")
+    async def remove_project(ctx: Context, project_path: str) -> str:
+        """Removes a schema project from the project list.
+
+        Only the list changes: the project folder on disk is left as it is.
+
+        Args:
+            project_path: The project, as msm.list_projects reports it.
+
+        Returns:
+            The project path as it was listed.
+        """
+        return msm_projects.remove_project(project_path, owner=_project_list_owner(ctx))
 
     @tool(name="msm.get_project_information")
     async def get_project_information(

@@ -237,10 +237,11 @@ and reuses everything 2b proved. A server runs in ONE OAuth mode
   | Scope | Grants |
   | --- | --- |
   | `mcp:db` | the db tools (connect, browse, run SQL) |
+  | `mcp:msm` | the msm tools (schema projects and the per-user project list) |
 
-  `mcp:msm` existed until 2026-10-09, when the msm group left multi-tenant mode (see
-  decision 5 in [multi-tenant.md](multi-tenant.md)). Older mentions of it below
-  describe the state at the time.
+  `mcp:msm` left with the msm group on 2026-10-09 and came back with it on
+  2026-11-04 (decision 5 in [multi-tenant.md](multi-tenant.md)); in between, a
+  token carrying it had the scope ignored.
 
   - **There are no read/write/admin scopes on purpose.** What a user can do is
     decided by **the database's own privileges for the account and its default

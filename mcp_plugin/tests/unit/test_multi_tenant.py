@@ -595,7 +595,8 @@ def test_a_multi_tenant_server_refuses_what_it_cannot_serve(tenant_config):
         server._check_multi_tenant("stdio", ["db"], False)
     with pytest.raises(mysqlsh.Error, match="--gui"):
         server._check_multi_tenant("streamable-http", ["db"], True)
-    with pytest.raises(mysqlsh.Error, match="msm, sandbox, migrator, util"):
+    server._check_multi_tenant("streamable-http", ["db", "msm"], False)
+    with pytest.raises(mysqlsh.Error, match="sandbox, migrator, util"):
         server._check_multi_tenant(
             "streamable-http", ["db", "msm", "sandbox", "migrator", "util"], False
         )
@@ -706,7 +707,7 @@ def test_setup_rotates_shows_disables_and_removes(tenant_config, capsys):
     assert tenants.is_active_user(ada)
 
     with pytest.raises(mysqlsh.Error, match="Unknown scope"):
-        setup_cli.apply({"user": "ada", "set_scopes": "mcp:msm"})
+        setup_cli.apply({"user": "ada", "set_scopes": "mcp:sandbox"})
     setup_cli.apply({"user": "ada", "set_scopes": "mcp:db"})
     assert tenants.get_scopes(ada) == ["mcp:db"]
 
@@ -1016,3 +1017,108 @@ def test_a_sessionless_client_of_an_unauthenticated_server_is_told_why(tenant_co
             tools["db.connect"](_context(None, session_id=None), URI)
     finally:
         general.set_active_transport(None)
+
+
+# --- the msm group: a project list per user ---------------------------------------
+
+
+@pytest.fixture
+def project_lists(tmp_path, monkeypatch):
+    """Keeps every project list a test writes in a directory of its own."""
+    from msm_plugin.lib import projects
+
+    data_path = tmp_path / "msm_plugin_data"
+    data_path.mkdir()
+    monkeypatch.setattr(projects, "get_data_path", lambda: str(data_path))
+
+    return projects
+
+
+def _msm_tools():
+    """Registers the msm tools in-process, without a server."""
+    from mcp_plugin.lib import msm_functions
+
+    recorder = helpers.ToolRecorder()
+    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
+
+    return recorder.tools
+
+
+def _make_project(root, name):
+    """Makes a folder that passes for a schema project and returns its path."""
+    folder = os.path.join(str(root), f"{name}.msm.project")
+    os.makedirs(folder)
+    with open(os.path.join(folder, "msm.project.json"), "w") as settings:
+        json.dump({"schemaName": name}, settings)
+
+    return folder
+
+
+def test_each_user_has_a_project_list_of_their_own(multi_tenant, project_lists, tmp_path):
+    ada, bob = _add("ada"), _add("bob")
+    tenants.set_allowed_paths(ada, [str(tmp_path)])
+    tenants.set_allowed_paths(bob, [str(tmp_path)])
+    shop = _make_project(tmp_path, "shop")
+    tools = _msm_tools()
+
+    added = asyncio.run(tools["msm.add_project"](_context(ada), shop, folder="/Mine"))
+    assert added["folder"] == "/Mine"
+    assert asyncio.run(tools["msm.list_projects"](_context(ada))) == [added]
+    assert asyncio.run(tools["msm.list_projects"](_context(bob))) == []
+    with pytest.raises(ToolError, match="not in the project list"):
+        asyncio.run(tools["msm.remove_project"](_context(bob), shop))
+
+    # Each list is a file of its own, and the shell user's is untouched.
+    assert os.path.exists(project_lists.get_projects_file_path(ada))
+    assert not os.path.exists(project_lists.get_projects_file_path(bob))
+    assert project_lists.list_projects() == []
+
+
+def test_a_user_lists_projects_from_their_allowed_paths_only(multi_tenant, project_lists,
+                                                            tmp_path):
+    ada = _add("ada")
+    tenants.set_allowed_paths(ada, [str(tmp_path / "allowed")])
+    elsewhere = _make_project(tmp_path / "elsewhere", "shop")
+    tools = _msm_tools()
+
+    with pytest.raises(ToolError, match="Ask the administrator"):
+        asyncio.run(tools["msm.add_project"](_context(ada), elsewhere))
+
+    assert asyncio.run(tools["msm.list_projects"](_context(ada))) == []
+
+
+def test_a_project_a_user_creates_goes_to_their_own_list(multi_tenant, project_lists,
+                                                        tmp_path):
+    ada = _add("ada")
+    tenants.set_allowed_paths(ada, [str(tmp_path)])
+    tools = _msm_tools()
+
+    created = asyncio.run(
+        tools["msm.create_project"](_context(ada), "tenant_schema", str(tmp_path), "Ada")
+    )
+
+    [listed] = asyncio.run(tools["msm.list_projects"](_context(ada)))
+    assert listed["project_path"] == created
+    assert project_lists.list_projects() == []
+
+
+def test_the_msm_tools_need_the_msm_scope(multi_tenant, project_lists):
+    ada = _add("ada")
+    tools = _msm_tools()
+
+    with pytest.raises(ToolError, match="mcp:msm"):
+        asyncio.run(tools["msm.list_projects"](_context(ada, scopes=["mcp:db"])))
+    with pytest.raises(ToolError, match="not authenticated"):
+        asyncio.run(tools["msm.list_projects"](_context(None)))
+
+
+def test_removing_a_user_removes_their_project_list(multi_tenant, project_lists, tmp_path):
+    ada = _add("ada")
+    tenants.set_allowed_paths(ada, [str(tmp_path)])
+    tools = _msm_tools()
+    asyncio.run(tools["msm.add_project"](_context(ada), _make_project(tmp_path, "shop")))
+    assert os.path.exists(project_lists.get_projects_file_path(ada))
+
+    tenants.remove_user(ada)
+
+    assert not os.path.exists(project_lists.get_projects_file_path(ada))

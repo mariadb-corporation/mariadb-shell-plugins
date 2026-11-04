@@ -183,15 +183,16 @@ def served_function_groups(function_groups) -> set:
     groups = set(function_groups)
     return {group for group in groups if group_requirement_met(group, groups)}
 
-# The groups a multi-tenant server serves, and the only ones it may. The
-# sandbox, migrator and restd groups run local server processes and long jobs
-# that write to the server's disk - resources one user would take from all the
-# others - the util group's dumps and loads are such jobs too, and the msm
-# group works on schema project folders, which live on the developer's own
-# machine, not on a remote server. The dba group uses the server's own cloud
-# vendor API keys, which would hand every user the same vendor accounts. None
-# of them are offered to tenants.
-MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB,)
+# The groups a multi-tenant server serves, and the only ones it may. The msm
+# group works on schema projects within the user's own allowed paths and keeps
+# a project list per user. The sandbox, migrator and restd groups run local
+# server processes and long jobs that write to the server's disk - resources
+# one user would take from all the others - the util group's dumps and loads
+# are such jobs too, and the sql group works on SQL files, which live on the
+# developer's own machine, not on a remote server. The dba group uses the
+# server's own cloud vendor API keys, which would hand every user the same
+# vendor accounts. None of those are offered to tenants.
+MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB, FUNCTION_GROUP_MSM)
 
 # The current time as the files record it: ISO 8601, UTC, seconds - the same
 # as the shell's tasks report theirs.

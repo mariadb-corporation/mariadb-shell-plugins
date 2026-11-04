@@ -519,8 +519,8 @@ def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
         raise mysqlsh.Error(
             f"The function group(s) {', '.join(refused)} are not available in "
             "multi-tenant mode, as they run local servers and long jobs on this "
-            "machine, work on files on the developer's own machine, or use the "
-            "server's own cloud vendor API keys. "
+            "machine, work on SQL files on the developer's own machine, or use "
+            "the server's own cloud vendor API keys. "
             "Available groups: "
             f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
         )

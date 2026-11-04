@@ -391,3 +391,137 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                 await call("db.close", {"connection_id": connection_id})
 
     asyncio.run(_run())
+
+
+# --- the project list -----------------------------------------------------------
+
+
+@pytest.fixture
+def project_lists(tmp_path, monkeypatch):
+    """Keeps every project list a test writes in a directory of its own."""
+    from msm_plugin.lib import projects
+
+    data_path = tmp_path / "msm_plugin_data"
+    data_path.mkdir()
+    monkeypatch.setattr(projects, "get_data_path", lambda: str(data_path))
+
+    return projects
+
+
+def _msm_tools():
+    """Registers the msm tools in-process, without a server."""
+    from mcp_plugin.lib import msm_functions
+
+    recorder = helpers.ToolRecorder()
+    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
+
+    return recorder.tools
+
+
+def _call(tools, name, *args, **kwargs):
+    """Calls one of the async msm tools, as a single-tenant stdio client."""
+    return asyncio.run(tools[name](None, *args, **kwargs))
+
+
+def _make_project(root, name):
+    """Makes a folder that passes for a schema project and returns its path."""
+    import json
+
+    folder = os.path.join(root, f"{name}.msm.project")
+    os.makedirs(folder)
+    with open(os.path.join(folder, "msm.project.json"), "w") as settings:
+        json.dump({"schemaName": name}, settings)
+
+    return folder
+
+
+def test_the_project_colors_are_the_connection_colors(project_lists):
+    """One palette for both lists, so a client shows them with one piece of code."""
+    assert project_lists.COLORS == config.CONNECTION_COLORS
+
+
+def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+    assert _call(tools, "msm.list_projects") == []
+
+    added = _call(tools, "msm.add_project", shop, folder="Shop", color="green")
+    assert added == {
+        "project_path": shop,
+        "folder": "/Shop",
+        "caption": "",
+        "color": "green",
+        "schema_name": "shop",
+        "exists": True,
+    }
+    assert _call(tools, "msm.list_projects") == [added]
+
+    moved = _call(
+        tools, "msm.update_project", shop, new_folder="/Archive", new_caption="Old"
+    )
+    assert moved["folder"] == "/Archive"
+    assert moved["caption"] == "Old"
+    assert moved["color"] == "green"
+
+    assert _call(tools, "msm.remove_project", shop) == shop
+    assert _call(tools, "msm.list_projects") == []
+    assert os.path.isdir(shop)
+
+
+def test_a_created_project_is_listed(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+
+    created = _call(
+        tools,
+        "msm.create_project",
+        SCHEMA_NAME,
+        allowed_temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+    )
+
+    [listed] = _call(tools, "msm.list_projects")
+    assert listed["project_path"] == created
+    assert listed["folder"] == "/"
+    assert listed["schema_name"] == SCHEMA_NAME
+
+
+def test_adding_a_project_needs_an_allowed_path(project_lists, clean_config, tmp_path):
+    """The list is no way around the allowed paths."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(str(tmp_path), "shop")
+    assert config.is_path_allowed(shop) is False
+
+    with pytest.raises(ToolError, match="not allowed"):
+        _call(tools, "msm.add_project", shop)
+
+    assert _call(tools, "msm.list_projects") == []
+
+
+def test_a_missing_project_is_listed_as_such(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+    _call(tools, "msm.add_project", shop)
+    os.remove(os.path.join(shop, "msm.project.json"))
+
+    [listed] = _call(tools, "msm.list_projects")
+
+    assert listed["exists"] is False
+    assert listed["schema_name"] is None
+    assert _call(tools, "msm.remove_project", shop) == shop
+
+
+def test_a_bad_detail_is_refused_before_anything_is_written(project_lists, allowed_temp_dir):
+    """The plugin's ValueError reaches the client as a tool error, nothing written."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+
+    with pytest.raises(ToolError, match="not a color"):
+        _call(tools, "msm.add_project", shop, color="teal")
+    with pytest.raises(ToolError, match="not in the project list"):
+        _call(tools, "msm.update_project", shop, new_folder="/Shop")
+
+    assert _call(tools, "msm.list_projects") == []

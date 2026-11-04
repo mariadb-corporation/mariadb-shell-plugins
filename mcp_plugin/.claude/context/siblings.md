@@ -7,6 +7,28 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Current state
 
+- **msm_plugin's project list (2026-11-04, `wip/msm-project-list`):** the schema
+  projects a user works with, for the VS Code extension's MSM Projects view, kept by
+  `msm_plugin/lib/projects.py` in `plugin_data/msm_plugin/projects.json` (the shell
+  user) and `projects/<mcp_user_id>.json` (one per tenant), keyed by the project
+  folder's absolute path with `folder` / `caption` / `color` details - the same
+  rules and the same six color names as `connections.json`
+  (`test_the_project_colors_are_the_connection_colors` pins `projects.COLORS ==
+  config.CONNECTION_COLORS`). mcp imports `lib.projects` DIRECTLY (like
+  `lib.source`) because the owner has no place in the shell-facing wrappers;
+  `msm_functions._project_list_owner(ctx)` is the client identity's user. Tools:
+  `msm.list_projects` (`project_path`, `folder`, `caption`, `color`, `schema_name`,
+  `exists`), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
+  (`new_folder`/`new_caption`/`new_color`, left out keeps, `""` clears),
+  `msm.remove_project` (list only, disk untouched); `msm.create_project` calls the
+  wrapper with `add_to_project_list=False` and adds the result to the CALLER's list
+  itself, so a tenant's project never lands in the server's own list. Registered in
+  every mode, not gated on `--gui` (no secret in them, and multi-tenant mode refuses
+  `--gui`). The msm plugin's own `ValueError`s reach the client as `ToolError`s
+  through the registrar. Tests: `test_msm.py` (in-process, `ToolRecorder`, ctx None)
+  and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
+  `projects.get_data_path` to a tmp dir. With it the msm group is back in
+  multi-tenant mode (multi-tenant.md decision 5).
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;

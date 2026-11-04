@@ -78,7 +78,8 @@ API_KEY_PREFIX = "mdbmcp_"
 # The scopes a user can be granted: one per function group a multi-tenant
 # server serves. A tool is only callable with the scope of its group.
 SCOPE_DB = "mcp:db"
-SUPPORTED_SCOPES = (SCOPE_DB,)
+SCOPE_MSM = "mcp:msm"
+SUPPORTED_SCOPES = (SCOPE_DB, SCOPE_MSM)
 
 # The scopes a new user gets unless told otherwise.
 DEFAULT_SCOPES = SUPPORTED_SCOPES
@@ -554,9 +555,23 @@ def remove_user(mcp_user_id) -> None:
         None
     """
     config._shell().delete_all_secrets(*config.secret_options(mcp_user_id))
+    _remove_project_list(mcp_user_id)
 
     with _changing_users() as users:
         users.pop(mcp_user_id, None)
+
+
+def _remove_project_list(mcp_user_id) -> None:
+    """Deletes the user's schema project list, kept by the msm plugin.
+
+    Nothing without that plugin: the list then never existed.
+    """
+    try:
+        from msm_plugin.lib import projects
+    except ImportError:  # pragma: no cover - a shell without msm_plugin
+        return
+
+    projects.remove_owner(mcp_user_id)
 
 
 def _change_user(mcp_user_id, change) -> dict:
