@@ -381,3 +381,53 @@ def tool_registrar(server):
         return decorator
 
     return mcp_tool
+
+
+# The line a tool's docstring holds for the argument only a --gui server
+# offers, at column 0.
+GUI_ARGUMENT_DOC = "{gui_argument_doc}\n"
+
+
+def register_with_gui_argument(tool, name, function, argument, doc) -> None:
+    """Registers a tool with an argument only a ``--gui`` server offers.
+
+    Some choices are the user's alone, made in the MariaDB VS Code extension,
+    which runs the ``--gui`` server: which connection list a sandbox goes
+    into, whether LLMs may work on a schema project. Without ``--gui`` the
+    argument is taken out of the signature the SDK builds the tool's schema
+    from - and its lines out of the description, the docstring's
+    ``{gui_argument_doc}`` line - so the tool does not ADVERTISE it, rather
+    than advertising it and refusing it. The function keeps the parameter at
+    its default.
+
+    Args:
+        tool: The tool decorator factory of the server.
+        name (str): The tool's name.
+        function: The tool's implementation.
+        argument (str): The parameter only a --gui server offers.
+        doc (str): Its lines in the Args section, indented as the
+            docstring's other arguments are.
+
+    Returns:
+        None
+    """
+    # Imported lazily, as general imports the shell.
+    from mcp_plugin.lib import general
+
+    # The placeholder line sits at column 0, so the compiler's docstring
+    # dedent found nothing to strip; cleandoc does it once it is filled.
+    if general.is_gui_mode():
+        function.__doc__ = function.__doc__.replace(GUI_ARGUMENT_DOC, doc)
+    else:
+        function.__doc__ = function.__doc__.replace(GUI_ARGUMENT_DOC, "")
+        signature = inspect.signature(function)
+        function.__signature__ = signature.replace(
+            parameters=[
+                parameter
+                for parameter in signature.parameters.values()
+                if parameter.name != argument
+            ]
+        )
+    function.__doc__ = inspect.cleandoc(function.__doc__)
+
+    tool(name=name)(function)

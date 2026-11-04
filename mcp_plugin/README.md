@@ -297,6 +297,10 @@ Management (`msm`) plugin:
 | `msm.generate_deployment_script` | `generate_deployment_script` |
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
 | `msm.deploy_schema` | `deploy_schema` |
+| `msm.list_projects` | `list_projects` |
+| `msm.add_project` | `add_project` |
+| `msm.update_project` | `update_project` |
+| `msm.remove_project` | `remove_project` |
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of
@@ -305,6 +309,35 @@ prompting for input.
 `msm.deploy_schema` deploys onto a connection opened with `db.connect`, so it is only
 registered when the `db` function group is served as well. All other `msm` tools work
 on a schema project on disk and are always available.
+
+The last four manage the **project list**: the schema projects the user works with,
+kept in `projects.json` in the msm plugin's data directory so that a client such as
+the MariaDB VS Code extension can show them without searching the disk. A project
+is listed by its folder's absolute path, filed in a folder of the list (`/Shop`,
+`/Shop/Production`; `/` is the top level) and shown with an optional caption and one
+of the six colors a stored connection can have (red, orange, yellow, green, blue,
+purple). `msm.create_project` adds the project it creates, filed and shown as its
+`folder`, `caption` and `color` arguments say; `msm.add_project` adds an
+existing one (and updates the details of one already listed); `msm.update_project`
+moves, captions or colors it, each argument left out keeping what is there and `""`
+clearing it; `msm.remove_project` takes it off the list and leaves the folder alone.
+A project whose folder was moved or deleted stays listed with `exists` false, so it
+can be shown as missing and removed; the listing also gives each project's
+`development_version`. Adding a project goes through the allowed paths
+like every other path.
+
+Each listed project also says whether LLMs may work on it (`mcp_access`). A server
+started without `--gui` - the one agents talk to - leaves the projects that say no
+out of `msm.list_projects` and refuses every path in or below them, in every tool
+group and whatever the allowed paths say; links are resolved first, and case is
+folded where the file system ignores it, so neither a link into such a project nor
+`SHOP.msm.project` for a listed `shop.msm.project` gets around it. Only the `--gui` server of the VS Code
+extension offers the `mcp_access` argument of `msm.create_project` and
+`msm.add_project` (and `new_mcp_access` of `msm.update_project`), so an agent can
+never grant itself access. A project added through the extension starts without
+access, one an agent adds or creates with it, and an entry written before the
+setting existed has it. In [multi-tenant mode](#multi-tenant-mode) every user has a
+list of their own (`projects/<mcp_user_id>.json`), deleted with the user.
 
 ### REST service tools (`rest`)
 
@@ -815,15 +848,17 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   as they are, so that `--showApiKey` can show them again). **Run the server
   under an OS account of its own**, and on Linux note that the default
   `login-path` helper only obfuscates `~/.mylogin.cnf`.
-- **Only the `db` group** is served. The `sandbox`, `migrator` and `util` tools run
-  local servers and long jobs on the machine, and the `msm` and `sql` tools work on
-  schema project folders and SQL files, which belong on the developer's own machine, not on
-  a remote server; none of them are offered to tenants. Neither is `--gui`,
-  and neither is stdio, which has no request to carry a key. A user's token
-  has to grant the scope of a tool's group (`mcp:db`; set with `--setScopes`).
+- **Only the `db` and `msm` groups** are served. The `sandbox`, `migrator` and `util`
+  tools run local servers and long jobs on the machine, and the `sql` tools work on
+  SQL files, which belong on the developer's own machine, not on a remote server;
+  none of them are offered to tenants. Neither is `--gui`, and neither is stdio,
+  which has no request to carry a key. A user's token has to grant the scope of a
+  tool's group (`mcp:db`, `mcp:msm`; set with `--setScopes`).
 - **Paths** are a user's own: `db.execute_sql_script` only reads a script file,
-  and the files its SOURCE directives include, from the user's allowed paths. A path that is not allowed is refused, never
-  offered to the client to trust.
+  and the files its SOURCE directives include, from the user's allowed paths, and
+  the `msm` tools work on schema projects there only. A path that is not allowed is
+  refused, never offered to the client to trust. Each user has a
+  [project list](#schema-management-tools-msm) of their own.
 - **Changes apply at once.** A user removed or disabled, or given a new key, is
   refused from their next request on, and their open connections are closed.
   Requests with refused keys are counted per address and user, and answered
@@ -853,7 +888,7 @@ issued for its own **public URL**, which has to be configured:
 mariadb-shell -- mcp setup-oauth --publicUrl=https://mcp.example.com/mcp
 ```
 
-The scope is `mcp:db`, one per tool group served; a client is only
+The scopes are `mcp:db` and `mcp:msm`, one per tool group served; a client is only
 shown, and may only call, the tools its token grants. There are deliberately no
 read or write scopes: what a user can do in the database is what MariaDB's own
 grants let their account and its role do. A user's sessions run under the role
@@ -878,7 +913,7 @@ mariadb-shell -- mcp setup-keycloak-realm --server=https://kc.example.com --real
     --adminUser=admin --mcpUrl=https://mcp.example.com/mcp --grantRealmRoleTo=ada
 ```
 
-`setup-keycloak-realm` creates the client scope `mcp:db` with an Audience
+`setup-keycloak-realm` creates the client scopes `mcp:db` and `mcp:msm` with an Audience
 mapper putting the public URL into the token's `aud`, the realm role `mcp-user`,
 and a public PKCE client for MCP clients. Keycloak refuses anonymous dynamic
 client registration by default ("Trusted Hosts" policy); allow your clients'

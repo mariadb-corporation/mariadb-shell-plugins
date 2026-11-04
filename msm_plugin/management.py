@@ -55,6 +55,8 @@ def create_new_project_folder(
         copyrights (list): The copyright notices of the project, for a project held
             by more than one copyright holder. When given, it takes the place of
             copyright_holder.
+        add_to_project_list (bool): Whether to add the new project to the
+            project list (see msm.listProjects). Defaults to True.
 
     Returns:
         None
@@ -65,6 +67,7 @@ def create_new_project_folder(
     license = kwargs.get("license", None)
     enforce_target_path = kwargs.get("enforce_target_path", False)
     copyrights = kwargs.get("copyrights", None)
+    add_to_project_list = kwargs.get("add_to_project_list", True)
 
     if schema_name is None and lib.core.get_interactive_default():
         schema_name = lib.core.prompt("Enter the database schema name: ")
@@ -104,6 +107,9 @@ def create_new_project_folder(
             copyrights=copyrights,
         )
 
+        if add_to_project_list:
+            lib.projects.add_project(project_path)
+
         if lib.core.get_interactive_default():
             print(f'The project folder "{project_path}" has been created successfully.')
     except ValueError as e:
@@ -114,6 +120,102 @@ def create_new_project_folder(
 
     if not lib.core.get_interactive_default():
         return project_path
+
+
+@plugin_function("msm.listProjects", shell=True, cli=True, web=True)
+def list_projects() -> list[dict]:
+    """Returns the schema projects in the project list
+
+    The project list holds the schema projects the user works with, each filed
+    in a folder of the list and shown with an optional caption and color. A
+    project is added with msm.addProject, or when msm.createNewProjectFolder
+    creates it.
+
+    Returns:
+        One dict per project, sorted by project path: project_path, the
+        folder it is filed in ("/" for the top level), caption and color ("" for
+        none), mcp_access (whether LLMs may work on it), the schema_name its settings file states (None where that cannot
+        be read) and whether the folder still exists as a project.
+    """
+    return lib.projects.list_projects()
+
+
+@plugin_function("msm.addProject", shell=True, cli=True, web=True)
+def add_project(project_path: str, **kwargs) -> dict:
+    """Adds an existing schema project to the project list
+
+    Adding a project that is listed already changes the details given and keeps
+    the others.
+
+    Args:
+        project_path (str): The path to the schema project folder.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        folder (str): The folder of the list to file the project in, such as
+            "/Shop/Production". Defaults to the top level for a new entry.
+        caption (str): The caption to show the project with.
+        color (str): The color to show the project in: red, orange, yellow,
+            green, blue or purple.
+        mcp_access (bool): Whether LLMs may work on the project through an MCP
+            server started without --gui. Defaults to True for a new entry.
+
+    Returns:
+        The project as msm.listProjects reports it.
+    """
+    return lib.projects.add_project(
+        project_path=project_path,
+        folder=kwargs.get("folder", None),
+        caption=kwargs.get("caption", None),
+        color=kwargs.get("color", None),
+        mcp_access=kwargs.get("mcp_access", None),
+    )
+
+
+@plugin_function("msm.updateProject", shell=True, cli=True, web=True)
+def update_project(project_path: str, **kwargs) -> dict:
+    """Changes how a listed schema project is filed and shown
+
+    Each option left out keeps what the project has; an empty string clears it.
+
+    Args:
+        project_path (str): The path to the schema project folder, as listed.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        folder (str): The folder of the list to move the project to; "/" is
+            the top level.
+        caption (str): The caption to show the project with.
+        color (str): The color to show the project in: red, orange, yellow,
+            green, blue or purple.
+        mcp_access (bool): Whether LLMs may work on the project through an MCP
+            server started without --gui.
+
+    Returns:
+        The project as msm.listProjects reports it.
+    """
+    return lib.projects.update_project(
+        project_path=project_path,
+        folder=kwargs.get("folder", None),
+        caption=kwargs.get("caption", None),
+        color=kwargs.get("color", None),
+        mcp_access=kwargs.get("mcp_access", None),
+    )
+
+
+@plugin_function("msm.removeProject", shell=True, cli=True, web=True)
+def remove_project(project_path: str) -> str:
+    """Removes a schema project from the project list
+
+    The project folder on disk is left as it is.
+
+    Args:
+        project_path (str): The path to the schema project folder, as listed.
+
+    Returns:
+        The project path as it was listed.
+    """
+    return lib.projects.remove_project(project_path=project_path)
 
 
 @plugin_function("msm.get.projectSettings", shell=True, cli=True, web=True)

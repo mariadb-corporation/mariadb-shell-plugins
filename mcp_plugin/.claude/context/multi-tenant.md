@@ -79,16 +79,26 @@ authorization spec, Keycloak, the bundled Python and the SDK's auth hooks - are 
      secret.
    - Keys are compared with `hmac.compare_digest`.
    - One key per user. `--rotateApiKey` replaces it.
-5. **Only the db tools are served in multi-tenant mode (user).** `msm` was served
-   at first, limited to the caller's `allowedPaths`, and REMOVED on 2026-10-09
-   (user): its tools work on schema project folders, which live on the
-   developer's machine, not on a remote MCP server's. **`msm`, `sandbox` and
-   `migrator` are not served**, and asking for them explicitly is an error.
-   **`--gui` is refused.** The default groups become `db`. The scope `mcp:msm` went
-   with the group (`SUPPORTED_SCOPES = ("mcp:db",)`); a stored user or a token
-   still carrying it is not refused, the scope is just ignored (`scopes_of`
-   filters). Per-user `allowedPaths` stay: `db.execute_sql_script` reads a
-   `file_path` only from them.
+5. **The db and msm tools are served in multi-tenant mode (user).** `msm` was
+   served at first, limited to the caller's `allowedPaths`, REMOVED on
+   2026-10-09 (user: its tools work on schema project folders, which live on
+   the developer's machine), and BROUGHT BACK on 2026-11-04 (user) with the
+   per-user project list (`msm.list_projects` and the three tools that change
+   it; the list files are msm_plugin's `projects/<mcp_user_id>.json`, see
+   [siblings.md](siblings.md)): every msm tool checks its paths against the
+   caller's own `allowedPaths`, refusing rather than eliciting, and
+   `msm.create_project` files the new project in the caller's list. A project
+   whose entry says no to `mcpAccess` is refused there too (there is no `--gui`
+   in multi-tenant mode, so a tenant's own entries all have access unless an
+   administrator edits the file).
+   `MULTI_TENANT_FUNCTION_GROUPS = (db, msm)`, `SUPPORTED_SCOPES = ("mcp:db",
+   "mcp:msm")`, `tenants.remove_user` deletes the user's list. **`sandbox`,
+   `migrator`, `util`, `restd`, `sql`, `dba` and `rest` are not served**, and
+   asking for them explicitly is an error. **`--gui` is refused.** The default
+   groups become `db, msm`. A user or token carrying a scope that is not
+   supported is not refused, the scope is just ignored (`scopes_of` filters).
+   Per-user `allowedPaths` stay: `db.execute_sql_script` reads a `file_path`
+   only from them.
 6. **stdio is refused in multi-tenant mode (user).**
 7. **No TLS on a non-loopback bind in multi-tenant mode only WARNS (user).** The
    warning names the leak: bearer tokens and API keys sent in clear.

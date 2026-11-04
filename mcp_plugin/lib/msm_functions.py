@@ -24,6 +24,21 @@ The tools run while the shell is in non-interactive mode, so the wrapped
 Path arguments are authorized through
 :func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
 MCP elicitation - to trust a path that is not yet allowed.
+
+The project list tools (``msm.list_projects`` and the three that change the
+list) go to :mod:`msm_plugin.lib.projects` directly rather than through the
+shell-facing wrappers: in multi-tenant mode every user has a list of their
+own, selected by the ``owner`` those functions take, and the shell functions -
+which serve the shell user's one list - have no business taking it. The owner
+is the calling user's ``mcp_user_id`` there and None otherwise.
+
+Every entry of the list says whether LLMs may work on the project
+(``mcp_access``). Only the ``--gui`` server - the VS Code extension's - sets it
+and sees the projects that say no; a server without ``--gui`` leaves them out
+of msm.list_projects and refuses every path in them (see
+:func:`mcp_plugin.lib.general.require_project_access`), so an agent can neither
+read such a project nor grant itself access. A project the extension adds
+starts without access, one an agent adds with it.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver
@@ -31,7 +46,41 @@ MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_registrar
+
+
+# The arguments only a --gui server offers, by tool, with the lines that
+# describe them (see tool_registrar.register_with_gui_argument). Whether LLMs
+# may work on a project is the user's call, made in the VS Code extension: a
+# server without --gui serves the agents the setting restricts.
+_GUI_ARGUMENTS = {
+    "msm.create_project": (
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
+                server started without --gui. Defaults to False: the
+                project stays the extension's until the user says otherwise.
+""",
+    ),
+    "msm.add_project": (
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
+                server started without --gui. Left out, a listed project
+                keeps its setting and a new one gets none.
+""",
+    ),
+    "msm.update_project": (
+        "new_mcp_access",
+        """            new_mcp_access: Whether LLMs may work on the project through an
+                MCP server started without --gui. Left out, it keeps its
+                setting.
+""",
+    ),
+}
+
+
+def _register_with_gui_argument(tool, name, function) -> None:
+    """Registers an msm tool with its argument only a --gui server offers."""
+    register_with_gui_argument(tool, name, function, *_GUI_ARGUMENTS[name])
 
 
 def register_msm_tools(server, function_groups=()) -> None:
@@ -49,9 +98,13 @@ def register_msm_tools(server, function_groups=()) -> None:
     Returns:
         None
     """
+    import os
+
     import anyio.to_thread
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
+    from msm_plugin.lib import management as msm_management
+    from msm_plugin.lib import projects as msm_projects
 
     tool = tool_registrar(server)
 
@@ -59,7 +112,18 @@ def register_msm_tools(server, function_groups=()) -> None:
         """Builds a kwargs dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
 
-    @tool(name="msm.create_project")
+    async def _authorize_project(ctx, schema_project_path) -> None:
+        """Authorizes a project path; None is the working directory.
+
+        The working directory is where the plugin goes for a project left
+        out, so a project LLMs may not work on is refused there too.
+        """
+        await general.require_allowed_path(ctx, schema_project_path)
+        # In multi-tenant mode require_allowed_path checks the working
+        # directory for None itself.
+        if schema_project_path is None and not general.is_multi_tenant():
+            general.require_project_access(ctx, os.getcwd())
+
     async def create_project(
         ctx: Context,
         schema_name: str,
@@ -70,6 +134,10 @@ def register_msm_tools(server, function_groups=()) -> None:
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        folder: Optional[str] = None,
+        caption: Optional[str] = None,
+        color: Optional[str] = None,
+        mcp_access: bool = False,
     ) -> Optional[str]:
         """Creates a new database schema project folder.
 
@@ -86,15 +154,40 @@ def register_msm_tools(server, function_groups=()) -> None:
                 yearOfCreation, an optional yearOfLastUpdate and a tracksUpdates
                 flag marking the holders whose year follows the current one.
                 When given, it takes the place of copyright_holder.
+            folder: The folder of the project list to file it in, such as
+                "/Shop". Defaults to the top level.
+            caption: The caption to show it with in the project list.
+            color: The color to show it in (red, orange, yellow, green, blue
+                or purple).
+{gui_argument_doc}
 
         Returns:
-            The path of the created project folder.
+            The path of the created project folder. The project is added to
+            the project list (see msm.list_projects).
         """
         await general.require_allowed_path(ctx, target_path)
-        return msm.create_new_project_folder(
+        # The project folder itself, whether it is replaced (overwriting
+        # deletes it first) or made anew where a listed project's folder went
+        # missing: either way one kept from LLMs stays theirs, and adding it
+        # below must not open it.
+        general.require_project_access(
+            ctx,
+            os.path.join(
+                os.path.abspath(os.path.expanduser(target_path)),
+                msm_management.convert_string_to_valid_filename(schema_name)
+                + ".msm.project",
+            ),
+        )
+        # Checked before the folder is made, which a bad one would outlive.
+        msm_projects.normalize_details(folder, caption, color)
+        # Read before anything else: the caller's list is where the project
+        # goes, not the shell user's, which the wrapper would add it to.
+        owner = general.get_client_identity(ctx).user
+        project_path = msm.create_new_project_folder(
             schema_name=schema_name,
             target_path=target_path,
             copyright_holder=copyright_holder,
+            add_to_project_list=False,
             **_kwargs(
                 license=license,
                 overwrite_existing=overwrite_existing,
@@ -103,6 +196,157 @@ def register_msm_tools(server, function_groups=()) -> None:
                 copyrights=copyrights,
             ),
         )
+        # The extension's projects start as its own; an agent's have to be
+        # open to it, or it could not go on with what it made.
+        msm_projects.add_project(
+            project_path,
+            folder,
+            caption,
+            color,
+            owner=owner,
+            mcp_access=mcp_access if general.is_gui_mode() else True,
+        )
+
+        return project_path
+
+    _register_with_gui_argument(tool, "msm.create_project", create_project)
+
+    @tool(name="msm.list_projects")
+    async def list_projects(ctx: Context) -> list:
+        """Lists the schema projects in the project list.
+
+        The project list holds the schema projects the user works with, so a
+        client can show them without searching the disk. Each is filed in a
+        folder of the list and may carry a caption and a color. A project
+        enters the list through msm.add_project, or when msm.create_project
+        creates it.
+
+        Returns:
+            One entry per project, sorted by path: its "project_path", the
+            "folder" of the list it is filed in ("/" for the top level, for
+            example "/Shop/Production" for a nested folder), the "caption"
+            and "color" to show it with (each "" for none), whether LLMs may
+            work on it through a server without --gui ("mcp_access"; such a
+            server lists only those that may), the "schema_name"
+            its settings file states (null where that cannot be read) and
+            whether the folder still "exists" as a project - one that was
+            moved or deleted stays listed, so it can be shown as missing and
+            removed - and its "development_version" (null where it cannot be
+            read).
+        """
+        listed = msm_projects.list_projects(
+            general.get_client_identity(ctx).user, mcp_access_only=not general.is_gui_mode()
+        )
+        for project in listed:
+            project["development_version"] = _development_version(project)
+        return listed
+
+    def _development_version(project) -> Optional[str]:
+        """Returns a listed project's development version, or None."""
+        if not project["exists"]:
+            return None
+        try:
+            return msm_management.get_schema_development_version(
+                schema_project_path=project["project_path"]
+            )
+        except Exception:  # pylint: disable=broad-except
+            # A broken project is still listed; its row shows no version.
+            return None
+
+    async def add_project(
+        ctx: Context,
+        project_path: str,
+        folder: Optional[str] = None,
+        caption: Optional[str] = None,
+        color: Optional[str] = None,
+        mcp_access: Optional[bool] = None,
+    ) -> dict:
+        """Adds an existing schema project to the project list.
+
+        Adding a project that is listed already changes the details given
+        and keeps the others, so this is safe to call again.
+
+        Args:
+            project_path: The path of the schema project folder, which has to
+                hold a msm.project.json.
+            folder: The folder of the list to file it in, such as "/Shop";
+                "/" is the top level. Left out, a new entry goes to the top
+                level and a listed one stays where it is.
+            caption: The caption to show it with; "" removes it. Left out, a
+                listed project keeps its caption.
+            color: The color to show it in (red, orange, yellow, green, blue
+                or purple); "" removes it. Left out, a listed project keeps
+                its color.
+{gui_argument_doc}
+
+        Returns:
+            The project as msm.list_projects reports it.
+        """
+        await general.require_allowed_path(ctx, project_path)
+        gui = general.is_gui_mode()
+        return msm_projects.add_project(
+            project_path,
+            folder,
+            caption,
+            color,
+            owner=general.get_client_identity(ctx).user,
+            mcp_access=mcp_access if gui else None,
+            default_mcp_access=not gui,
+        )
+
+    _register_with_gui_argument(tool, "msm.add_project", add_project)
+
+    async def update_project(
+        ctx: Context,
+        project_path: str,
+        new_folder: Optional[str] = None,
+        new_caption: Optional[str] = None,
+        new_color: Optional[str] = None,
+        new_mcp_access: Optional[bool] = None,
+    ) -> dict:
+        """Changes how a listed schema project is filed and shown.
+
+        Args:
+            project_path: The project, as msm.list_projects reports it. It
+                does not have to exist on disk any more.
+            new_folder: The folder of the list to move it to, such as
+                "/Archive"; "/" is the top level. Left out, it stays where it
+                is.
+            new_caption: The caption to show it with; "" removes it. Left
+                out, it keeps its caption.
+            new_color: The color to show it in (red, orange, yellow, green,
+                blue or purple); "" removes it. Left out, it keeps its color.
+{gui_argument_doc}
+
+        Returns:
+            The project as msm.list_projects reports it.
+        """
+        general.require_project_access(ctx, project_path)
+        return msm_projects.update_project(
+            project_path,
+            new_folder,
+            new_caption,
+            new_color,
+            owner=general.get_client_identity(ctx).user,
+            mcp_access=new_mcp_access if general.is_gui_mode() else None,
+        )
+
+    _register_with_gui_argument(tool, "msm.update_project", update_project)
+
+    @tool(name="msm.remove_project")
+    async def remove_project(ctx: Context, project_path: str) -> str:
+        """Removes a schema project from the project list.
+
+        Only the list changes: the project folder on disk is left as it is.
+
+        Args:
+            project_path: The project, as msm.list_projects reports it.
+
+        Returns:
+            The project path as it was listed.
+        """
+        general.require_project_access(ctx, project_path)
+        return msm_projects.remove_project(project_path, owner=general.get_client_identity(ctx).user)
 
     @tool(name="msm.get_project_information")
     async def get_project_information(
@@ -118,7 +362,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             A dict with information about the schema project.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.get_project_information(**_kwargs(schema_project_path=schema_project_path))
 
     @tool(name="msm.set_development_version")
@@ -137,7 +381,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             None
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.set_development_version(
             **_kwargs(version=version, schema_project_path=schema_project_path)
         )
@@ -156,7 +400,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The list of released versions.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.get_released_versions(**_kwargs(schema_project_path=schema_project_path))
 
     @tool(name="msm.get_last_released_version")
@@ -173,7 +417,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The last released version.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.get_last_released_version(**_kwargs(schema_project_path=schema_project_path))
 
     @tool(name="msm.get_last_deployment_version")
@@ -190,7 +434,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The last deployment version.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.get_last_deployment_version(
             **_kwargs(schema_project_path=schema_project_path)
         )
@@ -218,7 +462,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The list of generated files.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.prepare_release(
             **_kwargs(
                 version=version,
@@ -282,7 +526,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The file name of the deployment script.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.generate_deployment_script(
             **_kwargs(
                 version=version,
@@ -305,7 +549,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The list of deployed versions.
         """
-        await general.require_allowed_path(ctx, schema_project_path)
+        await _authorize_project(ctx, schema_project_path)
         return msm.get_deployment_script_versions(
             **_kwargs(schema_project_path=schema_project_path)
         )
@@ -347,7 +591,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             Returns:
                 A message describing what was deployed.
             """
-            await general.require_allowed_path(ctx, schema_project_path)
+            await _authorize_project(ctx, schema_project_path)
             await general.require_allowed_path(ctx, backup_directory)
 
             # Read here, while this is still the request's own context; the

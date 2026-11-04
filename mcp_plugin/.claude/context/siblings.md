@@ -7,6 +7,48 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Current state
 
+- **msm_plugin's project list (2026-11-04, `wip/msm-project-list`):** the schema
+  projects a user works with, for the VS Code extension's MSM Projects view, kept by
+  `msm_plugin/lib/projects.py` in `plugin_data/msm_plugin/projects.json` (the shell
+  user) and `projects/<mcp_user_id>.json` (one per tenant), keyed by the project
+  folder's absolute path with `folder` / `caption` / `color` details - the same
+  rules and the same six color names as `connections.json`
+  (`test_the_project_colors_are_the_connection_colors` pins `projects.COLORS ==
+  config.CONNECTION_COLORS`). mcp imports `lib.projects` DIRECTLY (like
+  `lib.source`) because the owner has no place in the shell-facing wrappers;
+  the owner is the client identity's user (`general.get_client_identity(ctx).user`). Tools:
+  `msm.list_projects` (`project_path`, `folder`, `caption`, `color`, `schema_name`,
+  `exists`, plus `development_version` read by the tool, null where unreadable), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
+  (`new_folder`/`new_caption`/`new_color`, left out keeps, `""` clears),
+  `msm.remove_project` (list only, disk untouched); `msm.create_project` (with `folder`/`caption`/`color`,
+  checked by `projects.normalize_details` before the folder is made) calls the
+  wrapper with `add_to_project_list=False` and adds the result to the CALLER's list
+  itself, so a tenant's project never lands in the server's own list. Registered in
+  every mode, not gated on `--gui` (no secret in them, and multi-tenant mode refuses
+  `--gui`). The msm plugin's own `ValueError`s reach the client as `ToolError`s
+  through the registrar. Tests: `test_msm.py` (in-process, `ToolRecorder`, ctx None)
+  and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
+  `projects.get_data_path` to a tmp dir. With it the msm group is back in
+  multi-tenant mode (multi-tenant.md decision 5).
+- **MCP access per project (2026-11-04, user):** every entry carries `mcpAccess`
+  (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
+  default False for what a `--gui` server adds or creates, True everywhere else, and
+  True for an entry without it (pre-setting files). Enforcement is one place:
+  `general.project_refusal(path, user)` (`require_project_access(ctx, path)` raises
+  it; `path_refusal` adds the allow-list for `db.execute_sql_script`'s `file_path`,
+  `source_dir` and SOURCE includes, which check paths without `require_allowed_path`), called from `require_allowed_path`
+  outside GUI mode (so EVERY group's path arguments are covered, also in
+  multi-tenant mode where None is checked as the cwd), plus directly by
+  `msm.update_project` / `msm.remove_project` (no allowed-path check there: a
+  missing project can be moved) and for the cwd when an msm tool's
+  `schema_project_path` is left out (`_authorize_project`). `msm.create_project`
+  with `overwrite_existing` checks the folder it would replace. It asks
+  `projects.find_restricted_project(path, owner)`, which compares `realpath`s with
+  `commonpath`, case folded where the disk ignores it (macOS by default, not only
+  Windows as `os.path.normcase` assumes). The argument is hidden outside `--gui` by
+  `tool_registrar.register_with_gui_argument`, shared with `sandbox.deploy` (signature + `{gui_argument_doc}` placeholder at
+  column 0, as `sandbox.deploy` does), not refused. Tests: the "MCP access to a
+  project" block of `test_msm.py`, the "MCP access" block of `test_projects.py`.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;

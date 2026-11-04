@@ -42,12 +42,11 @@ this machine does not have yet.
 # cSpell:ignore mysqlsh MariaDB mcpserver sandboxlib mariadbd openssl
 
 import contextlib
-import inspect
 import os
 from typing import Optional
 
 from mcp_plugin.lib import config, general, restd, sandbox_servers
-from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
+from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_error, tool_registrar
 
 # How a resolved server's origin reads in the message sandbox.deploy answers
 # with. Worth saying: "downloaded now" is the difference between a deploy that
@@ -70,50 +69,16 @@ def _is_listening(port: int) -> bool:
     return restd.is_listening(port)
 
 
-# The part of sandbox.deploy's description only a --gui server gives, with the
-# argument it describes.
+# The lines of sandbox.deploy's description only a --gui server gives.
+# Which list a sandbox's connection goes into is a choice only the MariaDB
+# VS Code extension can make: its own list exists for it alone. Without
+# --gui the function keeps the shared list, which is where an agent's
+# sandbox has to go for the agent to open it.
 _MCP_ACCESS_DOC = """            mcp_access: Whether the connection registered for the instance
                 goes into the shared MCP connection list, which every MCP
                 client on this machine can open (the default), or into the
                 MariaDB VS Code extension's own list only.
 """
-
-
-def _register_deploy(tool, deploy) -> None:
-    """Registers sandbox.deploy, with ``mcp_access`` in GUI mode only.
-
-    Which list a sandbox's connection goes into is a choice only the MariaDB
-    VS Code extension can make: its own list exists for it alone. Without
-    ``--gui`` the argument is taken out of the signature the SDK builds the
-    tool's schema from - and its line out of the description - so the tool
-    does not ADVERTISE it, rather than advertising it and refusing it. The
-    function keeps the parameter, at its default of the shared list, which
-    is where an agent's sandbox has to go for the agent to open it.
-
-    Args:
-        tool: The tool decorator factory of the server.
-        deploy: The sandbox.deploy implementation.
-
-    Returns:
-        None
-    """
-    # The placeholder line sits at column 0, so the compiler's docstring
-    # dedent found nothing to strip; cleandoc does it once it is filled.
-    if general.is_gui_mode():
-        deploy.__doc__ = deploy.__doc__.replace("{mcp_access_doc}", _MCP_ACCESS_DOC)
-    else:
-        deploy.__doc__ = deploy.__doc__.replace("{mcp_access_doc}", "")
-        signature = inspect.signature(deploy)
-        deploy.__signature__ = signature.replace(
-            parameters=[
-                parameter
-                for parameter in signature.parameters.values()
-                if parameter.name != "mcp_access"
-            ]
-        )
-    deploy.__doc__ = inspect.cleandoc(deploy.__doc__)
-
-    tool(name="sandbox.deploy")(deploy)
 
 
 def register_sandbox_tools(server, function_groups=()) -> None:
@@ -272,7 +237,8 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             mariadbd_options: Additional server options for the [mysqld]
                 section, as 'option=value' strings.
             timeout: Seconds to wait for the instance to start. Defaults to 60.
-{mcp_access_doc}
+{gui_argument_doc}
+
         Returns:
             A message confirming the deployment, naming the server version it
             runs when one was requested.
@@ -352,7 +318,9 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         return message
 
-    _register_deploy(tool, deploy)
+    register_with_gui_argument(
+        tool, "sandbox.deploy", deploy, "mcp_access", _MCP_ACCESS_DOC
+    )
 
     @tool(name="sandbox.start")
     async def start(

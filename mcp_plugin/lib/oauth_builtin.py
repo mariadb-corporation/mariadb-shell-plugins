@@ -1522,6 +1522,7 @@ def _grant_scopes(record, user) -> list:
 
 _SCOPE_DESCRIPTIONS = {
     tenants.SCOPE_DB: "work with your databases (connect, browse, run SQL)",
+    tenants.SCOPE_MSM: "work with your schema projects (create, release, deploy)",
 }
 
 # The page's style (lib/assets/sign-in-page.css) follows the MySQL REST
