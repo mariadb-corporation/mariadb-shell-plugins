@@ -446,12 +446,14 @@ def test_the_other_case_of_a_name_is_the_same_folder_where_the_disk_says_so(
     found = projects.find_restricted_project(os.path.join(recased, "development"))
     assert found == (shop if ignores_case else None)
 
+    if not ignores_case:
+        # SHOP.msm.project is another folder there, and one that does not exist.
+        return
     projects.add_project(recased, caption="Shop")
-    (listed,) = projects.list_projects() if ignores_case else [None]
-    if ignores_case:
-        assert listed["project_path"] == shop
-        assert listed["mcp_access"] is False
-        assert listed["caption"] == "Shop"
+    (listed,) = projects.list_projects()
+    assert listed["project_path"] == shop
+    assert listed["mcp_access"] is False
+    assert listed["caption"] == "Shop"
 
 
 def test_the_shell_functions_set_mcp_access(data_path, tmp_path):
