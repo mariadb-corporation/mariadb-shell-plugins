@@ -30,7 +30,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
-- **MCP access per project (2026-11-04, user):** every entry carries `mcpAccess`
+- **MCP access per project (user):** every entry carries `mcpAccess`
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and
   True for an entry without it (pre-setting files). Enforcement is one place:
@@ -41,11 +41,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   multi-tenant mode where None is checked as the cwd), plus directly by
   `msm.update_project` / `msm.remove_project` (no allowed-path check there: a
   missing project can be moved) and for the cwd when an msm tool's
-  `schema_project_path` is left out (`_authorize_project`). `msm.create_project`
-  with `overwrite_existing` checks the folder it would replace. It asks
+  `schema_project_path` is left out (`_authorize_project`, outside multi-tenant mode only, where
+  `require_allowed_path` already checks the cwd for None). `msm.create_project`
+  checks the folder it makes or replaces, with or without `overwrite_existing`:
+  a restricted entry whose folder went missing must not be re-added with access. It asks
   `projects.find_restricted_project(path, owner)`, which compares `realpath`s with
-  `commonpath`, case folded where the disk ignores it (macOS by default, not only
-  Windows as `os.path.normcase` assumes). The argument is hidden outside `--gui` by
+  `commonpath`, `""` taken as the cwd, case folded where the disk ignores it
+  (macOS by default, not only Windows as `os.path.normcase` assumes). The argument is hidden outside `--gui` by
   `tool_registrar.register_with_gui_argument`, shared with `sandbox.deploy` (signature + `{gui_argument_doc}` placeholder at
   column 0, as `sandbox.deploy` does), not refused. Tests: the "MCP access to a
   project" block of `test_msm.py`, the "MCP access" block of `test_projects.py`.
@@ -202,6 +204,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 3. **`rest_plugin` suite (2026-10-02, bld shell with `4aaf294c6`): 247 pass, 0 fail, 2
    skipped** (`--mdupgrade` and a content-set test that needs a built project). msm: 14 pass.
+
+10. Project list review leftovers on the mcp side (the msm_plugin side is in its
+    PROJECT_CONTEXT Next steps): `msm.update_project` / `msm.remove_project` skip the
+    allowed paths (they touch only the list; intended?), and `msm.list_projects`
+    reads every project's files on the event loop, like the other msm tools.
 
 9. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
    Management" in the VS Code UI — outside msm_plugin, so left inconsistent by the rebrand.
