@@ -515,8 +515,19 @@ def list_projects(owner=None, mcp_access_only=False) -> list:
 
 
 def _real_path(path: str) -> str:
-    """Returns a path with every link in it resolved, in its one case."""
-    return os.path.normcase(os.path.realpath(normalize_project_path(path)))
+    """Returns a path with every link in it resolved, in its one case.
+
+    An empty path is the current directory, as it is to every tool that
+    takes the path on to the file system: a check that skipped it would let
+    ``""`` reach a restricted project the working directory is in.
+
+    Raises:
+        ValueError: If it is not a string.
+    """
+    if not isinstance(path, str):
+        raise ValueError(f"A path has to be a string, not {path!r}.")
+
+    return os.path.normcase(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
 
 
 def _is_within(path: str, folder: str) -> bool:

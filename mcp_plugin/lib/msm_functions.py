@@ -164,16 +164,18 @@ def register_msm_tools(server, function_groups=()) -> None:
             the project list (see msm.list_projects).
         """
         await general.require_allowed_path(ctx, target_path)
-        if overwrite_existing:
-            # Replacing a project deletes it first: not one kept from LLMs.
-            general.require_project_access(
-                ctx,
-                os.path.join(
-                    os.path.abspath(os.path.expanduser(target_path)),
-                    msm_management.convert_string_to_valid_filename(schema_name)
-                    + ".msm.project",
-                ),
-            )
+        # The project folder itself, whether it is replaced (overwriting
+        # deletes it first) or made anew where a listed project's folder went
+        # missing: either way one kept from LLMs stays theirs, and adding it
+        # below must not open it.
+        general.require_project_access(
+            ctx,
+            os.path.join(
+                os.path.abspath(os.path.expanduser(target_path)),
+                msm_management.convert_string_to_valid_filename(schema_name)
+                + ".msm.project",
+            ),
+        )
         # Checked before the folder is made, which a bad one would outlive.
         msm_projects.normalize_details(folder, caption, color)
         # Read before anything else: the caller's list is where the project

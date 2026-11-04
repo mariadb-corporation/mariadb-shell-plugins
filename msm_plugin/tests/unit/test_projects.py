@@ -411,6 +411,18 @@ def test_a_restricted_project_is_found_for_any_path_in_it(data_path, tmp_path):
     assert projects.find_restricted_project(shop, OWNER) is None
 
 
+def test_an_empty_path_is_the_working_directory(data_path, tmp_path, monkeypatch):
+    """"" reaches the working directory on disk, so it is checked as that."""
+    shop = _make_project(tmp_path, "shop")
+    projects.add_project(shop, mcp_access=False)
+    monkeypatch.chdir(shop)
+
+    assert projects.find_restricted_project("") == shop
+    assert projects.find_restricted_project(".") == shop
+    with pytest.raises(ValueError):
+        projects.find_restricted_project(None)
+
+
 def test_a_link_does_not_get_around_a_restricted_project(data_path, tmp_path):
     shop = _make_project(tmp_path, "shop")
     projects.add_project(shop, mcp_access=False)

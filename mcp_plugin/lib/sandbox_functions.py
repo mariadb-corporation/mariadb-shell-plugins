@@ -238,6 +238,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
                 section, as 'option=value' strings.
             timeout: Seconds to wait for the instance to start. Defaults to 60.
 {gui_argument_doc}
+
         Returns:
             A message confirming the deployment, naming the server version it
             runs when one was requested.

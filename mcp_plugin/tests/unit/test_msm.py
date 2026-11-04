@@ -672,6 +672,36 @@ def test_the_working_directory_counts_for_a_project_left_out(
 
     with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
         _call(tools, "msm.get_project_information")
+    # "" reaches the working directory on disk just as None does.
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        _call(tools, "msm.get_project_information", schema_project_path="")
+
+
+def test_an_agent_cannot_recreate_a_missing_project_kept_from_it(
+    project_lists, allowed_temp_dir
+):
+    """A listed project whose folder went missing keeps its setting: creating
+    a project in its place would otherwise add it to the list with access."""
+    import shutil
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, SCHEMA_NAME)
+    project_lists.add_project(shop, mcp_access=False)
+    shutil.rmtree(shop)
+
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        _call(
+            tools,
+            "msm.create_project",
+            SCHEMA_NAME,
+            allowed_temp_dir,
+            copyright_holder=COPYRIGHT_HOLDER,
+        )
+    assert not os.path.exists(shop)
+    (listed,) = project_lists.list_projects()
+    assert listed["mcp_access"] is False
 
 
 def test_other_tool_groups_cannot_reach_a_project_kept_from_it(
