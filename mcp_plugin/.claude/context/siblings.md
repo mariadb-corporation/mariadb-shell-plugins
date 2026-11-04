@@ -44,7 +44,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `schema_project_path` is left out (`_authorize_project`). `msm.create_project`
   with `overwrite_existing` checks the folder it would replace. It asks
   `projects.find_restricted_project(path, owner)`, which compares `realpath`s with
-  `commonpath`. The argument is hidden outside `--gui` by
+  `commonpath`, case folded where the disk ignores it (macOS by default, not only
+  Windows as `os.path.normcase` assumes). The argument is hidden outside `--gui` by
   `tool_registrar.register_with_gui_argument`, shared with `sandbox.deploy` (signature + `{gui_argument_doc}` placeholder at
   column 0, as `sandbox.deploy` does), not refused. Tests: the "MCP access to a
   project" block of `test_msm.py`, the "MCP access" block of `test_projects.py`.

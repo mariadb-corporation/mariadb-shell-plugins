@@ -720,6 +720,24 @@ def test_other_tool_groups_cannot_reach_a_project_kept_from_it(
     asyncio.run(general.require_allowed_path(None, os.path.join(allowed_temp_dir, "dump")))
 
 
+def test_the_other_case_of_a_project_kept_from_it_is_refused_too(
+    project_lists, allowed_temp_dir
+):
+    """Where the file system ignores case, SHOP.msm.project is the listed
+    shop.msm.project, and the allowed path keeps its spelling."""
+    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp_plugin.lib import general
+
+    shop = _make_project(allowed_temp_dir, "shop")
+    project_lists.add_project(shop, mcp_access=False)
+    recased = os.path.join(allowed_temp_dir, "SHOP.msm.project", "dump")
+    if not os.path.isdir(os.path.dirname(recased)):
+        pytest.skip("the file system tells the two spellings apart")
+
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        asyncio.run(general.require_allowed_path(None, recased))
+
+
 def test_a_sql_script_in_a_project_kept_from_it_is_not_read(project_lists, allowed_temp_dir):
     """db.execute_sql_script checks its paths itself, the same way."""
     from mcp.server.mcpserver.exceptions import ToolError

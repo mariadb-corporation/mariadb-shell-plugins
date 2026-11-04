@@ -329,8 +329,9 @@ like every other path.
 Each listed project also says whether LLMs may work on it (`mcp_access`). A server
 started without `--gui` - the one agents talk to - leaves the projects that say no
 out of `msm.list_projects` and refuses every path in or below them, in every tool
-group and whatever the allowed paths say; links are resolved first, so a link into
-such a project does not get around it. Only the `--gui` server of the VS Code
+group and whatever the allowed paths say; links are resolved first, and case is
+folded where the file system ignores it, so neither a link into such a project nor
+`SHOP.msm.project` for a listed `shop.msm.project` gets around it. Only the `--gui` server of the VS Code
 extension offers the `mcp_access` argument of `msm.create_project` and
 `msm.add_project` (and `new_mcp_access` of `msm.update_project`), so an agent can
 never grant itself access. A project added through the extension starts without

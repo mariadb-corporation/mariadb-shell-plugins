@@ -73,6 +73,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 # The file holding the shell user's list, in the plugin's data directory.
 PROJECTS_FILE_NAME = "projects.json"
@@ -285,9 +286,53 @@ def normalize_project_path(project_path) -> str:
 def _same_path(left, right) -> bool:
     """Returns whether two normalized paths name the same folder.
 
-    Case does not count on the platforms where the file system ignores it.
+    Case does not count where the file system ignores it (see
+    :func:`_folded`).
     """
-    return os.path.normcase(left) == os.path.normcase(right)
+    return _folded(left) == _folded(right)
+
+
+def _ignores_case(path: str) -> bool:
+    """Returns whether the file system holding a path ignores case.
+
+    The deepest folder of the path that exists is asked: a file system that
+    opens the same folder under its name in the other case ignores case. A
+    name without letters tells nothing, so the folder above it is asked; the
+    root of a disk, which has none, leaves it to the platform. This is the
+    disk's answer, not ``os.path.normcase``'s, which folds case on Windows
+    only: a macOS volume ignores case as well, by default.
+
+    Args:
+        path: An absolute path, with every link in it resolved.
+    """
+    folder = path
+    while True:
+        parent, name = os.path.split(folder)
+        if parent == folder or not name:
+            return sys.platform in ("darwin", "win32")
+        swapped = name.swapcase()
+        if os.path.lexists(folder) and swapped != name:
+            try:
+                return os.path.samefile(folder, os.path.join(parent, swapped))
+            except OSError:
+                return False
+        folder = parent
+
+
+def _folded(path: str) -> str:
+    """Returns a normalized path in the one spelling it compares by.
+
+    On a file system that ignores case, ``Shop.msm.project`` and
+    ``SHOP.msm.project`` open the same folder, and so does a name in
+    another Unicode normalization form on macOS: a comparison that kept the
+    spelling would let the one that is not listed past a listed project
+    that keeps to the VS Code extension. The path is folded there, and left
+    as written where the file system tells the two apart.
+    """
+    if _ignores_case(path):
+        return unicodedata.normalize("NFC", path).casefold()
+
+    return path
 
 
 def is_project_folder(project_path) -> bool:
@@ -515,7 +560,8 @@ def list_projects(owner=None, mcp_access_only=False) -> list:
 
 
 def _real_path(path: str) -> str:
-    """Returns a path with every link in it resolved, in its one case.
+    """Returns a path with every link in it resolved, folded where the file
+    system ignores case (see :func:`_folded`).
 
     An empty path is the current directory, as it is to every tool that
     takes the path on to the file system: a check that skipped it would let
@@ -527,7 +573,7 @@ def _real_path(path: str) -> str:
     if not isinstance(path, str):
         raise ValueError(f"A path has to be a string, not {path!r}.")
 
-    return os.path.normcase(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
+    return _folded(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
 
 
 def _is_within(path: str, folder: str) -> bool:

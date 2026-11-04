@@ -432,6 +432,28 @@ def test_a_link_does_not_get_around_a_restricted_project(data_path, tmp_path):
     assert projects.find_restricted_project(os.path.join(str(link), "msm.project.json")) == shop
 
 
+def test_the_other_case_of_a_name_is_the_same_folder_where_the_disk_says_so(
+    data_path, tmp_path
+):
+    """On a volume that ignores case, SHOP.msm.project opens the listed
+    Shop.msm.project: it is found restricted, and adding it changes the
+    listed entry instead of filing a second one with access."""
+    shop = _make_project(tmp_path, "Shop")
+    projects.add_project(shop, mcp_access=False)
+    recased = os.path.join(str(tmp_path), "SHOP.msm.project")
+    ignores_case = os.path.exists(recased)
+
+    found = projects.find_restricted_project(os.path.join(recased, "development"))
+    assert found == (shop if ignores_case else None)
+
+    projects.add_project(recased, caption="Shop")
+    (listed,) = projects.list_projects() if ignores_case else [None]
+    if ignores_case:
+        assert listed["project_path"] == shop
+        assert listed["mcp_access"] is False
+        assert listed["caption"] == "Shop"
+
+
 def test_the_shell_functions_set_mcp_access(data_path, tmp_path):
     shop = _make_project(tmp_path, "shop")
 
