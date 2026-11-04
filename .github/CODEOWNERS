@@ -1,0 +1,3 @@
+# Code owners: the devtools team is asked to review every pull request, and
+# the branch protection on main only lets its members merge one.
+*   @mariadb-corporation/devtools
