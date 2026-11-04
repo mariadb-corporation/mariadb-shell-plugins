@@ -1023,6 +1023,10 @@ async def require_allowed_path(ctx, path) -> None:
     performs is what
     :func:`mcp_plugin.lib.config.is_path_allowed` has already answered.
 
+    Outside GUI mode a path in or below a schema project whose entry in the
+    project list says no to MCP access (see :func:`require_project_access`)
+    is refused whether or not it is allowed, before anything is asked.
+
     In multi-tenant mode it is checked against the calling user's own allowed
     paths, and two things change. A path that is not allowed is refused
     outright, never offered to the client to trust: the client is the party
@@ -1043,6 +1047,7 @@ async def require_allowed_path(ctx, path) -> None:
 
     if is_multi_tenant():
         checked = os.getcwd() if path is None else path
+        require_project_access(ctx, checked)
         if config.is_path_allowed(checked, get_client_identity(ctx).user):
             return
 
@@ -1050,6 +1055,8 @@ async def require_allowed_path(ctx, path) -> None:
 
     if path is None:
         return
+
+    require_project_access(ctx, path)
 
     if config.is_path_allowed(path):
         return
@@ -1059,6 +1066,44 @@ async def require_allowed_path(ctx, path) -> None:
         return
 
     raise tool_error(path_not_allowed(path))
+
+
+def require_project_access(ctx, path) -> None:
+    """Refuses a path in a schema project LLMs may not work on.
+
+    Each entry of the user's MSM project list says whether an LLM may work on
+    the project (``mcpAccess``). A project the user keeps to the MariaDB VS
+    Code extension is refused to every server but the ``--gui`` one, which is
+    the extension's own, so this does nothing in GUI mode. The list is the
+    calling user's in multi-tenant mode, the shell user's otherwise.
+
+    Args:
+        ctx: The MCP request context, or ``None``.
+        path: The file or folder about to be worked on, or ``None``.
+
+    Returns:
+        None
+    """
+    if path is None or is_gui_mode():
+        return
+
+    try:
+        from msm_plugin.lib import projects
+    except ImportError:  # pragma: no cover - msm_plugin not installed
+        return
+
+    try:
+        project = projects.find_restricted_project(path, get_client_identity(ctx).user)
+    except ValueError:
+        # Not a path at all; the tool says so itself.
+        return
+
+    if project is not None:
+        raise tool_error(
+            f"Access to path '{path}' is not allowed: it is in the schema "
+            f"project '{project}', which its owner keeps to the MariaDB VS Code "
+            "extension. Only the owner can give MCP access to it."
+        )
 
 
 async def _confirm_trust_path(ctx, path) -> bool:

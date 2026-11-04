@@ -124,6 +124,7 @@ def test_a_project_is_added_listed_and_removed(data_path, tmp_path):
         "folder": "/Shop",
         "caption": "Prod",
         "color": "green",
+        "mcp_access": True,
         "schema_name": "shop",
         "exists": True,
     }
@@ -133,7 +134,9 @@ def test_a_project_is_added_listed_and_removed(data_path, tmp_path):
         content = json.load(list_file)
     assert content == {
         "version": 1,
-        "projects": {shop: {"folder": "/Shop", "caption": "Prod", "color": "green"}},
+        "projects": {
+            shop: {"folder": "/Shop", "caption": "Prod", "color": "green", "mcpAccess": True}
+        },
     }
 
     assert projects.remove_project(shop) == shop
@@ -152,7 +155,7 @@ def test_a_project_without_details_is_at_the_top_level(data_path, tmp_path):
     assert listed["caption"] == ""
     assert listed["color"] == ""
     with open(projects.get_projects_file_path()) as list_file:
-        assert json.load(list_file)["projects"] == {notes: {}}
+        assert json.load(list_file)["projects"] == {notes: {"mcpAccess": True}}
 
 
 def test_only_a_project_folder_can_be_added(data_path, tmp_path):
@@ -211,7 +214,7 @@ def test_an_update_moves_recaptions_and_clears(data_path, tmp_path):
     assert cleared["caption"] == ""
     assert cleared["color"] == ""
     with open(projects.get_projects_file_path()) as list_file:
-        assert json.load(list_file)["projects"] == {shop: {}}
+        assert json.load(list_file)["projects"] == {shop: {"mcpAccess": True}}
 
 
 def test_an_update_needs_a_listed_project(data_path, tmp_path):
@@ -342,3 +345,83 @@ def test_creating_a_project_can_leave_the_list_alone(data_path, tmp_path):
     )
 
     assert projects.list_projects() == []
+
+
+# --- MCP access -----------------------------------------------------------------
+
+
+def test_mcp_access_is_kept_and_defaults_by_caller(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+    notes = _make_project(tmp_path, "notes")
+
+    assert projects.add_project(shop, default_mcp_access=False)["mcp_access"] is False
+    assert projects.add_project(notes)["mcp_access"] is True
+    # Added again, a listed project keeps its setting unless told.
+    assert projects.add_project(shop, caption="Prod")["mcp_access"] is False
+    assert projects.add_project(shop, mcp_access=True)["mcp_access"] is True
+    assert projects.update_project(shop, mcp_access=False)["mcp_access"] is False
+    assert projects.update_project(shop, color="red")["mcp_access"] is False
+
+    with open(projects.get_projects_file_path()) as list_file:
+        stored = json.load(list_file)["projects"]
+    assert stored[shop] == {"caption": "Prod", "color": "red", "mcpAccess": False}
+    assert stored[notes] == {"mcpAccess": True}
+
+
+def test_mcp_access_has_to_be_a_bool(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+
+    with pytest.raises(ValueError, match="true or false"):
+        projects.add_project(shop, mcp_access="false")
+    assert projects.list_projects() == []
+
+
+def test_an_entry_from_before_the_setting_has_access(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+    with open(projects.get_projects_file_path(), "w") as list_file:
+        json.dump({"version": 1, "projects": {shop: {"folder": "/Shop"}}}, list_file)
+
+    assert projects.list_projects()[0]["mcp_access"] is True
+    assert projects.find_restricted_project(shop) is None
+
+
+def test_the_listing_can_leave_out_the_projects_without_access(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+    notes = _make_project(tmp_path, "notes")
+    projects.add_project(shop, mcp_access=False)
+    projects.add_project(notes)
+
+    assert _paths(projects.list_projects()) == sorted([shop, notes])
+    assert _paths(projects.list_projects(mcp_access_only=True)) == [notes]
+
+
+def test_a_restricted_project_is_found_for_any_path_in_it(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+    notes = _make_project(tmp_path, "notes")
+    projects.add_project(shop, mcp_access=False)
+    projects.add_project(notes)
+
+    assert projects.find_restricted_project(shop) == shop
+    assert projects.find_restricted_project(os.path.join(shop, "development", "x.sql")) == shop
+    assert projects.find_restricted_project(notes) is None
+    assert projects.find_restricted_project(str(tmp_path)) is None
+    # A sibling whose name starts the same is not inside it.
+    assert projects.find_restricted_project(shop + "2") is None
+    # Another owner's list is another list.
+    assert projects.find_restricted_project(shop, OWNER) is None
+
+
+def test_a_link_does_not_get_around_a_restricted_project(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+    projects.add_project(shop, mcp_access=False)
+    link = tmp_path / "shortcut"
+    os.symlink(shop, link)
+
+    assert projects.find_restricted_project(os.path.join(str(link), "msm.project.json")) == shop
+
+
+def test_the_shell_functions_set_mcp_access(data_path, tmp_path):
+    shop = _make_project(tmp_path, "shop")
+
+    assert management.add_project(shop)["mcp_access"] is True
+    assert management.update_project(shop, mcp_access=False)["mcp_access"] is False

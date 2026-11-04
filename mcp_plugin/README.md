@@ -322,7 +322,18 @@ moves, captions or colors it, each argument left out keeping what is there and `
 clearing it; `msm.remove_project` takes it off the list and leaves the folder alone.
 A project whose folder was moved or deleted stays listed with `exists` false, so it
 can be shown as missing and removed. Adding a project goes through the allowed paths
-like every other path. In [multi-tenant mode](#multi-tenant-mode) every user has a
+like every other path.
+
+Each listed project also says whether LLMs may work on it (`mcp_access`). A server
+started without `--gui` - the one agents talk to - leaves the projects that say no
+out of `msm.list_projects` and refuses every path in or below them, in every tool
+group and whatever the allowed paths say; links are resolved first, so a link into
+such a project does not get around it. Only the `--gui` server of the VS Code
+extension offers the `mcp_access` argument of `msm.create_project` and
+`msm.add_project` (and `new_mcp_access` of `msm.update_project`), so an agent can
+never grant itself access. A project added through the extension starts without
+access, one an agent adds or creates with it, and an entry written before the
+setting existed has it. In [multi-tenant mode](#multi-tenant-mode) every user has a
 list of their own (`projects/<mcp_user_id>.json`), deleted with the user.
 
 ### REST service tools (`rest`)

@@ -134,7 +134,7 @@ def list_projects() -> list[dict]:
     Returns:
         One dict per project, sorted by project path: project_path, the
         folder it is filed in ("/" for the top level), caption and color ("" for
-        none), the schema_name its settings file states (None where that cannot
+        none), mcp_access (whether LLMs may work on it), the schema_name its settings file states (None where that cannot
         be read) and whether the folder still exists as a project.
     """
     return lib.projects.list_projects()
@@ -157,6 +157,8 @@ def add_project(project_path: str, **kwargs) -> dict:
         caption (str): The caption to show the project with.
         color (str): The color to show the project in: red, orange, yellow,
             green, blue or purple.
+        mcp_access (bool): Whether LLMs may work on the project through an MCP
+            server started without --gui. Defaults to True for a new entry.
 
     Returns:
         The project as msm.listProjects reports it.
@@ -166,6 +168,7 @@ def add_project(project_path: str, **kwargs) -> dict:
         folder=kwargs.get("folder", None),
         caption=kwargs.get("caption", None),
         color=kwargs.get("color", None),
+        mcp_access=kwargs.get("mcp_access", None),
     )
 
 
@@ -185,6 +188,8 @@ def update_project(project_path: str, **kwargs) -> dict:
         caption (str): The caption to show the project with.
         color (str): The color to show the project in: red, orange, yellow,
             green, blue or purple.
+        mcp_access (bool): Whether LLMs may work on the project through an MCP
+            server started without --gui.
 
     Returns:
         The project as msm.listProjects reports it.
@@ -194,6 +199,7 @@ def update_project(project_path: str, **kwargs) -> dict:
         folder=kwargs.get("folder", None),
         caption=kwargs.get("caption", None),
         color=kwargs.get("color", None),
+        mcp_access=kwargs.get("mcp_access", None),
     )
 
 

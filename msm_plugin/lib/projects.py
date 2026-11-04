@@ -30,20 +30,29 @@ of the list (``/Shop/Production``, not a directory), and may carry a caption
 and a color, exactly as the MCP plugin keeps the details of a stored
 database connection, so the same client code shows both.
 
+Each project also says whether an LLM may work on it (``mcpAccess``): an MCP
+server started without ``--gui`` - the one agents talk to - refuses every path
+in or below a project that says no, and leaves it out of its listing, while
+the ``--gui`` server of the VS Code extension works on all of them. A project
+added through the extension starts with no access, one added anywhere else
+with access; an entry that does not say (written before the setting existed)
+has access, as every project had then.
+
 The list is a JSON file in the plugin's data directory::
 
     {
       "version": 1,
       "projects": {
         "/Users/ada/work/shop.msm.project": {
-          "folder": "/Shop", "caption": "Shop (prod)", "color": "green"
+          "folder": "/Shop", "caption": "Shop (prod)", "color": "green",
+          "mcpAccess": false
         },
-        "/Users/ada/work/notes.msm.project": {}
+        "/Users/ada/work/notes.msm.project": {"mcpAccess": true}
       }
     }
 
-keyed by the project folder's absolute path, each detail written only when
-set. ``projects.json`` is the shell user's own list. An MCP server serving
+keyed by the project folder's absolute path, each text detail written only
+when set and ``mcpAccess`` always. ``projects.json`` is the shell user's own list. An MCP server serving
 several users keeps one list per user, ``projects/<owner>.json``, where the
 owner is the user's ``mcp_user_id`` (a UUID): the ``owner`` argument of every
 function here selects it, and None is the shell user's list.
@@ -90,8 +99,13 @@ COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 # The longest caption a project can carry.
 MAX_CAPTION_LENGTH = 100
 
-# The details kept for a project, in the order they are reported.
+# The text details kept for a project, in the order they are reported.
 DETAIL_FIELDS = ("folder", "caption", "color")
+
+# The file's key for whether an LLM may work on the project, and what an entry
+# that does not say means: access, as every project had before the setting.
+MCP_ACCESS_FIELD = "mcpAccess"
+DEFAULT_MCP_ACCESS = True
 
 # An owner is a user's mcp_user_id: a canonical lower-case UUID, and nothing
 # else, since it becomes a file name.
@@ -301,13 +315,28 @@ def read_schema_name(project_path):
     return schema_name if isinstance(schema_name, str) else None
 
 
-def _normalized_details(folder, caption, color) -> dict:
+def normalize_mcp_access(mcp_access) -> bool:
+    """Returns whether an LLM may work on a project, as a bool.
+
+    Raises:
+        ValueError: If it is not a bool. ``"false"`` would be true, so a string
+            is refused rather than guessed at.
+    """
+    if not isinstance(mcp_access, bool):
+        raise ValueError(f"mcp_access must be true or false, not {mcp_access!r}.")
+
+    return mcp_access
+
+
+def _normalized_details(folder, caption, color, mcp_access=None) -> dict:
     """Returns the details a caller gave, normalized; None ones left out.
 
     Raises:
         ValueError: If a detail is not valid.
     """
     changes = {}
+    if mcp_access is not None:
+        changes[MCP_ACCESS_FIELD] = normalize_mcp_access(mcp_access)
     if folder is not None:
         changes["folder"] = normalize_folder(folder)
     if caption is not None:
@@ -399,14 +428,24 @@ def _read_file(path: str, strict: bool) -> dict:
         return {}
 
     return {
-        project_path: {
-            field: value
-            for field, value in entry.items()
-            if field in DETAIL_FIELDS and isinstance(value, str) and value
-        }
+        project_path: _kept_details(entry)
         for project_path, entry in content["projects"].items()
         if isinstance(project_path, str) and isinstance(entry, dict)
     }
+
+
+def _kept_details(entry: dict) -> dict:
+    """Returns the details of a stored entry worth keeping: the known ones,
+    the text ones only when set."""
+    kept = {
+        field: value
+        for field, value in entry.items()
+        if field in DETAIL_FIELDS and isinstance(value, str) and value
+    }
+    if isinstance(entry.get(MCP_ACCESS_FIELD), bool):
+        kept[MCP_ACCESS_FIELD] = entry[MCP_ACCESS_FIELD]
+
+    return kept
 
 
 def _write_file(path: str, entries: dict) -> None:
@@ -439,6 +478,7 @@ def _listed(project_path: str, entry: dict) -> dict:
         "folder": entry.get("folder") or ROOT_FOLDER,
         "caption": entry.get("caption", ""),
         "color": entry.get("color", ""),
+        "mcp_access": entry.get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS),
         "schema_name": read_schema_name(project_path),
         "exists": is_project_folder(project_path),
     }
@@ -447,27 +487,78 @@ def _listed(project_path: str, entry: dict) -> dict:
 # --- The list ------------------------------------------------------------------
 
 
-def list_projects(owner=None) -> list:
+def list_projects(owner=None, mcp_access_only=False) -> list:
     """Returns the projects of one list, with their details.
 
     Args:
         owner: The user whose list it is, or None for the shell user's own.
+        mcp_access_only: Whether to leave out the projects an LLM may not
+            work on, as the MCP server does for its agents.
 
     Returns:
         A list of dicts, sorted by project path: ``project_path``, the
         ``folder`` of the list it is filed in (:data:`ROOT_FOLDER` for the
-        top level), its ``caption`` and ``color`` (``""`` for none), the
+        top level), its ``caption`` and ``color`` (``""`` for none), whether
+        an LLM may work on it (``mcp_access``), the
         ``schema_name`` its settings file states (None where that cannot be
         read) and whether the folder still ``exists`` as a project - one
         that was moved or deleted stays listed, so a client can show it as
         missing and offer to remove it.
     """
     entries = _read_file(get_projects_file_path(owner), strict=False)
+    listed = [_listed(project_path, entries[project_path]) for project_path in sorted(entries)]
 
-    return [_listed(project_path, entries[project_path]) for project_path in sorted(entries)]
+    return [project for project in listed if project["mcp_access"] or not mcp_access_only]
 
 
-def add_project(project_path, folder=None, caption=None, color=None, owner=None) -> dict:
+def _real_path(path: str) -> str:
+    """Returns a path with every link in it resolved, in its one case."""
+    return os.path.normcase(os.path.realpath(normalize_project_path(path)))
+
+
+def _is_within(path: str, folder: str) -> bool:
+    """Returns whether a resolved path is a resolved folder or inside it."""
+    try:
+        return os.path.commonpath([path, folder]) == folder
+    except ValueError:
+        # Different drives on Windows.
+        return False
+
+
+def find_restricted_project(path, owner=None):
+    """Returns the listed project an LLM may not work on that holds a path.
+
+    Links are resolved on both sides, so a link pointing into a project does
+    not get around it, and neither does a project listed through one.
+
+    Args:
+        path: A file or folder; it need not exist.
+        owner: The user whose list it is, or None for the shell user's own.
+
+    Returns:
+        The project's path as listed, if ``path`` is it or is inside it and the
+        project says no to ``mcpAccess``; None otherwise.
+    """
+    resolved = _real_path(path)
+    entries = _read_file(get_projects_file_path(owner), strict=False)
+    for project_path, entry in entries.items():
+        if entry.get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS):
+            continue
+        if _is_within(resolved, _real_path(project_path)):
+            return project_path
+
+    return None
+
+
+def add_project(
+    project_path,
+    folder=None,
+    caption=None,
+    color=None,
+    owner=None,
+    mcp_access=None,
+    default_mcp_access=DEFAULT_MCP_ACCESS,
+) -> dict:
     """Adds an existing schema project to a list.
 
     Adding a project that is listed already changes the details given and
@@ -484,6 +575,10 @@ def add_project(project_path, folder=None, caption=None, color=None, owner=None)
         color: The color to show it in (see :func:`normalize_color`); None
             keeps, ``""`` clears.
         owner: The user whose list it is, or None for the shell user's own.
+        mcp_access: Whether an LLM may work on it; None keeps what a listed
+            project has, ``default_mcp_access`` for a new one.
+        default_mcp_access: What a new entry gets when ``mcp_access`` is None:
+            access, unless the caller is the VS Code extension's server.
 
     Returns:
         The project as :func:`list_projects` reports it.
@@ -493,16 +588,24 @@ def add_project(project_path, folder=None, caption=None, color=None, owner=None)
             valid. Nothing is written then.
     """
     project_path = normalize_project_path(project_path)
-    changes = _normalized_details(folder, caption, color)
+    changes = _normalized_details(folder, caption, color, mcp_access)
     if not is_project_folder(project_path):
         raise ValueError(
             f"The path {project_path} does not contain a MSM project folder."
         )
 
-    return _change(owner, project_path, changes, must_be_listed=False)
+    return _change(
+        owner,
+        project_path,
+        changes,
+        must_be_listed=False,
+        new_mcp_access=normalize_mcp_access(default_mcp_access),
+    )
 
 
-def update_project(project_path, folder=None, caption=None, color=None, owner=None) -> dict:
+def update_project(
+    project_path, folder=None, caption=None, color=None, owner=None, mcp_access=None
+) -> dict:
     """Changes how a listed project is filed and shown.
 
     Args:
@@ -513,6 +616,7 @@ def update_project(project_path, folder=None, caption=None, color=None, owner=No
         caption: The caption; None keeps, ``""`` clears.
         color: The color; None keeps, ``""`` clears.
         owner: The user whose list it is, or None for the shell user's own.
+        mcp_access: Whether an LLM may work on it; None keeps.
 
     Returns:
         The project as :func:`list_projects` reports it.
@@ -522,13 +626,16 @@ def update_project(project_path, folder=None, caption=None, color=None, owner=No
             Nothing is written then.
     """
     project_path = normalize_project_path(project_path)
-    changes = _normalized_details(folder, caption, color)
+    changes = _normalized_details(folder, caption, color, mcp_access)
 
     return _change(owner, project_path, changes, must_be_listed=True)
 
 
-def _change(owner, project_path, changes, must_be_listed) -> dict:
-    """Applies normalized detail changes to one project under the lock."""
+def _change(owner, project_path, changes, must_be_listed, new_mcp_access=None) -> dict:
+    """Applies normalized detail changes to one project under the lock.
+
+    ``new_mcp_access`` is what a project not listed yet gets unless the
+    changes say; every entry written says, so the file shows the setting."""
     path = get_projects_file_path(owner)
     with _file_lock(path):
         entries = _read_file(path, strict=True)
@@ -538,8 +645,18 @@ def _change(owner, project_path, changes, must_be_listed) -> dict:
 
         key = stored if stored is not None else project_path
         entry = dict(entries.get(key, {}))
+        entry.setdefault(
+            MCP_ACCESS_FIELD,
+            DEFAULT_MCP_ACCESS
+            if stored is not None or new_mcp_access is None
+            else new_mcp_access,
+        )
         entry.update(changes)
-        entry = {field: value for field, value in entry.items() if value}
+        entry = {
+            field: value
+            for field, value in entry.items()
+            if field == MCP_ACCESS_FIELD or value
+        }
         if stored is None or entry != entries[key]:
             entries[key] = entry
             _write_file(path, entries)

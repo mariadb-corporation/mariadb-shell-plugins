@@ -451,6 +451,7 @@ def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_te
         "folder": "/Shop",
         "caption": "",
         "color": "green",
+        "mcp_access": True,
         "schema_name": "shop",
         "exists": True,
     }
@@ -525,3 +526,157 @@ def test_a_bad_detail_is_refused_before_anything_is_written(project_lists, allow
         _call(tools, "msm.update_project", shop, new_folder="/Shop")
 
     assert _call(tools, "msm.list_projects") == []
+
+
+# --- MCP access to a project ----------------------------------------------------
+
+
+def _parameters(tools, name):
+    import inspect
+
+    return list(inspect.signature(tools[name]).parameters)
+
+
+def test_only_a_gui_server_offers_mcp_access(project_lists, gui_mode):
+    from mcp_plugin.lib import general
+
+    gui_tools = _msm_tools()
+    assert "mcp_access" in _parameters(gui_tools, "msm.create_project")
+    assert "mcp_access" in _parameters(gui_tools, "msm.add_project")
+    assert "new_mcp_access" in _parameters(gui_tools, "msm.update_project")
+    assert "mcp_access:" in gui_tools["msm.add_project"].__doc__
+
+    general.set_gui_mode(False)
+    tools = _msm_tools()
+    assert "mcp_access" not in _parameters(tools, "msm.create_project")
+    assert "mcp_access" not in _parameters(tools, "msm.add_project")
+    assert "new_mcp_access" not in _parameters(tools, "msm.update_project")
+    assert "mcp_access" not in tools["msm.add_project"].__doc__
+    assert "{gui_argument_doc}" not in tools["msm.update_project"].__doc__
+
+
+def test_a_gui_server_adds_projects_without_mcp_access(project_lists, gui_mode, tmp_path):
+    tools = _msm_tools()
+    shop = _make_project(str(tmp_path), "shop")
+    notes = _make_project(str(tmp_path), "notes")
+
+    assert _call(tools, "msm.add_project", shop)["mcp_access"] is False
+    assert _call(tools, "msm.add_project", notes, mcp_access=True)["mcp_access"] is True
+    assert _call(tools, "msm.update_project", notes, new_mcp_access=False)[
+        "mcp_access"
+    ] is False
+
+    created = _call(
+        tools,
+        "msm.create_project",
+        SCHEMA_NAME,
+        str(tmp_path),
+        copyright_holder=COPYRIGHT_HOLDER,
+    )
+    listed = {project["project_path"]: project for project in _call(tools, "msm.list_projects")}
+    assert listed[created]["mcp_access"] is False
+    assert len(listed) == 3, "a --gui server lists every project"
+
+
+def test_an_agent_adds_projects_with_mcp_access(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+
+    assert _call(tools, "msm.add_project", shop)["mcp_access"] is True
+    created = _call(
+        tools,
+        "msm.create_project",
+        SCHEMA_NAME,
+        allowed_temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+    )
+    assert all(project["mcp_access"] for project in _call(tools, "msm.list_projects"))
+    assert created in [project["project_path"] for project in _call(tools, "msm.list_projects")]
+
+
+def test_an_agent_cannot_reach_a_project_kept_from_it(project_lists, allowed_temp_dir):
+    """Listed without MCP access, a project is out of an agent's reach, even
+    inside an allowed path: not listed, not read, not changed, not removed."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+    notes = _make_project(allowed_temp_dir, "notes")
+    project_lists.add_project(shop, mcp_access=False)
+    project_lists.add_project(notes)
+
+    assert [project["project_path"] for project in _call(tools, "msm.list_projects")] == [notes]
+
+    refused = [
+        ("msm.get_project_information", (), {"schema_project_path": shop}),
+        ("msm.get_released_versions", (), {"schema_project_path": shop}),
+        ("msm.prepare_release", ("0.0.1",), {"schema_project_path": shop}),
+        ("msm.get_sql_content_from_section", (os.path.join(shop, "x.sql"), "100"), {}),
+        ("msm.add_project", (shop,), {"caption": "mine now"}),
+        ("msm.update_project", (shop,), {"new_folder": "/Taken"}),
+        ("msm.remove_project", (shop,), {}),
+    ]
+    for name, args, kwargs in refused:
+        with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+            _call(tools, name, *args, **kwargs)
+
+    [kept] = [p for p in project_lists.list_projects() if p["project_path"] == shop]
+    assert kept["caption"] == "" and kept["folder"] == "/" and kept["mcp_access"] is False
+
+
+def test_an_agent_cannot_replace_a_project_kept_from_it(project_lists, allowed_temp_dir):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, SCHEMA_NAME)
+    project_lists.add_project(shop, mcp_access=False)
+
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        _call(
+            tools,
+            "msm.create_project",
+            SCHEMA_NAME,
+            allowed_temp_dir,
+            copyright_holder=COPYRIGHT_HOLDER,
+            overwrite_existing=True,
+        )
+    assert os.path.isfile(os.path.join(shop, "msm.project.json"))
+
+
+def test_the_working_directory_counts_for_a_project_left_out(
+    project_lists, allowed_temp_dir, monkeypatch
+):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+    project_lists.add_project(shop, mcp_access=False)
+    monkeypatch.chdir(shop)
+
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        _call(tools, "msm.get_project_information")
+
+
+def test_other_tool_groups_cannot_reach_a_project_kept_from_it(
+    project_lists, allowed_temp_dir
+):
+    """The check sits in require_allowed_path, which every path argument of
+    every group goes through."""
+    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp_plugin.lib import general
+
+    shop = _make_project(allowed_temp_dir, "shop")
+    project_lists.add_project(shop, mcp_access=False)
+
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        asyncio.run(general.require_allowed_path(None, os.path.join(shop, "dump")))
+    asyncio.run(general.require_allowed_path(None, os.path.join(allowed_temp_dir, "dump")))
+
+
+def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):
+    tools = _msm_tools()
+    shop = _make_project(str(tmp_path), "shop")
+    project_lists.add_project(shop, mcp_access=False)
+
+    assert _call(tools, "msm.update_project", shop, new_caption="Mine")["caption"] == "Mine"
+    assert _call(tools, "msm.remove_project", shop) == shop

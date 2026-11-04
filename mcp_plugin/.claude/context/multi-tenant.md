@@ -87,7 +87,10 @@ authorization spec, Keycloak, the bundled Python and the SDK's auth hooks - are 
    it; the list files are msm_plugin's `projects/<mcp_user_id>.json`, see
    [siblings.md](siblings.md)): every msm tool checks its paths against the
    caller's own `allowedPaths`, refusing rather than eliciting, and
-   `msm.create_project` files the new project in the caller's list.
+   `msm.create_project` files the new project in the caller's list. A project
+   whose entry says no to `mcpAccess` is refused there too (there is no `--gui`
+   in multi-tenant mode, so a tenant's own entries all have access unless an
+   administrator edits the file).
    `MULTI_TENANT_FUNCTION_GROUPS = (db, msm)`, `SUPPORTED_SCOPES = ("mcp:db",
    "mcp:msm")`, `tenants.remove_user` deletes the user's list. **`sandbox`,
    `migrator`, `util`, `restd`, `sql`, `dba` and `rest` are not served**, and
