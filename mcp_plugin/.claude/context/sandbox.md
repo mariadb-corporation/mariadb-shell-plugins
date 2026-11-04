@@ -75,9 +75,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - **`sandbox.deploy` takes `mcp_access` in `--gui` mode ONLY** (default
   True = the shared `mcp` list, as before; False = the extension's own `gui`
   list, still in `/Sandboxes`). Without `--gui` it is not ADVERTISED:
-  `_register_deploy` trims it from the function's `__signature__` (which
+  `tool_registrar.register_with_gui_argument` (shared with the msm tools'
+  GUI-only arguments) trims it from the function's `__signature__` (which
   the SDK builds the schema from; `functools.wraps` in `tool_registrar`
-  carries it) and its `{mcp_access_doc}` line from the docstring, and the
+  carries it) and its `{gui_argument_doc}` line from the docstring, and the
   function keeps the parameter at its default - an agent's sandbox must be
   one the agent can open. `test_deploy_offers_mcp_access_only_with_gui`
   checks both advertised schemas over stdio. `sandbox.delete` now removes

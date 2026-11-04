@@ -316,12 +316,14 @@ the MariaDB VS Code extension can show them without searching the disk. A projec
 is listed by its folder's absolute path, filed in a folder of the list (`/Shop`,
 `/Shop/Production`; `/` is the top level) and shown with an optional caption and one
 of the six colors a stored connection can have (red, orange, yellow, green, blue,
-purple). `msm.create_project` adds the project it creates; `msm.add_project` adds an
+purple). `msm.create_project` adds the project it creates, filed and shown as its
+`folder`, `caption` and `color` arguments say; `msm.add_project` adds an
 existing one (and updates the details of one already listed); `msm.update_project`
 moves, captions or colors it, each argument left out keeping what is there and `""`
 clearing it; `msm.remove_project` takes it off the list and leaves the folder alone.
 A project whose folder was moved or deleted stays listed with `exists` false, so it
-can be shown as missing and removed. Adding a project goes through the allowed paths
+can be shown as missing and removed; the listing also gives each project's
+`development_version`. Adding a project goes through the allowed paths
 like every other path.
 
 Each listed project also says whether LLMs may work on it (`mcp_access`). A server

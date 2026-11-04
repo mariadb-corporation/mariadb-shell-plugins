@@ -1063,7 +1063,9 @@ def test_each_user_has_a_project_list_of_their_own(multi_tenant, project_lists, 
 
     added = asyncio.run(tools["msm.add_project"](_context(ada), shop, folder="/Mine"))
     assert added["folder"] == "/Mine"
-    assert asyncio.run(tools["msm.list_projects"](_context(ada))) == [added]
+    assert asyncio.run(tools["msm.list_projects"](_context(ada))) == [
+        {**added, "development_version": None}
+    ]
     assert asyncio.run(tools["msm.list_projects"](_context(bob))) == []
     with pytest.raises(ToolError, match="not in the project list"):
         asyncio.run(tools["msm.remove_project"](_context(bob), shop))

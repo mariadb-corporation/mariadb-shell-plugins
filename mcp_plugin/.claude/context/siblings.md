@@ -16,11 +16,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   (`test_the_project_colors_are_the_connection_colors` pins `projects.COLORS ==
   config.CONNECTION_COLORS`). mcp imports `lib.projects` DIRECTLY (like
   `lib.source`) because the owner has no place in the shell-facing wrappers;
-  `msm_functions._project_list_owner(ctx)` is the client identity's user. Tools:
+  the owner is the client identity's user (`general.get_client_identity(ctx).user`). Tools:
   `msm.list_projects` (`project_path`, `folder`, `caption`, `color`, `schema_name`,
-  `exists`), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
+  `exists`, plus `development_version` read by the tool, null where unreadable), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
   (`new_folder`/`new_caption`/`new_color`, left out keeps, `""` clears),
-  `msm.remove_project` (list only, disk untouched); `msm.create_project` calls the
+  `msm.remove_project` (list only, disk untouched); `msm.create_project` (with `folder`/`caption`/`color`,
+  checked by `projects.normalize_details` before the folder is made) calls the
   wrapper with `add_to_project_list=False` and adds the result to the CALLER's list
   itself, so a tenant's project never lands in the server's own list. Registered in
   every mode, not gated on `--gui` (no secret in them, and multi-tenant mode refuses
@@ -33,7 +34,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and
   True for an entry without it (pre-setting files). Enforcement is one place:
-  `general.require_project_access(ctx, path)`, called from `require_allowed_path`
+  `general.project_refusal(path, user)` (`require_project_access(ctx, path)` raises
+  it; `path_refusal` adds the allow-list for `db.execute_sql_script`'s `file_path`,
+  `source_dir` and SOURCE includes, which check paths without `require_allowed_path`), called from `require_allowed_path`
   outside GUI mode (so EVERY group's path arguments are covered, also in
   multi-tenant mode where None is checked as the cwd), plus directly by
   `msm.update_project` / `msm.remove_project` (no allowed-path check there: a
@@ -42,7 +45,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   with `overwrite_existing` checks the folder it would replace. It asks
   `projects.find_restricted_project(path, owner)`, which compares `realpath`s with
   `commonpath`. The argument is hidden outside `--gui` by
-  `_register_with_gui_argument` (signature + `{gui_argument_doc}` placeholder at
+  `tool_registrar.register_with_gui_argument`, shared with `sandbox.deploy` (signature + `{gui_argument_doc}` placeholder at
   column 0, as `sandbox.deploy` does), not refused. Tests: the "MCP access to a
   project" block of `test_msm.py`, the "MCP access" block of `test_projects.py`.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass

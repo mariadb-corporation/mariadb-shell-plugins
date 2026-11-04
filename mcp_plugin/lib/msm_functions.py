@@ -43,80 +43,44 @@ starts without access, one an agent adds with it.
 
 # cSpell:ignore mysqlsh MariaDB mcpserver
 
-import inspect
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_registrar
 
 
-def _project_list_owner(ctx):
-    """Returns whose project list a request works on: the user's, or None."""
-    return general.get_client_identity(ctx).user
-
-
-# The arguments only a --gui server advertises, by tool, with the lines that
-# describe them; each tool's docstring has a placeholder line for them.
-_GUI_ARGUMENT_DOCS = {
-    "msm.create_project": """            mcp_access: Whether LLMs may work on the project through an MCP
+# The arguments only a --gui server offers, by tool, with the lines that
+# describe them (see tool_registrar.register_with_gui_argument). Whether LLMs
+# may work on a project is the user's call, made in the VS Code extension: a
+# server without --gui serves the agents the setting restricts.
+_GUI_ARGUMENTS = {
+    "msm.create_project": (
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
                 server started without --gui. Defaults to False: the
                 project stays the extension's until the user says otherwise.
 """,
-    "msm.add_project": """            mcp_access: Whether LLMs may work on the project through an MCP
+    ),
+    "msm.add_project": (
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
                 server started without --gui. Left out, a listed project
                 keeps its setting and a new one gets none.
 """,
-    "msm.update_project": """            new_mcp_access: Whether LLMs may work on the project through an
+    ),
+    "msm.update_project": (
+        "new_mcp_access",
+        """            new_mcp_access: Whether LLMs may work on the project through an
                 MCP server started without --gui. Left out, it keeps its
                 setting.
 """,
-}
-
-_GUI_ARGUMENTS = {
-    "msm.create_project": "mcp_access",
-    "msm.add_project": "mcp_access",
-    "msm.update_project": "new_mcp_access",
+    ),
 }
 
 
 def _register_with_gui_argument(tool, name, function) -> None:
-    """Registers a tool whose MCP access argument only a --gui server offers.
-
-    Whether LLMs may work on a project is the user's call, made in the VS Code
-    extension: a server without --gui serves the agents the setting restricts,
-    so the argument is taken out of the signature the SDK builds the schema
-    from - and its lines out of the description - rather than advertised and
-    refused, as sandbox.deploy does with its own. The function keeps the
-    parameter at its default.
-
-    Args:
-        tool: The tool decorator factory of the server.
-        name (str): The tool's name.
-        function: The tool's implementation.
-
-    Returns:
-        None
-    """
-    argument = _GUI_ARGUMENTS[name]
-    # The placeholder line sits at column 0, so the compiler's docstring
-    # dedent found nothing to strip; cleandoc does it once it is filled.
-    if general.is_gui_mode():
-        function.__doc__ = function.__doc__.replace(
-            "{gui_argument_doc}\n", _GUI_ARGUMENT_DOCS[name]
-        )
-    else:
-        function.__doc__ = function.__doc__.replace("{gui_argument_doc}\n", "")
-        signature = inspect.signature(function)
-        function.__signature__ = signature.replace(
-            parameters=[
-                parameter
-                for parameter in signature.parameters.values()
-                if parameter.name != argument
-            ]
-        )
-    function.__doc__ = inspect.cleandoc(function.__doc__)
-
-    tool(name=name)(function)
+    """Registers an msm tool with its argument only a --gui server offers."""
+    register_with_gui_argument(tool, name, function, *_GUI_ARGUMENTS[name])
 
 
 def register_msm_tools(server, function_groups=()) -> None:
@@ -168,6 +132,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        folder: Optional[str] = None,
+        caption: Optional[str] = None,
+        color: Optional[str] = None,
         mcp_access: bool = False,
     ) -> Optional[str]:
         """Creates a new database schema project folder.
@@ -185,11 +152,16 @@ def register_msm_tools(server, function_groups=()) -> None:
                 yearOfCreation, an optional yearOfLastUpdate and a tracksUpdates
                 flag marking the holders whose year follows the current one.
                 When given, it takes the place of copyright_holder.
+            folder: The folder of the project list to file it in, such as
+                "/Shop". Defaults to the top level.
+            caption: The caption to show it with in the project list.
+            color: The color to show it in (red, orange, yellow, green, blue
+                or purple).
 {gui_argument_doc}
 
         Returns:
             The path of the created project folder. The project is added to
-            the project list (see msm.list_projects) at the top level.
+            the project list (see msm.list_projects).
         """
         await general.require_allowed_path(ctx, target_path)
         if overwrite_existing:
@@ -202,9 +174,11 @@ def register_msm_tools(server, function_groups=()) -> None:
                     + ".msm.project",
                 ),
             )
+        # Checked before the folder is made, which a bad one would outlive.
+        msm_projects.normalize_details(folder, caption, color)
         # Read before anything else: the caller's list is where the project
         # goes, not the shell user's, which the wrapper would add it to.
-        owner = _project_list_owner(ctx)
+        owner = general.get_client_identity(ctx).user
         project_path = msm.create_new_project_folder(
             schema_name=schema_name,
             target_path=target_path,
@@ -222,6 +196,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         # open to it, or it could not go on with what it made.
         msm_projects.add_project(
             project_path,
+            folder,
+            caption,
+            color,
             owner=owner,
             mcp_access=mcp_access if general.is_gui_mode() else True,
         )
@@ -250,11 +227,27 @@ def register_msm_tools(server, function_groups=()) -> None:
             its settings file states (null where that cannot be read) and
             whether the folder still "exists" as a project - one that was
             moved or deleted stays listed, so it can be shown as missing and
-            removed.
+            removed - and its "development_version" (null where it cannot be
+            read).
         """
-        return msm_projects.list_projects(
-            _project_list_owner(ctx), mcp_access_only=not general.is_gui_mode()
+        listed = msm_projects.list_projects(
+            general.get_client_identity(ctx).user, mcp_access_only=not general.is_gui_mode()
         )
+        for project in listed:
+            project["development_version"] = _development_version(project)
+        return listed
+
+    def _development_version(project) -> Optional[str]:
+        """Returns a listed project's development version, or None."""
+        if not project["exists"]:
+            return None
+        try:
+            return msm_management.get_schema_development_version(
+                schema_project_path=project["project_path"]
+            )
+        except Exception:  # pylint: disable=broad-except
+            # A broken project is still listed; its row shows no version.
+            return None
 
     async def add_project(
         ctx: Context,
@@ -292,7 +285,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             folder,
             caption,
             color,
-            owner=_project_list_owner(ctx),
+            owner=general.get_client_identity(ctx).user,
             mcp_access=mcp_access if gui else None,
             default_mcp_access=not gui,
         )
@@ -330,7 +323,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             new_folder,
             new_caption,
             new_color,
-            owner=_project_list_owner(ctx),
+            owner=general.get_client_identity(ctx).user,
             mcp_access=new_mcp_access if general.is_gui_mode() else None,
         )
 
@@ -349,7 +342,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             The project path as it was listed.
         """
         general.require_project_access(ctx, project_path)
-        return msm_projects.remove_project(project_path, owner=_project_list_owner(ctx))
+        return msm_projects.remove_project(project_path, owner=general.get_client_identity(ctx).user)
 
     @tool(name="msm.get_project_information")
     async def get_project_information(

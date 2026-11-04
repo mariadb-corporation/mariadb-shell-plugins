@@ -328,7 +328,7 @@ def normalize_mcp_access(mcp_access) -> bool:
     return mcp_access
 
 
-def _normalized_details(folder, caption, color, mcp_access=None) -> dict:
+def normalize_details(folder, caption, color, mcp_access=None) -> dict:
     """Returns the details a caller gave, normalized; None ones left out.
 
     Raises:
@@ -506,9 +506,12 @@ def list_projects(owner=None, mcp_access_only=False) -> list:
         missing and offer to remove it.
     """
     entries = _read_file(get_projects_file_path(owner), strict=False)
-    listed = [_listed(project_path, entries[project_path]) for project_path in sorted(entries)]
-
-    return [project for project in listed if project["mcp_access"] or not mcp_access_only]
+    return [
+        _listed(project_path, entries[project_path])
+        for project_path in sorted(entries)
+        if not mcp_access_only
+        or entries[project_path].get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS)
+    ]
 
 
 def _real_path(path: str) -> str:
@@ -539,11 +542,15 @@ def find_restricted_project(path, owner=None):
         The project's path as listed, if ``path`` is it or is inside it and the
         project says no to ``mcpAccess``; None otherwise.
     """
-    resolved = _real_path(path)
     entries = _read_file(get_projects_file_path(owner), strict=False)
-    for project_path, entry in entries.items():
-        if entry.get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS):
-            continue
+    restricted = [
+        project_path
+        for project_path, entry in entries.items()
+        if not entry.get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS)
+    ]
+    # Most lists restrict nothing, so the path is only resolved for some.
+    resolved = _real_path(path) if restricted else None
+    for project_path in restricted:
         if _is_within(resolved, _real_path(project_path)):
             return project_path
 
@@ -588,7 +595,7 @@ def add_project(
             valid. Nothing is written then.
     """
     project_path = normalize_project_path(project_path)
-    changes = _normalized_details(folder, caption, color, mcp_access)
+    changes = normalize_details(folder, caption, color, mcp_access)
     if not is_project_folder(project_path):
         raise ValueError(
             f"The path {project_path} does not contain a MSM project folder."
@@ -626,7 +633,7 @@ def update_project(
             Nothing is written then.
     """
     project_path = normalize_project_path(project_path)
-    changes = _normalized_details(folder, caption, color, mcp_access)
+    changes = normalize_details(folder, caption, color, mcp_access)
 
     return _change(owner, project_path, changes, must_be_listed=True)
 
@@ -647,16 +654,11 @@ def _change(owner, project_path, changes, must_be_listed, new_mcp_access=None) -
         entry = dict(entries.get(key, {}))
         entry.setdefault(
             MCP_ACCESS_FIELD,
-            DEFAULT_MCP_ACCESS
-            if stored is not None or new_mcp_access is None
-            else new_mcp_access,
+            new_mcp_access if stored is None and new_mcp_access is not None
+            else DEFAULT_MCP_ACCESS,
         )
         entry.update(changes)
-        entry = {
-            field: value
-            for field, value in entry.items()
-            if field == MCP_ACCESS_FIELD or value
-        }
+        entry = _kept_details(entry)
         if stored is None or entry != entries[key]:
             entries[key] = entry
             _write_file(path, entries)

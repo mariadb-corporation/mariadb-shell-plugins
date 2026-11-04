@@ -1071,11 +1071,7 @@ async def require_allowed_path(ctx, path) -> None:
 def require_project_access(ctx, path) -> None:
     """Refuses a path in a schema project LLMs may not work on.
 
-    Each entry of the user's MSM project list says whether an LLM may work on
-    the project (``mcpAccess``). A project the user keeps to the MariaDB VS
-    Code extension is refused to every server but the ``--gui`` one, which is
-    the extension's own, so this does nothing in GUI mode. The list is the
-    calling user's in multi-tenant mode, the shell user's otherwise.
+    See :func:`project_refusal`; the list is the calling user's.
 
     Args:
         ctx: The MCP request context, or ``None``.
@@ -1084,26 +1080,73 @@ def require_project_access(ctx, path) -> None:
     Returns:
         None
     """
+    refusal = project_refusal(path, get_client_identity(ctx).user)
+    if refusal is not None:
+        raise tool_error(refusal)
+
+
+def project_refusal(path, user=None):
+    """Says why a path in a schema project LLMs may not work on is refused.
+
+    Each entry of the user's MSM project list says whether an LLM may work on
+    the project (``mcpAccess``). A project the user keeps to the MariaDB VS
+    Code extension is refused to every server but the ``--gui`` one, which is
+    the extension's own, so this refuses nothing in GUI mode. The list is the
+    given user's in multi-tenant mode, the shell user's otherwise.
+
+    Args:
+        path: The file or folder about to be worked on, or ``None``.
+        user: The calling user, in multi-tenant mode.
+
+    Returns:
+        The refusal, or ``None`` where the path may be worked on.
+    """
     if path is None or is_gui_mode():
-        return
+        return None
 
     try:
         from msm_plugin.lib import projects
     except ImportError:  # pragma: no cover - msm_plugin not installed
-        return
+        return None
 
     try:
-        project = projects.find_restricted_project(path, get_client_identity(ctx).user)
+        project = projects.find_restricted_project(path, user)
     except ValueError:
         # Not a path at all; the tool says so itself.
-        return
+        return None
 
-    if project is not None:
-        raise tool_error(
-            f"Access to path '{path}' is not allowed: it is in the schema "
-            f"project '{project}', which its owner keeps to the MariaDB VS Code "
-            "extension. Only the owner can give MCP access to it."
-        )
+    if project is None:
+        return None
+    return (
+        f"Access to path '{path}' is not allowed: it is in the schema "
+        f"project '{project}', which its owner keeps to the MariaDB VS Code "
+        "extension. Only the owner can give MCP access to it."
+    )
+
+
+def path_refusal(path, user=None):
+    """Says why a path a tool reads without asking the user is refused.
+
+    For the tools that check a path themselves rather than through
+    :func:`require_allowed_path`: refused where it is in a project LLMs may
+    not work on (:func:`project_refusal`) or not allowed.
+
+    Args:
+        path: The file or folder about to be read.
+        user: The calling user, in multi-tenant mode.
+
+    Returns:
+        The refusal, or ``None`` where the path may be read.
+    """
+    # Imported lazily to avoid a circular import (config imports general).
+    from mcp_plugin.lib import config
+
+    refusal = project_refusal(path, user)
+    if refusal is not None:
+        return refusal
+    if not config.is_path_allowed(path, user):
+        return path_not_allowed(path)
+    return None
 
 
 async def _confirm_trust_path(ctx, path) -> bool:

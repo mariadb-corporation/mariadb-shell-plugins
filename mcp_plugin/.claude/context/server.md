@@ -182,9 +182,9 @@ session machinery the db tools sit on is in
   `"json"`) stay.
 - **The tool listing is a per-request cost** (2026-10-21, PR #69, merged 2026-10-23): with every group served
   it was 82k characters, about 20k tokens, and is 59k after the trim of that day:
-  titles gone (5.4k), the null alternatives gone (5.8k), `sandbox.deploy` dedented (its `{mcp_access_doc}` placeholder
+  titles gone (5.4k), the null alternatives gone (5.8k), `sandbox.deploy` dedented (its `{gui_argument_doc}` placeholder
   at column 0 had defeated the compiler's docstring dedent, so every line kept 8
-  spaces; `_register_deploy` now runs `inspect.cleandoc` after filling it), and the
+  spaces; `register_with_gui_argument` now runs `inspect.cleandoc` after filling it), and the
   long descriptions cut by the rule "keep what changes the agent's choice or prevents
   a wrong call, drop repeated explanation, justification of defaults and detail an
   error message would give". `db.execute_sql_script` says "as db.execute_sql" instead

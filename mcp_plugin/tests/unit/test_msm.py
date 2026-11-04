@@ -455,7 +455,7 @@ def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_te
         "schema_name": "shop",
         "exists": True,
     }
-    assert _call(tools, "msm.list_projects") == [added]
+    assert _call(tools, "msm.list_projects") == [{**added, "development_version": None}]
 
     moved = _call(
         tools, "msm.update_project", shop, new_folder="/Archive", new_caption="Old"
@@ -484,6 +484,23 @@ def test_a_created_project_is_listed(project_lists, allowed_temp_dir):
     assert listed["project_path"] == created
     assert listed["folder"] == "/"
     assert listed["schema_name"] == SCHEMA_NAME
+    assert listed["development_version"] == "0.0.1"
+
+
+def test_a_project_is_created_into_its_place_in_the_list(project_lists, allowed_temp_dir):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    with pytest.raises(ToolError, match="not a color"):
+        _call(tools, "msm.create_project", SCHEMA_NAME, allowed_temp_dir,
+              copyright_holder=COPYRIGHT_HOLDER, color="teal")
+    # Refused before the folder was made.
+    assert os.listdir(allowed_temp_dir) == []
+
+    _call(tools, "msm.create_project", SCHEMA_NAME, allowed_temp_dir,
+          copyright_holder=COPYRIGHT_HOLDER, folder="Shop", caption="Shop", color="blue")
+    [listed] = _call(tools, "msm.list_projects")
+    assert (listed["folder"], listed["caption"], listed["color"]) == ("/Shop", "Shop", "blue")
 
 
 def test_adding_a_project_needs_an_allowed_path(project_lists, clean_config, tmp_path):
@@ -671,6 +688,26 @@ def test_other_tool_groups_cannot_reach_a_project_kept_from_it(
     with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
         asyncio.run(general.require_allowed_path(None, os.path.join(shop, "dump")))
     asyncio.run(general.require_allowed_path(None, os.path.join(allowed_temp_dir, "dump")))
+
+
+def test_a_sql_script_in_a_project_kept_from_it_is_not_read(project_lists, allowed_temp_dir):
+    """db.execute_sql_script checks its paths itself, the same way."""
+    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp_plugin.lib import db_functions
+
+    shop = _make_project(allowed_temp_dir, "shop")
+    script = os.path.join(shop, "script.sql")
+    with open(script, "w", encoding="utf-8") as script_file:
+        script_file.write("SELECT 1;")
+    project_lists.add_project(shop, mcp_access=False)
+
+    for text, file_path, source_dir in ((None, script, None), ("SELECT 1;", None, shop)):
+        with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+            db_functions.read_sql_input(
+                None, text, file_path, source_dir, "sql_script", "inline"
+            )
+    with pytest.raises(ValueError, match="keeps to the MariaDB VS Code extension"):
+        db_functions.allowed_include(script, None)
 
 
 def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):

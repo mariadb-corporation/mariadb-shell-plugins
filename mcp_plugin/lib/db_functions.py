@@ -2373,8 +2373,9 @@ def read_sql_input(
                 f"'source_dir' goes with '{text_name}': the SOURCE paths of a "
                 "file are relative to the file's own folder."
             )
-        if not config.is_path_allowed(file_path, user):
-            raise tool_error(general.path_not_allowed(file_path))
+        refusal = general.path_refusal(file_path, user)
+        if refusal is not None:
+            raise tool_error(refusal)
         with open(file_path, "r", encoding="utf-8") as script_file:
             text = script_file.read()
         # As msm takes them relative to development/.
@@ -2383,8 +2384,9 @@ def read_sql_input(
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     if source_dir is not None:
-        if not config.is_path_allowed(source_dir, user):
-            raise tool_error(general.path_not_allowed(source_dir))
+        refusal = general.path_refusal(source_dir, user)
+        if refusal is not None:
+            raise tool_error(refusal)
         if not os.path.isdir(source_dir):
             raise tool_error(f"'source_dir' {source_dir!r} is no folder.")
         source_dir = os.path.abspath(source_dir)
@@ -2408,8 +2410,9 @@ def allowed_include(path: str, user) -> str:
         ValueError: For a path that may not be read.
     """
     resolved = os.path.realpath(path)
-    if not config.is_path_allowed(resolved, user):
-        raise ValueError(general.path_not_allowed(resolved))
+    refusal = general.path_refusal(resolved, user)
+    if refusal is not None:
+        raise ValueError(refusal)
     return resolved
 
 
