@@ -20,7 +20,7 @@ command line a utility is run with and the parsing of what the shell prints,
 on lines recorded from a real shell. A fake shell then crashes, to show that a
 load is resumed and nothing else is. The tools finally run end to end over
 stdio against the shared sandbox: a dump, a load into another schema, an
-export and an import, each followed with util.get_task, a cancelled dump, and
+export and an import, each followed with task.get, a cancelled dump, and
 the refusals.
 """
 # cSpell:ignore mysqlsh thds
@@ -38,10 +38,19 @@ import time
 import pytest
 
 import helpers
+from mysqlsh import task_manager
+
 from mcp_plugin.lib import general, tasks, util_functions, util_process
 
 CLIENT = general.ClientIdentity(None, None)
 OTHER = general.ClientIdentity("10.0.0.2", "session-2")
+
+
+def _create(kind, title, client=CLIENT, connection_id=None, max_running=tasks.MAX_RUNNING_UTIL_TASKS):
+    """A util task, as a util tool creates one."""
+    return tasks.create(
+        tasks.TASK_TYPE_UTIL, kind, title, client, max_running, {"connection_id": connection_id}
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +61,9 @@ def no_tasks():
     tasks.clear()
 
 
-# --- the registry, without a server --------------------------------------
+# --- the tasks of a client ---------------------------------------------------
+# The task registry itself is the shell's (mysqlsh.task_manager), tested there;
+# what the MCP side adds is that a task is its client's.
 
 
 def _finished(task, timeout=5):
@@ -62,100 +73,27 @@ def _finished(task, timeout=5):
     return task.status
 
 
-def test_a_task_records_its_events():
-    task = tasks.create("dump_schemas", "Dump shop", CLIENT, "conn-1")
-
-    def work(task):
-        task.on_event({"type": "stageStarted", "stage": "Writing DDL"})
-        task.on_event({"type": "progress", "stage": "Writing DDL", "current": 1, "total": 4, "totalKnown": True})
-        task.on_event({"type": "message", "level": "status", "text": "Writing DDL..."})
-        task.on_event({"type": "stageFinished", "stage": "Writing DDL", "seconds": 0.5})
-        task.on_event({"type": "stageStarted", "stage": "Dumping data"})
-        task.on_event({
-            "type": "progress", "stage": "Dumping data", "current": 50, "total": 200,
-            "throughput": 1000, "etaSeconds": 3, "items": "rows", "totalIsApproximate": True,
-        })
-        return {"output_url": "/tmp/x"}
-
-    task.start(work)
-    assert _finished(task) == tasks.COMPLETED
-
-    snapshot = task.snapshot()
-    assert snapshot["kind"] == "dump_schemas"
-    assert snapshot["connection_id"] == "conn-1"
-    assert snapshot["result"] == {"output_url": "/tmp/x"}
-    assert snapshot["error"] is None
-    assert snapshot["stage"] == "Dumping data"
-    assert snapshot["progress"] == {
-        "current": 50, "total": 200, "throughput": 1000, "eta_seconds": 3,
-        "items": "rows", "total_is_approximate": True, "percent": 25.0,
-    }
-    # the stage still running when the work returned ends with the task
-    assert snapshot["stages"] == [
-        {"name": "Writing DDL", "status": "completed", "seconds": 0.5},
-        {"name": "Dumping data", "status": "completed", "seconds": None},
-    ]
-    assert [m["text"] for m in snapshot["messages"]] == ["Writing DDL..."]
-    assert snapshot["next_since"] == 1
-    assert snapshot["started_at"] and snapshot["finished_at"]
+@pytest.fixture
+def release():
+    """An event the running tasks of a test wait on, set when it ends."""
+    event = threading.Event()
+    yield event
+    event.set()
 
 
-def test_messages_since_and_dropped(monkeypatch):
-    monkeypatch.setattr(tasks, "MAX_MESSAGES", 3)
-    task = tasks.create("load_dump", "Load", CLIENT)
-    # the deque was made with the default size: make one of the patched size
-    task.messages = tasks.collections.deque(maxlen=3)
-    for index in range(5):
-        task.on_event({"type": "message", "level": "info", "text": f"line {index}"})
-
-    snapshot = task.snapshot(1)
-    assert [m["text"] for m in snapshot["messages"]] == ["line 2", "line 3", "line 4"]
-    # line 1 was dropped before the caller could read it
-    assert snapshot["messages_dropped"] == 1
-    assert task.snapshot(4)["messages"][0]["seq"] == 5
-    assert task.snapshot(5)["messages"] == []
+def _started(release, kind, title, client=CLIENT, max_running=tasks.MAX_RUNNING_UTIL_TASKS):
+    """A util task that runs - holds its client's slot - until ``release`` is set."""
+    task = _create(kind, title, client, max_running=max_running)
+    tasks.start(task, lambda t: release.wait(5))
+    return task
 
 
-def test_a_failed_task_reports_its_error():
-    task = tasks.create("load_dump", "Load", CLIENT)
+def test_a_task_belongs_to_its_client(release):
+    # a task created and never started is nobody's: it is listed from its start
+    _create("dump_schemas", "Never started")
+    assert tasks.list_for(CLIENT) == []
 
-    def work(task):
-        raise RuntimeError("Dump directory not found\n")
-
-    task.start(work)
-    assert _finished(task) == tasks.FAILED
-    snapshot = task.snapshot()
-    assert snapshot["error"] == "Dump directory not found"
-    assert snapshot["messages"][-1] == {**snapshot["messages"][-1], "level": "error", "text": "Dump directory not found"}
-
-
-def test_cancel_reaches_the_running_work():
-    task = tasks.create("dump_instance", "Dump", CLIENT)
-    started = threading.Event()
-    stop = threading.Event()
-
-    def work(task):
-        task.set_canceller(stop.set)
-        task.on_event({"type": "stageStarted", "stage": "Dumping data"})
-        started.set()
-        assert stop.wait(5)
-        raise RuntimeError("Interrupted by user")
-
-    task.start(work)
-    assert started.wait(5)
-    task.cancel()
-    assert _finished(task) == tasks.CANCELLED
-    snapshot = task.snapshot()
-    assert snapshot["cancel_requested"] is True
-    assert snapshot["stages"][0]["status"] == "cancelled"
-    assert snapshot["messages"][-1]["text"] == "The task was cancelled."
-    # cancelling a finished task changes nothing
-    task.cancel()
-    assert task.status == tasks.CANCELLED
-
-
-def test_a_task_belongs_to_its_client():
-    task = tasks.create("dump_schemas", "Dump", CLIENT)
+    task = _started(release, "dump_schemas", "Dump")
     assert tasks.get(task.id, CLIENT) is task
     with pytest.raises(Exception, match="There is no task with the id"):
         tasks.get(task.id, OTHER)
@@ -165,95 +103,27 @@ def test_a_task_belongs_to_its_client():
     assert tasks.list_for(CLIENT) == [task]
 
 
-def test_running_tasks_are_limited_per_client(monkeypatch):
-    monkeypatch.setattr(tasks, "MAX_RUNNING_TASKS_PER_CLIENT", 2)
-    tasks.create("a", "A", CLIENT)
-    tasks.create("b", "B", CLIENT)
-    with pytest.raises(Exception, match="Already 2 tasks are running"):
-        tasks.create("c", "C", CLIENT)
+def test_running_tasks_are_limited_per_client(release):
+    _started(release, "a", "A", max_running=2)
+    _started(release, "b", "B", max_running=2)
+    with pytest.raises(Exception, match="Already 2 util tasks are running"):
+        _create("c", "C", max_running=2)
     # another client has its own allowance
-    tasks.create("d", "D", OTHER)
+    _started(release, "d", "D", OTHER, max_running=2)
 
 
-def test_finished_tasks_are_pruned(monkeypatch):
-    monkeypatch.setattr(tasks, "MAX_FINISHED_TASKS", 2)
-    done = []
-    for index in range(3):
-        task = tasks.create("t", f"T{index}", CLIENT)
-        task.start(lambda task: None)
-        _finished(task)
-        done.append(task)
-    # the oldest of the three finished ones is gone
-    assert [task.title for task in tasks.list_for(CLIENT)] == ["T1", "T2"]
+def test_a_task_that_cannot_start_is_a_tool_error(monkeypatch):
+    import threading
 
-    monkeypatch.setattr(tasks, "FINISHED_TASK_LIFETIME", -1)
-    assert tasks.list_for(CLIENT) == []
+    def no_thread(self):
+        raise RuntimeError("can't start new thread")
 
-
-def test_a_waiting_caller_wakes_on_a_change():
-    task = tasks.create("t", "T", CLIENT)
-    version = task.version
-
-    def later():
-        time.sleep(0.2)
-        task.on_event({"type": "message", "level": "info", "text": "hello"})
-
-    threading.Thread(target=later).start()
-    started = time.monotonic()
-    task.wait_for_change(version, 5)
-    assert time.monotonic() - started < 2
-    assert task.snapshot()["messages"][0]["text"] == "hello"
-
-
-def test_a_wait_for_news_answers_at_once_where_there_is_news():
-    task = tasks.create("t", "T", CLIENT)
-    task.on_event({"type": "message", "level": "info", "text": "hello"})
-
-    started = time.monotonic()
-    snapshot = task.wait_for_news(0, 5)
-    assert time.monotonic() - started < 1
-    assert [m["text"] for m in snapshot["messages"]] == ["hello"]
-    # nothing after what the caller has: it waits, up to the timeout
-    started = time.monotonic()
-    assert task.wait_for_news(snapshot["next_since"], 0.3)["messages"] == []
-    assert time.monotonic() - started >= 0.3
-
-
-def test_a_message_right_after_the_snapshot_is_not_waited_past():
-    # another thread adds a message between the snapshot and the wait: it
-    # must wake the wait, not be taken for what the caller has seen
-    task = tasks.create("t", "T", CLIENT)
-    take_snapshot = task.snapshot
-    racing = []
-
-    def snapshot(since=0):
-        taken = take_snapshot(since)
-        if not racing:
-            racing.append(threading.Thread(target=lambda: task.on_event(
-                {"type": "message", "level": "info", "text": "news"})))
-            racing[0].start()
-            racing[0].join(0.3)
-        return taken
-
-    task.snapshot = snapshot
-    started = time.monotonic()
-    answer = task.wait_for_news(0, 5)
-    assert time.monotonic() - started < 2
-    assert [m["text"] for m in answer["messages"]] == ["news"]
-
-
-def test_a_cancel_before_the_work_could_take_it_reaches_it_later():
-    task = tasks.create("load_dump", "Load", CLIENT)
-    task.cancel()
-    stopped = []
-    task.set_canceller(lambda: stopped.append(True))
-    assert stopped == [True]
-
-
-def test_a_percentage_only_where_the_total_is_known():
-    assert tasks._progress_of({"current": 5, "total": 10, "totalKnown": False})["percent"] is None
-    assert tasks._progress_of({"current": 5, "total": 0})["percent"] is None
-    assert tasks._progress_of({"current": 15, "total": 10})["percent"] == 100.0
+    task = _create("dump_schemas", "Dump")
+    monkeypatch.setattr(threading.Thread, "start", no_thread)
+    with pytest.raises(Exception, match="^The task could not start: can't start new thread$") as raised:
+        tasks.start(task, lambda t: None)
+    assert type(raised.value).__name__ == "ToolError"
+    assert task.status == tasks.FAILED
 
 
 def test_options_set_by_the_tools_are_refused():
@@ -497,7 +367,7 @@ def test_a_copy_has_the_stages_of_both_sides():
     assert started == ["SRC: Writing DDL", "TGT: Opening dump", "SRC: Dumping data", "TGT: Loading data"]
     assert [e["stage"] for e in events if e["type"] == "stageFinished"] == ["TGT: Opening dump"]
     # an unknown total is no percentage
-    assert tasks._progress_of(events[-1])["percent"] is None
+    assert task_manager._progress_of(events[-1])["percent"] is None
 
 
 def test_the_last_error_is_the_task_error_and_earlier_ones_are_messages():
@@ -569,7 +439,7 @@ def test_without_a_shell_the_call_fails_before_any_task(tmp_path, monkeypatch):
     # no context is needed: the shell is looked for before anything else
     with pytest.raises(Exception, match="Put mariadb-shell on the PATH"):
         asyncio.run(dump_instance(None, connection_id="c1", output_url="/d"))
-    assert tasks._tasks == {}
+    assert task_manager._tasks == {}
 
 
 # --- the process, with a fake shell ---------------------------------------------
@@ -644,7 +514,7 @@ def fake_shell(tmp_path, monkeypatch):
 
 def _run(function, args, options, monkeypatch, mode, target=None):
     monkeypatch.setenv("FAKE_SHELL_MODE", mode)
-    task = tasks.create(function, function, CLIENT)
+    task = _create(function, function)
     task.start(lambda task: util_process.run(
         task, function, args, options, ("mariadb://u@h:3306", "pw"), target
     ))
@@ -715,7 +585,7 @@ def test_nothing_else_is_resumed(fake_shell, monkeypatch, function, args, option
 def test_a_shell_that_does_not_stop_on_cancel_is_killed(fake_shell, monkeypatch):
     monkeypatch.setattr(util_process, "CANCEL_GRACE_SECONDS", 0.5)
     monkeypatch.setenv("FAKE_SHELL_MODE", "hang")
-    task = tasks.create("dump_schemas", "Dump", CLIENT)
+    task = _create("dump_schemas", "Dump")
     task.start(lambda task: util_process.run(
         task, "dump_schemas", [["s"], "/d"], {}, ("mariadb://u@h", "pw")
     ))
@@ -805,15 +675,17 @@ TOOLS = {
     "util.dump_instance", "util.dump_schemas", "util.dump_tables",
     "util.export_table", "util.load_dump", "util.import_table",
     "util.copy_instance", "util.copy_schemas", "util.copy_tables",
-    "util.get_task", "util.list_tasks", "util.cancel_task",
 }
+TASK_TOOLS = {"task.get", "task.list", "task.cancel"}
 
 
 def test_util_tools_need_the_db_group():
     pytest.importorskip("mcp")
 
     assert not TOOLS & set(helpers.list_tool_names(["util"]))
-    assert TOOLS <= set(helpers.list_tool_names(["util", "db"]))
+    assert TOOLS | TASK_TOOLS <= set(helpers.list_tool_names(["util", "db"]))
+    # the task tools come with a group that starts tasks, not on their own
+    assert not TASK_TOOLS & set(helpers.list_tool_names(["db"]))
 
 
 def _kill_shell_running(argument: str, timeout: float = 10) -> bool:
@@ -853,7 +725,7 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 """Follows a task to its end, collecting its messages."""
                 since, messages, seen_progress = 0, [], False
                 for _ in range(600):
-                    state = payload(await call("util.get_task", {"task_id": task_id, "since": since, "wait_ms": 2000}))
+                    state = payload(await call("task.get", {"task_id": task_id, "since": since, "wait_ms": 2000}))
                     messages += state["messages"]
                     since = state["next_since"]
                     seen_progress = seen_progress or state["progress"] is not None
@@ -943,7 +815,7 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                     "options": {"threads": 1, "maxRate": "50k"},
                 }))
                 await asyncio.sleep(1)
-                cancelled = payload(await call("util.cancel_task", {"task_id": started["task_id"]}))
+                cancelled = payload(await call("task.cancel", {"task_id": started["task_id"]}))
                 assert cancelled["cancel_requested"] is True
                 state, _, _ = await follow(started["task_id"])
                 assert state["status"] == "cancelled"
@@ -959,8 +831,9 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 assert "same as the source" in state["error"]
 
                 # all of them are listed, without their messages
-                listed = payload(await call("util.list_tasks", {}))
+                listed = payload(await call("task.list", {"task_type": "util"}))
                 listed = listed if isinstance(listed, list) else [listed]
+                assert {task["task_type"] for task in listed} == {"util"}
                 assert [task["kind"] for task in listed] == (
                     ["dump_schemas", "load_dump"]
                     + (["load_dump"] if os.name != "nt" else [])
@@ -996,7 +869,7 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                     "output_url": os.path.join(allowed_temp_dir, "x"),
                 })
                 assert result.is_error
-                result = await call("util.get_task", {"task_id": "no-such-task"})
+                result = await call("task.get", {"task_id": "no-such-task"})
                 assert result.is_error and "no task with the id" in str(helpers.tool_payload(result))
             finally:
                 await sql("DROP SCHEMA IF EXISTS mcp_util")

@@ -83,7 +83,7 @@ import mysqlsh
 # same way, lazily. It costs nothing: `mcp_plugin.lib` imports it eagerly
 # anyway, and unlike `migrator_functions` it pulls in no MCP SDK module at
 # import time.
-from mcp_plugin.lib import config, db_functions, general, tenants
+from mcp_plugin.lib import config, db_functions, general, setup_dba, tenants
 
 
 # Maps a function group name to the (module, function) naming the callback that
@@ -104,6 +104,7 @@ _FUNCTION_GROUP_REGISTRARS = {
     general.FUNCTION_GROUP_UTIL: ("util_functions", "register_util_tools"),
     general.FUNCTION_GROUP_RESTD: ("restd_functions", "register_restd_tools"),
     general.FUNCTION_GROUP_SQL: ("sql_functions", "register_sql_tools"),
+    general.FUNCTION_GROUP_DBA: ("dba_functions", "register_dba_tools"),
 }
 
 
@@ -222,6 +223,15 @@ def server_instructions(
             "mariadb-import or generated INSERT statements; export a table "
             f"to such a file with {name('util', 'export_table')}."
         )
+    if general.FUNCTION_GROUP_DBA in groups and setup_dba.is_available():
+        rules.append(
+            "- Never ask the user for a cloud vendor's API key, and never put "
+            "one in a command, a file or a reply. A vendor that "
+            f"{name('dba', 'list_vendors')} reports with no api_key_projects "
+            "has no key yet: ask the user to store one themselves with "
+            "`mariadb-shell -- mcp setup --setDbaApiKey=<vendor> "
+            "--dbaApiKeyStdin`."
+        )
 
     if not rules:
         return ""
@@ -280,6 +290,10 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     tool_registrar.use_tool_name_separator(server, tool_name_separator)
     for group in function_groups:
         _registrar(group)(server, function_groups)
+    if general.served_function_groups(function_groups) & set(general.TASK_FUNCTION_GROUPS):
+        from mcp_plugin.lib import task_functions
+
+        task_functions.register_task_tools(server)
     tool_registrar.finish_tool_names(server)
 
     return server
@@ -505,7 +519,8 @@ def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
         raise mysqlsh.Error(
             f"The function group(s) {', '.join(refused)} are not available in "
             "multi-tenant mode, as they run local servers and long jobs on this "
-            "machine, or work on files on the developer's own machine. "
+            "machine, work on files on the developer's own machine, or use the "
+            "server's own cloud vendor API keys. "
             "Available groups: "
             f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
         )

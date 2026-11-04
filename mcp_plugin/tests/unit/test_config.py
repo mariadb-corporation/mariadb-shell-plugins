@@ -34,8 +34,12 @@ import pytest
 
 import mysqlsh
 
-from mcp_plugin.lib import config, setup, setup_migrator, setup_prompts
+from mcp_plugin.lib import config, setup, setup_dba, setup_migrator, setup_prompts
 import mcp_plugin.tests.unit.helpers as helpers
+
+# The management menu's entries for the cloud vendor API keys, which it offers
+# where the dba plugin is installed - as it is in a run_tests.py run.
+DBA_MENU_LABELS = [label for label, _ in setup_dba.menu_entries()]
 
 
 # --- db.list_connections over stdio ---------------------------------------
@@ -994,7 +998,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
         "1",                       # select first path
         "2",                       # menu: delete a connection
         "1",                       # select first connection
-        "6",                       # menu: finish
+        "8",                       # menu: finish
     ]
     fake_shell = _FakeShell(answers)
     monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
@@ -1020,6 +1024,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
         "Delete a connection",
         "Add an allowed path",
         "Delete an allowed path",
+        *DBA_MENU_LABELS,
         setup_migrator.menu_label(),
         setup.MENU_FINISH_LABEL,
     ]
@@ -1040,28 +1045,29 @@ def test_setup_menu_hides_the_migrator_where_it_is_unsupported(
     Driven through run_setup rather than through _menu_entries (see
     tests/unit/test_setup_migrator.py) because "not shown" covers the status line the
     menu prints above itself as well as the entry itself - and because the
-    scripted answers are what prove the renumbering: "5" has to be Finish, so a
-    menu that still had six choices would select the migration entry instead and
+    scripted answers are what prove the renumbering: "7" has to be Finish, so a
+    menu that still had eight choices would select the migration entry instead and
     then leave its prompts unanswered, which _FakeShell fails on.
     """
     _clear_config()
     config.set_allowed_paths([])
     monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
 
-    fake_shell = _FakeShell(["5"])  # menu: finish, which is 5 without the entry
+    fake_shell = _FakeShell(["7"])  # menu: finish, which is 7 without the entry
     monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
 
     setup.run_setup()
 
     # The choices the select prompt was given are the menu now, so the absent
-    # entry is asserted there - and this pins that Finish really is the fifth,
-    # which the scripted "5" relies on.
+    # entry is asserted there - and this pins that Finish really is the
+    # seventh, which the scripted "7" relies on.
     assert fake_shell.select_prompts() == [
         [
             "Add a connection",
             "Delete a connection",
             "Add an allowed path",
             "Delete an allowed path",
+            *DBA_MENU_LABELS,
             setup.MENU_FINISH_LABEL,
         ]
     ]
@@ -1089,7 +1095,7 @@ def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch)
         "1",                                # menu: add a connection
         "  mariadb://setup_c@127.0.0.1  ",  # the same connection, spelled out
         "pw",                               # password
-        "6",                                # menu: finish
+        "8",                                # menu: finish
     ]
     fake_shell = _FakeShell(answers)
     monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
@@ -1113,7 +1119,7 @@ def test_setup_refuses_a_connection_too_long_to_store(clean_config, monkeypatch)
     answers = [
         "1",                                                 # add a connection
         "mariadb://setup_long@127.0.0.1:3306/" + "s" * 220,  # too long
-        "6",                                                 # finish
+        "8",                                                 # finish
     ]
     fake_shell = _FakeShell(answers)
     monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)

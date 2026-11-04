@@ -139,6 +139,11 @@ session machinery the db tools sit on is in
   `config.is_path_allowed` directly and just errors out) — but they DO take `ctx` now, see
   the connection-safeguards bullet above.
 
+- **dba group and task tools:** `general.FUNCTION_GROUP_DBA`; the
+  `task.*` tools are registered once after the group loop when util or dba is
+  served (`general.TASK_FUNCTION_GROUPS`); a server-instructions rule against
+  asking for vendor API keys. See [dba.md](dba.md).
+
 ## Files that matter
 
 - lib/server.py -> build/serve; `_FUNCTION_GROUP_REGISTRARS` (a (module, function) NAME

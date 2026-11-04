@@ -8,6 +8,14 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Current state
 
+- The suite needs a shell build with `mysqlsh.task_manager` (in mariadb-shell:
+  `cmake --build <build dir> --target python_extensions`; a new folder under
+  `python/plugins` needs a CMake reconfigure first, as the folders are globbed
+  at configure time). `test_dba.py` covers the dba group; the task registry
+  itself is tested in the shell's `python/plugins/task_plugin/test`, and
+  `test_util.py` keeps only what the MCP side adds (client ownership, the cap
+  as a tool error, a failed start as a tool error).
+
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (9), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
