@@ -283,15 +283,6 @@ def normalize_project_path(project_path) -> str:
     return os.path.normpath(os.path.abspath(os.path.expanduser(project_path.strip())))
 
 
-def _same_path(left, right) -> bool:
-    """Returns whether two normalized paths name the same folder.
-
-    Case does not count where the file system ignores it (see
-    :func:`_folded`).
-    """
-    return _folded(left) == _folded(right)
-
-
 def _ignores_case(path: str) -> bool:
     """Returns whether the file system holding a path ignores case.
 
@@ -508,9 +499,14 @@ def _write_file(path: str, entries: dict) -> None:
 
 
 def _stored_key(entries: dict, project_path: str):
-    """Returns the key a project is stored under, or None if it is not."""
+    """Returns the key a project is stored under, or None if it is not.
+
+    Case does not count where the file system ignores it (see
+    :func:`_folded`).
+    """
+    folded = _folded(project_path)
     for stored in entries:
-        if _same_path(stored, project_path):
+        if _folded(stored) == folded:
             return stored
 
     return None

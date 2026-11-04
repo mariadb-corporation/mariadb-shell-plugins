@@ -119,7 +119,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         out, so a project LLMs may not work on is refused there too.
         """
         await general.require_allowed_path(ctx, schema_project_path)
-        if schema_project_path is None:
+        # In multi-tenant mode require_allowed_path checks the working
+        # directory for None itself.
+        if schema_project_path is None and not general.is_multi_tenant():
             general.require_project_access(ctx, os.getcwd())
 
     async def create_project(
