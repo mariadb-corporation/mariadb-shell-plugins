@@ -67,6 +67,7 @@ jobs:
       rest_plugin: ${{ steps.changes.outputs.rest_plugin }}
       msm_plugin: ${{ steps.changes.outputs.msm_plugin }}
       mcp_plugin: ${{ steps.changes.outputs.mcp_plugin }}
+      dba_plugin: ${{ steps.changes.outputs.dba_plugin }}
 
     steps:
 
@@ -111,7 +112,10 @@ jobs:
             fi
           fi
 
-          for part in rest_plugin msm_plugin mcp_plugin; do
+          # dba_plugin is a plugin group: its core and the vendor plugins,
+          # which load through the core. A change to any member runs the
+          # group's one suite, which tests the core with every vendor.
+          for part in rest_plugin msm_plugin mcp_plugin dba_plugin; do
             if [ "$run_all" = true ] || printf '%s\n' "$changed" | grep -q "^${part}/"; then
               echo "${part}: running tests"
               echo "${part}=true" >> "$GITHUB_OUTPUT"
@@ -136,6 +140,7 @@ jobs:
       needs.changes.outputs.rest_plugin == 'true'
       || needs.changes.outputs.msm_plugin == 'true'
       || needs.changes.outputs.mcp_plugin == 'true'
+      || needs.changes.outputs.dba_plugin == 'true'
 
     env:
         MYSQL_PORT: 3312
@@ -178,4 +183,10 @@ jobs:
         if: needs.changes.outputs.mcp_plugin == 'true'
         run: |
           cd mcp_plugin && msh --py -f run_tests.py
+        shell: bash
+
+      - name: Run dba_plugin tests
+        if: needs.changes.outputs.dba_plugin == 'true'
+        run: |
+          cd dba_plugin/dba_core && msh --py -f run_tests.py
         shell: bash

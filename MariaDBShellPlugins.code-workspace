@@ -28,6 +28,10 @@
         {
             "name": "MCP Plugin",
             "path": "mcp_plugin"
+        },
+        {
+            "name": "MariaDB DBA Plugin",
+            "path": "dba_plugin"
         }
     ],
     "settings": {
@@ -56,6 +60,7 @@
             "rest_plugin": true,
             "msm_plugin": true,
             "mcp_plugin": true,
+            "dba_plugin": true,
             "MariaDBShellPlugins.code-workspace": true,
         },
         "editor.defaultFormatter": "ms-python.black-formatter"
