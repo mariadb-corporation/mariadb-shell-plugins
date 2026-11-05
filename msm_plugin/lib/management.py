@@ -627,6 +627,14 @@ def copy_template_file_and_substitute(
         f.write(script)
 
 
+def project_folder_path(target_path: str, schema_name: str) -> str:
+    """The folder create_schema_project_folder makes for a schema in target_path."""
+    return os.path.join(
+        os.path.abspath(os.path.expanduser(target_path)),
+        f"{convert_string_to_valid_filename(schema_name)}.msm.project",
+    )
+
+
 def create_schema_project_folder(
     schema_name: str,
     target_path: str,
@@ -674,8 +682,7 @@ def create_schema_project_folder(
     # When used in file names, critical characters need to be removed
     schema_file_name = convert_string_to_valid_filename(schema_name)
 
-    # Create the project folder
-    project_path = os.path.join(target_path, f"{schema_file_name}.msm.project")
+    project_path = project_folder_path(target_path, schema_name)
     if os.path.exists(project_path):
         if overwrite_existing:
             shutil.rmtree(project_path)

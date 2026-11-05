@@ -34,6 +34,7 @@ its whole script in one file.
 
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from msm_plugin.lib import management, source
 
@@ -65,12 +66,35 @@ def breakout_header(project_settings: dict, section_id: str, title: str) -> str:
     )
 
 
+def header_end(header: str) -> str:
+    """The SOURCE start bound that leaves a breakout file's header out."""
+    return f"ln{header.count(chr(10)) + 1}"
+
+
 def include_directive(file_name: str, header: str) -> str:
     """The SOURCE directive including a breakout file without its header."""
-    return (
-        f"SOURCE './{BREAKOUT_FOLDER}/{file_name}'[ln{header.count(chr(10)) + 1}:]; "
-        "-- Without the header"
+    return f"SOURCE './{BREAKOUT_FOLDER}/{file_name}'[{header_end(header)}:]; -- Without the header"
+
+
+def set_section_body(section: dict, body: str) -> None:
+    """Replaces the SQL of a section (of get_file_sections) with body.
+
+    A blank line after the banner and two before the next one, as the
+    templates have them; set_sql_content strips both.
+    """
+    section["full_content"] = (
+        section["full_content"][: section["sql_start"]] + "\n\n" + body + "\n\n"
     )
+
+
+def write_if_changed(path: str, text: str, old: Optional[str]) -> bool:
+    """Writes a file unless it holds the text already; says whether it wrote."""
+    if old == text:
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    return True
 
 
 @dataclass
@@ -121,22 +145,19 @@ def write_section_parts(schema_project_path: str, section_id: str, parts: list) 
             path = source.checked_include_path(
                 os.path.join(development, BREAKOUT_FOLDER, part.file_name)
             )
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
-                f.write(header + part.sql.strip("\n") + "\n")
-            written.append(path)
+            old = None
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    old = f.read()
+            if write_if_changed(path, header + part.sql.strip("\n") + "\n", old):
+                written.append(path)
             directives.append(include_directive(part.file_name, header))
         body = "\n\n".join(directives)
 
     sections = management.get_file_sections(dev_file)
     if section_id not in sections:
         raise ValueError(f"The development script has no MSM Section {section_id}.")
-    section = sections[section_id]
-    # A blank line after the banner and two before the next one, as the
-    # templates have them.
-    section["full_content"] = (
-        section["full_content"][: section["sql_start"]] + "\n\n" + body + "\n\n"
-    )
+    set_section_body(sections[section_id], body)
     management.write_sections_to_file(dev_file, sections, overwrite_existing=True)
     written.insert(0, dev_file)
     return written

@@ -46,7 +46,7 @@ import zipfile
 from dataclasses import dataclass, field
 from typing import Optional
 
-from msm_plugin.lib import diagrams
+from msm_plugin.lib import diagrams, layout
 
 DOCUMENT = "document.mwb.xml"
 DATA = "@db/data.db"
@@ -244,10 +244,6 @@ def quote_identifier(name: str) -> str:
     return "`" + name.replace("`", "``") + "`"
 
 
-def _comment(text: str) -> str:
-    return diagrams.sql_string_literal(text)
-
-
 def _simple_type_name(model: Model, link) -> str:
     """The SQL name of a simple type: TIMESTAMP for ...datatype.timestamp_f."""
     simple = model.objects.get(link)
@@ -306,7 +302,7 @@ def _column_sql(model: Model, column: dict) -> str:
         if column.get("autoIncrement"):
             parts.append("AUTO_INCREMENT")
     if column.get("comment"):
-        parts.append(f"COMMENT {_comment(column['comment'])}")
+        parts.append(f"COMMENT {diagrams.sql_string_literal(column['comment'])}")
     return " ".join(parts)
 
 
@@ -339,7 +335,7 @@ def _index_sql(model: Model, index: dict) -> str:
     if index.get("algorithm"):
         text += f" USING {index['algorithm']}"
     if index.get("comment"):
-        text += f" COMMENT {_comment(index['comment'])}"
+        text += f" COMMENT {diagrams.sql_string_literal(index['comment'])}"
     if index.get("visible", 1) == 0:
         text += " IGNORED"
     return text
@@ -362,8 +358,9 @@ def foreign_key_sql(model: Model, foreign_key: dict) -> str:
     )
     for clause, rule in (("ON DELETE", foreign_key.get("deleteRule")),
                          ("ON UPDATE", foreign_key.get("updateRule"))):
-        if _rule(rule):
-            text += f"\n    {clause} {_rule(rule)}"
+        rule = _rule(rule)
+        if rule:
+            text += f"\n    {clause} {rule}"
     return text
 
 
@@ -385,7 +382,7 @@ def _table_options(table: dict) -> str:
     if table.get("rowFormat"):
         options.append(f"ROW_FORMAT = {table['rowFormat']}")
     if table.get("comment"):
-        options.append(f"COMMENT = {_comment(table['comment'])}")
+        options.append(f"COMMENT = {diagrams.sql_string_literal(table['comment'])}")
     return "\n".join(options)
 
 
@@ -542,7 +539,9 @@ def _object_name(sql: str, fallback: str) -> str:
     return name[1:-1].replace("``", "`") if name.startswith("`") else name
 
 
-def _privilege_target(model: Model, privilege: dict, schema_name: str) -> Optional[str]:
+def _privilege_target(model: Model, privilege: dict) -> str:
+    """What a GRANT is on: an object of the schema, or * for all of it (the
+    script runs after USE of the schema, whatever name a deployment gives it)."""
     target = model.objects.get(privilege.get("databaseObject"))
     if target is not None and target.get("name"):
         return quote_identifier(target["name"])
@@ -588,17 +587,15 @@ def schema_sql(model: Model, schema: dict) -> Imported:
 
     statements = []
     for table in order:
-        inline = [
-            foreign_key for foreign_key in table.get("foreignKeys", [])
-            if id(foreign_key) not in later_ids
-            and model.objects.get(foreign_key.get("referencedTable")) is not None
-        ]
+        inline = []
         for foreign_key in table.get("foreignKeys", []):
             if model.objects.get(foreign_key.get("referencedTable")) is None:
                 result.warnings.append(
                     f"The foreign key `{foreign_key.get('name')}` of `{table['name']}` refers "
                     "to a table the model does not have; it was left out."
                 )
+            elif id(foreign_key) not in later_ids:
+                inline.append(foreign_key)
         if table.get("partitionType"):
             result.warnings.append(
                 f"The partitioning of `{table['name']}` was not imported."
@@ -661,13 +658,12 @@ def schema_sql(model: Model, schema: dict) -> Imported:
         lines = [f"CREATE ROLE IF NOT EXISTS {quote_identifier(role['name'])};"]
         for privilege in role.get("privileges", []):
             names = [p for p in privilege.get("privileges", []) if p]
-            target = _privilege_target(model, privilege, schema["name"])
-            if not names or target is None:
+            if not names:
                 continue
-            # The script runs after USE of the schema, so * is all of it,
-            # whatever name a deployment gives the schema.
-            on = target
-            lines.append(f"GRANT {', '.join(names)} ON {on} TO {quote_identifier(role['name'])};")
+            target = _privilege_target(model, privilege)
+            lines.append(
+                f"GRANT {', '.join(names)} ON {target} TO {quote_identifier(role['name'])};"
+            )
         for child in role.get("childRoles", []):
             child_role = model.objects.get(child)
             if child_role is not None:
@@ -694,10 +690,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
 # Diagrams
 
 
-def _figure(model: Model, figure: dict, root_layer: Optional[dict]) -> Optional[dict]:
-    table = model.objects.get(figure.get("table"))
-    if table is None:
-        return None
+def _figure(model: Model, figure: dict, table: dict, root_layer: Optional[dict]) -> dict:
     layer = model.objects.get(figure.get("layer"))
     result = {
         "id": figure["_id"],
@@ -708,7 +701,7 @@ def _figure(model: Model, figure: dict, root_layer: Optional[dict]) -> Optional[
         "top": float(figure.get("top", 0)),
         "width": float(figure.get("width", 0)),
         "height": float(figure.get("height", 0)),
-        "color": figure.get("color") or "#98BFDA",
+        "color": figure.get("color") or layout.FIGURE_COLOR,
     }
     if layer is not None and (root_layer is None or layer["_id"] != root_layer["_id"]):
         result["layer"] = layer["_id"]
@@ -742,9 +735,7 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
                     or table["_id"] not in table_ids:
                 skipped += 1
                 continue
-            converted = _figure(model, figure, root_layer)
-            if converted is not None:
-                figures.append(converted)
+            figures.append(_figure(model, figure, table, root_layer))
         figure_ids = {figure["id"] for figure in figures}
 
         layers = []

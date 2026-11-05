@@ -28,7 +28,7 @@ import os
 
 import pytest
 
-from msm_plugin.lib import diagrams, lsp, management, modeling, source
+from msm_plugin.lib import diagrams, lsp, management, modeling, sections, source
 from msm_plugin.lib.management import create_schema_project_folder
 
 LSP = lsp.find_lsp()
@@ -375,8 +375,8 @@ def test_an_include_can_be_refused(project):
 def test_a_bad_inline_size_setting_is_refused():
     for value in (-1, "16k", True):
         with pytest.raises(ValueError, match="maxInlineSectionSize"):
-            modeling.get_max_inline_section_size({"maxInlineSectionSize": value})
-    assert modeling.get_max_inline_section_size({}) == modeling.DEFAULT_MAX_INLINE_SECTION_SIZE
+            sections.get_max_inline_section_size({"maxInlineSectionSize": value})
+    assert sections.get_max_inline_section_size({}) == sections.DEFAULT_MAX_INLINE_SECTION_SIZE
 
 
 # -----------------------------------------------------------------------------

@@ -41,12 +41,8 @@ from msm_plugin.lib import sections as sections_lib
 from msm_plugin.lib import workbench
 
 DIAGRAMS_SECTION_ID = "160"
-BREAKOUT_FILE = "./sections/160_schema_diagrams.sql"
-
-# A section body larger than this is kept in a breakout file, unless the
-# project's msm.project.json sets maxInlineSectionSize (see lib/sections.py).
-DEFAULT_MAX_INLINE_SECTION_SIZE = sections_lib.DEFAULT_MAX_INLINE_SECTION_SIZE
-get_max_inline_section_size = sections_lib.get_max_inline_section_size
+BREAKOUT_FILE_NAME = "160_schema_diagrams.sql"
+BREAKOUT_FILE = f"./{sections_lib.BREAKOUT_FOLDER}/{BREAKOUT_FILE_NAME}"
 
 # Every file of a SOURCE directive is read through source.read_include, so a
 # caller that has to check them sets source.checked_includes() around the call.
@@ -160,23 +156,6 @@ def read_diagram_rows(schema_project_path: str) -> list:
     return _rows(_Project.load(schema_project_path))
 
 
-def _breakout_header(project_settings: dict) -> str:
-    """The first lines of a new breakout file: the project's notices."""
-    return sections_lib.breakout_header(
-        project_settings, DIAGRAMS_SECTION_ID, "Schema Diagrams, written by msm"
-    )
-
-
-def _write_if_changed(path: str, text: str, old: Optional[str]) -> bool:
-    """Writes a file unless it holds the text already; says whether it wrote."""
-    if old == text:
-        return False
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(text)
-    return True
-
-
 def _write(project: _Project, rows: list) -> list:
     """Writes the rows of the project's diagrams VIEW into Section 160.
 
@@ -195,11 +174,15 @@ def _write(project: _Project, rows: list) -> list:
     written = []
 
     included = _section_directive(section["sql_content"])
-    if included is None and len(view_sql) > get_max_inline_section_size(project.settings):
-        header = _breakout_header(project.settings)
-        included = (BREAKOUT_FILE, f"ln{header.count(chr(10)) + 1}", "")
+    if included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
+        project.settings
+    ):
+        header = sections_lib.breakout_header(
+            project.settings, DIAGRAMS_SECTION_ID, "Schema Diagrams, written by msm"
+        )
+        included = (BREAKOUT_FILE, sections_lib.header_end(header), "")
         before, after = header, ""
-        body = f"SOURCE '{BREAKOUT_FILE}'[{included[1]}:]; -- Without the header"
+        body = sections_lib.include_directive(BREAKOUT_FILE_NAME, header)
     elif included is not None:
         before = after = ""
         body = None
@@ -231,16 +214,12 @@ def _write(project: _Project, rows: list) -> list:
                 "the whole diagrams VIEW once written. Leave the end bound out (or count "
                 "it from the end of the file) and make sure the file exists."
             )
-        if _write_if_changed(path, text, old):
+        if sections_lib.write_if_changed(path, text, old):
             written.append(path)
             project.files[path] = (path, text)
 
     if body is not None:
-        # A blank line after the banner and two before the next one, as the
-        # templates have them; set_sql_content strips both.
-        section["full_content"] = (
-            section["full_content"][: section["sql_start"]] + "\n\n" + body + "\n\n"
-        )
+        sections_lib.set_section_body(section, body)
     script = "\n".join(item["full_content"] for item in sections.values())
     if script != project.script:
         management.write_sections_to_file(project.dev_file, sections, overwrite_existing=True)
@@ -818,16 +797,10 @@ def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -
         Part("170_roles.sql", "ROLEs and GRANTs", imported.roles),
     ])
 
-    snapshot = update_schema_definition(project_path, lsp_path)
-    files += snapshot["files"]
-
+    project = _Project.load(project_path)
+    schema_document, rows, _ = _replace_snapshot(project, _rows(project), lsp_path)
     documents, warnings = workbench.diagram_documents(model, schema)
     warnings = imported.warnings + warnings
-    project = _Project.load(project_path)
-    rows = _rows(project)
-    schema_document = next(
-        row["document"] for row in rows if row["format"] == diagrams.SCHEMA_FORMAT
-    )
     for document in documents:
         diagrams.validate_diagram(document)
         if diagrams.reconcile_diagram(document, schema_document):
@@ -837,8 +810,7 @@ def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -
             )
         rows.append({"name": document["name"], "format": diagrams.DIAGRAM_FORMAT,
                      "document": document})
-    if documents:
-        files += _write(project, rows)
+    files += _write(project, rows)
 
     result = dict(imported.counts)
     result["diagrams"] = [document["name"] for document in documents]
@@ -857,6 +829,7 @@ def create_project_from_workbench_model(
     enforce_target_path: bool = False,
     copyrights: list = None,
     lsp_path: str = None,
+    model: workbench.Model = None,
 ) -> dict:
     """Creates a schema project from a schema of a MySQL Workbench model.
 
@@ -878,13 +851,16 @@ def create_project_from_workbench_model(
         enforce_target_path: Create target_path where it is missing.
         copyrights: The copyright notices, instead of copyright_holder.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        model: The model read from model_path already (read_model), which
+            is then not read again.
 
     Returns:
         {project_path, schema, tables, views, routines, triggers, events,
         roles, inserted_rows, diagrams, scripts_not_imported, warnings,
         files}.
     """
-    model = workbench.read_model(model_path)
+    if model is None:
+        model = workbench.read_model(model_path)
     model_schema = model.schema(schema)
     # Checked first: the snapshot needs the binary, and a project without
     # it would be removed again.
