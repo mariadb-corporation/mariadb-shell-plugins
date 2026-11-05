@@ -177,6 +177,56 @@ def set_schema_diagram(document: dict = None, **kwargs) -> list:
     return lib.modeling.set_diagram(_project(kwargs), dict(document))
 
 
+@plugin_function("msm.editSchema", shell=True, cli=True, web=True)
+def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
+    """Changes schema objects in the SQL of a schema project
+
+    The CREATE statements of the development script, and the files it includes, are changed by
+    the MariaDB SQL language server's binary mariadb-lsp; diagrams follow renamed objects, and the
+    schema snapshot is made again. Once the project has a release, the statements that take a
+    deployed schema along are kept in development/<schema>_update_next.sql, whose sections
+    msm.prepareRelease moves into the next release's update script. Everything is written, or
+    nothing.
+
+    On the command line give the edits as a JSON file with --editsFile.
+
+    Args:
+        edits (list): The edits, each an object with its op: rename_table, rename_column,
+            rename_view, rename_routine, add_table, drop_table, add_column, modify_column,
+            drop_column, add_index, drop_index, add_foreign_key, drop_foreign_key,
+            set_table_options (the language server's docs/edit-format.md).
+        base_hash (str): The source_hash of the schema snapshot the edits were made against. They
+            are refused when the project's snapshot was made again since.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        edits_file (str): A JSON file holding the edits, instead of edits.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        rows (the diagrams VIEW afterwards), files written, migration (the statements kept for
+        the next update script), migration_file and notes on what was not changed.
+    """
+    edits_file = kwargs.get("edits_file")
+    if edits_file is not None:
+        if edits:
+            raise ValueError("Give the edits as edits or as edits_file, not both.")
+        try:
+            with open(os.path.expanduser(edits_file), "r", encoding="utf-8") as f:
+                edits = json.load(f)
+        except OSError as e:
+            raise ValueError(f"The edits file could not be read: {e}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"The edits file `{edits_file}` is not valid JSON: {e}")
+    if base_hash is None:
+        raise ValueError("No base_hash given: the source_hash of the snapshot the edits are for.")
+    return lib.editing.edit_schema(
+        _project(kwargs), [dict(edit) for edit in edits or []], base_hash, kwargs.get("lsp_path")
+    )
+
+
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)
 def remove_schema_diagram(name: str, **kwargs) -> list:
     """Removes a diagram from a schema project

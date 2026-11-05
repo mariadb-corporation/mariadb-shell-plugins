@@ -695,6 +695,62 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm_modeling.set_schema_diagram, document
         )
 
+    @tool(name="msm.edit_schema")
+    async def edit_schema(
+        ctx: Context,
+        edits: list,
+        base_hash: str,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Changes schema objects in the SQL of a schema project.
+
+        The CREATE statements are the source of truth, so a change to a
+        table, column, index or foreign key is made in the development
+        script and the files it includes (by the MariaDB SQL language
+        server's binary); diagrams follow renamed objects and the schema
+        snapshot is made again. Once the project has a release, the
+        statements that take a deployed schema along are kept for the next
+        release's update script. Everything is written, or nothing.
+
+        Args:
+            edits: The edits in order, each an object with its op:
+                rename_table (table, new_name), rename_column (table,
+                column, new_name), rename_view, rename_routine,
+                add_table (table: name, columns, indexes, foreign_keys,
+                options), drop_table (table), add_column (table, column,
+                after or first), modify_column (table, column, definition),
+                drop_column (table, column), add_index / drop_index,
+                add_foreign_key / drop_foreign_key, set_table_options.
+                Columns, indexes and foreign keys are given as
+                msm.get_schema_diagrams' snapshot has them.
+            base_hash: The snapshot's source_hash the edits were made
+                against; refused when the snapshot was made again since.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            rows (the diagrams VIEW afterwards, pictures left out as by
+            msm.get_schema_diagrams), files written, migration (the
+            statements kept for the next update script), migration_file and
+            notes on what the edits could not change.
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.edit_schema,
+            edits,
+            base_hash,
+            **_kwargs(lsp_path=_lsp_path()),
+        )
+        result["rows"] = [
+            {**row, "document": msm_diagrams.elide_images(row["document"])}
+            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
+            for row in result["rows"]
+        ]
+        return result
+
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(
         ctx: Context,

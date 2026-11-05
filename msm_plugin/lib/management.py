@@ -1396,6 +1396,26 @@ def prepare_release(
             )
             files_for_release.append(schema_update_file_path)
 
+            # The changes msm.editSchema kept for this release go into the
+            # update script's sections, and the pending script starts over.
+            from msm_plugin.lib import editing
+            from msm_plugin.lib import sections as sections_lib
+
+            pending_path = editing.pending_update_path(schema_project_path, project_settings)
+            pending = editing.read_pending_update(pending_path)
+            if any(pending.values()):
+                update_sections = get_file_sections(schema_update_file_path)
+                for section_id, sql in pending.items():
+                    if sql:
+                        sections_lib.set_section_body(update_sections[section_id], sql)
+                write_sections_to_file(
+                    file_path=schema_update_file_path,
+                    sections=update_sections,
+                    overwrite_existing=True,
+                )
+                if editing.clear_pending_update(pending_path, project_settings):
+                    files_for_release.append(pending_path)
+
     # Update the version of the development schema file store in section
     # MSM Section 910: Database Schema Version
     set_development_version(
