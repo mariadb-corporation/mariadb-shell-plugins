@@ -255,3 +255,77 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         )
     else:
         return result
+
+
+@plugin_function("msm.importWorkbenchModel", shell=True, cli=True, web=True)
+def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
+    """Creates a schema project from a MySQL Workbench model (.mwb)
+
+    The development script gets the CREATE statements of a schema of the model: its tables and
+    foreign keys, and the rows the model holds as INSERTs (MSM Section 140), its views, routines,
+    triggers and events (Section 150), and its roles with their GRANTs (Section 170). A section
+    larger than the project's maxInlineSectionSize goes into breakout files under
+    development/sections/. User-defined types are replaced by their SQL definition. Then the
+    schema snapshot is made from that SQL by the mariadb-lsp binary, and the model's EER
+    diagrams are added. Scripts attached to the model are not imported, they are listed.
+
+    Args:
+        model_path (str): The .mwb file.
+        target_path (str): The folder to create the project folder in.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema (str): The schema of the model to import. Needed when the model has several.
+        copyright_holder (str): The name of the copyright holder.
+        license (str): The license to use for the project.
+        copyrights (list): The copyright notices of the project, instead of copyright_holder.
+        overwrite_existing (bool): If the project folder already exists, overwrite it.
+        enforce_target_path (bool): Create the target_path if it does not yet exist.
+        add_to_project_list (bool): Whether to add the new project to the project list (see
+            msm.listProjects). Defaults to True.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        The project's path and schema, the numbers of tables, views, routines, triggers, events,
+        roles and inserted rows, the diagrams, the attached scripts that were not imported,
+        warnings on what else was left out, and the files written.
+    """
+    copyright_holder = kwargs.get("copyright_holder")
+    if (
+        copyright_holder is None
+        and not kwargs.get("copyrights")
+        and lib.core.get_interactive_default()
+    ):
+        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+
+    result = lib.modeling.create_project_from_workbench_model(
+        model_path,
+        target_path,
+        copyright_holder=copyright_holder,
+        license=kwargs.get("license"),
+        schema=kwargs.get("schema"),
+        overwrite_existing=bool(kwargs.get("overwrite_existing", False)),
+        enforce_target_path=bool(kwargs.get("enforce_target_path", False)),
+        copyrights=kwargs.get("copyrights"),
+        lsp_path=kwargs.get("lsp_path"),
+    )
+    if kwargs.get("add_to_project_list", True):
+        lib.projects.add_project(result["project_path"])
+
+    if lib.core.get_interactive_default():
+        print(
+            f"Created the project `{result['project_path']}` with {result['tables']} table(s), "
+            f"{result['views']} view(s), {result['routines']} routine(s), "
+            f"{result['triggers']} trigger(s), {result['events']} event(s), "
+            f"{result['roles']} role(s) and {len(result['diagrams'])} diagram(s)."
+        )
+        if result["scripts_not_imported"]:
+            print(
+                "Scripts of the model that were not imported: "
+                + ", ".join(result["scripts_not_imported"])
+            )
+        for warning in result["warnings"]:
+            print(f"Note: {warning}")
+    else:
+        return result

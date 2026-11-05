@@ -878,3 +878,63 @@ def test_a_diagram_include_outside_the_allowed_paths_is_refused(
         _call(tools, "msm.get_schema_diagrams", path)
     with pytest.raises(Exception, match="allowed"):
         _call(tools, "msm.list_schema_diagrams", path)
+
+
+# --- MySQL Workbench import ------------------------------------------------------
+
+_MWB_XML = """<?xml version="1.0"?>
+<data grt_format="2.0" document_type="MySQL Workbench Model" version="1.4.4">
+<value type="object" struct-name="workbench.Document" id="{D}">
+ <value type="list" content-type="object" key="physicalModels">
+  <value type="object" struct-name="workbench.physical.Model" id="{PM}">
+   <value type="object" struct-name="db.mysql.Catalog" id="{CAT}" key="catalog">
+    <value type="list" content-type="object" key="roles"/>
+    <value type="list" content-type="object" key="schemata">
+     <value type="object" struct-name="db.mysql.Schema" id="{S}">
+      <value type="string" key="name">wbshop</value>
+      <value type="list" content-type="object" key="tables">
+       <value type="object" struct-name="db.mysql.Table" id="{T}">
+        <value type="string" key="name">item</value>
+        <value type="string" key="tableEngine">InnoDB</value>
+        <value type="list" content-type="object" key="columns">
+         <value type="object" struct-name="db.mysql.Column" id="{C}">
+          <value type="string" key="name">id</value>
+          <link type="object" key="simpleType">com.mysql.rdbms.mysql.datatype.int</link>
+          <value type="int" key="isNotNull">1</value>
+          <value type="int" key="length">-1</value>
+          <value type="int" key="precision">-1</value>
+          <value type="int" key="scale">-1</value>
+         </value>
+        </value>
+        <value type="list" content-type="object" key="indices"/>
+        <value type="list" content-type="object" key="foreignKeys"/>
+       </value>
+      </value>
+     </value>
+    </value>
+   </value>
+   <value type="list" content-type="object" key="diagrams"/>
+  </value>
+ </value>
+</value>
+</data>"""
+
+
+@pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
+def test_a_workbench_model_is_imported_through_the_tools(project_lists, allowed_temp_dir):
+    import zipfile
+
+    model = os.path.join(allowed_temp_dir, "shop.mwb")
+    with zipfile.ZipFile(model, "w") as archive:
+        archive.writestr("document.mwb.xml", _MWB_XML)
+    tools = _msm_tools()
+
+    result = _call(tools, "msm.import_workbench_model", model, allowed_temp_dir,
+                   copyright_holder="Example Ltd.")
+    assert result["schema"] == "wbshop"
+    assert result["tables"] == 1
+    assert [project["project_path"] for project in _call(tools, "msm.list_projects")] == [
+        result["project_path"]
+    ]
+    listed = _call(tools, "msm.list_schema_diagrams", result["project_path"])
+    assert listed["schema_definition"] == {"tables": 1, "current": True}

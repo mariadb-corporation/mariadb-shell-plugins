@@ -61,6 +61,13 @@ _GUI_ARGUMENTS = {
                 project stays the extension's until the user says otherwise.
 """,
     ),
+    "msm.import_workbench_model": (
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
+                server started without --gui. Defaults to False: the
+                project stays the extension's until the user says otherwise.
+""",
+    ),
     "msm.add_project": (
         "mcp_access",
         """            mcp_access: Whether LLMs may work on the project through an MCP
@@ -678,6 +685,92 @@ def register_msm_tools(server, function_groups=()) -> None:
             name,
             **_kwargs(tables=tables, keep_placed=keep_placed, lsp_path=_lsp_path()),
         )
+
+    async def import_workbench_model(
+        ctx: Context,
+        model_path: str,
+        target_path: str,
+        schema: Optional[str] = None,
+        copyright_holder: Optional[str] = None,
+        license: Optional[str] = None,
+        overwrite_existing: bool = False,
+        enforce_target_path: bool = False,
+        copyrights: Optional[list] = None,
+        mcp_access: bool = False,
+    ) -> dict:
+        """Creates a database schema project from a MySQL Workbench model (.mwb).
+
+        The development script gets the CREATE statements of a schema of the
+        model: tables, foreign keys and the model's rows as INSERTs (MSM
+        Section 140), views, routines, triggers and events (Section 150),
+        roles and their GRANTs (Section 170), in breakout files under
+        development/sections/ where a section is large. User-defined types are
+        replaced by their SQL definition. The schema snapshot is then made
+        from that SQL, and the model's EER diagrams are added. Scripts
+        attached to the model are listed, not imported.
+
+        Args:
+            model_path: The .mwb file.
+            target_path: The path the project folder should be created in.
+            schema: The schema of the model to import; needed when the model
+                has several.
+            copyright_holder: The name of the copyright holder.
+            license: The license to use for the project.
+            overwrite_existing: Overwrite the project folder if it exists.
+            enforce_target_path: Create the target_path if it does not exist.
+            copyrights: The copyright notices of the project, instead of
+                copyright_holder (see msm.create_project).
+{gui_argument_doc}
+
+        Returns:
+            project_path, schema, the numbers of tables, views, routines,
+            triggers, events, roles and inserted_rows, diagrams (names),
+            scripts_not_imported, warnings and the files written. The project
+            is added to the project list (see msm.list_projects).
+        """
+        from msm_plugin.lib import source
+        from msm_plugin.lib import workbench as msm_workbench
+
+        await general.require_allowed_path(ctx, model_path)
+        await general.require_allowed_path(ctx, target_path)
+        model = await anyio.to_thread.run_sync(msm_workbench.read_model, model_path)
+        schema_name = model.schema(schema)["name"]
+        # The project folder, as msm.create_project checks it: one kept from
+        # LLMs stays theirs.
+        general.require_project_access(
+            ctx,
+            os.path.join(
+                os.path.abspath(os.path.expanduser(target_path)),
+                msm_management.convert_string_to_valid_filename(schema_name)
+                + ".msm.project",
+            ),
+        )
+        owner = general.get_client_identity(ctx).user
+        kwargs = _kwargs(
+            schema=schema,
+            copyright_holder=copyright_holder,
+            license=license,
+            overwrite_existing=overwrite_existing,
+            enforce_target_path=enforce_target_path,
+            copyrights=copyrights,
+            lsp_path=_lsp_path(),
+        )
+
+        def run():
+            with source.checked_includes(lambda path: db_functions.allowed_include(path, owner)):
+                return msm_modeling.import_workbench_model(
+                    model_path, target_path, add_to_project_list=False, **kwargs
+                )
+
+        result = await anyio.to_thread.run_sync(run)
+        msm_projects.add_project(
+            result["project_path"],
+            owner=owner,
+            mcp_access=mcp_access if general.is_gui_mode() else True,
+        )
+        return result
+
+    _register_with_gui_argument(tool, "msm.import_workbench_model", import_workbench_model)
 
     @tool(name="msm.remove_schema_diagram")
     async def remove_schema_diagram(
