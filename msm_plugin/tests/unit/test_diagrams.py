@@ -108,6 +108,14 @@ def project(tmp_path):
     return path
 
 
+def figures_by_type(document) -> dict:
+    """A diagram's figures grouped by their type."""
+    by_type = {}
+    for figure in document["figures"]:
+        by_type.setdefault(figure.get("type", "TableFigure"), []).append(figure)
+    return by_type
+
+
 def dev_script(project_path) -> str:
     with open(management.get_schema_development_file_path(project_path)) as f:
         return f.read()
@@ -260,17 +268,15 @@ def test_a_diagram_loses_what_the_schema_no_longer_has():
 
 def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
     schema = {"tables": [], "views": [{"name": "V"}], "routines": [{"name": "f"}]}
-    document = {
-        "format": diagrams.DIAGRAM_FORMAT, "name": "D", "layers": [], "connections": [],
-        "figures": [
-            {"id": "v", "type": "ViewFigure", "view": "v"},
-            {"id": "gone", "type": "ViewFigure", "view": "gone"},
-            {"id": "g", "type": "RoutineGroupFigure", "name": "G", "routines": ["F", "gone"]},
-            {"id": "empty", "type": "RoutineGroupFigure", "name": "E", "routines": ["gone"]},
-            {"id": "n", "type": "NoteFigure", "text": "kept as it is"},
-            {"id": "i", "type": "ImageFigure", "image": "data:image/png;base64,AA=="},
-        ],
-    }
+    document = diagram("D", tables=())
+    document["figures"] = [
+        {"id": "v", "type": "ViewFigure", "view": "v"},
+        {"id": "gone", "type": "ViewFigure", "view": "gone"},
+        {"id": "g", "type": "RoutineGroupFigure", "name": "G", "routines": ["F", "gone"]},
+        {"id": "empty", "type": "RoutineGroupFigure", "name": "E", "routines": ["gone"]},
+        {"id": "n", "type": "NoteFigure", "text": "kept as it is"},
+        {"id": "i", "type": "ImageFigure", "image": "data:image/png;base64,AA=="},
+    ]
     assert diagrams.reconcile_diagram(document, schema)
     assert [f["id"] for f in document["figures"]] == ["v", "g", "n", "i"]
     assert document["figures"][1]["routines"] == ["F"]

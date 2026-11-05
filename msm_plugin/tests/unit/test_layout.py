@@ -28,7 +28,7 @@ import pytest
 
 from msm_plugin.lib import diagrams, layout, management, modeling
 # The project, its tables and a diagram of them, as the diagram tests have them.
-from test_diagrams import TABLES_SQL, diagram, needs_lsp, project  # noqa: F401
+from test_diagrams import TABLES_SQL, diagram, figures_by_type, needs_lsp, project  # noqa: F401
 
 
 def boxes(positions, sizes):
@@ -167,12 +167,20 @@ def test_figure_sizes_follow_the_table_card():
     assert layout.figure_width(huge) == layout.MAX_FIGURE_WIDTH
 
 
+def card_size(figure_type, objects, figure=None, title=None):
+    """The size of a figure's card, as modeling sizes it: by the kind's rows and sections."""
+    kind = diagrams.FIGURE_KINDS[figure_type]
+    title = title if title is not None else objects.get("name", "")
+    return layout.card_size(title, kind.rows(objects), kind.sections(objects, figure or {}), figure)
+
+
 def test_view_and_routine_cards_are_sized_like_table_cards():
     view = {"name": "big_orders", "columns": []}
-    assert layout.view_figure_height(view) == 30 + 2 * 8
-    assert layout.view_figure_height({"name": "v", "columns": ["a", "b"]}) == 30 + 8 + 16 + 36 + 8
-    assert layout.view_figure_width({"name": "v", "columns": []}) == layout.MIN_FIGURE_WIDTH
-    assert layout.view_figure_width(view) == 140  # its title
+    assert card_size("ViewFigure", view) == (140, 30 + 2 * 8)  # as wide as its title
+    assert card_size("ViewFigure", {"name": "v", "columns": ["a", "b"]}) == (
+        layout.MIN_FIGURE_WIDTH, 30 + 8 + 16 + 36 + 8,
+    )
+    assert card_size("ViewFigure", view, {"expanded": False})[1] == 30
     routines = [
         {"name": "order_count", "kind": "function", "parameters": [], "returns": "INT"},
         {"name": "add_order", "kind": "procedure",
@@ -181,9 +189,13 @@ def test_view_and_routine_cards_are_sized_like_table_cards():
     assert [diagrams.routine_label(r) for r in routines] == [
         "order_count(): INT", "add_order(INT UNSIGNED)",
     ]
-    assert layout.routine_figure_height(routines) == 30 + 8 + 16 + 36 + 8
-    assert layout.routine_figure_height(routines, {"expanded": False}) == 30
-    assert layout.routine_figure_width("Routines", routines) > layout.MIN_FIGURE_WIDTH
+    width, height = card_size("RoutineGroupFigure", routines, title="Routines")
+    assert height == 30 + 8 + 16 + 36 + 8
+    assert layout.MIN_FIGURE_WIDTH < width <= layout.MAX_FIGURE_WIDTH
+    assert card_size("RoutineGroupFigure", routines, {"expanded": False}, "R")[1] == 30
+    # The table card's own helpers say the same as the kind.
+    table = {"name": "t", "columns": [{"name": "id", "type": "INT"}]}
+    assert card_size("TableFigure", table) == (layout.figure_width(table), layout.figure_height(table))
 
 
 # -----------------------------------------------------------------------------
@@ -237,7 +249,7 @@ def test_a_new_diagram_shows_the_schema_laid_out(project):
     assert figure["customer"]["top"] < figure["orders"]["top"] < figure["invoice"]["top"]
     assert figure["customer"]["left"] >= layout.MARGIN
     assert figure["customer"]["height"] == 30 + 8 + 16 + 2 * 18 + 8
-    assert all(f["color"] == layout.FIGURE_COLOR for f in document["figures"])
+    assert all(f["color"] == diagrams.FIGURE_COLOR for f in document["figures"])
     connections = {(c["table"], c["foreignKey"]) for c in document["connections"]}
     assert connections == {
         ("orders", "fk_orders_customer"), ("orders", "fk_orders_reviewer"),
@@ -386,17 +398,15 @@ def test_views_and_routines_are_placed_without_connections(project):
     )
     assert (result["figures"], result["connections"]) == (5, 3)
     document = diagram_document(project)
-    by_type = {}
-    for figure in document["figures"]:
-        by_type.setdefault(figure["type"], []).append(figure)
+    by_type = figures_by_type(document)
     (view,) = by_type["ViewFigure"]
     assert (view["view"], view["name"], view["color"]) == (
-        "big_orders", "big_orders", layout.VIEW_FIGURE_COLOR,
+        "big_orders", "big_orders", diagrams.VIEW_FIGURE_COLOR,
     )
     (group,) = by_type["RoutineGroupFigure"]
     assert group["routines"] == ["order_count", "add_order"]
-    assert group["name"] == modeling.ROUTINE_FIGURE_NAME
-    assert group["height"] == layout.routine_figure_height([{}, {}])
+    assert group["name"] == diagrams.ROUTINE_GROUP_NAME
+    assert group["height"] == 30 + 8 + 16 + 2 * 18 + 8
     # Below the tables, which are connected; nothing connects to them.
     lowest_table = max(f["top"] + f["height"] for f in by_type["TableFigure"])
     assert view["top"] >= lowest_table and group["top"] >= lowest_table

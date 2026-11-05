@@ -41,7 +41,8 @@ made from an outline.
 import hashlib
 import json
 import re
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 DIAGRAMS_VIEW = "msm_schema_diagrams"
 SCHEMA_FORMAT = "msm-schema/1"
@@ -150,8 +151,8 @@ _ESCAPES = {"0": "\0", "b": "\b", "n": "\n", "r": "\r", "t": "\t", "Z": "\x1a"}
 # are skipped, single-quoted strings are the literals (group "literal").
 _TOKENS = re.compile(
     r"--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?(?:\*/|\Z)"
-    r"|`(?:[^`]|``)*`|\"(?:[^\"\\]|\\.|\"\")*\""
-    r"|'(?P<literal>(?:[^'\\]|\\.|'')*)'"
+    r"|`(?:[^`]++|``)*`|\"(?:[^\"\\]++|\\.|\"\")*\""
+    r"|'(?P<literal>(?:[^'\\]++|\\.|'')*)'"
     r"|'",
     re.DOTALL,
 )
@@ -403,39 +404,13 @@ ROUTINE_GROUP_FIGURE = "RoutineGroupFigure"
 NOTE_FIGURE = "NoteFigure"
 IMAGE_FIGURE = "ImageFigure"
 
-
-def figure_type(figure: dict) -> str:
-    """A figure's type: a table (the default), a view, a group of routines,
-    or something msm leaves alone."""
-    return figure.get("type") or TABLE_FIGURE
-
-
-def is_table_figure(figure: dict) -> bool:
-    """Whether a diagram figure shows a table (the default type)."""
-    return figure_type(figure) == TABLE_FIGURE
-
-
-def is_view_figure(figure: dict) -> bool:
-    return figure_type(figure) == VIEW_FIGURE
-
-
-def is_routine_group_figure(figure: dict) -> bool:
-    return figure_type(figure) == ROUTINE_GROUP_FIGURE
-
-
-def figure_table(figure: dict) -> str:
-    """The lower-case name of the table a figure shows."""
-    return (figure.get("table") or figure.get("name") or "").lower()
-
-
-def figure_view(figure: dict) -> str:
-    """The lower-case name of the view a figure shows."""
-    return (figure.get("view") or figure.get("name") or "").lower()
-
-
-def figure_routines(figure: dict) -> list:
-    """The names of the routines a routine group figure lists, as written."""
-    return [name for name in figure.get("routines") or [] if isinstance(name, str)]
+# The colours new figures get, Workbench's.
+FIGURE_COLOR = "#98BFDA"
+VIEW_FIGURE_COLOR = "#FEDE58"
+ROUTINE_FIGURE_COLOR = "#98D8A5"
+NOTE_FIGURE_COLOR = "#FEFDED"
+# The name of the routine group figure msm adds to a diagram.
+ROUTINE_GROUP_NAME = "Routines"
 
 
 def routine_label(routine: dict) -> str:
@@ -448,6 +423,130 @@ def routine_label(routine: dict) -> str:
     if routine.get("returns"):
         label += f": {routine['returns']}"
     return label
+
+
+def _table_sections(table: dict, figure: dict) -> list:
+    sections = []
+    if figure.get("columnsExpanded") is not False:
+        sections.append(len(table.get("columns", [])))
+    if figure.get("indicesExpanded") is True:
+        sections.append(len(table.get("indexes", [])))
+    if figure.get("foreignKeysExpanded") is True:
+        sections.append(len(table.get("foreign_keys", [])))
+    return sections
+
+
+@dataclass(frozen=True)
+class FigureKind:
+    """A kind of figure that shows objects of the snapshot, and what its
+    card shows of them.
+
+    Attributes:
+        key: The figure's member naming what it shows: the object's name, or
+            for a group the names listed. Workbench's link key as well.
+        objects: The snapshot list the objects are in, a catalog() key.
+        many: Whether the figure lists several objects (a routine group).
+        color: The colour a new figure gets.
+        rows: The card's rows for the object (or the objects), a text each.
+        sections: The rows of each expanded section of the card, for the
+            object(s) and the figure's flags; an empty section takes no room.
+    """
+
+    key: str
+    objects: str
+    many: bool
+    color: str
+    rows: Callable
+    sections: Callable
+
+
+FIGURE_KINDS = {
+    TABLE_FIGURE: FigureKind(
+        "table", "tables", False, FIGURE_COLOR,
+        rows=lambda table: [
+            column.get("name", "") + (column.get("type") or "")
+            for column in table.get("columns", [])
+        ],
+        sections=_table_sections,
+    ),
+    VIEW_FIGURE: FigureKind(
+        "view", "views", False, VIEW_FIGURE_COLOR,
+        rows=lambda view: [str(column) for column in view.get("columns") or []],
+        sections=lambda view, figure: (
+            [len(view.get("columns") or [])] if figure.get("columnsExpanded") is not False
+            else []
+        ),
+    ),
+    ROUTINE_GROUP_FIGURE: FigureKind(
+        "routines", "routines", True, ROUTINE_FIGURE_COLOR,
+        rows=lambda routines: [routine_label(routine) for routine in routines],
+        sections=lambda routines, figure: [len(routines)],
+    ),
+}
+
+
+def figure_type(figure: dict) -> str:
+    """A figure's type: a table (the default), a view, a group of routines,
+    or something msm leaves alone."""
+    return figure.get("type") or TABLE_FIGURE
+
+
+def figure_kind(figure: dict) -> Optional[FigureKind]:
+    """The kind of a figure that shows snapshot objects; None for a note, an
+    image or a type msm does not know."""
+    return FIGURE_KINDS.get(figure_type(figure))
+
+
+def is_table_figure(figure: dict) -> bool:
+    """Whether a diagram figure shows a table (the default type)."""
+    return figure_type(figure) == TABLE_FIGURE
+
+
+def is_routine_group_figure(figure: dict) -> bool:
+    return figure_type(figure) == ROUTINE_GROUP_FIGURE
+
+
+def figure_object_name(figure: dict) -> str:
+    """The name of the table or view a figure shows, as written; the
+    figure's own name for every other kind."""
+    kind = figure_kind(figure)
+    if kind is not None and not kind.many:
+        return figure.get(kind.key) or figure.get("name") or ""
+    return figure.get("name") or ""
+
+
+def figure_table(figure: dict) -> str:
+    """The lower-case name of the table a figure shows."""
+    return (figure.get("table") or figure.get("name") or "").lower()
+
+
+def figure_routines(figure: dict) -> list:
+    """The names of the routines a routine group figure lists, as written."""
+    return [name for name in figure.get("routines") or [] if isinstance(name, str)]
+
+
+def catalog(schema_document: dict) -> dict:
+    """The snapshot's tables, views and routines by their lower-case name."""
+    return {
+        kind: {item["name"].lower(): item for item in schema_document.get(kind, [])}
+        for kind in ("tables", "views", "routines")
+    }
+
+
+def figure_objects(figure: dict, catalog: dict):
+    """What of the snapshot a figure shows: the table or view, the routines
+    a routine group lists (those the schema has), or None for a figure of
+    nothing the schema has, a note or an image."""
+    kind = figure_kind(figure)
+    if kind is None:
+        return None
+    objects = catalog[kind.objects]
+    if kind.many:
+        found = [
+            objects[name.lower()] for name in figure_routines(figure) if name.lower() in objects
+        ]
+        return found or None
+    return objects.get(figure_object_name(figure).lower())
 
 
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
@@ -466,28 +565,23 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     Returns:
         Whether anything was dropped.
     """
-    tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
-    views = {view["name"].lower() for view in schema_document.get("views", [])}
-    routines = {routine["name"].lower() for routine in schema_document.get("routines", [])}
+    objects = catalog(schema_document)
+    tables = objects["tables"]
     figures, connections = diagram["figures"], diagram["connections"]
 
     changed = False
     kept_figures = []
     for figure in figures:
-        if is_table_figure(figure):
-            if figure_table(figure) not in tables:
-                continue
-        elif is_view_figure(figure):
-            if figure_view(figure) not in views:
-                continue
-        elif is_routine_group_figure(figure):
-            listed = figure.get("routines") or []
-            shown = [name for name in figure_routines(figure) if name.lower() in routines]
-            if len(shown) != len(listed):
+        kind = figure_kind(figure)
+        if kind is not None and kind.many:
+            shown = [
+                name for name in figure_routines(figure) if name.lower() in objects[kind.objects]
+            ]
+            if shown != (figure.get("routines") or []):
                 figure["routines"] = shown
                 changed = True
-            if not shown:
-                continue
+        if kind is not None and figure_objects(figure, objects) is None:
+            continue
         kept_figures.append(figure)
     figure_ids = {figure.get("id") for figure in kept_figures}
 

@@ -34,7 +34,7 @@ import pytest
 from msm_plugin.lib import diagrams, management, modeling, projects, sections, workbench
 
 # The project, as the diagram tests have it, and their mark for the binary.
-from test_diagrams import needs_lsp, project  # noqa: F401
+from test_diagrams import figures_by_type, needs_lsp, project  # noqa: F401
 
 
 # -----------------------------------------------------------------------------
@@ -162,33 +162,33 @@ def shop_model():
                       obj("db.UserDatatype", "UDT-UUID", name="UUID", sqlDefinition="UUID",
                           flags="", actualType=Link("com.mysql.rdbms.mysql.datatype.binary"))])
 
-    def figure(object_id, table, left, top, layer):
-        return obj("workbench.physical.TableFigure", object_id, table=Link(table),
-                   layer=Link(layer), left=float(left), top=float(top), width=160.0,
-                   height=120.0, color="#98BFDA", expanded=1, columnsExpanded=1,
-                   indicesExpanded=0, foreignKeysExpanded=0, triggersExpanded=0,
-                   manualSizing=0, name="")
+    def figure(struct, object_id, left, top, layer, **members):
+        """A figure of a diagram as Workbench writes one, its own members on top."""
+        return obj(struct, object_id, layer=Link(layer), left=float(left), top=float(top),
+                   **{"width": 160.0, "height": 120.0, "color": "", "expanded": 1,
+                      "manualSizing": 0, "name": "", **members})
 
-    figures = [figure("{F-CUSTOMER}", "{T-CUSTOMER}", 20, 20, "{L-ROOT}"),
-               figure("{F-ORDERS}", "{T-ORDERS}", 20, 200, "{L-ROOT}"),
-               figure("{F-EMP}", "{T-EMPLOYEE}", 10, 30, "{L-HR}"),
-               obj("workbench.physical.ViewFigure", "{F-VIEW}", view=Link("{V-1}"),
-                   layer=Link("{L-ROOT}"), left=400.0, top=400.0, width=120.0, height=46.0,
-                   color="#fede58", expanded=1, manualSizing=0, name=""),
-               obj("workbench.physical.RoutineGroupFigure", "{F-RG}", routineGroup=Link("{RG-1}"),
-                   layer=Link("{L-ROOT}"), left=600.0, top=400.0, width=140.0, height=80.0,
-                   color="", expanded=1, manualSizing=0, name=""),
-               obj("workbench.model.NoteFigure", "{F-NOTE}", layer=Link("{L-HR}"), left=10.0,
-                   top=250.0, width=137.0, height=25.0, color="#FEFDED", expanded=1,
-                   manualSizing=1, name="text1", text="The staff", font="", textColor=""),
-               obj("workbench.model.ImageFigure", "{F-IMAGE}", layer=Link("{L-ROOT}"),
-                   left=800.0, top=20.0, width=64.0, height=64.0, color="", expanded=1,
-                   manualSizing=1, keepAspectRatio=1, name="Logo",
-                   filename="@images/logo.png"),
-               obj("workbench.model.ImageFigure", "{F-LOST}", layer=Link("{L-ROOT}"),
-                   left=900.0, top=20.0, width=64.0, height=64.0, color="", expanded=1,
-                   manualSizing=1, keepAspectRatio=1, name="Lost",
-                   filename="@images/missing.png")]
+    def table_figure(object_id, table, left, top, layer):
+        return figure("workbench.physical.TableFigure", object_id, left, top, layer,
+                      table=Link(table), color="#98BFDA", columnsExpanded=1, indicesExpanded=0,
+                      foreignKeysExpanded=0, triggersExpanded=0)
+
+    figures = [table_figure("{F-CUSTOMER}", "{T-CUSTOMER}", 20, 20, "{L-ROOT}"),
+               table_figure("{F-ORDERS}", "{T-ORDERS}", 20, 200, "{L-ROOT}"),
+               table_figure("{F-EMP}", "{T-EMPLOYEE}", 10, 30, "{L-HR}"),
+               figure("workbench.physical.ViewFigure", "{F-VIEW}", 400, 400, "{L-ROOT}",
+                      view=Link("{V-1}"), width=120.0, height=46.0, color="#fede58"),
+               figure("workbench.physical.RoutineGroupFigure", "{F-RG}", 600, 400, "{L-ROOT}",
+                      routineGroup=Link("{RG-1}"), width=140.0, height=80.0),
+               figure("workbench.model.NoteFigure", "{F-NOTE}", 10, 250, "{L-HR}",
+                      width=137.0, height=25.0, color="#FEFDED", manualSizing=1, name="text1",
+                      text="The staff", font="", textColor=""),
+               figure("workbench.model.ImageFigure", "{F-IMAGE}", 800, 20, "{L-ROOT}",
+                      width=64.0, height=64.0, manualSizing=1, keepAspectRatio=1, name="Logo",
+                      filename="@images/logo.png"),
+               figure("workbench.model.ImageFigure", "{F-LOST}", 900, 20, "{L-ROOT}",
+                      width=64.0, height=64.0, manualSizing=1, keepAspectRatio=1, name="Lost",
+                      filename="@images/missing.png")]
     diagram = obj(
         "workbench.physical.Diagram", "{DIAGRAM}", name="Shop", width=1000.0, height=800.0,
         zoom=1.0, description="",
@@ -369,7 +369,7 @@ def test_a_foreign_key_to_a_table_outside_the_schema_is_left_out(tmp_path):
 def test_a_large_image_is_reported_not_embedded(tmp_path, monkeypatch):
     monkeypatch.setattr(workbench, "MAX_IMAGE_SIZE", 8)
     model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", shop_model()))
-    assert model.images["@images/logo.png"] is None
+    assert model.images["@images/logo.png"] == len(PNG)
     _, warnings = workbench.diagram_documents(model, model.schema())
     assert ("The image `@images/logo.png` of the diagram `Shop` was left out: it is larger "
             "than msm embeds.") in warnings
@@ -438,9 +438,7 @@ def test_the_diagrams_become_documents(mwb):
     (document,) = documents
     diagrams.validate_diagram(document)
     assert document["name"] == "Shop"
-    by_type = {}
-    for figure in document["figures"]:
-        by_type.setdefault(figure["type"], []).append(figure)
+    by_type = figures_by_type(document)
     figures = {figure["table"]: figure for figure in by_type["TableFigure"]}
     assert set(figures) == {"customer", "orders", "employee"}
     (view,) = by_type["ViewFigure"]

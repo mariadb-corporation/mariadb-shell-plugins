@@ -57,6 +57,8 @@ from typing import Optional
 
 from msm_plugin.lib import diagrams
 
+_TABLE = diagrams.FIGURE_KINDS[diagrams.TABLE_FIGURE]
+
 # The gap kept between figures, Workbench's minimum.
 GAP = 80
 # The gap between the rows of a layout.
@@ -65,12 +67,6 @@ ROW_GAP = 80
 DUMMY_WIDTH = 20
 # The space left around a diagram's figures.
 MARGIN = 40
-# The colours new figures get, Workbench's for tables, views and routine groups.
-FIGURE_COLOR = "#98BFDA"
-VIEW_FIGURE_COLOR = "#FEDE58"
-ROUTINE_FIGURE_COLOR = "#98D8A5"
-NOTE_FIGURE_COLOR = "#FEFDED"
-
 # The table card's measurements (tableCard.ts CARD), in diagram units.
 _HEADER_HEIGHT = 30
 _PADDING = 8
@@ -119,13 +115,16 @@ def _card_height(sections: list, figure: Optional[dict]) -> float:
     return float(_HEADER_HEIGHT + 2 * _PADDING + body + gaps)
 
 
+def card_size(title: str, rows: list, sections: list, figure: Optional[dict] = None) -> tuple:
+    """The width and height a card needs, see _card_width and _card_height.
+    What a figure kind's card shows is diagrams.FIGURE_KINDS' business."""
+    return _card_width(title, rows), _card_height(sections, figure)
+
+
 def figure_width(table: dict) -> float:
     """The width a table's figure needs to show its name and its columns,
     each row an icon, the name and, after it, the type."""
-    return _card_width(
-        table.get("name", ""),
-        [column.get("name", "") + (column.get("type") or "") for column in table.get("columns", [])],
-    )
+    return _card_width(table.get("name", ""), _TABLE.rows(table))
 
 
 def figure_height(table: dict, figure: Optional[dict] = None) -> float:
@@ -136,36 +135,7 @@ def figure_height(table: dict, figure: Optional[dict] = None) -> float:
     row per member.
     """
     figure = figure or {}
-    sections = []
-    if figure.get("columnsExpanded") is not False:
-        sections.append(len(table.get("columns", [])))
-    if figure.get("indicesExpanded") is True:
-        sections.append(len(table.get("indexes", [])))
-    if figure.get("foreignKeysExpanded") is True:
-        sections.append(len(table.get("foreign_keys", [])))
-    return _card_height(sections, figure)
-
-
-def view_figure_width(view: dict) -> float:
-    """The width a view's figure needs: its name and the columns it declares."""
-    return _card_width(view.get("name", ""), [str(c) for c in view.get("columns") or []])
-
-
-def view_figure_height(view: dict, figure: Optional[dict] = None) -> float:
-    """The height of a view's card: the header and the columns it declares."""
-    columns = len(view.get("columns") or [])
-    shown = (figure or {}).get("columnsExpanded") is not False
-    return _card_height([columns] if shown else [], figure)
-
-
-def routine_figure_width(name: str, routines: list) -> float:
-    """The width a routine group's figure needs: its name and a row per routine."""
-    return _card_width(name, [diagrams.routine_label(routine) for routine in routines])
-
-
-def routine_figure_height(routines: list, figure: Optional[dict] = None) -> float:
-    """The height of a routine group's card: the header and a row per routine."""
-    return _card_height([len(routines)], figure)
+    return _card_height(_TABLE.sections(table, figure), figure)
 
 
 # -----------------------------------------------------------------------------
