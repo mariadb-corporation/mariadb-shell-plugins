@@ -330,13 +330,18 @@ def schema_document_from_outline(
 
 
 def unread_statements(outline: dict) -> list:
-    """The outline's notes on statements it could not read.
+    """The outline's notes on statements it did not apply.
 
-    A statement with a syntax error is left out of the outline, so a snapshot
-    made from it would silently miss the objects it defines.
+    A statement with a syntax error, an ALTER TABLE of a table the script
+    does not create, an include that cannot be read and so on is left out of
+    the outline, so a snapshot made from it would silently miss what it
+    defines. The language server says so with each note's ``applied``; a
+    binary from before that member is judged by its message.
     """
     return [
-        note for note in outline.get("notes", []) if "not read" in note.get("message", "")
+        note
+        for note in outline.get("notes", [])
+        if (not note["applied"] if "applied" in note else "not read" in note.get("message", ""))
     ]
 
 

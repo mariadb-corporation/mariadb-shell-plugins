@@ -217,6 +217,26 @@ def test_foreign_keys_get_what_a_diagram_draws_them_with():
         diagrams.schema_document_from_outline({"format": 2}, "shop", [], "sha256:")
 
 
+def test_notes_on_statements_that_were_not_applied_are_found():
+    notes = [
+        {"kind": "syntax-error", "applied": False, "message": "not read: the statement has a syntax error"},
+        {"kind": "unknown-table", "applied": False, "message": "ALTER TABLE t: the script does not create this table"},
+        {"kind": "unknown-table", "applied": True, "message": "CREATE TABLE ... LIKE t, which the script does not create"},
+        {"kind": "a-kind-added-later", "applied": False, "message": "anything"},
+    ]
+    assert [note["kind"] for note in diagrams.unread_statements({"notes": notes})] == [
+        "syntax-error",
+        "unknown-table",
+        "a-kind-added-later",
+    ]
+    # A binary from before `applied`: by the message
+    older = [
+        {"message": "not read: the statement has a syntax error"},
+        {"message": "ALTER TABLE t: the script does not create this table"},
+    ]
+    assert diagrams.unread_statements({"notes": older}) == older[:1]
+
+
 def test_a_diagram_loses_what_the_schema_no_longer_has():
     schema = {
         "tables": [
@@ -452,7 +472,7 @@ def test_a_statement_that_cannot_be_read_stops_the_snapshot(project):
         TABLES_SQL + "\nCREATE TABLE broken (id INT,);",
         management.get_schema_development_file_path(project),
     )
-    with pytest.raises(ValueError, match="could not be read"):
+    with pytest.raises(ValueError, match="were not applied"):
         modeling.update_schema_definition(project)
     assert modeling.read_diagram_rows(project) == []
 

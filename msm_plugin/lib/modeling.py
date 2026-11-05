@@ -311,20 +311,24 @@ def _build_schema_definition(project: _Project, lsp_path: str = None) -> dict:
     hash_value = _source_hash(project, hashed)
 
     outline = lsp.outline(binary, script, project.development)
-    unread = diagrams.unread_statements(outline)
-    if unread:
-        details = "; ".join(
-            f"line {note['start']['line'] + 1}: {note['message']}" for note in unread[:10]
-        )
-        raise ValueError(
-            f"{len(unread)} statement(s) of `{script_name}` could not be read, so the "
-            f"schema snapshot would miss what they define: {details}"
-        )
-
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])
     ]
+    unread = diagrams.unread_statements(outline)
+    if unread:
+        # A note on an included statement is at that statement, in its file
+        # (newer binaries), and its message starts with the file and line.
+        details = "; ".join(
+            note["message"] if "source" in note
+            else f"line {note['start']['line'] + 1}: {note['message']}"
+            for note in unread[:10]
+        )
+        raise ValueError(
+            f"{len(unread)} statement(s) of `{script_name}` were not applied, so the "
+            f"schema snapshot would miss what they define: {details}"
+        )
+
     schema_name = management.get_effective_schema_name(project.settings)
     return diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
 
