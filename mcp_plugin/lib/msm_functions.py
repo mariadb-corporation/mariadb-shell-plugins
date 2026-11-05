@@ -103,6 +103,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     import anyio.to_thread
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
+    from msm_plugin import modeling as msm_modeling
     from msm_plugin.lib import management as msm_management
     from msm_plugin.lib import projects as msm_projects
 
@@ -123,6 +124,33 @@ def register_msm_tools(server, function_groups=()) -> None:
         # directory for None itself.
         if schema_project_path is None and not general.is_multi_tenant():
             general.require_project_access(ctx, os.getcwd())
+
+    async def _in_project(ctx, schema_project_path, function, *args, **kwargs):
+        """Runs an msm function on an authorized project, off the event loop.
+
+        Every file a SOURCE directive of the project names is read (or, for a
+        breakout file, written) without asking the user, so msm checks each
+        with the rule db.execute_sql_script's includes are, inside
+        source.checked_includes().
+        """
+        from msm_plugin.lib import source
+
+        await _authorize_project(ctx, schema_project_path)
+        user = general.get_client_identity(ctx).user
+        kwargs = _kwargs(schema_project_path=schema_project_path, **kwargs)
+
+        def run():
+            with source.checked_includes(lambda path: db_functions.allowed_include(path, user)):
+                return function(*args, **kwargs)
+
+        return await anyio.to_thread.run_sync(run)
+
+    def _lsp_path() -> Optional[str]:
+        """The mariadb-lsp `mcp setup --lspPath` names; else msm looks for it
+        as the sql tools do (next to the shell, on the PATH, ~/.local/bin)."""
+        from mcp_plugin.lib import config
+
+        return config.get_lsp_path() or None
 
     async def create_project(
         ctx: Context,
@@ -459,19 +487,142 @@ def register_msm_tools(server, function_groups=()) -> None:
                 for further development work.
             overwrite_existing: Overwrite existing files.
 
+        A release first makes the schema snapshot of the diagrams again (see
+        msm.update_schema_definition) and fails where it cannot.
+
         Returns:
             The list of generated files.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm.prepare_release(
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm.prepare_release,
             **_kwargs(
                 version=version,
                 next_version=next_version,
-                schema_project_path=schema_project_path,
                 allow_to_stay_on_same_version=allow_to_stay_on_same_version,
                 overwrite_existing=overwrite_existing,
-            )
+                lsp_path=_lsp_path(),
+            ),
         )
+
+    @tool(name="msm.list_schema_diagrams")
+    async def list_schema_diagrams(
+        ctx: Context, schema_project_path: Optional[str] = None
+    ) -> dict:
+        """Lists the schema diagrams of a database schema project.
+
+        A project keeps its diagrams in MSM Section 160 of the development
+        script, the `msm_schema_diagrams` VIEW: one row `schema_definition`
+        (format msm-schema/1) with a snapshot of the schema objects the
+        CREATE statements define, as the MariaDB SQL language server
+        outlines them, and one row per EER diagram (format msm-diagram/1).
+
+        Args:
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            schema_definition: the snapshot's table count and whether it was
+            made from the development script as it is now (current), or null
+            without one; diagrams: name, figures and connections of each.
+        """
+        return await _in_project(ctx, schema_project_path, msm_modeling.list_schema_diagrams)
+
+    @tool(name="msm.get_schema_diagrams")
+    async def get_schema_diagrams(
+        ctx: Context,
+        schema_project_path: Optional[str] = None,
+        diagram: Optional[str] = None,
+    ) -> list:
+        """Returns the rows of a schema project's diagrams VIEW.
+
+        Args:
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+            diagram: Only this diagram, with the schema snapshot. Defaults
+                to every row.
+
+        Returns:
+            The rows, each name, format and document. The msm-schema/1
+            document holds the snapshot: tables (columns, indexes,
+            foreign_keys with many, mandatory and referenced_mandatory,
+            checks), views, routines, triggers, events and sequences as the
+            language server's outline writes them, with their positions in
+            files (0-based lines and UTF-16 characters; source n is
+            files[n + 1]), and source_hash. An msm-diagram/1 document holds
+            layers, figures and connections.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
+        )
+
+    @tool(name="msm.update_schema_definition")
+    async def update_schema_definition(
+        ctx: Context, schema_project_path: Optional[str] = None
+    ) -> dict:
+        """Makes the schema snapshot of a project's diagrams again.
+
+        Use it after changing the CREATE statements of the development
+        script. The snapshot is made by the MariaDB SQL language server's
+        binary from the development script and the files its SOURCE
+        directives include; a statement it cannot read fails the call.
+        Diagrams lose the figures and connections of objects the schema no
+        longer has. msm.prepare_release does this too.
+
+        Args:
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The counts of tables, views, routines, triggers, events and
+            sequences, the diagrams that changed and the files written.
+        """
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.update_schema_definition,
+            **_kwargs(lsp_path=_lsp_path()),
+        )
+
+    @tool(name="msm.set_schema_diagram")
+    async def set_schema_diagram(
+        ctx: Context, document: dict, schema_project_path: Optional[str] = None
+    ) -> list:
+        """Adds a diagram to a schema project, or replaces the one of that name.
+
+        Args:
+            document: The msm-diagram/1 document: format "msm-diagram/1",
+                name, width, height, layers, figures (each id, type
+                "TableFigure", table, left, top, width, height, color,
+                layer) and connections (each id, foreignKey, table - the
+                table owning the foreign key -, startFigure, endFigure,
+                visible).
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The files written.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.set_schema_diagram, document
+        )
+
+    @tool(name="msm.remove_schema_diagram")
+    async def remove_schema_diagram(
+        ctx: Context, name: str, schema_project_path: Optional[str] = None
+    ) -> list:
+        """Removes a diagram from a schema project.
+
+        Args:
+            name: The name of the diagram.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The files written.
+        """
+        return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, name)
 
     @tool(name="msm.get_sql_content_from_section")
     async def get_sql_content_from_section(

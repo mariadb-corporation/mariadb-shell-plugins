@@ -1205,8 +1205,15 @@ def prepare_release(
     next_version: str,
     allow_to_stay_on_same_version: bool = False,
     overwrite_existing: bool = False,
+    lsp_path: str = None,
 ) -> list[str]:
     """Adds a new release to the schema project
+
+    The schema snapshot of the diagrams (MSM Section 160) is made again from
+    the development script first, so a release always holds the one that
+    matches its CREATE statements. That needs the MariaDB SQL language
+    server's binary, mariadb-lsp; without it, or when a statement cannot be
+    read, no release is made.
 
     Args:
         schema_project_path: The path to the schema project folder.
@@ -1215,6 +1222,7 @@ def prepare_release(
         allow_to_stay_on_same_version: Whether to allow to stay on the
             same version for further development work
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
 
     Returns:
         A list of filenames that have been created or changed for the release
@@ -1253,6 +1261,22 @@ def prepare_release(
             "The next development version needs to be at least at the same version as the version for release "
             f"{version}."
         )
+
+    # Refused before the snapshot below changes the development files.
+    schema_version_file_path = os.path.join(
+        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
+    )
+    if os.path.exists(schema_version_file_path) and not overwrite_existing:
+        raise ValueError(
+            f"The file {schema_version_file_path} already exists. Please explicitly allow to replace existing files."
+        )
+
+    # The release carries the snapshot of its CREATE statements. Like section
+    # 910 it changes the development files, which are not listed. (Imported
+    # here: lib.modeling imports this module.)
+    from msm_plugin.lib import modeling
+
+    modeling.update_schema_definition(schema_project_path, lsp_path=lsp_path)
 
     # Get the current schema development file sections
     schema_dev_file_path = os.path.join(
@@ -1314,9 +1338,6 @@ def prepare_release(
     )
 
     # Write the schema version file out
-    schema_version_file_path = os.path.join(
-        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
-    )
     write_sections_to_file(
         file_path=schema_version_file_path,
         sections=schema_version_sections,
@@ -1479,6 +1500,9 @@ def generate_deployment_script(
             "section_150_idempotent_schema_objects": target_version_sections.get(
                 "150", {}
             )
+            .get("sql_content", "")
+            .strip("\n"),
+            "section_160_schema_diagrams": target_version_sections.get("160", {})
             .get("sql_content", "")
             .strip("\n"),
             "section_170_authorization": indent(

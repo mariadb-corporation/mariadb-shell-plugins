@@ -37,6 +37,8 @@ text has to be expanded.
 """
 
 import bisect
+import contextlib
+import contextvars
 import os
 import re
 from dataclasses import dataclass
@@ -183,8 +185,43 @@ def resolve_include_path(path: str, base_dir: Optional[str]) -> str:
     return os.path.normpath(path)
 
 
+# Checks every file msm reads or writes for a SOURCE directive, see
+# checked_includes(). Unset, every path is taken as it is.
+_include_check: contextvars.ContextVar = contextvars.ContextVar(
+    "msm_include_check", default=None
+)
+
+
+@contextlib.contextmanager
+def checked_includes(check: Callable[[str], str]):
+    """Checks every include msm reads or writes while the block runs.
+
+    A caller that serves other people's requests (mcp_plugin) sets it once
+    around a call into msm, so every SOURCE directive's file - expanded for a
+    release, read for the diagrams, or written as a breakout file - is
+    checked, however deep the call reads it.
+
+    Args:
+        check: Given a path, returns the path to use (e.g. with symlinks
+            resolved), or raises a ValueError to refuse it.
+    """
+    token = _include_check.set(check)
+    try:
+        yield
+    finally:
+        _include_check.reset(token)
+
+
+def checked_include_path(path: str) -> str:
+    """The path to read or write for an include, after the current check."""
+    check = _include_check.get()
+    return path if check is None else check(path)
+
+
 def read_include(path: str) -> tuple[str, str]:
     """Reads a file a SOURCE directive names, as msm does.
+
+    The path goes through the check checked_includes() set, if any.
 
     Args:
         path: The file, resolved by :func:`resolve_include_path`.
@@ -192,6 +229,7 @@ def read_include(path: str) -> tuple[str, str]:
     Returns:
         The path of the file read and its content.
     """
+    path = checked_include_path(path)
     if not os.path.exists(path):
         raise ValueError(f"The file `{path}` could not be resolved.")
     with open(path, "r") as f:
@@ -218,6 +256,19 @@ def _directive_matches(script: str):
         line += script.count("\n", position, match.start())
         position = match.start()
         yield line, match
+
+
+def directive_slices(script: str) -> list[tuple[int, str, str, str]]:
+    """Lists the SOURCE directives of a script with their slices.
+
+    Returns:
+        One (line, path, start, end) per directive, in order; lines from 1,
+        start and end the slice bounds as written, "" when left out.
+    """
+    return [
+        (line, match.group(3), match.group(4) or "", match.group(5) or "")
+        for line, match in _directive_matches(script)
+    ]
 
 
 def directives(script: str) -> list[tuple[int, str]]:
