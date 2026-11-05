@@ -494,6 +494,9 @@ def _current_snapshot(project: _Project, rows: list, lsp_path: str = None) -> tu
     """
     schema = next((row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT), None)
     if schema is not None and schema["document"].get("source_hash") == _current_hash(project):
+        # A snapshot written before foreign keys were named has unnamed ones.
+        for table in schema["document"].get("tables", []):
+            diagrams.name_foreign_keys(table)
         return schema["document"], rows
     document, rows, _ = _replace_snapshot(project, rows, lsp_path)
     return document, rows
@@ -699,7 +702,12 @@ def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool) -> tup
         The tables added, the number of connections added and the tables placed.
     """
     by_name = {table["name"].lower(): table for table in document["tables"]}
-    taken = {item.get("id") for item in diagram["figures"] + diagram["connections"]}
+    items = diagram["figures"] + diagram["connections"]
+    taken = {item["id"] for item in items if item.get("id")}
+    # The layout keys the figures by id; a document may leave one out.
+    for item in items:
+        if not item.get("id"):
+            item["id"] = _new_id(taken)
     added = _add_figures(diagram, by_name, tables, taken)
     connections_added = _add_connections(diagram, by_name, document["schema"], taken)
     placed = _place(diagram, by_name, keep_placed)

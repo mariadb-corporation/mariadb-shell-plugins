@@ -302,6 +302,40 @@ def test_figures_without_a_position_are_placed(project):
 
 
 @needs_lsp
+def test_a_snapshot_with_unnamed_foreign_keys_is_laid_out(project):
+    """A snapshot written before foreign keys were named is reused as long
+    as the script is unchanged; its foreign keys get their names then."""
+    modeling.create_diagram(project, "Main", ["customer"])
+    rows = modeling.read_diagram_rows(project)
+    for table in rows[0]["document"]["tables"]:
+        for foreign_key in table["foreign_keys"]:
+            foreign_key["name"] = None
+    management.set_section_sql_content(
+        "160", diagrams.render_view_sql(rows), management.get_schema_development_file_path(project)
+    )
+    assert modeling.list_diagrams(project)["schema_definition"]["current"] is True
+
+    result = modeling.layout_diagram(project, "Main", ["orders"])
+    assert result["connections_added"] == 2
+    names = {c["foreignKey"] for c in diagram_document(project)["connections"]}
+    assert names == {"orders_ibfk_1", "orders_ibfk_2"}
+
+
+@needs_lsp
+def test_figures_without_an_id_are_placed(project):
+    document = diagram(tables=("customer", "orders"))
+    document["connections"] = []
+    for figure in document["figures"]:
+        del figure["id"], figure["left"], figure["top"]
+    modeling.set_diagram(project, document)
+    result = modeling.layout_diagram(project, "Main")
+    assert sorted(result["placed"]) == ["customer", "orders"]
+    figures = diagram_document(project)["figures"]
+    assert len({figure["id"] for figure in figures}) == 2
+    assert result["connections_added"] == 2
+
+
+@needs_lsp
 def test_a_changed_script_gets_a_new_snapshot_before_the_layout(project):
     modeling.create_diagram(project, "Main", ["customer"])
     management.set_section_sql_content(

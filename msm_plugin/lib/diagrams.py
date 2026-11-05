@@ -261,7 +261,7 @@ def _add_relationship_members(table: dict) -> None:
         )
 
 
-def _name_foreign_keys(table: dict) -> None:
+def name_foreign_keys(table: dict) -> None:
     """Gives every foreign key the SQL leaves unnamed the name MariaDB gives it.
 
     A diagram's connection names its foreign key, so each needs one. A
@@ -347,7 +347,7 @@ def schema_document_from_outline(
             document[kind].extend(schema.get(kind, []))
 
     for table in document["tables"]:
-        _name_foreign_keys(table)
+        name_foreign_keys(table)
         _add_relationship_members(table)
 
     document["rest"] = outline.get("rest", {})
