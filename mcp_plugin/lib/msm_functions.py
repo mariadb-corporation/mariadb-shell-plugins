@@ -595,7 +595,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             document: The msm-diagram/1 document: format "msm-diagram/1",
                 name, width, height, layers, figures (each id, type
                 "TableFigure", table, left, top, width, height, color,
-                layer) and connections (each id, foreignKey, table - the
+                layer; a figure without left and top is placed by
+                msm.layout_schema_diagram) and connections (each id, foreignKey, table - the
                 table owning the foreign key -, startFigure, endFigure,
                 visible).
             schema_project_path: The path to the schema project. Defaults to
@@ -606,6 +607,76 @@ def register_msm_tools(server, function_groups=()) -> None:
         """
         return await _in_project(
             ctx, schema_project_path, msm_modeling.set_schema_diagram, document
+        )
+
+    @tool(name="msm.create_schema_diagram")
+    async def create_schema_diagram(
+        ctx: Context,
+        name: str,
+        tables: Optional[list[str]] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Adds a diagram of the schema's tables to a schema project, laid out.
+
+        The tables are laid out in layers: a table a foreign key refers to
+        goes above the tables referring to it, with few crossing
+        connections, and tables without foreign keys are packed in rows
+        below. Every foreign key between two tables shown gets a connection.
+        The schema snapshot is made again first where the development script
+        changed since it was made.
+
+        Args:
+            name: The name of the new diagram.
+            tables: The tables to show. Defaults to all tables of the schema.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            name, figures and connections (counts), and the files written.
+        """
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.create_schema_diagram,
+            name,
+            **_kwargs(tables=tables, lsp_path=_lsp_path()),
+        )
+
+    @tool(name="msm.layout_schema_diagram")
+    async def layout_schema_diagram(
+        ctx: Context,
+        name: str,
+        tables: Optional[list[str]] = None,
+        keep_placed: bool = True,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Adds tables to a diagram of a schema project and lays its figures out.
+
+        With keep_placed (the default) only figures without a position are
+        laid out - the tables added, or figures a document given to
+        msm.set_schema_diagram leaves left and top out of - as a block below
+        the others; with keep_placed false every figure is laid out again.
+        Figures on a layer keep their place. Foreign keys between tables on
+        the diagram that are not drawn get a connection. The schema snapshot
+        is made again first where the development script changed.
+
+        Args:
+            name: The name of the diagram.
+            tables: Tables to add to the diagram. Defaults to none.
+            keep_placed: Whether figures that have a position keep it.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            name, added (tables added), placed (tables laid out),
+            connections_added and the files written.
+        """
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.layout_schema_diagram,
+            name,
+            **_kwargs(tables=tables, keep_placed=keep_placed, lsp_path=_lsp_path()),
         )
 
     @tool(name="msm.remove_schema_diagram")

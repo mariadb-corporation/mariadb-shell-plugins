@@ -261,6 +261,31 @@ def _add_relationship_members(table: dict) -> None:
         )
 
 
+def _name_foreign_keys(table: dict) -> None:
+    """Gives every foreign key the SQL leaves unnamed the name MariaDB gives it.
+
+    A diagram's connection names its foreign key, so each needs one. A
+    foreign key with neither a CONSTRAINT name nor an index name is named
+    `<table>_ibfk_<n>` by InnoDB, n one more than the highest such number the
+    table has so far (ha_innodb.cc: dict_table_get_foreign_id), so 1, 2, ...
+    in a CREATE TABLE, continued by each ALTER TABLE. The outline lists them
+    in that order. Such a name is marked ``generated_name``, as the SQL does
+    not have it.
+    """
+    prefix = f"{table['name']}_ibfk_"
+    foreign_keys = table.get("foreign_keys", [])
+    # A name the SQL gives one already is not given to another.
+    taken = {fk["name"].lower() for fk in foreign_keys if fk.get("name") is not None}
+    used = 0
+    for foreign_key in foreign_keys:
+        if foreign_key.get("name") is None:
+            used += 1
+            while f"{prefix}{used}".lower() in taken:
+                used += 1
+            foreign_key["name"] = f"{prefix}{used}"
+            foreign_key["generated_name"] = True
+
+
 def _same_name(a: Optional[str], b: Optional[str]) -> bool:
     return a is not None and b is not None and a.lower() == b.lower()
 
@@ -322,6 +347,7 @@ def schema_document_from_outline(
             document[kind].extend(schema.get(kind, []))
 
     for table in document["tables"]:
+        _name_foreign_keys(table)
         _add_relationship_members(table)
 
     document["rest"] = outline.get("rest", {})
