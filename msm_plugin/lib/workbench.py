@@ -539,14 +539,17 @@ def _object_name(sql: str, fallback: str) -> str:
     return name[1:-1].replace("``", "`") if name.startswith("`") else name
 
 
-def _privilege_target(model: Model, privilege: dict) -> str:
+def _privilege_target(model: Model, privilege: dict, schema_name: str) -> str:
     """What a GRANT is on: an object of the schema, or * for all of it (the
-    script runs after USE of the schema, whatever name a deployment gives it)."""
+    script runs after USE of the schema, whatever name a deployment gives it,
+    so `<schema>.*` of the model's schema is * as well)."""
     target = model.objects.get(privilege.get("databaseObject"))
     if target is not None and target.get("name"):
         return quote_identifier(target["name"])
     name = privilege.get("databaseObjectName") or ""
     if name in ("**.*", "*.*", "*", ""):
+        return "*"
+    if name.endswith(".*") and name[:-2].strip("`").lower() == schema_name.lower():
         return "*"
     return name if "." in name else quote_identifier(name)
 
@@ -582,6 +585,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
     """
     result = Imported()
     tables = [table for table in schema.get("tables", []) if not table.get("isStub")]
+    table_ids = {table["_id"] for table in tables}
     order, later = _ordered_tables(model, tables)
     later_ids = {id(foreign_key) for _, foreign_key in later}
 
@@ -589,10 +593,20 @@ def schema_sql(model: Model, schema: dict) -> Imported:
     for table in order:
         inline = []
         for foreign_key in table.get("foreignKeys", []):
-            if model.objects.get(foreign_key.get("referencedTable")) is None:
+            parent = model.objects.get(foreign_key.get("referencedTable"))
+            if parent is None:
                 result.warnings.append(
                     f"The foreign key `{foreign_key.get('name')}` of `{table['name']}` refers "
                     "to a table the model does not have; it was left out."
+                )
+            elif parent["_id"] not in table_ids:
+                # A stub, or a table of another schema: the script creates
+                # one schema, and a REFERENCES to a table it does not have
+                # could not be deployed.
+                result.warnings.append(
+                    f"The foreign key `{foreign_key.get('name')}` of `{table['name']}` refers "
+                    f"to `{parent.get('name')}`, which is not a table of the schema; it was "
+                    "left out."
                 )
             elif id(foreign_key) not in later_ids:
                 inline.append(foreign_key)
@@ -609,7 +623,6 @@ def schema_sql(model: Model, schema: dict) -> Imported:
             for table, foreign_key in later
         )
 
-    table_ids = {table["_id"] for table in tables}
     inserts = [sql for sql in (inserts_sql(model, table) for table in order) if sql]
     result.inserts = "\n\n".join(inserts) or None
     stale = [table_id for table_id in model.data if table_id not in table_ids]
@@ -660,7 +673,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
             names = [p for p in privilege.get("privileges", []) if p]
             if not names:
                 continue
-            target = _privilege_target(model, privilege)
+            target = _privilege_target(model, privilege, schema.get("name", ""))
             lines.append(
                 f"GRANT {', '.join(names)} ON {target} TO {quote_identifier(role['name'])};"
             )
@@ -802,12 +815,12 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
         documents.append(document)
 
     # Names have to be unique: they are the rows' names.
-    seen = {}
+    used = {diagrams.SCHEMA_ROW_NAME}
     for document in documents:
         name = document["name"]
-        if name == diagrams.SCHEMA_ROW_NAME or name in seen:
-            seen[name] = seen.get(name, 1) + 1
-            document["name"] = f"{name} ({seen[name]})"
-        else:
-            seen[name] = 1
+        number = 1
+        while document["name"] in used:
+            number += 1
+            document["name"] = f"{name} ({number})"
+        used.add(document["name"])
     return documents, warnings

@@ -293,6 +293,61 @@ def test_the_schema_becomes_sql(mwb):
                              "events": 0, "roles": 1, "inserted_rows": 3}
 
 
+def test_a_foreign_key_to_a_table_outside_the_schema_is_left_out(tmp_path):
+    document = shop_model()
+    catalog = document["physicalModels"][0]["catalog"]
+    schema = catalog["schemata"][0]
+    stub = obj("db.mysql.Table", "{T-STUB}", name="stub", isStub=1, columns=[
+        column("{C-STUB-ID}", "id", simple="int")], indices=[], foreignKeys=[], triggers=[])
+    schema["tables"].append(stub)
+    other = obj("db.mysql.Schema", "{S2}", name="crm", tables=[
+        obj("db.mysql.Table", "{T-CRM}", name="account", isStub=0, columns=[
+            column("{C-CRM-ID}", "id", simple="int")], indices=[], foreignKeys=[], triggers=[])],
+        views=[], routines=[], events=[])
+    catalog["schemata"].append(other)
+    orders = schema["tables"][1]
+    orders["foreignKeys"] += [
+        foreign_key("{FK-STUB}", "fk_orders_stub", "{T-ORDERS}", ["{C-ORDERS-ID}"], "{T-STUB}",
+                    ["{C-STUB-ID}"]),
+        foreign_key("{FK-CRM}", "fk_orders_account", "{T-ORDERS}", ["{C-ORDERS-ID}"], "{T-CRM}",
+                    ["{C-CRM-ID}"]),
+    ]
+    # Privileges on the whole schema, as the model names it.
+    catalog["roles"][0]["privileges"].append(
+        obj("db.RolePrivilege", "{RP-3}", databaseObjectName="shop.*", databaseObjectType="TABLE",
+            privileges=["INSERT"]))
+
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", document))
+    result = workbench.schema_sql(model, model.schema("shop"))
+    assert "fk_orders_stub" not in result.tables
+    assert "fk_orders_account" not in result.tables
+    assert "REFERENCES `customer`" in result.tables
+    assert sorted(w for w in result.warnings if "not a table of the schema" in w) == [
+        "The foreign key `fk_orders_account` of `orders` refers to `account`, which is not a "
+        "table of the schema; it was left out.",
+        "The foreign key `fk_orders_stub` of `orders` refers to `stub`, which is not a table "
+        "of the schema; it was left out.",
+    ]
+    assert "GRANT INSERT ON * TO `shop_reader`;" in result.roles
+
+
+def test_diagram_names_are_made_unique(tmp_path):
+    document = shop_model()
+    physical = document["physicalModels"][0]
+    first = physical["diagrams"][0]
+    first["name"] = "schema_definition"
+    for number, name in enumerate(("Shop", "Shop", "Shop (2)")):
+        copy = dict(first, _id=f"{{DIAGRAM-{number}}}", name=name, figures=[], layers=[],
+                    connections=[])
+        physical["diagrams"].append(copy)
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", document))
+    documents, _ = workbench.diagram_documents(model, model.schema())
+    names = [d["name"] for d in documents]
+    assert names[0] == "schema_definition (2)"
+    assert len(set(names)) == len(names) == 4
+    assert names[1:3] == ["Shop", "Shop (2)"]
+
+
 def test_a_statement_s_kind_and_an_event_saved_as_a_routine():
     assert workbench.statement_kind("CREATE DEFINER=`a`@`%` PROCEDURE p() BEGIN END") == "PROCEDURE"
     assert workbench.statement_kind("DELIMITER $$\nCREATE EVENT e ON SCHEDULE EVERY 1 DAY DO "
