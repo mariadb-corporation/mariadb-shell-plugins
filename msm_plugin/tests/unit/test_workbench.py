@@ -367,12 +367,30 @@ def test_a_foreign_key_to_a_table_outside_the_schema_is_left_out(tmp_path):
 
 
 def test_a_large_image_is_reported_not_embedded(tmp_path, monkeypatch):
-    monkeypatch.setattr(workbench, "MAX_IMAGE_SIZE", 8)
-    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", shop_model()))
-    assert model.images["@images/logo.png"] == len(PNG)
+    monkeypatch.setattr(workbench, "MAX_IMAGE_SIZE", 8 * 1024)
+    big = {"logo.png": PNG + b"\x00" * (8 * 1024)}
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", shop_model(), images=big))
+    assert model.images["@images/logo.png"] == len(big["logo.png"])
     _, warnings = workbench.diagram_documents(model, model.schema())
     assert ("The image `@images/logo.png` of the diagram `Shop` was left out: it is larger "
-            "than msm embeds.") in warnings
+            "than 8 KB.") in warnings
+
+
+def test_a_diagram_s_pictures_are_capped_together(tmp_path, monkeypatch):
+    # Room for one logo, and two figures showing it: the second is reported.
+    monkeypatch.setattr(workbench, "MAX_DIAGRAM_IMAGES_SIZE", len(PNG) + 1)
+    document = shop_model()
+    diagram = document["physicalModels"][0]["diagrams"][0]
+    logo = next(f for f in diagram["figures"] if f["_id"] == "{F-IMAGE}")
+    diagram["figures"].append(dict(logo, _id="{F-IMAGE-2}", name="Logo again"))
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", document))
+    documents, warnings = workbench.diagram_documents(model, model.schema())
+    images = [f["name"] for f in documents[0]["figures"] if f["type"] == "ImageFigure"]
+    assert images == ["Logo"]
+    assert [w for w in warnings if w.startswith("The image `@images/logo.png`")] == [
+        "The image `@images/logo.png` of the diagram `Shop` was left out: the diagram's "
+        f"pictures would be larger than {workbench.MAX_DIAGRAM_IMAGES_SIZE // 2 ** 20} MB together."
+    ]
 
 
 def test_diagram_names_are_made_unique(tmp_path):

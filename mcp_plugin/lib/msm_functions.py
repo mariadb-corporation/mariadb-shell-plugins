@@ -558,11 +558,21 @@ def register_msm_tools(server, function_groups=()) -> None:
             language server's outline writes them, with their positions in
             files (0-based lines and UTF-16 characters; source n is
             files[n + 1]), and source_hash. An msm-diagram/1 document holds
-            layers, figures and connections.
+            layers, figures and connections. An ImageFigure's picture, a
+            data URL, is left out: image_size says its length, and
+            msm.set_schema_diagram keeps the stored picture of a figure sent
+            without one.
         """
-        return await _in_project(
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        rows = await _in_project(
             ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
         )
+        return [
+            {**row, "document": msm_diagrams.elide_images(row["document"])}
+            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
+            for row in rows
+        ]
 
     @tool(name="msm.update_schema_definition")
     async def update_schema_definition(
@@ -600,12 +610,15 @@ def register_msm_tools(server, function_groups=()) -> None:
 
         Args:
             document: The msm-diagram/1 document: format "msm-diagram/1",
-                name, width, height, layers, figures (each id, type
-                "TableFigure", table, left, top, width, height, color,
-                layer; a figure without left and top is placed by
-                msm.layout_schema_diagram) and connections (each id, foreignKey, table - the
-                table owning the foreign key -, startFigure, endFigure,
-                visible).
+                name, width, height, layers, figures and connections (each
+                id, foreignKey, table - the table owning the foreign key -,
+                startFigure, endFigure, visible). A figure has id, type, name,
+                left, top, width, height, color and layer; a figure without
+                left and top is placed by msm.layout_schema_diagram. By type:
+                "TableFigure" has table, "ViewFigure" view,
+                "RoutineGroupFigure" routines (names), "NoteFigure" text,
+                "ImageFigure" image (a data URL; left out, the figure keeps
+                the picture stored under its id).
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 

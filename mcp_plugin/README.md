@@ -326,8 +326,10 @@ first when the script changed since it was made.
 the CREATE statements of a schema of the model (sections 140, 150 and 170, in breakout
 files under `development/sections/` where a section is large), its snapshot and its EER
 diagrams with their table, view, routine group, note and image figures (a picture is
-embedded as a data URL, up to 1 MB). Scripts attached to the model are listed, not
-imported.
+embedded as a data URL, up to 512 KB each and 4 MB per diagram). Scripts attached to
+the model are listed, not imported. `msm.get_schema_diagrams` leaves the pictures out
+(`image_size` says their length), and `msm.set_schema_diagram` keeps the stored one for
+a figure sent without it.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of

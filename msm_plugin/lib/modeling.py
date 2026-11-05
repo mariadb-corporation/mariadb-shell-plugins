@@ -419,6 +419,10 @@ def get_diagram_rows(schema_project_path: str, name: str = None) -> list:
 def set_diagram(schema_project_path: str, document: dict) -> list:
     """Adds a diagram to the VIEW, or replaces the one of the same name.
 
+    An image figure given without its picture keeps the one the replaced
+    diagram holds for that figure id (get_diagram_rows' callers may leave
+    the data URL out).
+
     Returns:
         The files written.
     """
@@ -433,6 +437,7 @@ def set_diagram(schema_project_path: str, document: dict) -> list:
     if index is None:
         rows.append(row)
     else:
+        diagrams.keep_images(document, rows[index]["document"])
         rows[index] = row
     return _write(project, rows)
 

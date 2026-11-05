@@ -527,6 +527,34 @@ def figure_routines(figure: dict) -> list:
     return [name for name in figure.get("routines") or [] if isinstance(name, str)]
 
 
+def elide_images(document: dict) -> dict:
+    """A copy of a diagram document without the pictures of its image
+    figures: each `image` (a data URL of up to hundreds of KB) is replaced
+    by `image_size`, its length. For a reader that cannot use the bytes."""
+    figures = []
+    for figure in document.get("figures", []):
+        picture = figure.get("image")
+        if isinstance(picture, str):
+            figure = {key: value for key, value in figure.items() if key != "image"}
+            figure["image_size"] = len(picture)
+        figures.append(figure)
+    return {**document, "figures": figures}
+
+
+def keep_images(document: dict, stored: Optional[dict]) -> None:
+    """Gives an image figure that comes without its picture the one the
+    stored diagram holds for the figure of the same id, in place."""
+    pictures = {
+        figure.get("id"): figure["image"]
+        for figure in (stored or {}).get("figures", [])
+        if isinstance(figure.get("image"), str) and figure.get("id")
+    }
+    for figure in document.get("figures", []):
+        if figure_type(figure) == IMAGE_FIGURE and not figure.get("image"):
+            if figure.get("id") in pictures:
+                figure["image"] = pictures[figure["id"]]
+
+
 def catalog(schema_document: dict) -> dict:
     """The snapshot's tables, views and routines by their lower-case name."""
     return {

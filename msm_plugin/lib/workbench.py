@@ -58,9 +58,11 @@ DATA = "@db/data.db"
 SCRIPTS = ("@scripts/", "@sqlscripts/")
 IMAGES = "@images/"
 # An image figure's picture goes into the diagram document as a data URL
-# (every msm call parses the document again), so a larger one is reported
-# instead of embedded.
-MAX_IMAGE_SIZE = 1024 * 1024
+# (every msm call parses the document again, and the VIEW is deployed), so a
+# larger one, or one past what a diagram's pictures may take together, is
+# reported instead of embedded.
+MAX_IMAGE_SIZE = 512 * 1024
+MAX_DIAGRAM_IMAGES_SIZE = 4 * 1024 * 1024
 _IMAGE_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
     ".svg": "image/svg+xml", ".bmp": "image/bmp", ".webp": "image/webp",
@@ -793,7 +795,7 @@ def _image_data_url(name: str, data: bytes) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-def _convert_figure(model: Model, figure: dict, schema_ids: dict, archive):
+def _convert_figure(model: Model, figure: dict, schema_ids: dict, archive, budget: int):
     """A Workbench figure as an msm-diagram/1 figure (Workbench's struct
     names are msm's types); None for one msm does not keep: another
     schema's object or an unknown kind; or the reason, a str, for an image
@@ -801,6 +803,7 @@ def _convert_figure(model: Model, figure: dict, schema_ids: dict, archive):
 
     Args:
         archive: The model file, open, for the images; None without any.
+        budget: What the diagram's pictures may still take, in bytes.
     """
     struct = (figure.get("_struct") or "").rsplit(".", 1)[-1]
     kind = diagrams.FIGURE_KINDS.get(struct)
@@ -840,7 +843,12 @@ def _convert_figure(model: Model, figure: dict, schema_ids: dict, archive):
         if size is None or archive is None:
             return "the model file does not hold it."
         if size > MAX_IMAGE_SIZE:
-            return "it is larger than msm embeds."
+            return f"it is larger than {MAX_IMAGE_SIZE // 1024} KB."
+        if size > budget:
+            return (
+                f"the diagram's pictures would be larger than "
+                f"{MAX_DIAGRAM_IMAGES_SIZE // (1024 * 1024)} MB together."
+            )
         result = _figure_base(figure, struct, figure.get("name") or "", "")
         result["image"] = _image_data_url(file_name, archive.read(file_name))
         return result
@@ -879,11 +887,12 @@ def _diagram_documents(model: Model, schema_ids: dict, archive) -> tuple:
         diagram_name = diagram.get("name") or "Diagram"
         root_layer = model.objects.get(diagram.get("rootLayer"))
         figures, skipped = [], 0
+        budget = MAX_DIAGRAM_IMAGES_SIZE
         for figure in diagram.get("figures", []):
             figure = model.objects.get(figure)
             if figure is None:
                 continue
-            converted = _convert_figure(model, figure, schema_ids, archive)
+            converted = _convert_figure(model, figure, schema_ids, archive, budget)
             if isinstance(converted, str):
                 warnings.append(
                     f"The image `{figure.get('filename')}` of the diagram `{diagram_name}` "
@@ -893,6 +902,8 @@ def _diagram_documents(model: Model, schema_ids: dict, archive) -> tuple:
             if converted is None:
                 skipped += 1
                 continue
+            if converted["type"] == diagrams.IMAGE_FIGURE:
+                budget -= model.images[figure["filename"]]
             layer = model.objects.get(figure.get("layer"))
             if layer is not None and (root_layer is None or layer["_id"] != root_layer["_id"]):
                 converted["layer"] = layer["_id"]

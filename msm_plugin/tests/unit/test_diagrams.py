@@ -266,6 +266,27 @@ def test_a_diagram_loses_what_the_schema_no_longer_has():
 # Section 160 of a project
 
 
+def test_pictures_are_elided_and_kept():
+    picture = "data:image/png;base64,iVBORw0KGgo="
+    stored = diagram("D", tables=("customer",))
+    stored["figures"].append({"id": "i", "type": "ImageFigure", "name": "Logo", "image": picture})
+    elided = diagrams.elide_images(stored)
+    assert "image" not in elided["figures"][1]
+    assert elided["figures"][1]["image_size"] == len(picture)
+    assert stored["figures"][1]["image"] == picture  # a copy
+    assert "image_size" not in elided["figures"][0]
+
+    sent = diagram("D", tables=("customer",))
+    sent["figures"] += [
+        {"id": "i", "type": "ImageFigure", "name": "Logo"},
+        {"id": "new", "type": "ImageFigure", "name": "No picture"},
+    ]
+    diagrams.keep_images(sent, stored)
+    assert sent["figures"][1]["image"] == picture
+    assert "image" not in sent["figures"][2]
+    diagrams.keep_images(sent, None)
+
+
 def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
     schema = {"tables": [], "views": [{"name": "V"}], "routines": [{"name": "f"}]}
     document = diagram("D", tables=())
