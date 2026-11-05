@@ -30,10 +30,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
-- **Schema diagrams (2026-11-05, `wip/msm-diagrams`):** five tools in
+- **Schema diagrams (PR #82, layout on `wip/msm-diagram-layout`):** seven tools in
   `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
   `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
-  `msm.set_schema_diagram`, `msm.remove_schema_diagram`. They and `msm.prepare_release`
+  `msm.set_schema_diagram`, `msm.remove_schema_diagram`, `msm.create_schema_diagram`
+  and `msm.layout_schema_diagram` (both pass `lsp_path`: they make the snapshot again
+  when the script changed). They and `msm.prepare_release`
   go through `_in_project(ctx, path, function, ...)`: `_authorize_project`, then the
   msm call in a worker thread inside `msm_plugin.lib.source.checked_includes(...)`
   with `db_functions.allowed_include` for the client's user, so EVERY file a SOURCE

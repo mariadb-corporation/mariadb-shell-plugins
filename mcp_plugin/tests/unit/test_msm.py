@@ -842,6 +842,25 @@ def test_the_schema_snapshot_is_made_through_the_tools(project_lists, allowed_te
     }
 
 
+@pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
+def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+
+    result = _call(tools, "msm.create_schema_diagram", "Main", ["customer"], path)
+    assert (result["figures"], result["connections"]) == (1, 0)
+    result = _call(tools, "msm.layout_schema_diagram", "Main", ["orders"], True, path)
+    assert (result["added"], result["placed"], result["connections_added"]) == (
+        ["orders"], ["orders"], 1,
+    )
+    document = _call(tools, "msm.get_schema_diagrams", path, "Main")[1]["document"]
+    figures = {figure["table"]: figure for figure in document["figures"]}
+    assert figures["customer"]["top"] < figures["orders"]["top"]
+
+    result = _call(tools, "msm.layout_schema_diagram", "Main", None, False, path)
+    assert sorted(result["placed"]) == ["customer", "orders"]
+
+
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(
     project_lists, allowed_temp_dir, tmp_path
 ):

@@ -261,6 +261,31 @@ def _add_relationship_members(table: dict) -> None:
         )
 
 
+def name_foreign_keys(table: dict) -> None:
+    """Gives every foreign key the SQL leaves unnamed the name MariaDB gives it.
+
+    A diagram's connection names its foreign key, so each needs one. A
+    foreign key with neither a CONSTRAINT name nor an index name is named
+    `<table>_ibfk_<n>` by InnoDB, n one more than the highest such number the
+    table has so far (ha_innodb.cc: dict_table_get_foreign_id), so 1, 2, ...
+    in a CREATE TABLE, continued by each ALTER TABLE. The outline lists them
+    in that order. Such a name is marked ``generated_name``, as the SQL does
+    not have it.
+    """
+    prefix = f"{table['name']}_ibfk_"
+    foreign_keys = table.get("foreign_keys", [])
+    # A name the SQL gives one already is not given to another.
+    taken = {fk["name"].lower() for fk in foreign_keys if fk.get("name") is not None}
+    used = 0
+    for foreign_key in foreign_keys:
+        if foreign_key.get("name") is None:
+            used += 1
+            while f"{prefix}{used}".lower() in taken:
+                used += 1
+            foreign_key["name"] = f"{prefix}{used}"
+            foreign_key["generated_name"] = True
+
+
 def _same_name(a: Optional[str], b: Optional[str]) -> bool:
     return a is not None and b is not None and a.lower() == b.lower()
 
@@ -322,6 +347,7 @@ def schema_document_from_outline(
             document[kind].extend(schema.get(kind, []))
 
     for table in document["tables"]:
+        name_foreign_keys(table)
         _add_relationship_members(table)
 
     document["rest"] = outline.get("rest", {})
@@ -369,6 +395,16 @@ def validate_diagram(document) -> None:
             raise ValueError(f"A diagram's `{member}` has to be a list.")
 
 
+def is_table_figure(figure: dict) -> bool:
+    """Whether a diagram figure shows a table (the default type)."""
+    return figure.get("type", "TableFigure") == "TableFigure"
+
+
+def figure_table(figure: dict) -> str:
+    """The lower-case name of the table a figure shows."""
+    return (figure.get("table") or figure.get("name") or "").lower()
+
+
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
@@ -385,14 +421,10 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """
     tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
     figures, connections = diagram["figures"], diagram["connections"]
-
-    def table_of(figure) -> str:
-        return (figure.get("table") or figure.get("name") or "").lower()
-
     kept_figures = [
         figure
         for figure in figures
-        if figure.get("type", "TableFigure") != "TableFigure" or table_of(figure) in tables
+        if not is_table_figure(figure) or figure_table(figure) in tables
     ]
     figure_ids = {figure.get("id") for figure in kept_figures}
 
