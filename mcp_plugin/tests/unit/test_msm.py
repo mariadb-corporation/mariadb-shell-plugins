@@ -895,6 +895,8 @@ def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
     _call(tools, "msm.set_schema_diagram", rows[-1]["document"], path)
     stored = modeling.get_diagram_rows(path, "Pics")[-1]["document"]
     assert next(f for f in stored["figures"] if f["id"] == "logo")["image"] == picture
+    # And the picture itself comes by its figure.
+    assert _call(tools, "msm.get_schema_diagram_image", "Pics", "logo", path) == picture
 
 
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(

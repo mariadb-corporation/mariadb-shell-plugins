@@ -574,6 +574,31 @@ def register_msm_tools(server, function_groups=()) -> None:
             for row in rows
         ]
 
+    @tool(name="msm.get_schema_diagram_image")
+    async def get_schema_diagram_image(
+        ctx: Context,
+        diagram: str,
+        figure_id: str,
+        schema_project_path: Optional[str] = None,
+    ) -> str:
+        """Returns the picture of an ImageFigure of a schema project's diagram.
+
+        msm.get_schema_diagrams leaves pictures out (image_size says their
+        length); this returns one, for a client that draws the diagram.
+
+        Args:
+            diagram: The name of the diagram.
+            figure_id: The id of the ImageFigure.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The picture, a data URL (up to 512 KB as msm imports them).
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.get_schema_diagram_image, diagram, figure_id
+        )
+
     @tool(name="msm.update_schema_definition")
     async def update_schema_definition(
         ctx: Context, schema_project_path: Optional[str] = None

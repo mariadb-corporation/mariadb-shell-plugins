@@ -304,6 +304,26 @@ def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
     assert not diagrams.reconcile_diagram(document, schema)
 
 
+def test_a_picture_is_read_by_its_figure(project):
+    picture = "data:image/svg+xml;base64,PHN2Zy8+"
+    document = diagram()
+    document["figures"] += [
+        {"id": "logo", "type": "ImageFigure", "name": "Logo", "image": picture},
+        {"id": "empty", "type": "ImageFigure", "name": "Empty"},
+    ]
+    modeling.set_diagram(project, document)
+    assert modeling.get_diagram_image(project, "Main", "logo") == picture
+    with pytest.raises(ValueError, match="no diagram `Other`"):
+        modeling.get_diagram_image(project, "Other", "logo")
+    with pytest.raises(ValueError, match="no figure `gone`"):
+        modeling.get_diagram_image(project, "Main", "gone")
+    with pytest.raises(ValueError, match="holds no picture"):
+        modeling.get_diagram_image(project, "Main", "empty")
+    table_figure = document["figures"][0]["id"]
+    with pytest.raises(ValueError, match="holds no picture"):
+        modeling.get_diagram_image(project, "Main", table_figure)
+
+
 def test_a_new_project_has_an_empty_diagrams_section(project):
     assert "MSM Section 160: Schema Diagrams" in dev_script(project)
     assert modeling.read_diagram_rows(project) == []

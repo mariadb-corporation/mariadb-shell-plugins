@@ -432,6 +432,33 @@ def get_diagram_rows(schema_project_path: str, name: str = None) -> list:
     return [row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT] + found
 
 
+def get_diagram_image(schema_project_path: str, name: str, figure_id: str) -> str:
+    """Returns the picture of an image figure, which get_diagram_rows'
+    callers that elide pictures (diagrams.elide_images) leave out.
+
+    Returns:
+        The picture, a data URL.
+
+    Raises:
+        ValueError: For a diagram, or an image figure with a picture, the
+            VIEW does not hold.
+    """
+    rows = [row for row in read_diagram_rows(schema_project_path) if _is_diagram(row, name)]
+    if not rows:
+        raise ValueError(f"The project has no diagram `{name}`.")
+    figure = next(
+        (figure for figure in rows[0]["document"].get("figures", [])
+         if figure.get("id") == figure_id),
+        None,
+    )
+    if figure is None:
+        raise ValueError(f"The diagram `{name}` has no figure `{figure_id}`.")
+    picture = figure.get("image")
+    if diagrams.figure_type(figure) != diagrams.IMAGE_FIGURE or not isinstance(picture, str):
+        raise ValueError(f"The figure `{figure_id}` of the diagram `{name}` holds no picture.")
+    return picture
+
+
 def set_diagram(schema_project_path: str, document: dict) -> list:
     """Adds a diagram to the VIEW, or replaces the one of the same name.
 

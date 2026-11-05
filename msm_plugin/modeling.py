@@ -88,6 +88,26 @@ def get_schema_diagrams(**kwargs) -> list:
     return lib.modeling.get_diagram_rows(_project(kwargs), kwargs.get("diagram"))
 
 
+@plugin_function("msm.getSchemaDiagramImage", shell=True, cli=True, web=True)
+def get_schema_diagram_image(diagram: str, figure_id: str, **kwargs) -> str:
+    """Returns the picture of an image figure of a schema diagram
+
+    The MCP server's msm.get_schema_diagrams leaves pictures out; this returns one.
+
+    Args:
+        diagram (str): The name of the diagram.
+        figure_id (str): The id of the ImageFigure.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+
+    Returns:
+        The picture, a data URL.
+    """
+    return lib.modeling.get_diagram_image(_project(kwargs), diagram, figure_id)
+
+
 @plugin_function("msm.updateSchemaDefinition", shell=True, cli=True, web=True)
 def update_schema_definition(**kwargs) -> dict:
     """Makes the schema snapshot of a project's diagrams again
