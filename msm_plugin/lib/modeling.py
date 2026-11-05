@@ -30,8 +30,9 @@ script in one file.
 """
 
 import os
+import re
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from msm_plugin.lib import diagrams, lsp, management, source
 
@@ -42,9 +43,8 @@ BREAKOUT_FILE = "./sections/160_schema_diagrams.sql"
 # project's msm.project.json sets maxInlineSectionSize.
 DEFAULT_MAX_INLINE_SECTION_SIZE = 16 * 1024
 
-# A check of a file a SOURCE directive includes: given its resolved path, it
-# raises a ValueError to refuse it (mcp_plugin passes its allowed-path check).
-IncludeCheck = Optional[Callable[[str], None]]
+# Every file of a SOURCE directive is read through source.read_include, so a
+# caller that has to check them sets source.checked_includes() around the call.
 
 
 def get_max_inline_section_size(project_settings: dict) -> int:
@@ -62,16 +62,6 @@ def _development_folder(schema_project_path: str) -> str:
     return os.path.join(schema_project_path, "development")
 
 
-def _template_section(section_id: str) -> dict:
-    """The section of the development script template, as a new project has it."""
-    template = os.path.join(
-        Path(__file__).parent.parent, "templates", "scripts", "schema_next.sql"
-    )
-    with open(template, "r") as f:
-        sections = management.get_script_sections(f.read())
-    return sections[section_id]
-
-
 def ensure_diagrams_section(sections: dict) -> dict:
     """Returns the sections with Section 160, added after 150 where missing.
 
@@ -79,33 +69,27 @@ def ensure_diagrams_section(sections: dict) -> dict:
     """
     if DIAGRAMS_SECTION_ID in sections:
         return sections
-    added = dict(_template_section(DIAGRAMS_SECTION_ID))
-    result = {}
-    placed = False
-    for section_id, section in sections.items():
-        if not placed and section_id.isdigit() and int(section_id) > int(DIAGRAMS_SECTION_ID):
-            result[DIAGRAMS_SECTION_ID] = added
-            placed = True
-        result[section_id] = section
-    if not placed:
-        result[DIAGRAMS_SECTION_ID] = added
-    return result
+    template = os.path.join(
+        Path(__file__).parent.parent, "templates", "scripts", "schema_next.sql"
+    )
+    with open(template, "r") as f:
+        added = management.get_script_sections(f.read())[DIAGRAMS_SECTION_ID]
+    ids = list(sections)
+    position = next(
+        (index for index, section_id in enumerate(ids)
+         if section_id.isdigit() and int(section_id) > int(DIAGRAMS_SECTION_ID)),
+        len(ids),
+    )
+    ids.insert(position, DIAGRAMS_SECTION_ID)
+    return {
+        section_id: added if section_id == DIAGRAMS_SECTION_ID else sections[section_id]
+        for section_id in ids
+    }
 
 
-def _checked_read(check: IncludeCheck):
-    """A reader for expand_source_directives that checks each file first."""
-
-    def read(path: str):
-        if check is not None:
-            check(path)
-        return source.read_include(path)
-
-    return read
-
-
-def _section_directive(sql_content: str) -> Optional[str]:
-    """The path of the one SOURCE directive of a section body, or None."""
-    found = source.directives(sql_content)
+def _section_directive(sql_content: str) -> Optional[tuple]:
+    """The (path, start, end) of the one SOURCE directive of a section body, or None."""
+    found = source.directive_slices(sql_content)
     if not found:
         return None
     if len(found) > 1:
@@ -113,15 +97,11 @@ def _section_directive(sql_content: str) -> Optional[str]:
             f"MSM Section {DIAGRAMS_SECTION_ID} may include one file only, it has "
             f"{len(found)} SOURCE directives."
         )
-    return found[0][1]
+    return found[0][1:]
 
 
-def read_diagram_rows(schema_project_path: str, check: IncludeCheck = None) -> list:
+def read_diagram_rows(schema_project_path: str) -> list:
     """Returns the rows of the project's diagrams VIEW.
-
-    Args:
-        schema_project_path: The project folder.
-        check: Checks a file the section includes, see IncludeCheck.
 
     Returns:
         The rows, each {name, format, document}; none where the section is
@@ -134,7 +114,7 @@ def read_diagram_rows(schema_project_path: str, check: IncludeCheck = None) -> l
     content = section["sql_content"]
     if source.contains_source_directive(content):
         content = source.expand_source_directives(
-            content, _development_folder(schema_project_path), read=_checked_read(check)
+            content, _development_folder(schema_project_path)
         )[0]
     return diagrams.parse_view_sql(content)
 
@@ -149,83 +129,81 @@ def _breakout_header(project_settings: dict) -> str:
     )
 
 
-def write_diagram_rows(
-    schema_project_path: str, rows: list, check: IncludeCheck = None
-) -> list:
+def _write_if_changed(path: str, text: str) -> bool:
+    """Writes a file unless it holds the text already; says whether it wrote."""
+    try:
+        with open(path, "r") as f:
+            if f.read() == text:
+                return False
+    except FileNotFoundError:
+        pass
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    return True
+
+
+def write_diagram_rows(schema_project_path: str, rows: list) -> list:
     """Writes the rows of the project's diagrams VIEW into Section 160.
 
     A section that includes a file keeps doing so: the file's part the
     directive selects is replaced, its header and footer stay. An inline
     section stays inline while the VIEW fits maxInlineSectionSize; a larger
-    one moves into the breakout file sections/160_schema_diagrams.sql.
-
-    Args:
-        schema_project_path: The project folder.
-        rows: The rows, each {name, format, document}.
-        check: Checks a file the section includes, see IncludeCheck.
+    one moves into the breakout file sections/160_schema_diagrams.sql. A file
+    that would not change is not written.
 
     Returns:
         The files written.
     """
     project_settings = management.get_project_settings(schema_project_path)
     development = _development_folder(schema_project_path)
-    dev_file = management.get_schema_development_file_path(schema_project_path)
     existing = management.get_schema_development_sections(schema_project_path)
     sections = ensure_diagrams_section(existing)
-    added = DIAGRAMS_SECTION_ID not in existing
+    section = sections[DIAGRAMS_SECTION_ID]
     view_sql = diagrams.render_view_sql(rows)
     written = []
 
-    included = _section_directive(sections[DIAGRAMS_SECTION_ID]["sql_content"])
+    included = _section_directive(section["sql_content"])
     if included is None and len(view_sql) > get_max_inline_section_size(project_settings):
         header = _breakout_header(project_settings)
-        breakout = source.resolve_include_path(BREAKOUT_FILE, development)
-        if check is not None:
-            check(breakout)
-        os.makedirs(os.path.dirname(breakout), exist_ok=True)
-        with open(breakout, "w") as f:
-            f.write(header + view_sql + "\n")
-        written.append(breakout)
-        first_line = header.count("\n") + 1
-        body = (
-            f"SOURCE '{BREAKOUT_FILE}'[ln{first_line}:]; -- Without the header"
-        )
+        included = (BREAKOUT_FILE, f"ln{header.count(chr(10)) + 1}", "")
+        before, after = header, ""
+        body = f"SOURCE '{BREAKOUT_FILE}'[{included[1]}:]; -- Without the header"
     elif included is not None:
-        breakout = source.resolve_include_path(included, development)
-        if check is not None:
-            check(breakout)
-        start, end = _directive_slice(sections[DIAGRAMS_SECTION_ID]["sql_content"])
-        try:
-            with open(breakout, "r") as f:
-                old = f.read()
-        except FileNotFoundError:
-            old = ""
-        start_offset = source.get_source_slice_offset(old, start, False) or 0
-        end_offset = source.get_source_slice_offset(old, end, True)
-        tail = "" if end_offset is None else old[end_offset:]
-        with open(breakout, "w") as f:
-            f.write(old[:start_offset] + view_sql + "\n" + tail)
-        written.append(breakout)
+        before = after = ""
         body = None
     else:
         body = view_sql
 
+    if included is not None:
+        path = source.checked_include_path(
+            source.resolve_include_path(included[0], development)
+        )
+        if body is None:
+            # The parts of the file outside the directive's slice stay.
+            try:
+                with open(path, "r") as f:
+                    old = f.read()
+            except FileNotFoundError:
+                old = ""
+            start = source.get_source_slice_offset(old, included[1], False) or 0
+            end = source.get_source_slice_offset(old, included[2], True)
+            before, after = old[:start], "" if end is None else old[end:]
+        if _write_if_changed(path, before + view_sql + "\n" + after):
+            written.append(path)
+
     if body is not None:
-        section = sections[DIAGRAMS_SECTION_ID]
-        # Two blank lines before the next banner, as the templates have them.
+        # A blank line after the banner and two before the next one, as the
+        # templates have them; set_sql_content strips both.
         section["full_content"] = (
             section["full_content"][: section["sql_start"]] + "\n\n" + body + "\n\n"
         )
-    if body is not None or added:
-        management.write_schema_development_file(schema_project_path, sections)
-        written.insert(0, dev_file)
+    if body is not None or sections is not existing:
+        dev_file = management.get_schema_development_file_path(schema_project_path)
+        script = "\n".join(item["full_content"] for item in sections.values())
+        if _write_if_changed(dev_file, script):
+            written.insert(0, dev_file)
     return written
-
-
-def _directive_slice(sql_content: str) -> tuple:
-    """The start and end bounds of the section's SOURCE directive, as written."""
-    match = next(source._directive_matches(sql_content))[1]
-    return match.group(4) or "", match.group(5) or ""
 
 
 def outline_input(schema_project_path: str) -> tuple:
@@ -253,15 +231,20 @@ def outline_input(schema_project_path: str) -> tuple:
     return script, hashed, os.path.basename(dev_file)
 
 
-def build_schema_definition(
-    schema_project_path: str, lsp_path: str = None, check: IncludeCheck = None
-) -> dict:
+def _source_hash(schema_project_path: str, hashed: str) -> str:
+    """The hash of the script without Section 160, its SOURCE files expanded."""
+    expanded = source.expand_source_directives(
+        hashed, _development_folder(schema_project_path)
+    )[0]
+    return diagrams.source_hash(expanded)
+
+
+def build_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:
     """Makes the msm-schema/1 snapshot of the project's development script.
 
     Args:
         schema_project_path: The project folder.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
-        check: Checks every file a SOURCE directive includes, see IncludeCheck.
 
     Returns:
         The snapshot document.
@@ -276,16 +259,15 @@ def build_schema_definition(
     development = _development_folder(schema_project_path)
     script, hashed, script_name = outline_input(schema_project_path)
 
-    # msm's reading of the directives decides what is included, and the binary
-    # must not find others: it also ends a line at a lone "\r".
-    if "\r" in script.replace("\r\n", ""):
+    # msm's reading of the directives decides what is included (and checked),
+    # and the binary must not find others: it also ends a line at a lone "\r".
+    if re.search(r"\r(?!\n)", script):
         raise ValueError(
             f"`{script_name}` has a line ending in a lone carriage return; "
             "save it with \\n or \\r\\n line endings."
         )
-    expanded = source.expand_source_directives(
-        hashed, development, read=_checked_read(check)
-    )[0]
+    # Expanded first, so every include is checked before the binary reads it.
+    hash_value = _source_hash(schema_project_path, hashed)
 
     outline = lsp.outline(binary, script, development)
     unread = diagrams.unread_statements(outline)
@@ -303,28 +285,19 @@ def build_schema_definition(
         for include in outline.get("includes", [])
     ]
     schema_name = management.get_effective_schema_name(project_settings)
-    return diagrams.schema_document_from_outline(outline, schema_name, files, expanded)
+    return diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
 
 
-def current_source_hash(schema_project_path: str, check: IncludeCheck = None) -> str:
+def current_source_hash(schema_project_path: str) -> str:
     """The hash the snapshot of the development script as it is now would have."""
-    _, hashed, _ = outline_input(schema_project_path)
-    expanded = source.expand_source_directives(
-        hashed, _development_folder(schema_project_path), read=_checked_read(check)
-    )[0]
-    return diagrams.source_hash(expanded)
+    return _source_hash(schema_project_path, outline_input(schema_project_path)[1])
 
 
-def _schema_row(rows: list) -> Optional[dict]:
-    for row in rows:
-        if row["format"] == diagrams.SCHEMA_FORMAT:
-            return row
-    return None
+def _is_diagram(row: dict, name: str = None) -> bool:
+    return row["format"] == diagrams.DIAGRAM_FORMAT and (name is None or row["name"] == name)
 
 
-def update_schema_definition(
-    schema_project_path: str, lsp_path: str = None, check: IncludeCheck = None
-) -> dict:
+def update_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:
     """Makes the snapshot again and writes it into the diagrams VIEW.
 
     Diagrams lose the figures and connections of objects the schema no longer
@@ -334,29 +307,26 @@ def update_schema_definition(
         {tables, views, routines, triggers, events, sequences} counts, the
         diagrams that changed and the files written.
     """
-    document = build_schema_definition(schema_project_path, lsp_path, check)
-    rows = read_diagram_rows(schema_project_path, check)
-    rows = [row for row in rows if row["format"] != diagrams.SCHEMA_FORMAT]
-
-    changed = []
-    for row in rows:
-        if row["format"] == diagrams.DIAGRAM_FORMAT and diagrams.reconcile_diagram(
-            row["document"], document
-        ):
-            changed.append(row["name"])
-
+    document = build_schema_definition(schema_project_path, lsp_path)
+    rows = [
+        row for row in read_diagram_rows(schema_project_path)
+        if row["format"] != diagrams.SCHEMA_FORMAT
+    ]
+    changed = [
+        row["name"] for row in rows
+        if _is_diagram(row) and diagrams.reconcile_diagram(row["document"], document)
+    ]
     rows.insert(
         0,
         {"name": diagrams.SCHEMA_ROW_NAME, "format": diagrams.SCHEMA_FORMAT, "document": document},
     )
-    files = write_diagram_rows(schema_project_path, rows, check)
-    result = {kind: len(document[kind]) for kind in diagrams._SCHEMA_OBJECT_KINDS}
+    result = {kind: len(document[kind]) for kind in diagrams.SCHEMA_OBJECT_KINDS}
     result["changed_diagrams"] = changed
-    result["files"] = files
+    result["files"] = write_diagram_rows(schema_project_path, rows)
     return result
 
 
-def list_diagrams(schema_project_path: str, check: IncludeCheck = None) -> dict:
+def list_diagrams(schema_project_path: str) -> dict:
     """Says what the project's diagrams VIEW holds.
 
     Returns:
@@ -364,14 +334,14 @@ def list_diagrams(schema_project_path: str, check: IncludeCheck = None) -> dict:
         figures, connections}]}; current says whether the snapshot was made
         from the development script as it is now.
     """
-    rows = read_diagram_rows(schema_project_path, check)
-    schema = _schema_row(rows)
+    rows = read_diagram_rows(schema_project_path)
+    schema = next((row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT), None)
     info = None
     if schema is not None:
         info = {
             "tables": len(schema["document"].get("tables", [])),
             "current": schema["document"].get("source_hash")
-            == current_source_hash(schema_project_path, check),
+            == current_source_hash(schema_project_path),
         }
     return {
         "schema_definition": info,
@@ -382,57 +352,54 @@ def list_diagrams(schema_project_path: str, check: IncludeCheck = None) -> dict:
                 "connections": len(row["document"].get("connections", [])),
             }
             for row in rows
-            if row["format"] == diagrams.DIAGRAM_FORMAT
+            if _is_diagram(row)
         ],
     }
 
 
-def get_diagram_rows(
-    schema_project_path: str, name: str = None, check: IncludeCheck = None
-) -> list:
+def get_diagram_rows(schema_project_path: str, name: str = None) -> list:
     """Returns the rows of the diagrams VIEW: all, or the schema row and one diagram.
 
     Raises:
         ValueError: For a diagram name the VIEW does not hold.
     """
-    rows = read_diagram_rows(schema_project_path, check)
+    rows = read_diagram_rows(schema_project_path)
     if name is None:
         return rows
-    found = [row for row in rows if row["name"] == name and row["format"] == diagrams.DIAGRAM_FORMAT]
+    found = [row for row in rows if _is_diagram(row, name)]
     if not found:
         raise ValueError(f"The project has no diagram `{name}`.")
-    schema = _schema_row(rows)
-    return ([schema] if schema is not None else []) + found
+    return [row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT] + found
 
 
-def set_diagram(schema_project_path: str, document: dict, check: IncludeCheck = None) -> list:
+def set_diagram(schema_project_path: str, document: dict) -> list:
     """Adds a diagram to the VIEW, or replaces the one of the same name.
 
     Returns:
         The files written.
     """
     diagrams.validate_diagram(document)
-    rows = read_diagram_rows(schema_project_path, check)
+    rows = read_diagram_rows(schema_project_path)
     row = {"name": document["name"], "format": diagrams.DIAGRAM_FORMAT, "document": document}
-    for index, existing in enumerate(rows):
-        if existing["name"] == document["name"] and existing["format"] == diagrams.DIAGRAM_FORMAT:
-            rows[index] = row
-            break
-    else:
+    index = next(
+        (index for index, existing in enumerate(rows) if _is_diagram(existing, document["name"])),
+        None,
+    )
+    if index is None:
         rows.append(row)
-    return write_diagram_rows(schema_project_path, rows, check)
+    else:
+        rows[index] = row
+    return write_diagram_rows(schema_project_path, rows)
 
 
-def remove_diagram(schema_project_path: str, name: str, check: IncludeCheck = None) -> list:
+def remove_diagram(schema_project_path: str, name: str) -> list:
     """Removes a diagram from the VIEW.
 
     Returns:
         The files written.
     """
-    rows = read_diagram_rows(schema_project_path, check)
-    kept = [
-        row for row in rows if not (row["name"] == name and row["format"] == diagrams.DIAGRAM_FORMAT)
-    ]
+    rows = read_diagram_rows(schema_project_path)
+    kept = [row for row in rows if not _is_diagram(row, name)]
     if len(kept) == len(rows):
         raise ValueError(f"The project has no diagram `{name}`.")
-    return write_diagram_rows(schema_project_path, kept, check)
+    return write_diagram_rows(schema_project_path, kept)

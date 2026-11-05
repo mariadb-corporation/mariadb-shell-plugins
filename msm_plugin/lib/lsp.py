@@ -124,7 +124,7 @@ def require_lsp(lsp_path: Optional[str] = None) -> str:
     return binary
 
 
-def outline(binary: str, sql: str, source_dir: str, sql_mode: str = None) -> dict:
+def outline(binary: str, sql: str, source_dir: str) -> dict:
     """Outlines SQL text with the binary.
 
     The binary expands the SOURCE directives itself, relative to source_dir,
@@ -134,16 +134,12 @@ def outline(binary: str, sql: str, source_dir: str, sql_mode: str = None) -> dic
         binary: The binary, from find_lsp().
         sql: The SQL text.
         source_dir: The folder relative SOURCE paths are taken from.
-        sql_mode: The sql_mode at the start, comma-separated.
 
     Returns:
         The outline, as the binary writes it (docs/outline-format.md of the
         lsp-server).
     """
-    command = [binary, "outline", "--source-dir", source_dir]
-    if sql_mode:
-        command += ["--sql-mode", sql_mode]
-    command.append("-")
+    command = [binary, "outline", "--source-dir", source_dir, "-"]
     try:
         answer = subprocess.run(
             command,

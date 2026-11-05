@@ -197,12 +197,14 @@ def test_foreign_keys_get_what_a_diagram_draws_them_with():
                         ],
                     }
                 ],
-                "views": [{"name": "msm_schema_diagrams"}, {"name": "v"}],
+                "views": [{"name": "v"}],
             },
             {"name": "other", "tables": [{"name": "elsewhere"}]},
         ],
     }
-    document = diagrams.schema_document_from_outline(outline, "shop", ["shop_next.sql"], "x")
+    document = diagrams.schema_document_from_outline(
+        outline, "shop", ["shop_next.sql"], diagrams.source_hash("x")
+    )
     assert document["format"] == diagrams.SCHEMA_FORMAT
     assert document["schema"] == "shop"
     assert document["source_hash"] == diagrams.source_hash("x")
@@ -212,7 +214,7 @@ def test_foreign_keys_get_what_a_diagram_draws_them_with():
     assert (a["many"], a["mandatory"], a["referenced_mandatory"]) == (True, True, True)
     assert (b["many"], b["mandatory"], b["referenced_mandatory"]) == (False, True, False)
     with pytest.raises(ValueError, match="outline format 2"):
-        diagrams.schema_document_from_outline({"format": 2}, "shop", [], "")
+        diagrams.schema_document_from_outline({"format": 2}, "shop", [], "sha256:")
 
 
 def test_a_diagram_loses_what_the_schema_no_longer_has():
@@ -251,6 +253,8 @@ def test_small_diagrams_stay_inline(project):
     # The next section's banner keeps its blank lines
     assert "}';\n\n\n-- ####" in dev_script(project)
 
+    # Nothing changes, nothing is written
+    assert modeling.set_diagram(project, diagram()) == []
     modeling.set_diagram(project, {**diagram(), "width": 10.0})
     modeling.set_diagram(project, diagram("Second"))
     rows = modeling.read_diagram_rows(project)
@@ -316,11 +320,14 @@ def test_an_include_can_be_refused(project):
     def refuse(path):
         raise ValueError(f"not allowed: {path}")
 
-    with pytest.raises(ValueError, match="not allowed"):
-        modeling.set_diagram(project, diagram(), check=refuse)
+    with pytest.raises(ValueError, match="not allowed"), source.checked_includes(refuse):
+        modeling.set_diagram(project, diagram())
     modeling.set_diagram(project, diagram())
-    with pytest.raises(ValueError, match="not allowed"):
-        modeling.read_diagram_rows(project, check=refuse)
+    with pytest.raises(ValueError, match="not allowed"), source.checked_includes(refuse):
+        modeling.read_diagram_rows(project)
+    # The check gives the path to use
+    with source.checked_includes(lambda path: path):
+        assert [row["name"] for row in modeling.read_diagram_rows(project)] == ["Main"]
 
 
 def test_a_bad_inline_size_setting_is_refused():
@@ -412,8 +419,8 @@ def test_included_objects_name_their_file(project):
     def refuse(path):
         raise ValueError(f"not allowed: {path}")
 
-    with pytest.raises(ValueError, match="not allowed"):
-        modeling.update_schema_definition(project, check=refuse)
+    with pytest.raises(ValueError, match="not allowed"), source.checked_includes(refuse):
+        modeling.update_schema_definition(project)
 
 
 @needs_lsp

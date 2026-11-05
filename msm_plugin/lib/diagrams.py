@@ -40,6 +40,7 @@ made from an outline.
 
 import hashlib
 import json
+import re
 from typing import Optional
 
 DIAGRAMS_VIEW = "msm_schema_diagrams"
@@ -51,7 +52,7 @@ SCHEMA_ROW_NAME = "schema_definition"
 OUTLINE_FORMAT = 1
 
 # The members of an outline schema a snapshot keeps.
-_SCHEMA_OBJECT_KINDS = ("tables", "views", "routines", "triggers", "events", "sequences")
+SCHEMA_OBJECT_KINDS = ("tables", "views", "routines", "triggers", "events", "sequences")
 
 # A JSON value goes on one line of its own when it is at most this long.
 _ONE_LINE_WIDTH = 160
@@ -76,22 +77,24 @@ def dump_document(document) -> str:
     """
 
     def dump(value, indent: str) -> str:
-        compact = json.dumps(value, ensure_ascii=False, separators=(", ", ": "))
-        if len(indent) + len(compact) <= _ONE_LINE_WIDTH or not isinstance(
-            value, (dict, list)
-        ):
-            return compact
-        if not value:
-            return compact
+        # Children first, so every value is written once: a container fits on
+        # a line exactly when its children each do and the whole is short.
+        if not isinstance(value, (dict, list)) or not value:
+            return json.dumps(value, ensure_ascii=False)
         inner = indent + "  "
         if isinstance(value, dict):
-            members = [
-                f"{inner}{json.dumps(key, ensure_ascii=False)}: {dump(item, inner)}"
+            parts = [
+                f"{json.dumps(key, ensure_ascii=False)}: {dump(item, inner)}"
                 for key, item in value.items()
             ]
-            return "{\n" + ",\n".join(members) + f"\n{indent}}}"
-        members = [f"{inner}{dump(item, inner)}" for item in value]
-        return "[\n" + ",\n".join(members) + f"\n{indent}]"
+            opening, closing = "{", "}"
+        else:
+            parts = [dump(item, inner) for item in value]
+            opening, closing = "[", "]"
+        one_line = opening + ", ".join(parts) + closing
+        if "\n" not in one_line and len(indent) + len(one_line) <= _ONE_LINE_WIDTH:
+            return one_line
+        return f"{opening}\n{inner}" + f",\n{inner}".join(parts) + f"\n{indent}{closing}"
 
     return dump(document, "")
 
@@ -143,6 +146,27 @@ def render_view_sql(rows: list) -> str:
 
 _ESCAPES = {"0": "\0", "b": "\b", "n": "\n", "r": "\r", "t": "\t", "Z": "\x1a"}
 
+# What a statement is scanned as: comments and quoted identifiers or strings
+# are skipped, single-quoted strings are the literals (group "literal").
+_TOKENS = re.compile(
+    r"--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?(?:\*/|\Z)"
+    r"|`(?:[^`]|``)*`|\"(?:[^\"\\]|\\.|\"\")*\""
+    r"|'(?P<literal>(?:[^'\\]|\\.|'')*)'"
+    r"|'",
+    re.DOTALL,
+)
+_ESCAPE = re.compile(r"\\(.)|''", re.DOTALL)
+
+
+def _unescape(match) -> str:
+    following = match.group(1)
+    if following is None:
+        return "'"
+    # \% and \_ keep their backslash, as the server reads them.
+    if following in ("%", "_"):
+        return "\\" + following
+    return _ESCAPES.get(following, following)
+
 
 def _string_literals(sql: str) -> list:
     """The string literals of a statement, in order, their contents unescaped.
@@ -151,61 +175,12 @@ def _string_literals(sql: str) -> list:
     skipped; only single-quoted literals are returned.
     """
     literals = []
-    position = 0
-    length = len(sql)
-    while position < length:
-        character = sql[position]
-        if character == "-" and sql.startswith("-- ", position) or (
-            character == "-" and sql.startswith("--\n", position)
-        ):
-            end = sql.find("\n", position)
-            position = length if end < 0 else end + 1
-        elif character == "#":
-            end = sql.find("\n", position)
-            position = length if end < 0 else end + 1
-        elif character == "/" and sql.startswith("/*", position):
-            end = sql.find("*/", position + 2)
-            position = length if end < 0 else end + 2
-        elif character in ("`", '"'):
-            end = position + 1
-            while end < length:
-                if sql[end] == character:
-                    if end + 1 < length and sql[end + 1] == character:
-                        end += 2
-                        continue
-                    break
-                if character == '"' and sql[end] == "\\":
-                    end += 1
-                end += 1
-            position = end + 1
-        elif character == "'":
-            parts = []
-            end = position + 1
-            while end < length:
-                current = sql[end]
-                if current == "\\" and end + 1 < length:
-                    following = sql[end + 1]
-                    # \% and \_ keep their backslash, as the server reads them.
-                    if following in ("%", "_"):
-                        parts.append("\\" + following)
-                    else:
-                        parts.append(_ESCAPES.get(following, following))
-                    end += 2
-                    continue
-                if current == "'":
-                    if end + 1 < length and sql[end + 1] == "'":
-                        parts.append("'")
-                        end += 2
-                        continue
-                    break
-                parts.append(current)
-                end += 1
-            if end >= length:
-                raise ValueError("The diagrams VIEW holds a string that is not closed.")
-            literals.append("".join(parts))
-            position = end + 1
-        else:
-            position += 1
+    for match in _TOKENS.finditer(sql):
+        if match.group(0) == "'":
+            raise ValueError("The diagrams VIEW holds a string that is not closed.")
+        literal = match.group("literal")
+        if literal is not None:
+            literals.append(_ESCAPE.sub(_unescape, literal))
     return literals
 
 
@@ -294,14 +269,14 @@ def schema_document_from_outline(
     outline: dict,
     schema_name: str,
     files: list,
-    hashed_text: str,
-    excluded_views: tuple = (DIAGRAMS_VIEW,),
+    hash_value: str,
 ) -> dict:
     """Makes the msm-schema/1 snapshot from an outline of the development script.
 
     The objects of the outline's schema of that name are kept as the outline
     writes them, together with the objects of the part of the script that
-    names no schema (before the first USE). Foreign keys get the members a
+    names no schema (before the first USE); the caller leaves the diagrams
+    VIEW out of the outlined script. Foreign keys get the members a
     diagram draws them with (see _add_relationship_members), and a foreign key
     that leaves its schema out names this one.
 
@@ -312,8 +287,7 @@ def schema_document_from_outline(
             then each of the outline's includes in order, each a path
             relative to the project's development folder. An object's
             ``source`` n is files[n + 1].
-        hashed_text: The SQL the snapshot stands for, see source_hash().
-        excluded_views: Views left out: the diagrams VIEW itself.
+        hash_value: The source_hash() of the SQL the snapshot stands for.
 
     Returns:
         The document.
@@ -328,29 +302,24 @@ def schema_document_from_outline(
         "format": SCHEMA_FORMAT,
         "schema": schema_name,
         "outline_format": OUTLINE_FORMAT,
-        "source_hash": source_hash(hashed_text),
+        "source_hash": hash_value,
         "files": files,
         "options": {},
     }
-    for kind in _SCHEMA_OBJECT_KINDS:
+    for kind in SCHEMA_OBJECT_KINDS:
         document[kind] = []
 
     for schema in outline.get("schemas", []):
         name = schema.get("name")
-        if name is not None and not _same_name(name, schema_name):
-            continue
         if name is not None:
+            if not _same_name(name, schema_name):
+                continue
             document["options"] = schema.get("options", {})
             for key in ("range", "selection_range"):
                 if key in schema:
                     document[key] = schema[key]
-        for kind in _SCHEMA_OBJECT_KINDS:
-            for item in schema.get(kind, []):
-                if kind == "views" and any(
-                    _same_name(item.get("name"), view) for view in excluded_views
-                ):
-                    continue
-                document[kind].append(item)
+        for kind in SCHEMA_OBJECT_KINDS:
+            document[kind].extend(schema.get(kind, []))
 
     for table in document["tables"]:
         _add_relationship_members(table)
@@ -410,37 +379,34 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         Whether anything was dropped.
     """
     tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
+    figures, connections = diagram["figures"], diagram["connections"]
 
-    def table_of(figure) -> Optional[str]:
+    def table_of(figure) -> str:
         return (figure.get("table") or figure.get("name") or "").lower()
 
     kept_figures = [
         figure
-        for figure in diagram.get("figures", [])
+        for figure in figures
         if figure.get("type", "TableFigure") != "TableFigure" or table_of(figure) in tables
     ]
     figure_ids = {figure.get("id") for figure in kept_figures}
 
     def has_foreign_key(connection) -> bool:
         table = tables.get((connection.get("table") or "").lower())
-        if table is None:
-            return False
-        return any(
+        return table is not None and any(
             _same_name(foreign_key.get("name"), connection.get("foreignKey"))
             for foreign_key in table.get("foreign_keys", [])
         )
 
     kept_connections = [
         connection
-        for connection in diagram.get("connections", [])
+        for connection in connections
         if connection.get("startFigure") in figure_ids
         and connection.get("endFigure") in figure_ids
         and has_foreign_key(connection)
     ]
 
-    changed = len(kept_figures) != len(diagram.get("figures", [])) or len(
-        kept_connections
-    ) != len(diagram.get("connections", []))
+    changed = len(kept_figures) != len(figures) or len(kept_connections) != len(connections)
     if changed:
         diagram["figures"] = kept_figures
         diagram["connections"] = kept_connections

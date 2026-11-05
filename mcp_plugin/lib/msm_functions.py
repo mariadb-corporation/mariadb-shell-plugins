@@ -125,24 +125,32 @@ def register_msm_tools(server, function_groups=()) -> None:
         if schema_project_path is None and not general.is_multi_tenant():
             general.require_project_access(ctx, os.getcwd())
 
-    def _include_check(ctx):
-        """Checks a file a SOURCE directive of a project includes.
+    async def _in_project(ctx, schema_project_path, function, *args, **kwargs):
+        """Runs an msm function on an authorized project, off the event loop.
 
-        The files are read without asking the user, so each is checked with
-        the rule db.execute_sql_script's includes are.
+        Every file a SOURCE directive of the project names is read (or, for a
+        breakout file, written) without asking the user, so msm checks each
+        with the rule db.execute_sql_script's includes are, inside
+        source.checked_includes().
         """
+        from msm_plugin.lib import source
+
+        await _authorize_project(ctx, schema_project_path)
         user = general.get_client_identity(ctx).user
+        kwargs = _kwargs(schema_project_path=schema_project_path, **kwargs)
 
-        def check(path: str) -> None:
-            db_functions.allowed_include(path, user)
+        def run():
+            with source.checked_includes(lambda path: db_functions.allowed_include(path, user)):
+                return function(*args, **kwargs)
 
-        return check
+        return await anyio.to_thread.run_sync(run)
 
     def _lsp_path() -> Optional[str]:
-        """The mariadb-lsp binary the sql tools run (mcp setup --lspPath)."""
-        from mcp_plugin.lib import sql_functions
+        """The mariadb-lsp `mcp setup --lspPath` names; else msm looks for it
+        as the sql tools do (next to the shell, on the PATH, ~/.local/bin)."""
+        from mcp_plugin.lib import config
 
-        return sql_functions.find_lsp()
+        return config.get_lsp_path() or None
 
     async def create_project(
         ctx: Context,
@@ -485,18 +493,18 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The list of generated files.
         """
-        await _authorize_project(ctx, schema_project_path)
-        kwargs = _kwargs(
-            version=version,
-            next_version=next_version,
-            schema_project_path=schema_project_path,
-            allow_to_stay_on_same_version=allow_to_stay_on_same_version,
-            overwrite_existing=overwrite_existing,
-            lsp_path=_lsp_path(),
-            include_check=_include_check(ctx),
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm.prepare_release,
+            **_kwargs(
+                version=version,
+                next_version=next_version,
+                allow_to_stay_on_same_version=allow_to_stay_on_same_version,
+                overwrite_existing=overwrite_existing,
+                lsp_path=_lsp_path(),
+            ),
         )
-        # The schema snapshot runs mariadb-lsp, so off the event loop.
-        return await anyio.to_thread.run_sync(lambda: msm.prepare_release(**kwargs))
 
     @tool(name="msm.list_schema_diagrams")
     async def list_schema_diagrams(
@@ -519,10 +527,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             made from the development script as it is now (current), or null
             without one; diagrams: name, figures and connections of each.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm_modeling.list_schema_diagrams(
-            **_kwargs(schema_project_path=schema_project_path, include_check=_include_check(ctx))
-        )
+        return await _in_project(ctx, schema_project_path, msm_modeling.list_schema_diagrams)
 
     @tool(name="msm.get_schema_diagrams")
     async def get_schema_diagrams(
@@ -548,13 +553,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             files[n + 1]), and source_hash. An msm-diagram/1 document holds
             layers, figures and connections.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm_modeling.get_schema_diagrams(
-            **_kwargs(
-                schema_project_path=schema_project_path,
-                diagram=diagram,
-                include_check=_include_check(ctx),
-            )
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
         )
 
     @tool(name="msm.update_schema_definition")
@@ -578,13 +578,12 @@ def register_msm_tools(server, function_groups=()) -> None:
             The counts of tables, views, routines, triggers, events and
             sequences, the diagrams that changed and the files written.
         """
-        await _authorize_project(ctx, schema_project_path)
-        kwargs = _kwargs(
-            schema_project_path=schema_project_path,
-            lsp_path=_lsp_path(),
-            include_check=_include_check(ctx),
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.update_schema_definition,
+            **_kwargs(lsp_path=_lsp_path()),
         )
-        return await anyio.to_thread.run_sync(lambda: msm_modeling.update_schema_definition(**kwargs))
 
     @tool(name="msm.set_schema_diagram")
     async def set_schema_diagram(
@@ -605,10 +604,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The files written.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm_modeling.set_schema_diagram(
-            document,
-            **_kwargs(schema_project_path=schema_project_path, include_check=_include_check(ctx)),
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.set_schema_diagram, document
         )
 
     @tool(name="msm.remove_schema_diagram")
@@ -625,11 +622,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The files written.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm_modeling.remove_schema_diagram(
-            name,
-            **_kwargs(schema_project_path=schema_project_path, include_check=_include_check(ctx)),
-        )
+        return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, name)
 
     @tool(name="msm.get_sql_content_from_section")
     async def get_sql_content_from_section(

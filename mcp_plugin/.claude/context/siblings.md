@@ -33,12 +33,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - **Schema diagrams (2026-11-05, `wip/msm-diagrams`):** five tools in
   `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
   `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
-  `msm.set_schema_diagram`, `msm.remove_schema_diagram`. Every one passes
-  `include_check` (`_include_check(ctx)` = `db_functions.allowed_include` for the
-  client's user), because the development script's SOURCE includes are read without
-  asking; `msm.prepare_release` passes it too, plus `lsp_path` from
-  `sql_functions.find_lsp()` (so `mcp setup --lspPath` counts), and runs in a thread
-  (the snapshot runs `mariadb-lsp`). Tests: the "schema diagrams" block of `test_msm.py`.
+  `msm.set_schema_diagram`, `msm.remove_schema_diagram`. They and `msm.prepare_release`
+  go through `_in_project(ctx, path, function, ...)`: `_authorize_project`, then the
+  msm call in a worker thread inside `msm_plugin.lib.source.checked_includes(...)`
+  with `db_functions.allowed_include` for the client's user, so EVERY file a SOURCE
+  directive names is checked where msm reads (`source.read_include`) or writes it -
+  the release's own expansion included. The contextvar is set inside the thread, not
+  around `run_sync`. `lsp_path` is only `mcp setup --lspPath` (`config.get_lsp_path()`);
+  without it msm searches itself (shell folder, PATH, ~/.local/bin), so no `--version`
+  probe on the event loop. Tests: the "schema diagrams" block of `test_msm.py`.
 - **MCP access per project (user):** every entry carries `mcpAccess`
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and

@@ -1206,7 +1206,6 @@ def prepare_release(
     allow_to_stay_on_same_version: bool = False,
     overwrite_existing: bool = False,
     lsp_path: str = None,
-    include_check=None,
 ) -> list[str]:
     """Adds a new release to the schema project
 
@@ -1224,8 +1223,6 @@ def prepare_release(
             same version for further development work
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
-        include_check: Checks each file a SOURCE directive includes, see
-            lib.modeling.IncludeCheck.
 
     Returns:
         A list of filenames that have been created or changed for the release
@@ -1265,13 +1262,12 @@ def prepare_release(
             f"{version}."
         )
 
-    # The snapshot the release carries is the one of its CREATE statements
+    # The release carries the snapshot of its CREATE statements. Like section
+    # 910 it changes the development files, which are not listed. (Imported
+    # here: lib.modeling imports this module.)
     from msm_plugin.lib import modeling
 
-    # Like section 910, it changes the development files, which are not listed.
-    modeling.update_schema_definition(
-        schema_project_path, lsp_path=lsp_path, check=include_check
-    )
+    modeling.update_schema_definition(schema_project_path, lsp_path=lsp_path)
 
     # Get the current schema development file sections
     schema_dev_file_path = os.path.join(

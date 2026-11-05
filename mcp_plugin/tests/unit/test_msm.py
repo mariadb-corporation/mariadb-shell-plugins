@@ -23,6 +23,7 @@ import os
 import pytest
 
 from mcp_plugin.lib import config
+from msm_plugin.lib import lsp as msm_lsp
 import mcp_plugin.tests.unit.helpers as helpers
 
 SCHEMA_NAME = "mcp_pytest_schema"
@@ -824,10 +825,7 @@ def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
     assert _call(tools, "msm.get_schema_diagrams", path) == []
 
 
-@pytest.mark.skipif(
-    __import__("msm_plugin.lib.lsp", fromlist=["find_lsp"]).find_lsp() is None,
-    reason="no mariadb-lsp binary",
-)
+@pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 def test_the_schema_snapshot_is_made_through_the_tools(project_lists, allowed_temp_dir):
     tools = _msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)

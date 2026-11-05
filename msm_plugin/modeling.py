@@ -29,7 +29,7 @@ from msm_plugin import lib
 
 
 def _project(kwargs) -> str:
-    return kwargs.get("schema_project_path", None) or lib.core.get_working_dir()
+    return kwargs.get("schema_project_path") or lib.core.get_working_dir()
 
 
 @plugin_function("msm.listSchemaDiagrams", shell=True, cli=True, web=True)
@@ -51,7 +51,7 @@ def list_schema_diagrams(**kwargs) -> dict:
         script as it is now (None without a snapshot), and diagrams: their names, figure and
         connection counts.
     """
-    result = lib.modeling.list_diagrams(_project(kwargs), kwargs.get("include_check", None))
+    result = lib.modeling.list_diagrams(_project(kwargs))
     if lib.core.get_interactive_default():
         schema = result["schema_definition"]
         if schema is None:
@@ -82,9 +82,7 @@ def get_schema_diagrams(**kwargs) -> list:
         The rows, each name, format (msm-schema/1 for the snapshot, msm-diagram/1 for a
         diagram) and the document.
     """
-    return lib.modeling.get_diagram_rows(
-        _project(kwargs), kwargs.get("diagram", None), kwargs.get("include_check", None)
-    )
+    return lib.modeling.get_diagram_rows(_project(kwargs), kwargs.get("diagram"))
 
 
 @plugin_function("msm.updateSchemaDefinition", shell=True, cli=True, web=True)
@@ -108,9 +106,7 @@ def update_schema_definition(**kwargs) -> dict:
         The number of tables, views, routines, triggers, events and sequences, the diagrams that
         changed and the files written.
     """
-    result = lib.modeling.update_schema_definition(
-        _project(kwargs), kwargs.get("lsp_path", None), kwargs.get("include_check", None)
-    )
+    result = lib.modeling.update_schema_definition(_project(kwargs), kwargs.get("lsp_path"))
     if lib.core.get_interactive_default():
         print(
             f"The schema snapshot holds {result['tables']} table(s), {result['views']} view(s), "
@@ -137,9 +133,7 @@ def set_schema_diagram(document: dict, **kwargs) -> list:
     Returns:
         The files written.
     """
-    return lib.modeling.set_diagram(
-        _project(kwargs), dict(document), kwargs.get("include_check", None)
-    )
+    return lib.modeling.set_diagram(_project(kwargs), dict(document))
 
 
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)
@@ -156,4 +150,4 @@ def remove_schema_diagram(name: str, **kwargs) -> list:
     Returns:
         The files written.
     """
-    return lib.modeling.remove_diagram(_project(kwargs), name, kwargs.get("include_check", None))
+    return lib.modeling.remove_diagram(_project(kwargs), name)

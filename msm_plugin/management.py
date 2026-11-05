@@ -477,8 +477,7 @@ def prepare_release(**kwargs) -> list[str]:
         next_version=next_version,
         allow_to_stay_on_same_version=allow_to_stay_on_same_version,
         overwrite_existing=overwrite_existing,
-        lsp_path=kwargs.get("lsp_path", None),
-        include_check=kwargs.get("include_check", None),
+        lsp_path=kwargs.get("lsp_path"),
     )
 
     if lib.core.get_interactive_default():
