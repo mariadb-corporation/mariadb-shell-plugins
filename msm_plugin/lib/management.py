@@ -617,14 +617,35 @@ def copy_template_file_and_substitute(
     Returns:
         None
     """
-    # Create schema development script
-    with open(source_file_path, "r") as f:
-        # Remove the copyright header and replace placeholders
-        script = Template(strip_template_copyright_header(f.readlines()))
-        script = script.substitute(substitutions)
+    script = render_template_file(source_file_path, substitutions)
 
     with open(target_file_path, "w") as f:
         f.write(script)
+
+
+def render_template_file(source_file_path: str, substitutions: dict) -> str:
+    """A template file's text without its copyright header, placeholders replaced."""
+    with open(source_file_path, "r") as f:
+        return Template(strip_template_copyright_header(f.readlines())).substitute(substitutions)
+
+
+DEVELOPMENT_SCRIPT_TEMPLATE = os.path.join(
+    Path(__file__).parent.parent, "templates", "scripts", "schema_next.sql"
+)
+
+
+def development_script_substitutions(project_settings: dict, version: str) -> dict:
+    """The values the development script template is filled with."""
+    schema_name = project_settings.get("schemaName") or ""
+    return {
+        "license": get_license_text(project_settings=project_settings),
+        "schema_name": schema_name,
+        "schema_identifier": get_schema_identifier(schema_name),
+        "version_str": version,
+        "version_comma_str": ", ".join(
+            str(number) for number in lib.core.convert_version_str_to_list(version)
+        ),
+    }
 
 
 def project_folder_path(target_path: str, schema_name: str) -> str:
@@ -754,17 +775,11 @@ def create_schema_project_folder(
             f.write(script)
 
     copy_template_file_and_substitute(
-        source_file_path=os.path.join(template_folder, "scripts", "schema_next.sql"),
+        source_file_path=DEVELOPMENT_SCRIPT_TEMPLATE,
         target_file_path=os.path.join(
             project_path, "development", f"{schema_file_name}_next.sql"
         ),
-        substitutions={
-            "license": get_license_text(project_settings=project_settings),
-            "schema_name": schema_name,
-            "schema_identifier": get_schema_identifier(schema_name),
-            "version_str": "0.0.1",
-            "version_comma_str": "0, 0, 1",
-        },
+        substitutions=development_script_substitutions(project_settings, "0.0.1"),
     )
 
     return project_path

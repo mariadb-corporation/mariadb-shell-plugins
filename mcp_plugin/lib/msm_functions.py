@@ -602,6 +602,46 @@ def register_msm_tools(server, function_groups=()) -> None:
             **_kwargs(lsp_path=_lsp_path()),
         )
 
+    @tool(name="msm.split_sections")
+    async def split_sections(
+        ctx: Context,
+        sections: Optional[list[str]] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Splits sections of a project's development script into files by object kind.
+
+        Section 140 goes into development/sections/140-10_tables.sql,
+        140-20_table_additions.sql and 140-30_inserts.sql, Section 150 into
+        150-10_procedures_functions.sql, 150-20_views.sql,
+        150-30_triggers.sql and 150-40_events.sql (routines first: a view
+        cannot be created before a function it calls), and Section 170 into
+        170_roles.sql; each section then includes its files by SOURCE
+        directives. Statements keep the comments above them, and their order
+        within a file. A section that includes a file already, has nothing to
+        move, or has a statement that fits no file between two that move is
+        left as it is and reported. Every section of the template the script
+        lacks is added. A schema snapshot that matched the script before is
+        made again.
+
+        Args:
+            sections: The sections to split, of "140", "150" and "170".
+                Defaults to all three.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            split (the files of each section split), skipped (the reason for
+            each section left as it is), sections_added (the template
+            sections that were missing), files (the files written) and
+            snapshot_updated (whether the schema snapshot was made again).
+        """
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm.split_sections,
+            **_kwargs(sections=sections, lsp_path=_lsp_path()),
+        )
+
     @tool(name="msm.set_schema_diagram")
     async def set_schema_diagram(
         ctx: Context, document: dict, schema_project_path: Optional[str] = None

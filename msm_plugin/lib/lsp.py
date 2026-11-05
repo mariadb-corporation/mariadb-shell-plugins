@@ -37,9 +37,9 @@ from typing import Optional
 
 LSP_BINARY_NAME = "mariadb-lsp"
 
-# How long the binary may take: --version, and an outline of a large script.
+# How long the binary may take: --version, and an outline or split of a large script.
 _VERSION_TIMEOUT = 10
-_OUTLINE_TIMEOUT = 120
+_RUN_TIMEOUT = 120
 
 
 class LspError(ValueError):
@@ -124,6 +124,32 @@ def require_lsp(lsp_path: Optional[str] = None) -> str:
     return binary
 
 
+def _run_json(binary: str, arguments: list, sql: str):
+    """Runs a subcommand of the binary on SQL text from stdin; returns its JSON."""
+    name = f"{LSP_BINARY_NAME} {arguments[0]}"
+    # Bytes, not text mode: text mode writes os.linesep for every line break,
+    # and the offsets `split` answers count the bytes the binary read.
+    try:
+        answer = subprocess.run(
+            [binary, *arguments, "-"],
+            input=sql.encode("utf-8"),
+            capture_output=True,
+            timeout=_RUN_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise LspError(f"`{name}` did not finish in {_RUN_TIMEOUT} s.")
+    except OSError as e:
+        raise LspError(f"`{LSP_BINARY_NAME}` could not be run: {e}")
+    if answer.returncode != 0:
+        stderr = answer.stderr.decode("utf-8", "replace").strip()
+        raise LspError(f"`{name}` failed (exit {answer.returncode}): {stderr}")
+    try:
+        return json.loads(answer.stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise LspError(f"`{name}` wrote no JSON: {e}")
+
+
 def outline(binary: str, sql: str, source_dir: str) -> dict:
     """Outlines SQL text with the binary.
 
@@ -139,27 +165,28 @@ def outline(binary: str, sql: str, source_dir: str) -> dict:
         The outline, as the binary writes it (docs/outline-format.md of the
         lsp-server).
     """
-    command = [binary, "outline", "--source-dir", source_dir, "-"]
-    try:
-        answer = subprocess.run(
-            command,
-            input=sql,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=_OUTLINE_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        raise LspError(f"`{LSP_BINARY_NAME} outline` did not finish in {_OUTLINE_TIMEOUT} s.")
-    except OSError as e:
-        raise LspError(f"`{LSP_BINARY_NAME}` could not be run: {e}")
-    if answer.returncode != 0:
+    return _run_json(binary, ["outline", "--source-dir", source_dir], sql)
+
+
+def split(binary: str, sql: str) -> list:
+    """Lists the statements of SQL text with the binary's splitter.
+
+    The splitter is the one MariaDB Shell runs scripts with: it follows
+    DELIMITER and SET sql_mode. SOURCE directives are not expanded.
+
+    Args:
+        binary: The binary, from find_lsp().
+        sql: The SQL text.
+
+    Returns:
+        The statements, as `mariadb-lsp split --format json` writes them:
+        kind ("sql" or "comment"), begin, body_end and end (UTF-8 byte
+        offsets; end is after the delimiter), delimiter, sql_mode.
+    """
+    result = _run_json(binary, ["split", "--format", "json"], sql)
+    if result.get("open_at_end"):
         raise LspError(
-            f"`{LSP_BINARY_NAME} outline` failed (exit {answer.returncode}): "
-            f"{answer.stderr.strip()}"
+            f"The script ends inside an open {result['open_at_end']}; it cannot be split "
+            "into statements."
         )
-    try:
-        return json.loads(answer.stdout)
-    except json.JSONDecodeError as e:
-        raise LspError(f"`{LSP_BINARY_NAME} outline` wrote no JSON: {e}")
+    return result.get("statements", [])

@@ -31,7 +31,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
-from msm_plugin.lib import diagrams, management, modeling, projects, sections, workbench
+from msm_plugin.lib import diagrams, management, modeling, projects, sections, statements, workbench
 
 # The project, as the diagram tests have it, and their mark for the binary.
 from test_diagrams import figures_by_type, needs_lsp, project  # noqa: F401
@@ -434,14 +434,14 @@ def test_a_list_member_that_is_a_link_is_followed(tmp_path):
 
 
 def test_a_statement_s_kind_and_an_event_saved_as_a_routine():
-    assert workbench.statement_kind("CREATE DEFINER=`a`@`%` PROCEDURE p() BEGIN END") == "PROCEDURE"
-    assert workbench.statement_kind("DELIMITER $$\nCREATE EVENT e ON SCHEDULE EVERY 1 DAY DO "
-                                    "DELETE FROM t$$\nDELIMITER ;") == "EVENT"
-    assert workbench.statement_kind("CREATE OR REPLACE ALGORITHM=MERGE VIEW v AS SELECT 1") == "VIEW"
-    assert workbench.statement_kind("SELECT 1") is None
+    assert statements.statement_kind("CREATE DEFINER=`a`@`%` PROCEDURE p() BEGIN END") == "PROCEDURE"
+    assert statements.statement_kind("DELIMITER $$\nCREATE EVENT e ON SCHEDULE EVERY 1 DAY DO "
+                                     "DELETE FROM t$$\nDELIMITER ;") == "EVENT"
+    assert statements.statement_kind("CREATE OR REPLACE ALGORITHM=MERGE VIEW v AS SELECT 1") == "VIEW"
+    assert statements.statement_kind("SELECT 1") is None
     # As Workbench saves a view: a comment first.
-    assert workbench.statement_kind("--\n-- View structure for view `v`\n--\n\nCREATE VIEW v \n"
-                                    "AS \nSELECT 1") == "VIEW"
+    assert statements.statement_kind("--\n-- View structure for view `v`\n--\n\nCREATE VIEW v \n"
+                                     "AS \nSELECT 1") == "VIEW"
     assert workbench._idempotent("VIEW", "v", "/* x */ -- y\nCREATE VIEW v AS SELECT 1;") == (
         "CREATE OR REPLACE VIEW v AS SELECT 1%%")
 
@@ -600,7 +600,7 @@ def test_an_imported_project_deploys(sandbox_session, tmp_path, monkeypatch):
     breakouts = sorted(os.listdir(os.path.join(path, "development", "sections")))
     assert breakouts == [
         "140-10_tables.sql", "140-20_table_additions.sql", "140-30_inserts.sql",
-        "150-10_views.sql", "150-20_procedures_functions.sql", "150-30_triggers.sql",
+        "150-10_procedures_functions.sql", "150-20_views.sql", "150-30_triggers.sql",
         "160_schema_diagrams.sql", "170_roles.sql",
     ]
 

@@ -531,6 +531,56 @@ def set_section_sql_content(file_path: str, section_id: str, sql_content: str) -
     )
 
 
+@plugin_function("msm.splitSections", shell=True, cli=True, web=True)
+def split_sections(**kwargs) -> dict:
+    """Splits sections of a project's development script into breakout files by object kind
+
+    Section 140 goes into development/sections/140-10_tables.sql, 140-20_table_additions.sql
+    and 140-30_inserts.sql, Section 150 into 150-10_procedures_functions.sql, 150-20_views.sql,
+    150-30_triggers.sql and 150-40_events.sql (routines first, as a view cannot be created
+    before a function it calls), and Section 170 into 170_roles.sql. Each section then includes
+    its files by SOURCE directives. Statements keep the comments above them and their order
+    within a file. The statements are found by the mariadb-lsp binary. A section that includes
+    a file already, has nothing to move, or has a statement that fits no file between two that
+    move is left as it is and reported. Every section of the template the script lacks is added.
+    A schema snapshot of the diagrams that matched the script before is made again.
+
+    Args:
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        sections (list): The sections to split, of 140, 150 and 170. Defaults to all three.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        split: the breakout files of each section split, skipped: the reason for each section
+        left as it is, sections_added: the template sections that were missing, files: the
+        files written, and snapshot_updated: whether the schema snapshot was made again.
+    """
+    project = kwargs.get("schema_project_path") or lib.core.get_working_dir()
+    section_ids = kwargs.get("sections")
+    if isinstance(section_ids, str):
+        section_ids = [section_ids]
+    result = lib.modeling.split_sections(
+        project,
+        section_ids=[str(section_id) for section_id in section_ids] if section_ids else None,
+        lsp_path=kwargs.get("lsp_path"),
+    )
+    if lib.core.get_interactive_default():
+        for section_id, files in result["split"].items():
+            print(f"MSM Section {section_id} now includes {', '.join(files)}.")
+        for section_id, reason in result["skipped"].items():
+            print(f"MSM Section {section_id} was left as it is. {reason}")
+        if result["sections_added"]:
+            print(f"Added the missing MSM Section(s) {', '.join(result['sections_added'])}.")
+        if not result["files"]:
+            print("No file was changed.")
+    else:
+        return result
+
+
 @plugin_function("msm.generateDeploymentScript", shell=True, cli=True, web=True)
 def generate_deployment_script(**kwargs) -> str:
     """Generate the deployment script for a release

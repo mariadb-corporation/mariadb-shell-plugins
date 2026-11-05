@@ -861,6 +861,20 @@ def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir
     assert sorted(result["placed"]) == ["customer", "orders"]
 
 
+@pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
+def test_sections_are_split_through_the_tools(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+
+    result = _call(tools, "msm.split_sections", ["140"], path)
+    assert result["split"] == {"140": ["140-10_tables.sql"]}
+    assert result["skipped"] == {}
+    assert os.path.isfile(os.path.join(path, "development", "sections", "140-10_tables.sql"))
+    result = _call(tools, "msm.split_sections", None, path)
+    assert result["split"] == {}
+    assert set(result["skipped"]) == {"140", "150", "170"}
+
+
 def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
     from msm_plugin.lib import modeling
 
