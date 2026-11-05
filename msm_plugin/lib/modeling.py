@@ -30,33 +30,22 @@ script in one file.
 """
 
 import os
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from msm_plugin.lib import diagrams, layout, lsp, management, source
+from msm_plugin.lib import sections as sections_lib
+from msm_plugin.lib import workbench
 
 DIAGRAMS_SECTION_ID = "160"
-BREAKOUT_FILE = "./sections/160_schema_diagrams.sql"
-
-# A section body larger than this is kept in a breakout file, unless the
-# project's msm.project.json sets maxInlineSectionSize.
-DEFAULT_MAX_INLINE_SECTION_SIZE = 16 * 1024
+BREAKOUT_FILE_NAME = "160_schema_diagrams.sql"
+BREAKOUT_FILE = f"./{sections_lib.BREAKOUT_FOLDER}/{BREAKOUT_FILE_NAME}"
 
 # Every file of a SOURCE directive is read through source.read_include, so a
 # caller that has to check them sets source.checked_includes() around the call.
-
-
-def get_max_inline_section_size(project_settings: dict) -> int:
-    """The largest section body kept inline in the development script."""
-    value = project_settings.get("maxInlineSectionSize", DEFAULT_MAX_INLINE_SECTION_SIZE)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(
-            "The project setting maxInlineSectionSize has to be a number of "
-            f"characters, not `{value}`."
-        )
-    return value
 
 
 def ensure_diagrams_section(sections: dict) -> dict:
@@ -167,26 +156,6 @@ def read_diagram_rows(schema_project_path: str) -> list:
     return _rows(_Project.load(schema_project_path))
 
 
-def _breakout_header(project_settings: dict) -> str:
-    """The first lines of a new breakout file: the project's notices."""
-    notices = management.render_copyright_notices(project_settings, prefix="-- ")
-    return (
-        f"{notices}\n"
-        "-- -----------------------------------------------------------------------------\n"
-        f"-- MSM Section {DIAGRAMS_SECTION_ID}: Schema Diagrams, written by msm\n"
-    )
-
-
-def _write_if_changed(path: str, text: str, old: Optional[str]) -> bool:
-    """Writes a file unless it holds the text already; says whether it wrote."""
-    if old == text:
-        return False
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(text)
-    return True
-
-
 def _write(project: _Project, rows: list) -> list:
     """Writes the rows of the project's diagrams VIEW into Section 160.
 
@@ -205,11 +174,15 @@ def _write(project: _Project, rows: list) -> list:
     written = []
 
     included = _section_directive(section["sql_content"])
-    if included is None and len(view_sql) > get_max_inline_section_size(project.settings):
-        header = _breakout_header(project.settings)
-        included = (BREAKOUT_FILE, f"ln{header.count(chr(10)) + 1}", "")
+    if included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
+        project.settings
+    ):
+        header = sections_lib.breakout_header(
+            project.settings, DIAGRAMS_SECTION_ID, "Schema Diagrams, written by msm"
+        )
+        included = (BREAKOUT_FILE, sections_lib.header_end(header), "")
         before, after = header, ""
-        body = f"SOURCE '{BREAKOUT_FILE}'[{included[1]}:]; -- Without the header"
+        body = sections_lib.include_directive(BREAKOUT_FILE_NAME, header)
     elif included is not None:
         before = after = ""
         body = None
@@ -241,16 +214,12 @@ def _write(project: _Project, rows: list) -> list:
                 "the whole diagrams VIEW once written. Leave the end bound out (or count "
                 "it from the end of the file) and make sure the file exists."
             )
-        if _write_if_changed(path, text, old):
+        if sections_lib.write_if_changed(path, text, old):
             written.append(path)
             project.files[path] = (path, text)
 
     if body is not None:
-        # A blank line after the banner and two before the next one, as the
-        # templates have them; set_sql_content strips both.
-        section["full_content"] = (
-            section["full_content"][: section["sql_start"]] + "\n\n" + body + "\n\n"
-        )
+        sections_lib.set_section_body(section, body)
     script = "\n".join(item["full_content"] for item in sections.values())
     if script != project.script:
         management.write_sections_to_file(project.dev_file, sections, overwrite_existing=True)
@@ -800,4 +769,121 @@ def layout_diagram(
         "placed": placed,
         "connections_added": connections_added,
         "files": _write(project, rows),
+    }
+
+
+# -----------------------------------------------------------------------------
+# MySQL Workbench models
+
+
+def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -> dict:
+    """Writes a schema of a Workbench model into a new project's script."""
+    imported = workbench.schema_sql(model, schema)
+    Part = sections_lib.Part
+    files = []
+    files += sections_lib.write_section_parts(project_path, "140", [
+        Part("140-10_tables.sql", "TABLEs", imported.tables),
+        Part("140-20_table_additions.sql", "Foreign keys added once all TABLEs exist",
+             imported.table_additions),
+        Part("140-30_inserts.sql", "INSERTs", imported.inserts),
+    ])
+    files += sections_lib.write_section_parts(project_path, "150", [
+        Part("150-10_views.sql", "VIEWs", imported.views),
+        Part("150-20_procedures_functions.sql", "PROCEDUREs and FUNCTIONs", imported.routines),
+        Part("150-30_triggers.sql", "TRIGGERs", imported.triggers),
+        Part("150-40_events.sql", "EVENTs", imported.events),
+    ])
+    files += sections_lib.write_section_parts(project_path, "170", [
+        Part("170_roles.sql", "ROLEs and GRANTs", imported.roles),
+    ])
+
+    project = _Project.load(project_path)
+    schema_document, rows, _ = _replace_snapshot(project, _rows(project), lsp_path)
+    documents, warnings = workbench.diagram_documents(model, schema)
+    warnings = imported.warnings + warnings
+    for document in documents:
+        diagrams.validate_diagram(document)
+        if diagrams.reconcile_diagram(document, schema_document):
+            warnings.append(
+                f"The diagram `{document['name']}` shows tables or foreign keys the "
+                "imported SQL does not define; they were left out."
+            )
+        rows.append({"name": document["name"], "format": diagrams.DIAGRAM_FORMAT,
+                     "document": document})
+    files += _write(project, rows)
+
+    result = dict(imported.counts)
+    result["diagrams"] = [document["name"] for document in documents]
+    result["warnings"] = warnings
+    result["files"] = list(dict.fromkeys(files))
+    return result
+
+
+def create_project_from_workbench_model(
+    model_path: str,
+    target_path: str,
+    copyright_holder: str = None,
+    license: str = None,
+    schema: str = None,
+    overwrite_existing: bool = False,
+    enforce_target_path: bool = False,
+    copyrights: list = None,
+    lsp_path: str = None,
+    model: workbench.Model = None,
+) -> dict:
+    """Creates a schema project from a schema of a MySQL Workbench model.
+
+    The project's development script gets the schema's CREATE statements
+    (tables, foreign keys, the model's rows as INSERTs in Section 140; views,
+    routines, triggers and events in Section 150; roles and their GRANTs in
+    Section 170), each section in breakout files where it is larger than
+    maxInlineSectionSize. Then the schema snapshot is made from that SQL, and
+    the model's EER diagrams are added. A project that cannot be completed is
+    removed again.
+
+    Args:
+        model_path: The .mwb file.
+        target_path: The folder to create the project folder in.
+        copyright_holder: The project's copyright holder.
+        license: The project's license.
+        schema: The model's schema to import; needed when it has several.
+        overwrite_existing: Replace an existing project folder.
+        enforce_target_path: Create target_path where it is missing.
+        copyrights: The copyright notices, instead of copyright_holder.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        model: The model read from model_path already (read_model), which
+            is then not read again.
+
+    Returns:
+        {project_path, schema, tables, views, routines, triggers, events,
+        roles, inserted_rows, diagrams, scripts_not_imported, warnings,
+        files}.
+    """
+    if model is None:
+        model = workbench.read_model(model_path)
+    model_schema = model.schema(schema)
+    # Checked first: the snapshot needs the binary, and a project without
+    # it would be removed again.
+    lsp.require_lsp(lsp_path)
+
+    project_path = management.create_schema_project_folder(
+        schema_name=model_schema["name"],
+        target_path=target_path,
+        copyright_holder=copyright_holder,
+        license=license if license is not None else "None",
+        overwrite_existing=overwrite_existing,
+        allow_special_chars=True,
+        enforce_target_path=enforce_target_path,
+        copyrights=copyrights,
+    )
+    try:
+        result = _import_into(project_path, model, model_schema, lsp_path)
+    except BaseException:
+        shutil.rmtree(project_path, ignore_errors=True)
+        raise
+    return {
+        "project_path": project_path,
+        "schema": model_schema["name"],
+        **result,
+        "scripts_not_imported": model.scripts,
     }
