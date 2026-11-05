@@ -294,6 +294,7 @@ Management (`msm`) plugin:
 | `msm.prepare_release` | `prepare_release` |
 | `msm.get_sql_content_from_section` | `get_sql_content_from_section` |
 | `msm.set_section_sql_content` | `set_section_sql_content` |
+| `msm.split_sections` | `split_sections` |
 | `msm.generate_deployment_script` | `generate_deployment_script` |
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
 | `msm.deploy_schema` | `deploy_schema` |
@@ -322,6 +323,10 @@ a table a foreign key refers to above the tables referring to it; views (a figur
 each) and routines (listed on one routine group figure) go below the tables, without
 connections. Notes and images stay where they are. Both tools make the snapshot again
 first when the script changed since it was made.
+`msm.split_sections` moves the statements of Sections 140, 150 and 170 into
+breakout files under `development/sections/` by object kind (tables, table additions,
+inserts; procedures and functions, views, triggers, events; roles), which the
+sections then include; it finds the statements with the same binary.
 `msm.import_workbench_model` creates a project from a MySQL Workbench model (`.mwb`):
 the CREATE statements of a schema of the model (sections 140, 150 and 170, in breakout
 files under `development/sections/` where a section is large), its snapshot and its EER

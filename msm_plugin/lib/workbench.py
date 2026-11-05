@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from msm_plugin.lib import diagrams
+from msm_plugin.lib import statements as statements_lib
 
 DOCUMENT = "document.mwb.xml"
 DATA = "@db/data.db"
@@ -538,45 +539,9 @@ def inserts_sql(model: Model, table: dict) -> Optional[str]:
     )
 
 
-_CREATE = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:ALGORITHM\s*=\s*\w+\s+)?"
-    r"(?:DEFINER\s*=\s*\S+\s+)?(?:SQL\s+SECURITY\s+\w+\s+)?"
-    r"(?:AGGREGATE\s+)?(?P<kind>VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\b",
-    re.IGNORECASE,
-)
-
-
-def _strip_statement(sql: str) -> str:
-    """A statement without the DELIMITER lines, the comments before it
-    (Workbench puts `-- View structure for view ...` there) and the
-    delimiter at its end."""
-    lines = [line for line in sql.strip().splitlines()
-             if not line.strip().upper().startswith("DELIMITER")]
-    text = "\n".join(lines).strip()
-    while True:
-        if text.startswith("--") or text.startswith("#"):
-            text = text.partition("\n")[2]
-        elif text.startswith("/*"):
-            text = text.partition("*/")[2]
-        else:
-            break
-        text = text.lstrip()
-    for delimiter in ("$$", "%%", "//", ";"):
-        if text.endswith(delimiter):
-            text = text[: -len(delimiter)].rstrip()
-            break
-    return text
-
-
-def statement_kind(sql: str) -> Optional[str]:
-    """VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT: what a CREATE statement creates."""
-    match = _CREATE.match(_strip_statement(sql))
-    return match.group("kind").upper() if match else None
-
-
 def _idempotent(kind: str, name: str, sql: str) -> str:
     """A CREATE statement of section 150, safe to run where the object exists."""
-    statement = _strip_statement(sql)
+    statement = statements_lib.strip_statement(sql)
     if kind in ("VIEW", "EVENT"):
         statement = re.sub(
             r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?", "CREATE OR REPLACE ", statement,
@@ -597,7 +562,7 @@ def _object_name(sql: str, fallback: str) -> str:
     match = re.search(
         r"\b(?:VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\s+(?:IF\s+NOT\s+EXISTS\s+)?"
         r"(?:`(?:[^`]|``)+`\s*\.\s*|\w+\s*\.\s*)?(`(?:[^`]|``)+`|\w+)",
-        _strip_statement(sql), re.IGNORECASE,
+        statements_lib.strip_statement(sql), re.IGNORECASE,
     )
     if not match:
         return fallback
@@ -704,7 +669,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
         if not (sql or "").strip():
             result.warnings.append(f"The {fallback_kind.lower()} `{fallback_name}` has no SQL.")
             return
-        kind = statement_kind(sql)
+        kind = statements_lib.statement_kind(sql)
         if kind is None:
             result.warnings.append(
                 f"The {fallback_kind.lower()} `{fallback_name}` is not a CREATE statement "

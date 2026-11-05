@@ -30,7 +30,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
-- **Schema diagrams (PR #82, layout #83, Workbench import on `wip/msm-mwb-import`):** eight tools in
+- **Schema diagrams (#82 section 160, #83 layout, #84 Workbench import, #85 views/routines/notes/images):** eight tools in
   `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
   `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
   `msm.set_schema_diagram`, `msm.remove_schema_diagram`, `msm.create_schema_diagram`
@@ -41,8 +41,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   project folder - its name from the model's schema, so the model is read first in a
   worker thread - through `require_project_access`; registered with the `mcp_access` GUI
   argument; the msm call inside `checked_includes`, then `projects.add_project` with the
-  client as owner). They and `msm.prepare_release`
-  go through `_in_project(ctx, path, function, ...)`: `_authorize_project`, then the
+  client as owner; new-project steps shared with `msm.create_project` through
+  `_require_new_project_access`, `_add_new_project` and `_with_checked_includes`).
+  `msm.get_schema_diagrams` returns diagrams through `diagrams.elide_images` (an
+  ImageFigure's data URL replaced by `image_size`, so no base64 reaches the LLM), and
+  `set_schema_diagram` keeps the stored picture of a figure sent without one (by id, in
+  msm's `set_diagram`). `msm.split_sections(sections=None, schema_project_path=None)`
+  wraps `msm_plugin.management.split_sections` (imported as `msm`) with `lsp_path`: it
+  moves Sections 140/150/170 into breakout files by object kind (routines before views)
+  and writes those files, so it goes through `_in_project` too. They and
+  `msm.prepare_release` go through `_in_project(ctx, path, function, ...)`: `_authorize_project`, then the
   msm call in a worker thread inside `msm_plugin.lib.source.checked_includes(...)`
   with `db_functions.allowed_include` for the client's user, so EVERY file a SOURCE
   directive names is checked where msm reads (`source.read_include`) or writes it -
