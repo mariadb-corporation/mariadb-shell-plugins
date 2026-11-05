@@ -632,8 +632,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             split (the files of each section split), skipped (the reason for
             each section left as it is), sections_added (the template
-            sections that were missing), files (the files written) and
-            snapshot_updated (whether the schema snapshot was made again).
+            sections that were missing), files (the files written),
+            snapshot_updated (whether the schema snapshot was made again), and
+            snapshot_error (why it could not be, where it could not).
         """
         return await _in_project(
             ctx,

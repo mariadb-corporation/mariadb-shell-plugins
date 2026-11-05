@@ -96,12 +96,7 @@ class _Project:
         # Every template section the script lacks is added here, so that the
         # snapshot's hash, the outline's positions and what _write writes
         # are all of the same, complete script.
-        sections, added = sections_lib.complete_sections(
-            schema_project_path, management.get_script_sections(script), settings
-        )
-        if added:
-            script = "\n".join(section["full_content"] for section in sections.values())
-            sections = management.get_script_sections(script)
+        script, sections, _ = sections_lib.complete_script(schema_project_path, script, settings)
         return cls(schema_project_path, settings, dev_file, script, sections)
 
     @property
@@ -369,7 +364,8 @@ def split_sections(schema_project_path: str, section_ids: list = None, lsp_path:
     no diagram is reconciled unasked.
 
     Returns:
-        The SplitResult's members, and snapshot_updated.
+        The SplitResult's members, snapshot_updated, and snapshot_error
+        where the snapshot could not be made again.
     """
     project = _Project.load(schema_project_path)
     current = _snapshot_is_current(project, _schema_row(_rows(project)))
@@ -378,8 +374,15 @@ def split_sections(schema_project_path: str, section_ids: list = None, lsp_path:
     )
     result["snapshot_updated"] = bool(result["split"]) and current
     if result["snapshot_updated"]:
-        written = update_schema_definition(schema_project_path, lsp_path)["files"]
-        result["files"] = list(dict.fromkeys([*result["files"], *written]))
+        # The split is written already; a snapshot that cannot be made again
+        # is reported, not raised, so that the caller learns what changed.
+        try:
+            written = update_schema_definition(schema_project_path, lsp_path)["files"]
+        except ValueError as e:
+            result["snapshot_updated"] = False
+            result["snapshot_error"] = str(e)
+        else:
+            result["files"] = list(dict.fromkeys([*result["files"], *written]))
     return result
 
 
@@ -479,8 +482,8 @@ def _current_snapshot(project: _Project, rows: list, lsp_path: str = None) -> tu
     Returns:
         The snapshot and the rows, holding it.
     """
-    schema = next((row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT), None)
-    if schema is not None and schema["document"].get("source_hash") == _current_hash(project):
+    schema = _schema_row(rows)
+    if _snapshot_is_current(project, schema):
         # A snapshot written before foreign keys were named has unnamed ones.
         for table in schema["document"].get("tables", []):
             diagrams.name_foreign_keys(table)
@@ -880,44 +883,24 @@ def layout_diagram(
 def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -> dict:
     """Writes a schema of a Workbench model into a new project's script."""
     imported = workbench.schema_sql(model, schema)
-    # The import's SQL by the object kinds the parts take (None: every kind)
-    by_kind = {
-        "TABLE": imported.tables,
-        "TABLE_ADDITION": imported.table_additions,
-        "INSERT": imported.inserts,
-        "PROCEDURE": imported.routines,
-        "FUNCTION": imported.routines,
-        "VIEW": imported.views,
-        "TRIGGER": imported.triggers,
-        "EVENT": imported.events,
+    # The import's SQL by the object kinds each part takes (None: every kind)
+    by_kinds = {
+        frozenset({"TABLE"}): imported.tables,
+        frozenset({"TABLE_ADDITION"}): imported.table_additions,
+        frozenset({"INSERT"}): imported.inserts,
+        frozenset({"PROCEDURE", "FUNCTION"}): imported.routines,
+        frozenset({"VIEW"}): imported.views,
+        frozenset({"TRIGGER"}): imported.triggers,
+        frozenset({"EVENT"}): imported.events,
         None: imported.roles,
     }
-    settings = management.get_project_settings(project_path)
-    dev_file = management.get_schema_development_file_path(project_path)
-    sections = management.get_file_sections(dev_file)
-    files = []
-    changed = False
-    for section_id, layouts in sections_lib.SECTION_PARTS.items():
-        parts = [
-            sections_lib.Part(
-                layout.file_name, layout.title,
-                by_kind[min(layout.kinds) if layout.kinds else None],
-            )
+    files = sections_lib.write_sections_parts(project_path, {
+        section_id: [
+            sections_lib.Part(layout.file_name, layout.title, by_kinds[layout.kinds])
             for layout in layouts
         ]
-        parts = [part for part in parts if part.sql and part.sql.strip()]
-        if not parts:
-            continue
-        body, written = sections_lib.section_body(
-            settings, os.path.dirname(dev_file), section_id, parts
-        )
-        sections_lib.set_section_body(sections[section_id], body)
-        files += written
-        changed = True
-    if changed:
-        # The development script is written once for every section imported.
-        management.write_sections_to_file(dev_file, sections, overwrite_existing=True)
-        files.insert(0, dev_file)
+        for section_id, layouts in sections_lib.SECTION_PARTS.items()
+    })
 
     project = _Project.load(project_path)
     schema_document, rows, _ = _replace_snapshot(project, _rows(project), lsp_path)

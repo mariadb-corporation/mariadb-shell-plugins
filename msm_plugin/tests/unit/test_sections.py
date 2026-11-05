@@ -129,7 +129,16 @@ def test_statements_are_classified_by_what_they_are_about():
     kind = statements.object_kind
     assert kind("CREATE TABLE t (i INT);") == "TABLE"
     assert kind("-- c\nCREATE OR REPLACE SEQUENCE s;") == "TABLE"
-    assert kind("ALTER TABLE t ADD c INT;") == "TABLE_ADDITION"
+    assert kind("ALTER TABLE `t` ADD CONSTRAINT `fk` FOREIGN KEY (a, b) REFERENCES u (a, b);") == (
+        "TABLE_ADDITION")
+    assert kind("ALTER TABLE s.t ADD INDEX i (a), -- c, d\n  ADD UNIQUE KEY u (b);") == (
+        "TABLE_ADDITION")
+    assert kind("ALTER TABLE t ADD PRIMARY KEY (a), ADD CHECK (a > 0);") == "TABLE_ADDITION"
+    # Anything else would change what the section does once it runs elsewhere
+    assert kind("ALTER TABLE t ADD c INT;") is None
+    assert kind("ALTER TABLE t ADD INDEX i (a), DROP COLUMN b;") is None
+    assert kind("ALTER TABLE a RENAME TO b;") is None
+    assert kind("ALTER SEQUENCE s RESTART 1;") is None
     assert kind("CREATE UNIQUE INDEX i ON t (c);") == "TABLE_ADDITION"
     assert kind("REPLACE INTO t VALUES (1);") == "INSERT"
     assert kind("DROP PROCEDURE IF EXISTS p%%") == "PROCEDURE"
