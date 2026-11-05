@@ -861,6 +861,28 @@ def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir
     assert sorted(result["placed"]) == ["customer", "orders"]
 
 
+def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
+    from msm_plugin.lib import modeling
+
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    picture = "data:image/png;base64,iVBORw0KGgo="
+    document = _diagram("Pics")
+    document["figures"].append({
+        "id": "logo", "type": "ImageFigure", "name": "Logo", "left": 1.0, "top": 1.0,
+        "width": 10.0, "height": 10.0, "image": picture,
+    })
+    _call(tools, "msm.set_schema_diagram", document, path)
+    rows = _call(tools, "msm.get_schema_diagrams", path, "Pics")
+    logo = next(f for f in rows[-1]["document"]["figures"] if f["id"] == "logo")
+    assert "image" not in logo
+    assert logo["image_size"] == len(picture)
+    # Sent back as received, the figure keeps its picture.
+    _call(tools, "msm.set_schema_diagram", rows[-1]["document"], path)
+    stored = modeling.get_diagram_rows(path, "Pics")[-1]["document"]
+    assert next(f for f in stored["figures"] if f["id"] == "logo")["image"] == picture
+
+
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(
     project_lists, allowed_temp_dir, tmp_path
 ):

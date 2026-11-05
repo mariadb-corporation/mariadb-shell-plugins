@@ -558,11 +558,21 @@ def register_msm_tools(server, function_groups=()) -> None:
             language server's outline writes them, with their positions in
             files (0-based lines and UTF-16 characters; source n is
             files[n + 1]), and source_hash. An msm-diagram/1 document holds
-            layers, figures and connections.
+            layers, figures and connections. An ImageFigure's picture, a
+            data URL, is left out: image_size says its length, and
+            msm.set_schema_diagram keeps the stored picture of a figure sent
+            without one.
         """
-        return await _in_project(
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        rows = await _in_project(
             ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
         )
+        return [
+            {**row, "document": msm_diagrams.elide_images(row["document"])}
+            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
+            for row in rows
+        ]
 
     @tool(name="msm.update_schema_definition")
     async def update_schema_definition(
@@ -600,12 +610,15 @@ def register_msm_tools(server, function_groups=()) -> None:
 
         Args:
             document: The msm-diagram/1 document: format "msm-diagram/1",
-                name, width, height, layers, figures (each id, type
-                "TableFigure", table, left, top, width, height, color,
-                layer; a figure without left and top is placed by
-                msm.layout_schema_diagram) and connections (each id, foreignKey, table - the
-                table owning the foreign key -, startFigure, endFigure,
-                visible).
+                name, width, height, layers, figures and connections (each
+                id, foreignKey, table - the table owning the foreign key -,
+                startFigure, endFigure, visible). A figure has id, type, name,
+                left, top, width, height, color and layer; a figure without
+                left and top is placed by msm.layout_schema_diagram. By type:
+                "TableFigure" has table, "ViewFigure" view,
+                "RoutineGroupFigure" routines (names), "NoteFigure" text,
+                "ImageFigure" image (a data URL; left out, the figure keeps
+                the picture stored under its id).
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
@@ -622,6 +635,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         name: str,
         tables: Optional[list[str]] = None,
         schema_project_path: Optional[str] = None,
+        views: Optional[list[str]] = None,
+        routines: Optional[list[str]] = None,
     ) -> dict:
         """Adds a diagram of the schema's tables to a schema project, laid out.
 
@@ -629,14 +644,19 @@ def register_msm_tools(server, function_groups=()) -> None:
         goes above the tables referring to it, with few crossing
         connections, and tables without foreign keys are packed in rows
         below. Every foreign key between two tables shown gets a connection.
-        The schema snapshot is made again first where the development script
-        changed since it was made.
+        Views get a figure each and routines are listed on one routine group
+        figure, placed below the tables, without connections. The schema
+        snapshot is made again first where the development script changed
+        since it was made.
 
         Args:
             name: The name of the new diagram.
             tables: The tables to show. Defaults to all tables of the schema.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
+            views: Views to show as well. Defaults to none.
+            routines: Routines (procedures and functions) to list on a
+                routine group figure. Defaults to none.
 
         Returns:
             name, figures and connections (counts), and the files written.
@@ -646,7 +666,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             schema_project_path,
             msm_modeling.create_schema_diagram,
             name,
-            **_kwargs(tables=tables, lsp_path=_lsp_path()),
+            **_kwargs(tables=tables, views=views, routines=routines, lsp_path=_lsp_path()),
         )
 
     @tool(name="msm.layout_schema_diagram")
@@ -656,16 +676,20 @@ def register_msm_tools(server, function_groups=()) -> None:
         tables: Optional[list[str]] = None,
         keep_placed: bool = True,
         schema_project_path: Optional[str] = None,
+        views: Optional[list[str]] = None,
+        routines: Optional[list[str]] = None,
     ) -> dict:
-        """Adds tables to a diagram of a schema project and lays its figures out.
+        """Adds tables, views and routines to a diagram of a schema project
+        and lays its figures out.
 
         With keep_placed (the default) only figures without a position are
-        laid out - the tables added, or figures a document given to
+        laid out - the objects added, or figures a document given to
         msm.set_schema_diagram leaves left and top out of - as a block below
-        the others; with keep_placed false every figure is laid out again.
-        Figures on a layer keep their place. Foreign keys between tables on
-        the diagram that are not drawn get a connection. The schema snapshot
-        is made again first where the development script changed.
+        the others; with keep_placed false every table, view and routine
+        group figure is laid out again. Figures on a layer, notes and images
+        keep their place. Foreign keys between tables on the diagram that
+        are not drawn get a connection. The schema snapshot is made again
+        first where the development script changed.
 
         Args:
             name: The name of the diagram.
@@ -673,9 +697,14 @@ def register_msm_tools(server, function_groups=()) -> None:
             keep_placed: Whether figures that have a position keep it.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
+            views: Views to add. Defaults to none.
+            routines: Routines to list on the diagram's routine group
+                figure, which is added where the diagram has none. Defaults
+                to none.
 
         Returns:
-            name, added (tables added), placed (tables laid out),
+            name, added (the objects added), placed (the figures laid out, by
+            the tables, views and routine groups they show),
             connections_added and the files written.
         """
         return await _in_project(
@@ -683,7 +712,13 @@ def register_msm_tools(server, function_groups=()) -> None:
             schema_project_path,
             msm_modeling.layout_schema_diagram,
             name,
-            **_kwargs(tables=tables, keep_placed=keep_placed, lsp_path=_lsp_path()),
+            **_kwargs(
+                tables=tables,
+                views=views,
+                routines=routines,
+                keep_placed=keep_placed,
+                lsp_path=_lsp_path(),
+            ),
         )
 
     async def import_workbench_model(

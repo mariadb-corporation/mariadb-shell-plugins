@@ -34,7 +34,7 @@ import pytest
 from msm_plugin.lib import diagrams, management, modeling, projects, sections, workbench
 
 # The project, as the diagram tests have it, and their mark for the binary.
-from test_diagrams import needs_lsp, project  # noqa: F401
+from test_diagrams import figures_by_type, needs_lsp, project  # noqa: F401
 
 
 # -----------------------------------------------------------------------------
@@ -148,6 +148,8 @@ def shop_model():
                       sqlDefinition="CREATE FUNCTION `order_count`() RETURNS INT\nREADS SQL DATA\n"
                                     "BEGIN\n  RETURN (SELECT COUNT(*) FROM `orders`);\nEND")],
         events=[],
+        routineGroups=[obj("db.mysql.RoutineGroup", "{RG-1}", name="Counting",
+                           routines=[Link("{R-1}")])],
     )
     roles = [obj("db.Role", "{ROLE-1}", name="shop_reader", childRoles=[], privileges=[
         obj("db.RolePrivilege", "{RP-1}", databaseObjectName="**.*", databaseObjectType="TABLE",
@@ -160,16 +162,33 @@ def shop_model():
                       obj("db.UserDatatype", "UDT-UUID", name="UUID", sqlDefinition="UUID",
                           flags="", actualType=Link("com.mysql.rdbms.mysql.datatype.binary"))])
 
-    def figure(object_id, table, left, top, layer):
-        return obj("workbench.physical.TableFigure", object_id, table=Link(table),
-                   layer=Link(layer), left=float(left), top=float(top), width=160.0,
-                   height=120.0, color="#98BFDA", expanded=1, columnsExpanded=1,
-                   indicesExpanded=0, foreignKeysExpanded=0, triggersExpanded=0,
-                   manualSizing=0, name="")
+    def figure(struct, object_id, left, top, layer, **members):
+        """A figure of a diagram as Workbench writes one, its own members on top."""
+        return obj(struct, object_id, layer=Link(layer), left=float(left), top=float(top),
+                   **{"width": 160.0, "height": 120.0, "color": "", "expanded": 1,
+                      "manualSizing": 0, "name": "", **members})
 
-    figures = [figure("{F-CUSTOMER}", "{T-CUSTOMER}", 20, 20, "{L-ROOT}"),
-               figure("{F-ORDERS}", "{T-ORDERS}", 20, 200, "{L-ROOT}"),
-               figure("{F-EMP}", "{T-EMPLOYEE}", 10, 30, "{L-HR}")]
+    def table_figure(object_id, table, left, top, layer):
+        return figure("workbench.physical.TableFigure", object_id, left, top, layer,
+                      table=Link(table), color="#98BFDA", columnsExpanded=1, indicesExpanded=0,
+                      foreignKeysExpanded=0, triggersExpanded=0)
+
+    figures = [table_figure("{F-CUSTOMER}", "{T-CUSTOMER}", 20, 20, "{L-ROOT}"),
+               table_figure("{F-ORDERS}", "{T-ORDERS}", 20, 200, "{L-ROOT}"),
+               table_figure("{F-EMP}", "{T-EMPLOYEE}", 10, 30, "{L-HR}"),
+               figure("workbench.physical.ViewFigure", "{F-VIEW}", 400, 400, "{L-ROOT}",
+                      view=Link("{V-1}"), width=120.0, height=46.0, color="#fede58"),
+               figure("workbench.physical.RoutineGroupFigure", "{F-RG}", 600, 400, "{L-ROOT}",
+                      routineGroup=Link("{RG-1}"), width=140.0, height=80.0),
+               figure("workbench.model.NoteFigure", "{F-NOTE}", 10, 250, "{L-HR}",
+                      width=137.0, height=25.0, color="#FEFDED", manualSizing=1, name="text1",
+                      text="The staff", font="", textColor=""),
+               figure("workbench.model.ImageFigure", "{F-IMAGE}", 800, 20, "{L-ROOT}",
+                      width=64.0, height=64.0, manualSizing=1, keepAspectRatio=1, name="Logo",
+                      filename="@images/logo.png"),
+               figure("workbench.model.ImageFigure", "{F-LOST}", 900, 20, "{L-ROOT}",
+                      width=64.0, height=64.0, manualSizing=1, keepAspectRatio=1, name="Lost",
+                      filename="@images/missing.png")]
     diagram = obj(
         "workbench.physical.Diagram", "{DIAGRAM}", name="Shop", width=1000.0, height=800.0,
         zoom=1.0, description="",
@@ -187,13 +206,20 @@ def shop_model():
     return obj("workbench.Document", "{DOCUMENT}", physicalModels=[model])
 
 
-def write_mwb(path, document, rows=None, scripts=("audit.sql",)):
+PNG = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+
+def write_mwb(path, document, rows=None, scripts=("audit.sql",), images={"logo.png": PNG}):
     xml = ('<?xml version="1.0"?>\n<data grt_format="2.0" document_type="MySQL Workbench Model"'
            ' version="1.4.4">' + grt(None, document) + "</data>")
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("document.mwb.xml", xml)
-        for script in scripts:
-            archive.writestr(f"@scripts/{script}", "SELECT 1;\n")
+        for number, script in enumerate(scripts):
+            # Either folder, by the Workbench version.
+            folder = "@scripts" if number % 2 == 0 else "@sqlscripts"
+            archive.writestr(f"{folder}/{script}", "SELECT 1;\n")
+        for name, data in images.items():
+            archive.writestr(f"@images/{name}", data)
         if rows is not None:
             data = str(path) + ".db"
             connection = sqlite3.connect(data)
@@ -238,6 +264,15 @@ def test_a_model_is_read(mwb):
     assert model.scripts == ["audit.sql"]
     with pytest.raises(ValueError, match="no schema `other`"):
         model.schema("other")
+
+
+def test_scripts_in_either_folder_are_listed(tmp_path):
+    path = write_mwb(tmp_path / "shop.mwb", shop_model(), scripts=("a.sql", "b.sql"))
+    with zipfile.ZipFile(path) as archive:
+        assert {n for n in archive.namelist() if "scripts" in n} == {
+            "@scripts/a.sql", "@sqlscripts/b.sql",
+        }
+    assert workbench.read_model(path).scripts == ["a.sql", "b.sql"]
 
 
 def test_what_is_not_a_model_is_refused(tmp_path):
@@ -331,6 +366,33 @@ def test_a_foreign_key_to_a_table_outside_the_schema_is_left_out(tmp_path):
     assert "GRANT INSERT ON * TO `shop_reader`;" in result.roles
 
 
+def test_a_large_image_is_reported_not_embedded(tmp_path, monkeypatch):
+    monkeypatch.setattr(workbench, "MAX_IMAGE_SIZE", 8 * 1024)
+    big = {"logo.png": PNG + b"\x00" * (8 * 1024)}
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", shop_model(), images=big))
+    assert model.images["@images/logo.png"] == len(big["logo.png"])
+    _, warnings = workbench.diagram_documents(model, model.schema())
+    assert ("The image `@images/logo.png` of the diagram `Shop` was left out: it is larger "
+            "than 8 KB.") in warnings
+
+
+def test_a_diagram_s_pictures_are_capped_together(tmp_path, monkeypatch):
+    # Room for one logo, and two figures showing it: the second is reported.
+    monkeypatch.setattr(workbench, "MAX_DIAGRAM_IMAGES_SIZE", len(PNG) + 1)
+    document = shop_model()
+    diagram = document["physicalModels"][0]["diagrams"][0]
+    logo = next(f for f in diagram["figures"] if f["_id"] == "{F-IMAGE}")
+    diagram["figures"].append(dict(logo, _id="{F-IMAGE-2}", name="Logo again"))
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", document))
+    documents, warnings = workbench.diagram_documents(model, model.schema())
+    images = [f["name"] for f in documents[0]["figures"] if f["type"] == "ImageFigure"]
+    assert images == ["Logo"]
+    assert [w for w in warnings if w.startswith("The image `@images/logo.png`")] == [
+        "The image `@images/logo.png` of the diagram `Shop` was left out: the diagram's "
+        f"pictures would be larger than {workbench.MAX_DIAGRAM_IMAGES_SIZE // 2 ** 20} MB together."
+    ]
+
+
 def test_diagram_names_are_made_unique(tmp_path):
     document = shop_model()
     physical = document["physicalModels"][0]
@@ -356,6 +418,8 @@ def test_a_list_member_that_is_a_link_is_followed(tmp_path):
     routine = schema["routines"][0]
     members = {}
     for key, value in schema.items():
+        if key == "routineGroups":
+            continue
         if key == "routines":
             members["routineGroups"] = [obj("db.mysql.RoutineGroup", "{RG-1}", name="all",
                                             routines=[routine])]
@@ -385,12 +449,32 @@ def test_a_statement_s_kind_and_an_event_saved_as_a_routine():
 def test_the_diagrams_become_documents(mwb):
     model = workbench.read_model(mwb)
     documents, warnings = workbench.diagram_documents(model, model.schema())
-    assert warnings == []
+    assert warnings == [
+        "The image `@images/missing.png` of the diagram `Shop` was left out: the model file "
+        "does not hold it.",
+    ]
     (document,) = documents
     diagrams.validate_diagram(document)
     assert document["name"] == "Shop"
-    figures = {figure["table"]: figure for figure in document["figures"]}
+    by_type = figures_by_type(document)
+    figures = {figure["table"]: figure for figure in by_type["TableFigure"]}
     assert set(figures) == {"customer", "orders", "employee"}
+    (view,) = by_type["ViewFigure"]
+    assert (view["view"], view["name"], view["color"], view["left"]) == (
+        "big_orders", "big_orders", "#fede58", 400.0,
+    )
+    (group,) = by_type["RoutineGroupFigure"]
+    assert (group["name"], group["routines"], group["color"]) == (
+        "Counting", ["order_count"], "#98D8A5",
+    )
+    (note,) = by_type["NoteFigure"]
+    assert (note["text"], note["name"], note["layer"], note["manualSizing"]) == (
+        "The staff", "text1", "{L-HR}", True,
+    )
+    assert "font" not in note
+    (image,) = by_type["ImageFigure"]
+    assert image["image"].startswith("data:image/png;base64,iVBORw0KGgo")
+    assert (image["name"], image["keepAspectRatio"]) == ("Logo", True)
     assert "layer" not in figures["customer"]
     assert figures["employee"]["layer"] == "{L-HR}"
     assert (figures["orders"]["left"], figures["orders"]["top"]) == (20.0, 200.0)

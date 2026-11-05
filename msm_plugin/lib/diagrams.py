@@ -41,7 +41,8 @@ made from an outline.
 import hashlib
 import json
 import re
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 DIAGRAMS_VIEW = "msm_schema_diagrams"
 SCHEMA_FORMAT = "msm-schema/1"
@@ -150,8 +151,8 @@ _ESCAPES = {"0": "\0", "b": "\b", "n": "\n", "r": "\r", "t": "\t", "Z": "\x1a"}
 # are skipped, single-quoted strings are the literals (group "literal").
 _TOKENS = re.compile(
     r"--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?(?:\*/|\Z)"
-    r"|`(?:[^`]|``)*`|\"(?:[^\"\\]|\\.|\"\")*\""
-    r"|'(?P<literal>(?:[^'\\]|\\.|'')*)'"
+    r"|`(?:[^`]++|``)*`|\"(?:[^\"\\]++|\\.|\"\")*\""
+    r"|'(?P<literal>(?:[^'\\]++|\\.|'')*)'"
     r"|'",
     re.DOTALL,
 )
@@ -395,9 +396,125 @@ def validate_diagram(document) -> None:
             raise ValueError(f"A diagram's `{member}` has to be a list.")
 
 
+TABLE_FIGURE = "TableFigure"
+VIEW_FIGURE = "ViewFigure"
+ROUTINE_GROUP_FIGURE = "RoutineGroupFigure"
+# A note's text and an image embedded as a data URL: msm keeps them as they
+# are, the schema has no say in them.
+NOTE_FIGURE = "NoteFigure"
+IMAGE_FIGURE = "ImageFigure"
+
+# The colours new figures get, Workbench's.
+FIGURE_COLOR = "#98BFDA"
+VIEW_FIGURE_COLOR = "#FEDE58"
+ROUTINE_FIGURE_COLOR = "#98D8A5"
+NOTE_FIGURE_COLOR = "#FEFDED"
+# The name of the routine group figure msm adds to a diagram.
+ROUTINE_GROUP_NAME = "Routines"
+
+
+def routine_label(routine: dict) -> str:
+    """The row a routine group figure shows for a routine: its name with the
+    parameters' types, and what a function returns."""
+    parameters = ", ".join(
+        parameter.get("type") or "" for parameter in routine.get("parameters") or []
+    )
+    label = f"{routine.get('name', '')}({parameters})"
+    if routine.get("returns"):
+        label += f": {routine['returns']}"
+    return label
+
+
+def _table_sections(table: dict, figure: dict) -> list:
+    sections = []
+    if figure.get("columnsExpanded") is not False:
+        sections.append(len(table.get("columns", [])))
+    if figure.get("indicesExpanded") is True:
+        sections.append(len(table.get("indexes", [])))
+    if figure.get("foreignKeysExpanded") is True:
+        sections.append(len(table.get("foreign_keys", [])))
+    return sections
+
+
+@dataclass(frozen=True)
+class FigureKind:
+    """A kind of figure that shows objects of the snapshot, and what its
+    card shows of them.
+
+    Attributes:
+        key: The figure's member naming what it shows: the object's name
+            (Workbench's link key as well), or for a group the names listed
+            (Workbench links the group instead, ``routineGroup``).
+        objects: The snapshot list the objects are in, a catalog() key.
+        many: Whether the figure lists several objects (a routine group).
+        color: The colour a new figure gets.
+        rows: The card's rows for the object (or the objects), a text each.
+        sections: The rows of each expanded section of the card, for the
+            object(s) and the figure's flags; an empty section takes no room.
+    """
+
+    key: str
+    objects: str
+    many: bool
+    color: str
+    rows: Callable
+    sections: Callable
+
+
+FIGURE_KINDS = {
+    TABLE_FIGURE: FigureKind(
+        "table", "tables", False, FIGURE_COLOR,
+        rows=lambda table: [
+            column.get("name", "") + (column.get("type") or "")
+            for column in table.get("columns", [])
+        ],
+        sections=_table_sections,
+    ),
+    VIEW_FIGURE: FigureKind(
+        "view", "views", False, VIEW_FIGURE_COLOR,
+        rows=lambda view: [str(column) for column in view.get("columns") or []],
+        sections=lambda view, figure: (
+            [len(view.get("columns") or [])] if figure.get("columnsExpanded") is not False
+            else []
+        ),
+    ),
+    ROUTINE_GROUP_FIGURE: FigureKind(
+        "routines", "routines", True, ROUTINE_FIGURE_COLOR,
+        rows=lambda routines: [routine_label(routine) for routine in routines],
+        sections=lambda routines, figure: [len(routines)],
+    ),
+}
+
+
+def figure_type(figure: dict) -> str:
+    """A figure's type: a table (the default), a view, a group of routines,
+    or something msm leaves alone."""
+    return figure.get("type") or TABLE_FIGURE
+
+
+def figure_kind(figure: dict) -> Optional[FigureKind]:
+    """The kind of a figure that shows snapshot objects; None for a note, an
+    image or a type msm does not know."""
+    return FIGURE_KINDS.get(figure_type(figure))
+
+
 def is_table_figure(figure: dict) -> bool:
     """Whether a diagram figure shows a table (the default type)."""
-    return figure.get("type", "TableFigure") == "TableFigure"
+    return figure_type(figure) == TABLE_FIGURE
+
+
+def is_routine_group_figure(figure: dict) -> bool:
+    """Whether a diagram figure lists routines."""
+    return figure_type(figure) == ROUTINE_GROUP_FIGURE
+
+
+def figure_object_name(figure: dict) -> str:
+    """The name of the table or view a figure shows, as written; the
+    figure's own name for every other kind."""
+    kind = figure_kind(figure)
+    if kind is not None and not kind.many:
+        return figure.get(kind.key) or figure.get("name") or ""
+    return figure.get("name") or ""
 
 
 def figure_table(figure: dict) -> str:
@@ -405,12 +522,71 @@ def figure_table(figure: dict) -> str:
     return (figure.get("table") or figure.get("name") or "").lower()
 
 
+def figure_routines(figure: dict) -> list:
+    """The names of the routines a routine group figure lists, as written."""
+    return [name for name in figure.get("routines") or [] if isinstance(name, str)]
+
+
+def elide_images(document: dict) -> dict:
+    """A copy of a diagram document without the pictures of its image
+    figures: each `image` (a data URL of up to hundreds of KB) is replaced
+    by `image_size`, its length. For a reader that cannot use the bytes."""
+    figures = []
+    for figure in document.get("figures", []):
+        picture = figure.get("image")
+        if isinstance(picture, str):
+            figure = {key: value for key, value in figure.items() if key != "image"}
+            figure["image_size"] = len(picture)
+        figures.append(figure)
+    return {**document, "figures": figures}
+
+
+def keep_images(document: dict, stored: Optional[dict]) -> None:
+    """Gives an image figure that comes without its picture the one the
+    stored diagram holds for the figure of the same id, in place."""
+    pictures = {
+        figure.get("id"): figure["image"]
+        for figure in (stored or {}).get("figures", [])
+        if isinstance(figure.get("image"), str) and figure.get("id")
+    }
+    for figure in document.get("figures", []):
+        if figure_type(figure) == IMAGE_FIGURE and not figure.get("image"):
+            if figure.get("id") in pictures:
+                figure["image"] = pictures[figure["id"]]
+
+
+def catalog(schema_document: dict) -> dict:
+    """The snapshot's tables, views and routines by their lower-case name."""
+    return {
+        kind: {item["name"].lower(): item for item in schema_document.get(kind, [])}
+        for kind in ("tables", "views", "routines")
+    }
+
+
+def figure_objects(figure: dict, catalog: dict):
+    """What of the snapshot a figure shows: the table or view, the routines
+    a routine group lists (those the schema has), or None for a figure of
+    nothing the schema has, a note or an image."""
+    kind = figure_kind(figure)
+    if kind is None:
+        return None
+    objects = catalog[kind.objects]
+    if kind.many:
+        found = [
+            objects[name.lower()] for name in figure_routines(figure) if name.lower() in objects
+        ]
+        return found or None
+    return objects.get(figure_object_name(figure).lower())
+
+
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
-    A figure shows a table; a connection a foreign key of the table of its
-    start figure. New tables are not added: placing them is up to the user
-    or the layout.
+    A table figure shows a table, a view figure a view, and a routine group
+    figure lists routines, losing the ones the schema no longer has and
+    going with the last of them; a connection is a foreign key of the table
+    of its start figure. Figures of other types are left alone. New objects
+    are not added: placing them is up to the user or the layout.
 
     Args:
         diagram: The msm-diagram/1 document, changed in place.
@@ -419,13 +595,26 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     Returns:
         Whether anything was dropped.
     """
-    tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
+    objects = catalog(schema_document)
+    tables = objects["tables"]
     figures, connections = diagram["figures"], diagram["connections"]
-    kept_figures = [
-        figure
-        for figure in figures
-        if not is_table_figure(figure) or figure_table(figure) in tables
-    ]
+
+    changed = False
+    kept_figures = []
+    for figure in figures:
+        kind = figure_kind(figure)
+        if kind is not None and kind.many:
+            shown = [
+                name for name in figure_routines(figure) if name.lower() in objects[kind.objects]
+            ]
+            if shown != (figure.get("routines") or []):
+                figure["routines"] = shown
+                changed = True
+            if not shown:
+                continue
+        elif kind is not None and figure_objects(figure, objects) is None:
+            continue
+        kept_figures.append(figure)
     figure_ids = {figure.get("id") for figure in kept_figures}
 
     def has_foreign_key(connection) -> bool:
@@ -443,8 +632,8 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         and has_foreign_key(connection)
     ]
 
-    changed = len(kept_figures) != len(figures) or len(kept_connections) != len(connections)
-    if changed:
+    if len(kept_figures) != len(figures) or len(kept_connections) != len(connections):
+        changed = True
         diagram["figures"] = kept_figures
         diagram["connections"] = kept_connections
         for layer in diagram.get("layers", []):

@@ -29,7 +29,8 @@ its members keyed by ``key``, lists and dicts as values of their own, and a
 reference to another object as a ``<link>`` holding its id. ``@db/data.db``
 is an SQLite database with a table per model table that has rows to insert,
 named by the table's id, its columns named by the columns' ids. Scripts
-attached to the model are in ``@scripts/``.
+attached to the model are in ``@scripts/`` or ``@sqlscripts/``, the pictures of
+its image figures in ``@images/``.
 
 This module has no file writes and no shell imports: it reads a model and
 writes the CREATE statements of one of its schemas, MariaDB SQL, grouped the
@@ -37,20 +38,35 @@ way an MSM development script keeps them, and its EER diagrams as
 msm-diagram/1 documents.
 """
 
+import base64
 import os
 import re
 import sqlite3
 import tempfile
 import xml.etree.ElementTree as ElementTree
 import zipfile
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Optional
 
-from msm_plugin.lib import diagrams, layout
+from msm_plugin.lib import diagrams
 
 DOCUMENT = "document.mwb.xml"
 DATA = "@db/data.db"
-SCRIPTS = "@scripts/"
+# Where the archive keeps the scripts attached to the model (either folder,
+# by the Workbench version) and the pictures of its image figures.
+SCRIPTS = ("@scripts/", "@sqlscripts/")
+IMAGES = "@images/"
+# An image figure's picture goes into the diagram document as a data URL
+# (every msm call parses the document again, and the VIEW is deployed), so a
+# larger one, or one past what a diagram's pictures may take together, is
+# reported instead of embedded.
+MAX_IMAGE_SIZE = 512 * 1024
+MAX_DIAGRAM_IMAGES_SIZE = 4 * 1024 * 1024
+_IMAGE_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+    ".svg": "image/svg+xml", ".bmp": "image/bmp", ".webp": "image/webp",
+}
 
 # A model larger than this is not read (the MRS model's XML is about 1 MB).
 _MAX_DOCUMENT_SIZE = 256 * 1024 * 1024
@@ -152,12 +168,17 @@ class Model:
         data: The rows to insert, by table id: {"columns": [column ids],
             "rows": [[value or None]]}.
         scripts: The names of the scripts attached to the model.
+        images: The size of each picture under @images/ by its archive name;
+            the import reads one from path when a figure shows it.
+        path: The model file.
     """
 
     document: dict
     objects: _Objects
     data: dict = field(default_factory=dict)
     scripts: list = field(default_factory=list)
+    images: dict = field(default_factory=dict)
+    path: str = ""
 
     @property
     def physical_model(self) -> dict:
@@ -235,8 +256,10 @@ def read_model(path: str) -> Model:
     Raises:
         ValueError: For a file that is not a Workbench model.
     """
+    # Absolute: diagram_documents opens the file again for the images.
+    path = os.path.abspath(os.path.expanduser(path))
     try:
-        archive = zipfile.ZipFile(os.path.expanduser(path))
+        archive = zipfile.ZipFile(path)
     except (OSError, zipfile.BadZipFile) as e:
         raise ValueError(f"`{path}` is not a MySQL Workbench model (.mwb) file: {e}")
     with archive:
@@ -257,11 +280,16 @@ def read_model(path: str) -> Model:
         objects = _Objects(objects)
         _follow_list_links(document, objects)
         data = _read_data(archive)
-        scripts = sorted(
-            name[len(SCRIPTS):] for name in archive.namelist()
-            if name.startswith(SCRIPTS) and not name.endswith("/")
-        )
-    return Model(document, objects, data, scripts)
+        scripts, images = [], {}
+        for info in archive.infolist():
+            name = info.filename
+            if name.endswith("/"):
+                continue
+            if name.startswith(SCRIPTS):
+                scripts.append(name.split("/", 1)[1])
+            elif name.startswith(IMAGES):
+                images[name] = info.file_size
+    return Model(document, objects, data, sorted(scripts), images, path)
 
 
 # -----------------------------------------------------------------------------
@@ -741,52 +769,145 @@ def schema_sql(model: Model, schema: dict) -> Imported:
 # Diagrams
 
 
-def _figure(model: Model, figure: dict, table: dict, root_layer: Optional[dict]) -> dict:
-    layer = model.objects.get(figure.get("layer"))
+def _figure_base(figure: dict, kind: str, name: str, color: str) -> dict:
+    """What every figure keeps: its id, type, name, place, size and colour,
+    and the flags Workbench has. The caller adds the layer."""
     result = {
         "id": figure["_id"],
-        "type": "TableFigure",
-        "name": table["name"],
-        "table": table["name"],
+        "type": kind,
+        "name": name,
         "left": float(figure.get("left", 0)),
         "top": float(figure.get("top", 0)),
         "width": float(figure.get("width", 0)),
         "height": float(figure.get("height", 0)),
-        "color": figure.get("color") or layout.FIGURE_COLOR,
+        "color": figure.get("color") or color,
     }
-    if layer is not None and (root_layer is None or layer["_id"] != root_layer["_id"]):
-        result["layer"] = layer["_id"]
     for key in ("expanded", "columnsExpanded", "indicesExpanded", "foreignKeysExpanded",
-                "triggersExpanded", "manualSizing"):
+                "triggersExpanded", "manualSizing", "keepAspectRatio"):
         if key in figure:
             result[key] = bool(figure[key])
     return result
 
 
+def _image_data_url(name: str, data: bytes) -> str:
+    extension = os.path.splitext(name)[1].lower()
+    mime = _IMAGE_TYPES.get(extension, "application/octet-stream")
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def _convert_figure(model: Model, figure: dict, schema_ids: dict, archive, budget: int):
+    """A Workbench figure as an msm-diagram/1 figure (Workbench's struct
+    names are msm's types); None for one msm does not keep: another
+    schema's object or an unknown kind; or the reason, a str, for an image
+    that is not embedded.
+
+    Args:
+        archive: The model file, open, for the images; None without any.
+        budget: What the diagram's pictures may still take, in bytes.
+    """
+    struct = (figure.get("_struct") or "").rsplit(".", 1)[-1]
+    kind = diagrams.FIGURE_KINDS.get(struct)
+    if kind is not None and not kind.many:
+        item = model.objects.get(figure.get(kind.key))
+        if item is None or item["_id"] not in schema_ids[kind.objects]:
+            return None
+        result = _figure_base(figure, struct, item["name"], kind.color)
+        result[kind.key] = item["name"]
+        return result
+    if kind is not None:
+        group = model.objects.get(figure.get("routineGroup"))
+        if group is None:
+            return None
+        routines = [
+            routine["name"]
+            for routine in (model.objects.get(r) for r in group.get("routines", []))
+            if routine is not None and routine["_id"] in schema_ids[kind.objects]
+        ]
+        if not routines:
+            return None
+        result = _figure_base(figure, struct, group.get("name") or diagrams.ROUTINE_GROUP_NAME,
+                              kind.color)
+        result[kind.key] = routines
+        return result
+    if struct == diagrams.NOTE_FIGURE:
+        result = _figure_base(figure, struct, figure.get("name") or "",
+                              diagrams.NOTE_FIGURE_COLOR)
+        result["text"] = figure.get("text") or ""
+        for key in ("font", "textColor"):
+            if figure.get(key):
+                result[key] = figure[key]
+        return result
+    if struct == diagrams.IMAGE_FIGURE:
+        file_name = figure.get("filename") or ""
+        size = model.images.get(file_name)
+        if size is None or archive is None:
+            return "the model file does not hold it."
+        if size > MAX_IMAGE_SIZE:
+            return f"it is larger than {MAX_IMAGE_SIZE // 1024} KB."
+        if size > budget:
+            return (
+                f"the diagram's pictures would be larger than "
+                f"{MAX_DIAGRAM_IMAGES_SIZE // (1024 * 1024)} MB together."
+            )
+        result = _figure_base(figure, struct, figure.get("name") or "", "")
+        result["image"] = _image_data_url(file_name, archive.read(file_name))
+        return result
+    return None
+
+
 def diagram_documents(model: Model, schema: dict) -> tuple:
     """The model's EER diagrams as msm-diagram/1 documents.
 
-    Only table figures are kept, those of other schemas' tables left out;
-    figures on a layer keep positions relative to it, as Workbench has them.
+    Table, view and routine group figures of the schema's objects are kept,
+    with notes and images (each picture embedded as a data URL); other
+    schemas' objects and other kinds are left out. Figures on a layer keep
+    positions relative to it, as Workbench has them.
 
     Returns:
         The documents, and warnings on what was left out.
     """
-    table_ids = {table["_id"] for table in schema.get("tables", [])}
+    schema_ids = {
+        kind: {item["_id"] for item in schema.get(kind, [])}
+        for kind in ("tables", "views", "routines")
+    }
+    # The model file, open while the figures' pictures are read.
+    opened = nullcontext()
+    if model.images and model.path:
+        try:
+            opened = zipfile.ZipFile(model.path)
+        except (OSError, zipfile.BadZipFile) as e:
+            raise ValueError(f"`{model.path}` cannot be read for the diagrams' images: {e}")
+    with opened as archive:
+        return _diagram_documents(model, schema_ids, archive)
+
+
+def _diagram_documents(model: Model, schema_ids: dict, archive) -> tuple:
     documents, warnings = [], []
     for diagram in model.physical_model.get("diagrams", []):
+        diagram_name = diagram.get("name") or "Diagram"
         root_layer = model.objects.get(diagram.get("rootLayer"))
         figures, skipped = [], 0
+        budget = MAX_DIAGRAM_IMAGES_SIZE
         for figure in diagram.get("figures", []):
             figure = model.objects.get(figure)
             if figure is None:
                 continue
-            table = model.objects.get(figure.get("table"))
-            if figure.get("_struct") != "workbench.physical.TableFigure" or table is None \
-                    or table["_id"] not in table_ids:
+            converted = _convert_figure(model, figure, schema_ids, archive, budget)
+            if isinstance(converted, str):
+                warnings.append(
+                    f"The image `{figure.get('filename')}` of the diagram `{diagram_name}` "
+                    f"was left out: {converted}"
+                )
+                continue
+            if converted is None:
                 skipped += 1
                 continue
-            figures.append(_figure(model, figure, table, root_layer))
+            if converted["type"] == diagrams.IMAGE_FIGURE:
+                budget -= model.images[figure["filename"]]
+            layer = model.objects.get(figure.get("layer"))
+            if layer is not None and (root_layer is None or layer["_id"] != root_layer["_id"]):
+                converted["layer"] = layer["_id"]
+            figures.append(converted)
         figure_ids = {figure["id"] for figure in figures}
 
         layers = []
@@ -835,7 +956,7 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
 
         document = {
             "format": diagrams.DIAGRAM_FORMAT,
-            "name": diagram.get("name") or "Diagram",
+            "name": diagram_name,
             "width": float(diagram.get("width", 0)),
             "height": float(diagram.get("height", 0)),
             "zoom": float(diagram.get("zoom", 1)),
@@ -847,8 +968,8 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
             document["description"] = diagram["description"]
         if skipped:
             warnings.append(
-                f"{skipped} figure(s) of the diagram `{document['name']}` that show no table "
-                "of the schema (notes, images, other objects) were left out."
+                f"{skipped} figure(s) of the diagram `{document['name']}` that show no table, "
+                "view or routine of the schema were left out."
             )
         documents.append(document)
 

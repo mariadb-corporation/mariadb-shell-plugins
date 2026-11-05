@@ -108,6 +108,14 @@ def project(tmp_path):
     return path
 
 
+def figures_by_type(document) -> dict:
+    """A diagram's figures grouped by their type."""
+    by_type = {}
+    for figure in document["figures"]:
+        by_type.setdefault(figure.get("type", "TableFigure"), []).append(figure)
+    return by_type
+
+
 def dev_script(project_path) -> str:
     with open(management.get_schema_development_file_path(project_path)) as f:
         return f.read()
@@ -256,6 +264,44 @@ def test_a_diagram_loses_what_the_schema_no_longer_has():
 
 # -----------------------------------------------------------------------------
 # Section 160 of a project
+
+
+def test_pictures_are_elided_and_kept():
+    picture = "data:image/png;base64,iVBORw0KGgo="
+    stored = diagram("D", tables=("customer",))
+    stored["figures"].append({"id": "i", "type": "ImageFigure", "name": "Logo", "image": picture})
+    elided = diagrams.elide_images(stored)
+    assert "image" not in elided["figures"][1]
+    assert elided["figures"][1]["image_size"] == len(picture)
+    assert stored["figures"][1]["image"] == picture  # a copy
+    assert "image_size" not in elided["figures"][0]
+
+    sent = diagram("D", tables=("customer",))
+    sent["figures"] += [
+        {"id": "i", "type": "ImageFigure", "name": "Logo"},
+        {"id": "new", "type": "ImageFigure", "name": "No picture"},
+    ]
+    diagrams.keep_images(sent, stored)
+    assert sent["figures"][1]["image"] == picture
+    assert "image" not in sent["figures"][2]
+    diagrams.keep_images(sent, None)
+
+
+def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
+    schema = {"tables": [], "views": [{"name": "V"}], "routines": [{"name": "f"}]}
+    document = diagram("D", tables=())
+    document["figures"] = [
+        {"id": "v", "type": "ViewFigure", "view": "v"},
+        {"id": "gone", "type": "ViewFigure", "view": "gone"},
+        {"id": "g", "type": "RoutineGroupFigure", "name": "G", "routines": ["F", "gone"]},
+        {"id": "empty", "type": "RoutineGroupFigure", "name": "E", "routines": ["gone"]},
+        {"id": "n", "type": "NoteFigure", "text": "kept as it is"},
+        {"id": "i", "type": "ImageFigure", "image": "data:image/png;base64,AA=="},
+    ]
+    assert diagrams.reconcile_diagram(document, schema)
+    assert [f["id"] for f in document["figures"]] == ["v", "g", "n", "i"]
+    assert document["figures"][1]["routines"] == ["F"]
+    assert not diagrams.reconcile_diagram(document, schema)
 
 
 def test_a_new_project_has_an_empty_diagrams_section(project):

@@ -181,10 +181,12 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
     The tables are laid out in layers: a table referred to by a foreign key goes above the
     tables referring to it, with as few crossing connections as the layout finds, and tables
     without foreign keys are packed in rows below. Every foreign key between two tables shown
-    gets a connection. The schema snapshot is made again first where the development script
-    changed since it was made, which needs the mariadb-lsp binary.
+    gets a connection. Views get a figure each and routines are listed on one routine group
+    figure, placed below the tables; neither gets connections. The schema snapshot is made
+    again first where the development script changed since it was made, which needs the
+    mariadb-lsp binary.
 
-    On the command line give the tables as JSON, for example --tables='["customer","orders"]'.
+    On the command line give the lists as JSON, for example --tables='["customer","orders"]'.
 
     Args:
         name (str): The name of the new diagram.
@@ -192,6 +194,9 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
 
     Keyword Args:
         tables (list): The tables to show. Defaults to all tables of the schema.
+        views (list): Views to show as well. Defaults to none.
+        routines (list): Routines (procedures and functions) to list on a routine group figure.
+            Defaults to none.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
@@ -200,11 +205,16 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
         The diagram's name, its number of figures and connections, and the files written.
     """
     result = lib.modeling.create_diagram(
-        _project(kwargs), name, kwargs.get("tables"), kwargs.get("lsp_path")
+        _project(kwargs),
+        name,
+        kwargs.get("tables"),
+        kwargs.get("lsp_path"),
+        views=kwargs.get("views"),
+        routines=kwargs.get("routines"),
     )
     if lib.core.get_interactive_default():
         print(
-            f"The diagram `{name}` shows {result['figures']} table(s) with "
+            f"The diagram `{name}` shows {result['figures']} figure(s) with "
             f"{result['connections']} connection(s)."
         )
     else:
@@ -213,16 +223,17 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
 
 @plugin_function("msm.layoutSchemaDiagram", shell=True, cli=True, web=True)
 def layout_schema_diagram(name: str, **kwargs) -> dict:
-    """Adds tables to a diagram of a schema project and lays its figures out
+    """Adds tables, views and routines to a diagram of a schema project and lays its figures out
 
-    By default only the figures without a position (the tables just added, or figures a
+    By default only the figures without a position (the objects just added, or figures a
     document given to msm.setSchemaDiagram leaves left and top out of) are laid out, as a block
-    below the others; with keep_placed set to false every figure is laid out again. Figures on
-    a layer keep their place. Foreign keys between tables on the diagram that are not drawn get
-    a connection. The schema snapshot is made again first where the development script changed
-    since it was made, which needs the mariadb-lsp binary.
+    below the others; with keep_placed set to false every table, view and routine group figure
+    is laid out again. Figures on a layer, notes and images keep their place. Foreign keys
+    between tables on the diagram that are not drawn get a connection. The schema snapshot is
+    made again first where the development script changed since it was made, which needs the
+    mariadb-lsp binary.
 
-    On the command line give the tables as JSON, for example --tables='["invoice"]'.
+    On the command line give the lists as JSON, for example --tables='["invoice"]'.
 
     Args:
         name (str): The name of the diagram.
@@ -230,14 +241,17 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
 
     Keyword Args:
         tables (list): Tables to add to the diagram. Defaults to none.
+        views (list): Views to add. Defaults to none.
+        routines (list): Routines to list on the diagram's routine group figure, which is added
+            where the diagram has none. Defaults to none.
         keep_placed (bool): Whether figures that have a position keep it. Defaults to true.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
 
     Returns:
-        The diagram's name, the tables added, the tables laid out, the number of connections
-        added, and the files written.
+        The diagram's name, the objects added, the figures laid out (the tables, views and routine
+        groups they show), the number of connections added, and the files written.
     """
     keep_placed = kwargs.get("keep_placed")
     result = lib.modeling.layout_diagram(
@@ -246,10 +260,12 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         kwargs.get("tables"),
         True if keep_placed is None else bool(keep_placed),
         kwargs.get("lsp_path"),
+        views=kwargs.get("views"),
+        routines=kwargs.get("routines"),
     )
     if lib.core.get_interactive_default():
         print(
-            f"Laid out {len(result['placed'])} table(s) of the diagram `{name}`"
+            f"Laid out {len(result['placed'])} figure(s) of the diagram `{name}`"
             + (f", {len(result['added'])} of them added" if result["added"] else "")
             + "."
         )

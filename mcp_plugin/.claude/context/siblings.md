@@ -35,7 +35,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
   `msm.set_schema_diagram`, `msm.remove_schema_diagram`, `msm.create_schema_diagram`
   and `msm.layout_schema_diagram` (both pass `lsp_path`: they make the snapshot again
-  when the script changed), and `msm.import_workbench_model` (authorized like
+  when the script changed; `tables`, `views` and `routines` name what to show, tables
+  only by default), and `msm.import_workbench_model` (authorized like
   `msm.create_project`: the .mwb and target_path through `require_allowed_path`, the
   project folder - its name from the model's schema, so the model is read first in a
   worker thread - through `require_project_access`; registered with the `mcp_access` GUI
