@@ -50,7 +50,9 @@ The figure sizes are estimated from the measurements of the MariaDB VS Code
 extension's table card (webview/src/modeler/tableCard.ts).
 """
 
+import bisect
 import math
+from collections import deque
 from typing import Optional
 
 # The gap kept between figures, Workbench's minimum.
@@ -122,16 +124,10 @@ def figure_height(table: dict, figure: Optional[dict] = None) -> float:
         sections.append(len(table.get("indexes", [])))
     if figure.get("foreignKeysExpanded") is True:
         sections.append(len(table.get("foreign_keys", [])))
-    top = _HEADER_HEIGHT + _PADDING
-    first = True
-    for rows in sections:
-        if rows == 0:
-            continue
-        if not first:
-            top += _SECTION_GAP
-        first = False
-        top += _HEADING_HEIGHT + rows * _ROW_HEIGHT
-    return float(top + _PADDING)
+    shown = [rows for rows in sections if rows]
+    body = sum(_HEADING_HEIGHT + rows * _ROW_HEIGHT for rows in shown)
+    gaps = _SECTION_GAP * max(len(shown) - 1, 0)
+    return float(_HEADER_HEIGHT + 2 * _PADDING + body + gaps)
 
 
 # -----------------------------------------------------------------------------
@@ -152,14 +148,15 @@ def layout(nodes: list, sizes: dict, edges: list) -> dict:
         (0, 0).
     """
     order = {node: index for index, node in enumerate(nodes)}
-    pairs = []
-    seen = set()
-    for child, parent in edges:
-        if child in order and parent in order and child != parent and (child, parent) not in seen:
-            seen.add((child, parent))
-            pairs.append((child, parent))
+    pairs = list(dict.fromkeys(
+        (child, parent) for child, parent in edges
+        if child in order and parent in order and child != parent
+    ))
 
-    blocks = [_layout_component(group, sizes, pairs, order) for group in _components(nodes, pairs)]
+    blocks = [
+        _layout_component(group, sizes, pairs, order)
+        for group in _components(nodes, pairs, order)
+    ]
     singles = [block for block in blocks if len(block[0]) == 1]
     groups = [block for block in blocks if len(block[0]) > 1]
     groups.sort(key=lambda block: (-len(block[0]), order[next(iter(block[0]))]))
@@ -185,10 +182,9 @@ def layout(nodes: list, sizes: dict, edges: list) -> dict:
     return result
 
 
-def _components(nodes: list, pairs: list) -> list:
+def _components(nodes: list, pairs: list, order: dict) -> list:
     """The connected groups of nodes, each in node order, by their first node."""
     parent = {node: node for node in nodes}
-    order = {node: index for index, node in enumerate(nodes)}
 
     def find(node):
         while parent[node] != node:
@@ -317,10 +313,10 @@ def _layers(group: list, up: list) -> dict:
 
     # Topological order, parents first, ties by the group's order.
     waiting = {node: len(parents[node]) for node in group}
-    ready = [node for node in group if waiting[node] == 0]
+    ready = deque(node for node in group if waiting[node] == 0)
     topological = []
     while ready:
-        node = ready.pop(0)
+        node = ready.popleft()
         topological.append(node)
         for child in children[node]:
             waiting[child] -= 1
@@ -350,13 +346,7 @@ def _crossings(rows: list, below: dict) -> int:
         seen = []
         for _, end in ends:
             # Lower ends already seen to the right of this one cross it.
-            low, high = 0, len(seen)
-            while low < high:
-                middle = (low + high) // 2
-                if seen[middle] <= end:
-                    low = middle + 1
-                else:
-                    high = middle
+            low = bisect.bisect_right(seen, end)
             total += len(seen) - low
             seen.insert(low, end)
     return total

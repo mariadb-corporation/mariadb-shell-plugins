@@ -347,10 +347,14 @@ def build_schema_definition(schema_project_path: str, lsp_path: str = None) -> d
     return _build_schema_definition(_Project.load(schema_project_path), lsp_path)
 
 
+def _current_hash(project: _Project) -> str:
+    """The hash the snapshot of the development script as it is now would have."""
+    return _source_hash(project, _outline_input(project)[1])
+
+
 def current_source_hash(schema_project_path: str) -> str:
     """The hash the snapshot of the development script as it is now would have."""
-    project = _Project.load(schema_project_path)
-    return _source_hash(project, _outline_input(project)[1])
+    return _current_hash(_Project.load(schema_project_path))
 
 
 def _is_diagram(row: dict, name: str = None) -> bool:
@@ -412,8 +416,7 @@ def list_diagrams(schema_project_path: str) -> dict:
     if schema is not None:
         info = {
             "tables": len(schema["document"].get("tables", [])),
-            "current": schema["document"].get("source_hash")
-            == _source_hash(project, _outline_input(project)[1]),
+            "current": schema["document"].get("source_hash") == _current_hash(project),
         }
     return {
         "schema_definition": info,
@@ -490,23 +493,10 @@ def _current_snapshot(project: _Project, rows: list, lsp_path: str = None) -> tu
         The snapshot and the rows, holding it.
     """
     schema = next((row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT), None)
-    if schema is not None and schema["document"].get("source_hash") == _source_hash(
-        project, _outline_input(project)[1]
-    ):
+    if schema is not None and schema["document"].get("source_hash") == _current_hash(project):
         return schema["document"], rows
     document, rows, _ = _replace_snapshot(project, rows, lsp_path)
     return document, rows
-
-
-def _table_figures(diagram: dict) -> list:
-    return [
-        figure for figure in diagram["figures"]
-        if figure.get("type", "TableFigure") == "TableFigure"
-    ]
-
-
-def _figure_table(figure: dict) -> str:
-    return (figure.get("table") or figure.get("name") or "").lower()
 
 
 def _new_id(taken: set) -> str:
@@ -517,13 +507,14 @@ def _new_id(taken: set) -> str:
             return new
 
 
-def _add_figures(diagram: dict, tables: dict, names: list) -> list:
+def _add_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
     """Adds a figure, not placed yet, for each of the tables not on the diagram.
 
     Args:
         diagram: The diagram, changed in place.
         tables: The snapshot's tables by their lower-case name.
         names: The tables to add.
+        taken: The ids in use, which the new ones join.
 
     Returns:
         The names of the tables added.
@@ -535,8 +526,11 @@ def _add_figures(diagram: dict, tables: dict, names: list) -> list:
             + ", ".join(f"`{name}`" for name in unknown)
             + " (the snapshot is made from the development script's CREATE statements)."
         )
-    shown = {_figure_table(figure) for figure in _table_figures(diagram)}
-    taken = {item.get("id") for item in diagram["figures"] + diagram["connections"]}
+    shown = {
+        diagrams.figure_table(figure)
+        for figure in diagram["figures"]
+        if diagrams.is_table_figure(figure)
+    }
     added = []
     for name in names:
         table = tables[name.lower()]
@@ -560,7 +554,7 @@ def _add_figures(diagram: dict, tables: dict, names: list) -> list:
     return added
 
 
-def _add_connections(diagram: dict, tables: dict, schema_name: str) -> int:
+def _add_connections(diagram: dict, tables: dict, schema_name: str, taken: set) -> int:
     """Adds a connection for every foreign key between two tables on the
     diagram that has none.
 
@@ -568,13 +562,13 @@ def _add_connections(diagram: dict, tables: dict, schema_name: str) -> int:
         How many were added.
     """
     figure_of = {}
-    for figure in _table_figures(diagram):
-        figure_of.setdefault(_figure_table(figure), figure)
+    for figure in diagram["figures"]:
+        if diagrams.is_table_figure(figure):
+            figure_of.setdefault(diagrams.figure_table(figure), figure)
     drawn = {
         ((connection.get("table") or "").lower(), (connection.get("foreignKey") or "").lower())
         for connection in diagram["connections"]
     }
-    taken = {item.get("id") for item in diagram["figures"] + diagram["connections"]}
     added = 0
     for name, start in figure_of.items():
         for foreign_key in tables[name].get("foreign_keys", []) if name in tables else []:
@@ -617,24 +611,24 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
         The names of the tables placed.
     """
     layers = {layer.get("id"): layer for layer in diagram.get("layers", [])}
-    on_layer = {figure_id for layer in layers.values() for figure_id in layer.get("figures", [])}
+    member_of = {}
+    for layer_id, layer in layers.items():
+        for figure_id in layer.get("figures", []):
+            member_of.setdefault(figure_id, layer_id)
 
     def layer_of(figure):
         layer_id = figure.get("layer")
-        if layer_id is None and figure.get("id") in on_layer:
-            layer_id = next(
-                key for key, layer in layers.items() if figure["id"] in layer.get("figures", [])
-            )
+        if layer_id is None:
+            layer_id = member_of.get(figure.get("id"))
         return layers.get(layer_id) if layer_id is not None else None
 
     moving = []
     staying = []
     for figure in diagram["figures"]:
         placed = _is_number(figure.get("left")) and _is_number(figure.get("top"))
-        is_table = figure.get("type", "TableFigure") == "TableFigure"
         if (
-            is_table
-            and _figure_table(figure) in tables
+            diagrams.is_table_figure(figure)
+            and diagrams.figure_table(figure) in tables
             and layer_of(figure) is None
             and not (keep_placed and placed)
         ):
@@ -659,13 +653,10 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
     if moving:
         sizes = {}
         for figure in moving:
-            table = tables[_figure_table(figure)]
+            table = tables[diagrams.figure_table(figure)]
             manual = figure.get("manualSizing") is True
-            if not (manual and _is_number(figure.get("width"))):
-                figure["width"] = (
-                    figure["width"] if _is_number(figure.get("width"))
-                    else layout.figure_width(table)
-                )
+            if not _is_number(figure.get("width")):
+                figure["width"] = layout.figure_width(table)
             if not (manual and _is_number(figure.get("height"))):
                 figure["height"] = layout.figure_height(table, figure)
             sizes[figure["id"]] = (figure["width"], figure["height"])
@@ -700,6 +691,21 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
     return [figure.get("table") or figure.get("name") for figure in moving]
 
 
+def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool) -> tuple:
+    """Adds the tables' figures and the missing connections, and lays the
+    figures out.
+
+    Returns:
+        The tables added, the number of connections added and the tables placed.
+    """
+    by_name = {table["name"].lower(): table for table in document["tables"]}
+    taken = {item.get("id") for item in diagram["figures"] + diagram["connections"]}
+    added = _add_figures(diagram, by_name, tables, taken)
+    connections_added = _add_connections(diagram, by_name, document["schema"], taken)
+    placed = _place(diagram, by_name, keep_placed)
+    return added, connections_added, placed
+
+
 def create_diagram(
     schema_project_path: str, name: str, tables: list = None, lsp_path: str = None
 ) -> dict:
@@ -725,7 +731,6 @@ def create_diagram(
             "layoutSchemaDiagram or remove it first."
         )
     document, rows = _current_snapshot(project, rows, lsp_path)
-    by_name = {table["name"].lower(): table for table in document["tables"]}
     diagram = {
         "format": diagrams.DIAGRAM_FORMAT,
         "name": name,
@@ -735,11 +740,8 @@ def create_diagram(
         "figures": [],
         "connections": [],
     }
-    diagrams.validate_diagram(diagram)
     names = [table["name"] for table in document["tables"]] if tables is None else list(tables)
-    _add_figures(diagram, by_name, names)
-    _add_connections(diagram, by_name, document["schema"])
-    _place(diagram, by_name, keep_placed=False)
+    _fill(diagram, document, names, keep_placed=False)
     if not diagram["figures"]:
         diagram["width"], diagram["height"] = 1000.0, 800.0
     rows.append({"name": name, "format": diagrams.DIAGRAM_FORMAT, "document": diagram})
@@ -783,10 +785,7 @@ def layout_diagram(
         raise ValueError(f"The project has no diagram `{name}`.")
     document, rows = _current_snapshot(project, rows, lsp_path)
     diagram = next(row for row in rows if _is_diagram(row, name))["document"]
-    by_name = {table["name"].lower(): table for table in document["tables"]}
-    added = _add_figures(diagram, by_name, list(tables or []))
-    connections_added = _add_connections(diagram, by_name, document["schema"])
-    placed = _place(diagram, by_name, keep_placed)
+    added, connections_added, placed = _fill(diagram, document, list(tables or []), keep_placed)
     return {
         "name": name,
         "added": added,

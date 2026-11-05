@@ -395,6 +395,16 @@ def validate_diagram(document) -> None:
             raise ValueError(f"A diagram's `{member}` has to be a list.")
 
 
+def is_table_figure(figure: dict) -> bool:
+    """Whether a diagram figure shows a table (the default type)."""
+    return figure.get("type", "TableFigure") == "TableFigure"
+
+
+def figure_table(figure: dict) -> str:
+    """The lower-case name of the table a figure shows."""
+    return (figure.get("table") or figure.get("name") or "").lower()
+
+
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
@@ -411,14 +421,10 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """
     tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
     figures, connections = diagram["figures"], diagram["connections"]
-
-    def table_of(figure) -> str:
-        return (figure.get("table") or figure.get("name") or "").lower()
-
     kept_figures = [
         figure
         for figure in figures
-        if figure.get("type", "TableFigure") != "TableFigure" or table_of(figure) in tables
+        if not is_table_figure(figure) or figure_table(figure) in tables
     ]
     figure_ids = {figure.get("id") for figure in kept_figures}
 
