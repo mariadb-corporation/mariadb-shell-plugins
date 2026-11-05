@@ -536,3 +536,23 @@ def test_a_release_needs_the_snapshot(tmp_path, monkeypatch):
     with pytest.raises(lsp.LspError, match="could not be found"):
         prepare_release(schema_project_path=path, version="1.0.0", next_version="1.0.1")
     assert os.listdir(os.path.join(path, "releases", "versions")) == ["README.md"]
+
+
+def test_a_diagram_can_be_given_as_a_file(project, tmp_path):
+    """The command line parses every option value as JSON it can, so a whole
+    document is given as a file."""
+    from msm_plugin import modeling as wrappers
+
+    path = tmp_path / "diagram.json"
+    path.write_text(json.dumps(diagram("File")))
+    wrappers.set_schema_diagram(document_file=str(path), schema_project_path=project)
+    assert [row["name"] for row in modeling.read_diagram_rows(project)] == ["File"]
+    with pytest.raises(ValueError, match="not both"):
+        wrappers.set_schema_diagram(diagram(), document_file=str(path), schema_project_path=project)
+    path.write_text("{")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        wrappers.set_schema_diagram(document_file=str(path), schema_project_path=project)
+    with pytest.raises(ValueError, match="could not be read"):
+        wrappers.set_schema_diagram(document_file=str(tmp_path / "missing.json"), schema_project_path=project)
+    with pytest.raises(ValueError, match="No diagram"):
+        wrappers.set_schema_diagram(schema_project_path=project)

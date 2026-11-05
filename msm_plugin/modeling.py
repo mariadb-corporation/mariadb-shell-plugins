@@ -24,6 +24,9 @@
 
 """The MariaDB Shell Schema Management Plugin - Modeling"""
 
+import json
+import os
+
 from mysqlsh.plugin_manager import plugin_function
 from msm_plugin import lib
 
@@ -119,8 +122,12 @@ def update_schema_definition(**kwargs) -> dict:
 
 
 @plugin_function("msm.setSchemaDiagram", shell=True, cli=True, web=True)
-def set_schema_diagram(document: dict, **kwargs) -> list:
+def set_schema_diagram(document: dict = None, **kwargs) -> list:
     """Adds a diagram to a schema project, or replaces the one of the same name
+
+    On the command line give the document as a JSON file with --documentFile, or one option
+    per member with each value as JSON, for example --format=msm-diagram/1 --name=Main
+    --layers='[]' --figures='[...]' --connections='[]'.
 
     Args:
         document (dict): The diagram, an msm-diagram/1 document: format, name, layers, figures
@@ -128,11 +135,25 @@ def set_schema_diagram(document: dict, **kwargs) -> list:
         **kwargs: Additional options.
 
     Keyword Args:
+        document_file (str): A JSON file holding the diagram, instead of document.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
 
     Returns:
         The files written.
     """
+    document_file = kwargs.get("document_file")
+    if document_file is not None:
+        if document:
+            raise ValueError("Give the diagram as document or as document_file, not both.")
+        try:
+            with open(os.path.expanduser(document_file), "r", encoding="utf-8") as f:
+                document = json.load(f)
+        except OSError as e:
+            raise ValueError(f"The diagram file could not be read: {e}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"The diagram file `{document_file}` is not valid JSON: {e}")
+    if document is None:
+        raise ValueError("No diagram given: pass document or document_file.")
     return lib.modeling.set_diagram(_project(kwargs), dict(document))
 
 
