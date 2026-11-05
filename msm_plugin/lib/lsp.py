@@ -45,7 +45,8 @@ _RUN_TIMEOUT = 120
 # The edit request's format (lsp-server docs/edit-format.md).
 EDIT_FORMAT = 1
 
-# Whether a binary has the edit command, by its path: --help is asked once.
+# Whether a binary has the edit command, by its path and modification time:
+# --help is asked once per build, so an updated binary is asked again.
 _supports_edit = {}
 
 
@@ -219,7 +220,11 @@ def supports_edit(binary: str) -> bool:
     A binary from before the command answers ``edit`` with an unknown
     command, which would read as an edit that failed.
     """
-    if binary not in _supports_edit:
+    try:
+        key = (binary, os.stat(binary).st_mtime_ns)
+    except OSError:
+        key = (binary, None)
+    if key not in _supports_edit:
         try:
             answer = subprocess.run(
                 [binary, "--help"],
@@ -232,8 +237,8 @@ def supports_edit(binary: str) -> bool:
             text = answer.stdout + answer.stderr
         except (OSError, subprocess.SubprocessError):
             text = ""
-        _supports_edit[binary] = re.search(r"^\s+edit\s", text, re.MULTILINE) is not None
-    return _supports_edit[binary]
+        _supports_edit[key] = re.search(r"^\s+edit\s", text, re.MULTILINE) is not None
+    return _supports_edit[key]
 
 
 def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
@@ -273,6 +278,8 @@ def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
                 f"{where} could not be made ({error.get('kind', 'error')}): "
                 f"{error.get('message', '')}"
             )
+        if isinstance(error, str) and error:
+            raise LspError(f"The edits could not be made: {error}")
         raise LspError(
             f"`{LSP_BINARY_NAME} edit` failed (exit {answer.returncode}): {_stderr(answer)}"
         )

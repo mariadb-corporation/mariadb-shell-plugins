@@ -54,6 +54,16 @@ REMOVALS_SECTION_ID = "290"
 # A statement that cannot run inside the update procedure of Section 240
 # (MariaDB 1357: a stored routine is not dropped from within another).
 _ROUTINE_DROP = re.compile(r"^\s*DROP\s+(?:PROCEDURE|FUNCTION)\b", re.IGNORECASE)
+# A routine's CREATE (rename_routine drops the routine and creates it again):
+# it cannot run inside the update procedure either (MariaDB 1303), and its
+# body would need a DELIMITER. Section 150 of the release, which every
+# deployment runs in full, creates the routine under its new name, so it is
+# not kept.
+_ROUTINE_CREATE = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:DEFINER\s*=\s*\S+\s+)?"
+    r"(?:AGGREGATE\s+)?(?:PROCEDURE|FUNCTION)\b",
+    re.IGNORECASE,
+)
 
 
 class StaleSchemaError(ValueError):
@@ -90,13 +100,18 @@ def edit_spans(text: str, edits: list) -> list:
         ValueError: For a position the text lacks, or edits that overlap.
     """
     line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
+    # By position only, and stable: inserts at one position keep the order
+    # the server gave them in, as LSP has it.
     spans = sorted(
         (
-            _offset(text, line_starts, edit["range"]["start"]),
-            _offset(text, line_starts, edit["range"]["end"]),
-            edit["new_text"],
-        )
-        for edit in edits
+            (
+                _offset(text, line_starts, edit["range"]["start"]),
+                _offset(text, line_starts, edit["range"]["end"]),
+                edit["new_text"],
+            )
+            for edit in edits
+        ),
+        key=lambda span: span[:2],
     )
     at = 0
     for start, end, _ in spans:
@@ -213,14 +228,6 @@ def _pending_update_template(project_settings: dict) -> str:
     )
 
 
-def _read_or_none(path: str) -> Optional[str]:
-    """A file's text, or None where there is no file."""
-    if not os.path.exists(path):
-        return None
-    with open(path, "r") as f:
-        return f.read()
-
-
 def _section_body(section: Optional[dict]) -> str:
     return (section or {}).get("sql_content", "").strip("\n")
 
@@ -228,7 +235,7 @@ def _section_body(section: Optional[dict]) -> str:
 def read_pending_update(path: str) -> dict:
     """The statements of a pending update script, by section ({"240": sql,
     "290": sql}, empty where none)."""
-    text = _read_or_none(path)
+    text = sections_lib.read_if_exists(path)
     if text is None:
         return {CHANGES_SECTION_ID: "", REMOVALS_SECTION_ID: ""}
     sections = management.get_script_sections(text)
@@ -265,7 +272,7 @@ def clear_pending_update(path: str, project_settings: dict) -> bool:
     Returns:
         Whether it was written.
     """
-    old = _read_or_none(path)
+    old = sections_lib.read_if_exists(path)
     if old is None:
         return False
     return sections_lib.write_if_changed(path, _pending_update_template(project_settings), old)
@@ -309,15 +316,24 @@ def _describe(edit: dict) -> str:
     return " ".join([str(edit.get("op"))] + names)
 
 
+def _kept_statement(item: dict) -> Optional[str]:
+    """A migration statement as the pending update script keeps it, without
+    its delimiter; None for one it does not keep (empty, or a routine's
+    CREATE)."""
+    sql = (item.get("sql") or "").strip().rstrip(";").strip()
+    return sql if sql and not _ROUTINE_CREATE.match(sql) else None
+
+
 def migration_statements(edits: list, migration: list) -> dict:
     """The binary's migration statements as the sections of the pending
     update script: each edit's statements under a comment naming it, a
-    routine's DROP in Section 290, everything else in 240."""
+    routine's DROP in Section 290, its CREATE left to Section 150 (see
+    _ROUTINE_CREATE), everything else in 240."""
     by_section = {CHANGES_SECTION_ID: [], REMOVALS_SECTION_ID: []}
     described = {CHANGES_SECTION_ID: set(), REMOVALS_SECTION_ID: set()}
     for item in migration:
-        sql = (item.get("sql") or "").strip().rstrip(";").strip()
-        if not sql:
+        sql = _kept_statement(item)
+        if sql is None:
             continue
         section_id = REMOVALS_SECTION_ID if _ROUTINE_DROP.match(sql) else CHANGES_SECTION_ID
         index = item.get("edit")
@@ -331,6 +347,11 @@ def migration_statements(edits: list, migration: list) -> dict:
 
 # -----------------------------------------------------------------------------
 # Editing a project
+
+
+def _diagrams_breakout_path(project) -> str:
+    """The breakout file _write may move the diagrams VIEW into."""
+    return source.resolve_include_path(modeling.BREAKOUT_FILE, project.development)
 
 
 def _check_request(edits) -> None:
@@ -377,6 +398,11 @@ def edit_schema(
         {},
     )
     stored = snapshot.get("source_hash")
+    if stored is None:
+        raise StaleSchemaError(
+            "The project has no schema snapshot yet: make it with "
+            "msm.updateSchemaDefinition, read the diagrams and redo the edits."
+        )
     if base_hash != stored:
         raise StaleSchemaError(
             "The schema changed since the snapshot the edits were made against "
@@ -429,15 +455,26 @@ def edit_schema(
     migration_file = None
     if migration and management.get_last_released_version(schema_project_path) is not None:
         migration_file = pending_update_path(schema_project_path, project.settings)
-        old = _read_or_none(migration_file)
+        old = sections_lib.read_if_exists(migration_file)
         texts[migration_file] = (
             old,
             pending_update_text(old, project.settings, migration_statements(edits, migration)),
         )
 
-    written = []
+    # The files as they are on disk, to put back: the development script's
+    # old text above is the completed one (sections msm adds), not the file.
+    originals = {path: sections_lib.read_if_exists(path) for path in texts}
+    originals[project.dev_file] = sections_lib.read_if_exists(project.dev_file)
+    originals[_diagrams_breakout_path(project)] = sections_lib.read_if_exists(
+        _diagrams_breakout_path(project)
+    )
+    for path in project.files:
+        originals.setdefault(path, sections_lib.read_if_exists(path))
+
+    written, touched = [], []
     try:
         for path, (old, new) in texts.items():
+            touched.append(path)
             if sections_lib.write_if_changed(path, new, old):
                 written.append(path)
         project = modeling._Project.load(schema_project_path)
@@ -447,14 +484,16 @@ def edit_schema(
                 for edit in edits:
                     rename_in_diagram(row["document"], edit)
         _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path)
+        # _write may write the script and the VIEW's breakout file.
+        touched += [path for path in originals if path not in touched]
         written += [path for path in modeling._write(project, rows) if path not in written]
     except BaseException:
-        for path, (old, _) in texts.items():
-            if path not in written:
-                continue
+        for path in touched:
+            old = originals.get(path)
             if old is None:
-                os.remove(path)
-            else:
+                if os.path.exists(path):
+                    os.remove(path)
+            elif sections_lib.read_if_exists(path) != old:
                 with open(path, "w") as f:
                     f.write(old)
         raise
@@ -462,7 +501,9 @@ def edit_schema(
     return {
         "rows": rows,
         "files": written,
-        "migration": [item.get("sql") for item in migration],
+        "migration": [
+            item.get("sql") for item in migration if _kept_statement(item) is not None
+        ] if migration_file else [],
         "migration_file": migration_file,
         "notes": result.get("notes", []),
     }

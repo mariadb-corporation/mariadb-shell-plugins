@@ -219,9 +219,11 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
     edits = _json_argument(edits, kwargs, "edits", "edits")
     if base_hash is None:
         raise ValueError("No base_hash given: the source_hash of the snapshot the edits are for.")
-    return lib.editing.edit_schema(
-        _project(kwargs), [dict(edit) for edit in edits or []], base_hash, kwargs.get("lsp_path")
-    )
+    if hasattr(edits, "__iter__") and not isinstance(edits, str) and not hasattr(edits, "keys"):
+        # The shell's dictionaries as Python's; anything else is for
+        # edit_schema to refuse, naming the edit.
+        edits = [dict(edit) if hasattr(edit, "keys") else edit for edit in edits]
+    return lib.editing.edit_schema(_project(kwargs), edits, base_hash, kwargs.get("lsp_path"))
 
 
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)

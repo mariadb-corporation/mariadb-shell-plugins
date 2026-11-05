@@ -117,6 +117,8 @@ def renaming_edit(calls=None):
                 migration.append({"edit": index, "sql": f"RENAME TABLE {old} TO {new}"})
             elif item["op"] == "rename_routine":
                 migration.append({"edit": index, "sql": f"DROP PROCEDURE IF EXISTS `{item['routine']}`"})
+                migration.append({"edit": index, "sql": (
+                    f"CREATE PROCEDURE `{item['new_name']}`()\nBEGIN\n    SELECT 1;\nEND")})
         return {"format": 1, "files": [{"file": "-", "edits": changes}], "migration": migration,
                 "notes": [], "outline": {}}
 
@@ -153,6 +155,12 @@ def test_text_edits_count_utf16_characters():
                                          "new_text": ""}])
 
 
+def test_inserts_at_one_position_keep_their_order():
+    at = {"line": 0, "character": 3}
+    edits = [{"range": {"start": at, "end": at}, "new_text": text} for text in ("z", "a")]
+    assert editing.apply_text_edits("abcdef", edits) == "abczadef"
+
+
 def test_diagrams_follow_renamed_views_and_routines():
     diagram = {"figures": [
         {"id": "v", "type": "ViewFigure", "name": "Summary", "view": "totals"},
@@ -172,6 +180,8 @@ def test_migrations_are_sorted_into_the_sections():
     statements = editing.migration_statements(edits, [
         {"edit": 0, "sql": "RENAME TABLE `customer` TO `client`;"},
         {"edit": 1, "sql": "DROP PROCEDURE IF EXISTS `p`"},
+        # Section 150 creates it again; it cannot run inside Section 240.
+        {"edit": 1, "sql": "CREATE PROCEDURE `q`()\nBEGIN\n    SELECT 1;\nEND"},
     ])
     assert statements == {
         "240": "-- msm.editSchema: rename_table customer -> client\n"
@@ -221,9 +231,12 @@ def test_a_released_project_keeps_the_migration(project, fake_edit, monkeypatch)
     assert result["migration_file"] == pending
     assert pending in result["files"]
 
-    editing.edit_schema(project, [{"op": "rename_table", "table": "client", "new_name": "buyer"},
-                                  {"op": "rename_routine", "routine": "p", "new_name": "q"}],
-                        base_hash(project))
+    result = editing.edit_schema(
+        project, [{"op": "rename_table", "table": "client", "new_name": "buyer"},
+                  {"op": "rename_routine", "routine": "p", "new_name": "q"}],
+        base_hash(project))
+    # The routine's CREATE is left to Section 150, and so not listed as kept
+    assert result["migration"] == ["RENAME TABLE `client` TO `buyer`", "DROP PROCEDURE IF EXISTS `p`"]
     kept = editing.read_pending_update(pending)
     assert kept["240"] == (
         "-- msm.editSchema: rename_table customer -> client\n"
