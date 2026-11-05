@@ -405,6 +405,9 @@ def prepare_release(**kwargs) -> list[str]:
         allow_to_stay_on_same_version (bool): Whether to allow to stay on the same version for further development
             work. Defaults to False.
         overwrite_existing (bool): Whether existing files should be overwritten. Defaults to False.
+        lsp_path (str): The MariaDB SQL language server's binary, mariadb-lsp, or its folder.
+            By default it is looked for next to the shell, on the PATH and in ~/.local/bin.
+            A release makes the schema snapshot of its diagrams again and fails without it.
 
     Returns:
         The list of generated files
@@ -474,6 +477,8 @@ def prepare_release(**kwargs) -> list[str]:
         next_version=next_version,
         allow_to_stay_on_same_version=allow_to_stay_on_same_version,
         overwrite_existing=overwrite_existing,
+        lsp_path=kwargs.get("lsp_path", None),
+        include_check=kwargs.get("include_check", None),
     )
 
     if lib.core.get_interactive_default():

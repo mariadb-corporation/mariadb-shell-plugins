@@ -301,6 +301,19 @@ Management (`msm`) plugin:
 | `msm.add_project` | `add_project` |
 | `msm.update_project` | `update_project` |
 | `msm.remove_project` | `remove_project` |
+| `msm.list_schema_diagrams` | `list_schema_diagrams` (`msm_plugin/modeling.py`) |
+| `msm.get_schema_diagrams` | `get_schema_diagrams` (`msm_plugin/modeling.py`) |
+| `msm.update_schema_definition` | `update_schema_definition` (`msm_plugin/modeling.py`) |
+| `msm.set_schema_diagram` | `set_schema_diagram` (`msm_plugin/modeling.py`) |
+| `msm.remove_schema_diagram` | `remove_schema_diagram` (`msm_plugin/modeling.py`) |
+
+The diagram tools work on MSM Section 160 of the development script, the
+`msm_schema_diagrams` VIEW: a schema snapshot in format `msm-schema/1`, made from
+the script's CREATE statements by the MariaDB SQL language server's binary
+`mariadb-lsp` (the one the `sql` tools use), and one `msm-diagram/1` row per EER
+diagram. `msm.update_schema_definition` and `msm.prepare_release` run the binary;
+a release fails without it, or when a statement of the script cannot be read. Every
+file a SOURCE directive of the script includes must be within the allowed paths.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of

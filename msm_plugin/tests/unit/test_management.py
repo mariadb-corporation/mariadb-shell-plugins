@@ -474,7 +474,8 @@ def test_prepare_release(sandbox_session, project_path):
 
     assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 1
 
-    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
+    # msm_schema_version and msm_schema_diagrams
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 2
 
     # ----------------------------------------------------------------------
     # Add more SQL to the development/my_schema_next.sql file
@@ -544,7 +545,8 @@ def test_prepare_release(sandbox_session, project_path):
     # Check that there are now two tables
     assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 2
 
-    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
+    # msm_schema_version and msm_schema_diagrams
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 2
 
     assert (
         lib.core.MsmDbExec(
@@ -596,7 +598,8 @@ def test_prepare_release(sandbox_session, project_path):
     # Check that there are now two tables
     assert count_tables(sandbox_session, SCHEMA_NAME, "BASE TABLE") == 3
 
-    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 1
+    # msm_schema_version and msm_schema_diagrams
+    assert count_tables(sandbox_session, SCHEMA_NAME, "VIEW") == 2
 
 
 def test_deployment(sandbox_session, project_path):

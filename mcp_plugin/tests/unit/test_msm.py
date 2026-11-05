@@ -765,3 +765,99 @@ def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):
 
     assert _call(tools, "msm.update_project", shop, new_caption="Mine")["caption"] == "Mine"
     assert _call(tools, "msm.remove_project", shop) == shop
+
+
+# --- schema diagrams ------------------------------------------------------------
+
+_DIAGRAM_TABLES = """CREATE TABLE `customer` (`id` INT NOT NULL PRIMARY KEY);
+CREATE TABLE `orders` (
+    `id` INT NOT NULL PRIMARY KEY,
+    `customer_id` INT NOT NULL,
+    CONSTRAINT `fk_orders_customer` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`)
+);"""
+
+
+def _diagram_project(tools, root):
+    """A project with two tables, created through the tools."""
+    from msm_plugin.lib import management
+
+    path = _call(tools, "msm.create_project", "shop", root)
+    management.set_section_sql_content(
+        "140", _DIAGRAM_TABLES, management.get_schema_development_file_path(path)
+    )
+    return path
+
+
+def _diagram(name="Main"):
+    return {
+        "format": "msm-diagram/1",
+        "name": name,
+        "width": 1000.0,
+        "height": 800.0,
+        "layers": [],
+        "figures": [
+            {"id": "f1", "type": "TableFigure", "name": "customer", "table": "customer",
+             "left": 10.0, "top": 10.0, "width": 150.0, "height": 80.0, "color": "#98BFDA"},
+        ],
+        "connections": [],
+    }
+
+
+def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+
+    assert _call(tools, "msm.list_schema_diagrams", path) == {
+        "schema_definition": None,
+        "diagrams": [],
+    }
+    _call(tools, "msm.set_schema_diagram", _diagram(), path)
+    listed = _call(tools, "msm.list_schema_diagrams", path)
+    assert listed["diagrams"] == [{"name": "Main", "figures": 1, "connections": 0}]
+    rows = _call(tools, "msm.get_schema_diagrams", path, "Main")
+    assert [row["name"] for row in rows] == ["Main"]
+
+    with pytest.raises(Exception, match="format"):
+        _call(tools, "msm.set_schema_diagram", {**_diagram(), "format": "mwb-diagram/1"}, path)
+
+    _call(tools, "msm.remove_schema_diagram", "Main", path)
+    assert _call(tools, "msm.get_schema_diagrams", path) == []
+
+
+@pytest.mark.skipif(
+    __import__("msm_plugin.lib.lsp", fromlist=["find_lsp"]).find_lsp() is None,
+    reason="no mariadb-lsp binary",
+)
+def test_the_schema_snapshot_is_made_through_the_tools(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    _call(tools, "msm.set_schema_diagram", _diagram(), path)
+
+    result = _call(tools, "msm.update_schema_definition", path)
+    assert result["tables"] == 2
+    schema = _call(tools, "msm.get_schema_diagrams", path)[0]
+    assert schema["format"] == "msm-schema/1"
+    assert {table["name"] for table in schema["document"]["tables"]} == {"customer", "orders"}
+    assert _call(tools, "msm.list_schema_diagrams", path)["schema_definition"] == {
+        "tables": 2,
+        "current": True,
+    }
+
+
+def test_a_diagram_include_outside_the_allowed_paths_is_refused(
+    project_lists, allowed_temp_dir, tmp_path
+):
+    """The development script's includes are read without asking, so they are checked."""
+    from msm_plugin.lib import management
+
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    outside = tmp_path / "secret.sql"
+    outside.write_text("CREATE TABLE t (id INT);\n")
+    dev_file = management.get_schema_development_file_path(path)
+    management.set_section_sql_content("160", f"SOURCE '{outside}';", dev_file)
+
+    with pytest.raises(Exception, match="allowed"):
+        _call(tools, "msm.get_schema_diagrams", path)
+    with pytest.raises(Exception, match="allowed"):
+        _call(tools, "msm.list_schema_diagrams", path)

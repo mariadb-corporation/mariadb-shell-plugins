@@ -135,6 +135,20 @@ DELIMITER ;
 
 
 -- #############################################################################
+-- MSM Section 160: Schema Diagrams
+-- -----------------------------------------------------------------------------
+-- The `msm_schema_diagrams` VIEW, written by msm: one row `schema_definition`
+-- (format msm-schema/1) holds a snapshot of the schema objects the CREATE
+-- statements of this script define, as the MariaDB SQL language server reads
+-- them, and one row per EER diagram (format msm-diagram/1) their layout.
+-- The CREATE statements are the source of truth: the snapshot is made from
+-- them by msm.update_schema_definition and by every msm.prepare_release.
+-- Do not edit this section by hand; once it is larger than the project's
+-- maxInlineSectionSize it is kept in sections/160_schema_diagrams.sql.
+-- #############################################################################
+
+
+-- #############################################################################
 -- MSM Section 170: Authorization
 -- -----------------------------------------------------------------------------
 -- This section is used to define the ROLEs and GRANT statements.

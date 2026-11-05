@@ -30,6 +30,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
+- **Schema diagrams (2026-11-05, `wip/msm-diagrams`):** five tools in
+  `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
+  `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
+  `msm.set_schema_diagram`, `msm.remove_schema_diagram`. Every one passes
+  `include_check` (`_include_check(ctx)` = `db_functions.allowed_include` for the
+  client's user), because the development script's SOURCE includes are read without
+  asking; `msm.prepare_release` passes it too, plus `lsp_path` from
+  `sql_functions.find_lsp()` (so `mcp setup --lspPath` counts), and runs in a thread
+  (the snapshot runs `mariadb-lsp`). Tests: the "schema diagrams" block of `test_msm.py`.
 - **MCP access per project (user):** every entry carries `mcpAccess`
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and

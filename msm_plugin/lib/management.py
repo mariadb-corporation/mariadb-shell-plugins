@@ -1205,8 +1205,16 @@ def prepare_release(
     next_version: str,
     allow_to_stay_on_same_version: bool = False,
     overwrite_existing: bool = False,
+    lsp_path: str = None,
+    include_check=None,
 ) -> list[str]:
     """Adds a new release to the schema project
+
+    The schema snapshot of the diagrams (MSM Section 160) is made again from
+    the development script first, so a release always holds the one that
+    matches its CREATE statements. That needs the MariaDB SQL language
+    server's binary, mariadb-lsp; without it, or when a statement cannot be
+    read, no release is made.
 
     Args:
         schema_project_path: The path to the schema project folder.
@@ -1215,6 +1223,9 @@ def prepare_release(
         allow_to_stay_on_same_version: Whether to allow to stay on the
             same version for further development work
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        include_check: Checks each file a SOURCE directive includes, see
+            lib.modeling.IncludeCheck.
 
     Returns:
         A list of filenames that have been created or changed for the release
@@ -1253,6 +1264,14 @@ def prepare_release(
             "The next development version needs to be at least at the same version as the version for release "
             f"{version}."
         )
+
+    # The snapshot the release carries is the one of its CREATE statements
+    from msm_plugin.lib import modeling
+
+    # Like section 910, it changes the development files, which are not listed.
+    modeling.update_schema_definition(
+        schema_project_path, lsp_path=lsp_path, check=include_check
+    )
 
     # Get the current schema development file sections
     schema_dev_file_path = os.path.join(
@@ -1479,6 +1498,9 @@ def generate_deployment_script(
             "section_150_idempotent_schema_objects": target_version_sections.get(
                 "150", {}
             )
+            .get("sql_content", "")
+            .strip("\n"),
+            "section_160_schema_diagrams": target_version_sections.get("160", {})
             .get("sql_content", "")
             .strip("\n"),
             "section_170_authorization": indent(
