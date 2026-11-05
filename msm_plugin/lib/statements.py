@@ -51,14 +51,34 @@ _DROP = re.compile(
 _TABLE = re.compile(
     r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMPORARY\s+)?(?:TABLE|SEQUENCE)\b", re.IGNORECASE
 )
-_TABLE_ADDITION = re.compile(
-    r"^\s*(?:ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?(?:TABLE|SEQUENCE)"
-    r"|CREATE\s+(?:OR\s+REPLACE\s+)?(?:ONLINE\s+|OFFLINE\s+)?"
-    r"(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b",
+_CREATE_INDEX = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:ONLINE\s+|OFFLINE\s+)?"
+    r"(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\b",
     re.IGNORECASE,
 )
+_ALTER_TABLE = re.compile(
+    r"^\s*ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?"
+    r"(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))?\s*",
+    re.IGNORECASE,
+)
+# What an ALTER TABLE of Section 140's additions may do: add a key, an index
+# or a constraint. These keep their meaning when they run once all TABLEs
+# and before the INSERTs; a column added, changed or dropped, or a rename,
+# would not (a positional INSERT, a CREATE TABLE ... AS SELECT).
+_ADDITION_CLAUSE = re.compile(
+    r"^ADD\s+(?:CONSTRAINT\b|FOREIGN\s+KEY\b|PRIMARY\s+KEY\b|CHECK\b"
+    r"|(?:UNIQUE|FULLTEXT|SPATIAL)\b|(?:INDEX|KEY)\b)",
+    re.IGNORECASE,
+)
+_ALTER_TOKEN = re.compile(
+    r"`(?:[^`]|``)*`|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\""
+    r"|--[^\n]*|#[^\n]*|/\*.*?\*/|[(),]|[^`'\"(),#/-]+|.",
+    re.DOTALL,
+)
 _INSERT = re.compile(r"^\s*(?:INSERT|REPLACE)\b", re.IGNORECASE)
-_DELIMITER_LINE = re.compile(r"^[ \t]*DELIMITER[ \t]+\S+[ \t]*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
+# A comment after the new delimiter goes with the line: the client reads the
+# delimiter up to the first blank.
+_DELIMITER_LINE = re.compile(r"^[ \t]*DELIMITER[ \t]+\S+[^\n]*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
 
 
 def strip_statement(sql: str) -> str:
@@ -89,6 +109,39 @@ def first_line(text: str) -> str:
     return lines[0].strip() if lines else ""
 
 
+def _alter_clauses(text: str) -> list:
+    """The clauses of an ALTER TABLE after its table name, split at the
+    commas outside quotes, comments and parentheses; comments left out."""
+    clauses, current, depth = [], [], 0
+    for token in _ALTER_TOKEN.findall(text):
+        if token.startswith(("--", "#")) or (token.startswith("/*") and not token.startswith("/*!")):
+            current.append(" ")
+            continue
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif token == "," and depth == 0:
+            clauses.append("".join(current).strip())
+            current = []
+            continue
+        current.append(token)
+    clauses.append("".join(current).strip())
+    return clauses
+
+
+def _is_table_addition(text: str) -> bool:
+    """CREATE INDEX, or an ALTER TABLE whose every clause adds a key, an
+    index or a constraint (_ADDITION_CLAUSE)."""
+    if _CREATE_INDEX.match(text):
+        return True
+    match = _ALTER_TABLE.match(text)
+    if not match:
+        return False
+    clauses = _alter_clauses(text[match.end():])
+    return all(_ADDITION_CLAUSE.match(clause) for clause in clauses)
+
+
 def statement_kind(sql: str) -> Optional[str]:
     """VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT: what a CREATE statement creates."""
     match = _CREATE.match(strip_statement(sql))
@@ -98,8 +151,8 @@ def statement_kind(sql: str) -> Optional[str]:
 def object_kind(sql: str) -> Optional[str]:
     """What a statement of a development script is about, as its sections group them.
 
-    TABLE (CREATE TABLE or SEQUENCE), TABLE_ADDITION (ALTER TABLE or SEQUENCE,
-    CREATE INDEX), INSERT (INSERT, REPLACE), and VIEW, PROCEDURE, FUNCTION,
+    TABLE (CREATE TABLE or SEQUENCE), TABLE_ADDITION (CREATE INDEX, or an
+    ALTER TABLE that only adds keys, indexes and constraints), INSERT (INSERT, REPLACE), and VIEW, PROCEDURE, FUNCTION,
     TRIGGER or EVENT for a CREATE or DROP of one; None for anything else.
     """
     text = strip_statement(sql)
@@ -108,7 +161,7 @@ def object_kind(sql: str) -> Optional[str]:
         return match.group("kind").upper()
     if _TABLE.match(text):
         return "TABLE"
-    if _TABLE_ADDITION.match(text):
+    if _is_table_addition(text):
         return "TABLE_ADDITION"
     if _INSERT.match(text):
         return "INSERT"
@@ -235,14 +288,19 @@ def cut_section(text: str, body_start: int, body_end: int, entries: list) -> Sec
         The SectionStatements.
 
     Raises:
-        ValueError: When a statement of the section runs past its end: the
-            last one lacks its delimiter, so the splitter read the next
-            section as part of it.
+        ValueError: When a statement runs past the section's end (its last
+            one lacks its delimiter, so the splitter read the next section as
+            part of it), or one of the section before runs into it.
     """
     statements = []
     preamble = ""
     position = body_start
     for begin, end, delimiter in entries:
+        if begin < body_start < end:
+            raise ValueError(
+                "A statement of the section before runs into this one, so it lacks its "
+                f"delimiter `{delimiter}`: {first_line(text[begin:body_start])}"
+            )
         if begin < body_start or begin >= body_end:
             continue
         if end > body_end:

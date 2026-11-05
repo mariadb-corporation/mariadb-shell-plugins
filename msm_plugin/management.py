@@ -550,19 +550,21 @@ def split_sections(**kwargs) -> dict:
 
     Keyword Args:
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
-        sections (list): The sections to split, of 140, 150 and 170. Defaults to all three.
+        sections (list): The sections to split, of 140, 150 and 170 (or a comma separated
+            string of them). Defaults to all three.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
 
     Returns:
         split: the breakout files of each section split, skipped: the reason for each section
         left as it is, sections_added: the template sections that were missing, files: the
-        files written, and snapshot_updated: whether the schema snapshot was made again.
+        files written, snapshot_updated: whether the schema snapshot was made again, and
+        snapshot_error: why it could not be, where it could not.
     """
     project = kwargs.get("schema_project_path") or lib.core.get_working_dir()
     section_ids = kwargs.get("sections")
-    if isinstance(section_ids, str):
-        section_ids = [section_ids]
+    if isinstance(section_ids, (str, int)):
+        section_ids = [part.strip() for part in str(section_ids).split(",") if part.strip()]
     result = lib.modeling.split_sections(
         project,
         section_ids=[str(section_id) for section_id in section_ids] if section_ids else None,
@@ -573,6 +575,8 @@ def split_sections(**kwargs) -> dict:
             print(f"MSM Section {section_id} now includes {', '.join(files)}.")
         for section_id, reason in result["skipped"].items():
             print(f"MSM Section {section_id} was left as it is. {reason}")
+        if result.get("snapshot_error"):
+            print(f"The schema snapshot could not be made again: {result['snapshot_error']}")
         if result["sections_added"]:
             print(f"Added the missing MSM Section(s) {', '.join(result['sections_added'])}.")
         if not result["files"]:

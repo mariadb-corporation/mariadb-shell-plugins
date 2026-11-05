@@ -217,29 +217,43 @@ def section_body(
     return "\n\n".join(text.strip("\n") for text in texts if text.strip()), written
 
 
-def write_section_parts(schema_project_path: str, section_id: str, parts: list) -> list:
-    """Sets the body of a section of the project's development script (section_body).
+def write_sections_parts(schema_project_path: str, parts_by_section: dict) -> list:
+    """Sets the bodies of sections of the project's development script (section_body).
+
+    The development script is written once, for every section given.
 
     Args:
         schema_project_path: The project folder.
-        section_id: The section, e.g. "140".
-        parts: The Parts, in order.
+        parts_by_section: The Parts of each section, e.g. {"140": [...]}, in
+            order; a section without a part that has SQL is left as it is.
 
     Returns:
         The files written; none when no part has SQL.
     """
-    parts = [part for part in parts if part.sql and part.sql.strip()]
-    if not parts:
+    parts_by_section = {
+        section_id: [part for part in parts if part.sql and part.sql.strip()]
+        for section_id, parts in parts_by_section.items()
+    }
+    parts_by_section = {section_id: parts for section_id, parts in parts_by_section.items() if parts}
+    if not parts_by_section:
         return []
     settings = management.get_project_settings(schema_project_path)
     dev_file = management.get_schema_development_file_path(schema_project_path)
     sections = management.get_file_sections(dev_file)
-    if section_id not in sections:
-        raise ValueError(f"The development script has no MSM Section {section_id}.")
-    body, written = section_body(settings, os.path.dirname(dev_file), section_id, parts)
-    set_section_body(sections[section_id], body)
+    written = []
+    for section_id, parts in parts_by_section.items():
+        if section_id not in sections:
+            raise ValueError(f"The development script has no MSM Section {section_id}.")
+        body, files = section_body(settings, os.path.dirname(dev_file), section_id, parts)
+        set_section_body(sections[section_id], body)
+        written += files
     management.write_sections_to_file(dev_file, sections, overwrite_existing=True)
     return [dev_file, *written]
+
+
+def write_section_parts(schema_project_path: str, section_id: str, parts: list) -> list:
+    """Sets the body of one section of the project's development script (write_sections_parts)."""
+    return write_sections_parts(schema_project_path, {section_id: parts})
 
 
 @functools.lru_cache(maxsize=1)
@@ -306,6 +320,24 @@ def complete_sections(
             text = section["full_content"].rstrip("\n") + ("\n" if is_last else "\n\n")
             pairs[index] = (section_id, {**section, "full_content": text})
     return dict(pairs), missing
+
+
+def complete_script(
+    schema_project_path: str, script: str, project_settings: dict = None
+) -> tuple:
+    """A development script with every template section it lacks (complete_sections).
+
+    Returns:
+        (script, its sections, the ids added). The script is the one given
+        when none is missing.
+    """
+    sections, added = complete_sections(
+        schema_project_path, management.get_script_sections(script), project_settings
+    )
+    if added:
+        script = "\n".join(section["full_content"] for section in sections.values())
+        sections = management.get_script_sections(script)
+    return script, sections, added
 
 
 @dataclass
@@ -380,12 +412,7 @@ def split_sections(
 
     with open(dev_file, "r") as f:
         script = f.read()
-    sections, added = complete_sections(
-        schema_project_path, management.get_script_sections(script), settings
-    )
-    if added:
-        script = "\n".join(section["full_content"] for section in sections.values())
-        sections = management.get_script_sections(script)
+    script, sections, added = complete_script(schema_project_path, script, settings)
     entries = statements_lib.sql_entries(script, lsp.split(binary, script))
 
     result = SplitResult(split={}, skipped={}, sections_added=added, files=[])
