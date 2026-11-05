@@ -348,12 +348,38 @@ def test_diagram_names_are_made_unique(tmp_path):
     assert names[1:3] == ["Shop", "Shop (2)"]
 
 
+def test_a_list_member_that_is_a_link_is_followed(tmp_path):
+    # As Workbench writes a routine in a routine group: the object under the
+    # group (routineGroups comes first alphabetically), a link in routines.
+    document = shop_model()
+    schema = document["physicalModels"][0]["catalog"]["schemata"][0]
+    routine = schema["routines"][0]
+    members = {}
+    for key, value in schema.items():
+        if key == "routines":
+            members["routineGroups"] = [obj("db.mysql.RoutineGroup", "{RG-1}", name="all",
+                                            routines=[routine])]
+            value = [Link(routine["_id"]), Link("{R-GONE}")]
+        members[key] = value
+    schema.clear()
+    schema.update(members)
+    model = workbench.read_model(write_mwb(tmp_path / "shop.mwb", document))
+    result = workbench.schema_sql(model, model.schema())
+    assert "CREATE FUNCTION `order_count`" in result.routines
+    assert result.routines.count("CREATE FUNCTION") == 1
+
+
 def test_a_statement_s_kind_and_an_event_saved_as_a_routine():
     assert workbench.statement_kind("CREATE DEFINER=`a`@`%` PROCEDURE p() BEGIN END") == "PROCEDURE"
     assert workbench.statement_kind("DELIMITER $$\nCREATE EVENT e ON SCHEDULE EVERY 1 DAY DO "
                                     "DELETE FROM t$$\nDELIMITER ;") == "EVENT"
     assert workbench.statement_kind("CREATE OR REPLACE ALGORITHM=MERGE VIEW v AS SELECT 1") == "VIEW"
     assert workbench.statement_kind("SELECT 1") is None
+    # As Workbench saves a view: a comment first.
+    assert workbench.statement_kind("--\n-- View structure for view `v`\n--\n\nCREATE VIEW v \n"
+                                    "AS \nSELECT 1") == "VIEW"
+    assert workbench._idempotent("VIEW", "v", "/* x */ -- y\nCREATE VIEW v AS SELECT 1;") == (
+        "CREATE OR REPLACE VIEW v AS SELECT 1%%")
 
 
 def test_the_diagrams_become_documents(mwb):

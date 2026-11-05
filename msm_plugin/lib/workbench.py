@@ -116,6 +116,32 @@ class _Objects:
         return found
 
 
+def _follow_list_links(value, objects: _Objects) -> None:
+    """Puts the object every list member links to in the member's place.
+
+    GRT writes an object in full where it first occurs and as a link
+    everywhere else, its keys in alphabetical order: a routine in a routine
+    group is an object under routineGroups and a link in its schema's
+    routines. The code reads lists as objects, so the links are followed
+    once, here; one to nothing is dropped. An object put in place is walked
+    where it is owned, not again.
+    """
+    if isinstance(value, dict):
+        for member in value.values():
+            _follow_list_links(member, objects)
+    elif isinstance(value, list):
+        kept = []
+        for item in value:
+            if isinstance(item, _Link):
+                item = objects.get(item)
+                if item is None:
+                    continue
+            else:
+                _follow_list_links(item, objects)
+            kept.append(item)
+        value[:] = kept
+
+
 @dataclass
 class Model:
     """A Workbench model as read from its file.
@@ -228,12 +254,14 @@ def read_model(path: str) -> Model:
             raise ValueError(f"`{path}` does not hold a MySQL Workbench model.")
         objects = {}
         document = _parse_value(root[0], objects)
+        objects = _Objects(objects)
+        _follow_list_links(document, objects)
         data = _read_data(archive)
         scripts = sorted(
             name[len(SCRIPTS):] for name in archive.namelist()
             if name.startswith(SCRIPTS) and not name.endswith("/")
         )
-    return Model(document, _Objects(objects), data, scripts)
+    return Model(document, objects, data, scripts)
 
 
 # -----------------------------------------------------------------------------
@@ -491,10 +519,20 @@ _CREATE = re.compile(
 
 
 def _strip_statement(sql: str) -> str:
-    """A statement without the DELIMITER lines and the delimiter at its end."""
+    """A statement without the DELIMITER lines, the comments before it
+    (Workbench puts `-- View structure for view ...` there) and the
+    delimiter at its end."""
     lines = [line for line in sql.strip().splitlines()
              if not line.strip().upper().startswith("DELIMITER")]
     text = "\n".join(lines).strip()
+    while True:
+        if text.startswith("--") or text.startswith("#"):
+            text = text.partition("\n")[2]
+        elif text.startswith("/*"):
+            text = text.partition("*/")[2]
+        else:
+            break
+        text = text.lstrip()
     for delimiter in ("$$", "%%", "//", ";"):
         if text.endswith(delimiter):
             text = text[: -len(delimiter)].rstrip()
@@ -737,7 +775,7 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
     table_ids = {table["_id"] for table in schema.get("tables", [])}
     documents, warnings = [], []
     for diagram in model.physical_model.get("diagrams", []):
-        root_layer = diagram.get("rootLayer") if isinstance(diagram.get("rootLayer"), dict) else None
+        root_layer = model.objects.get(diagram.get("rootLayer"))
         figures, skipped = [], 0
         for figure in diagram.get("figures", []):
             figure = model.objects.get(figure)
