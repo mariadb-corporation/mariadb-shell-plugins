@@ -568,11 +568,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         rows = await _in_project(
             ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
         )
-        return [
-            {**row, "document": msm_diagrams.elide_images(row["document"])}
-            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
-            for row in rows
-        ]
+        return msm_diagrams.elide_row_images(rows)
 
     @tool(name="msm.get_schema_diagram_image")
     async def get_schema_diagram_image(
@@ -744,11 +740,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             base_hash,
             **_kwargs(lsp_path=_lsp_path()),
         )
-        result["rows"] = [
-            {**row, "document": msm_diagrams.elide_images(row["document"])}
-            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
-            for row in result["rows"]
-        ]
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
     @tool(name="msm.create_schema_diagram")

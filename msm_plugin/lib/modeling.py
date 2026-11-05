@@ -443,11 +443,12 @@ def get_diagram_image(schema_project_path: str, name: str, figure_id: str) -> st
         ValueError: For a diagram, or an image figure with a picture, the
             VIEW does not hold.
     """
-    rows = [row for row in read_diagram_rows(schema_project_path) if _is_diagram(row, name)]
-    if not rows:
-        raise ValueError(f"The project has no diagram `{name}`.")
+    document = next(
+        row["document"] for row in get_diagram_rows(schema_project_path, name)
+        if _is_diagram(row, name)
+    )
     figure = next(
-        (figure for figure in rows[0]["document"].get("figures", [])
+        (figure for figure in document.get("figures", [])
          if figure.get("id") == figure_id),
         None,
     )

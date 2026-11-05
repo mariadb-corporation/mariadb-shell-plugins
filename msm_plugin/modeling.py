@@ -35,6 +35,23 @@ def _project(kwargs) -> str:
     return kwargs.get("schema_project_path") or lib.core.get_working_dir()
 
 
+def _json_argument(value, kwargs: dict, name: str, what: str):
+    """An argument given as itself or, on the command line, as a JSON file
+    (the keyword argument <name>_file)."""
+    file_path = kwargs.get(f"{name}_file")
+    if file_path is None:
+        return value
+    if value:
+        raise ValueError(f"Give the {what} as {name} or as {name}_file, not both.")
+    try:
+        with open(os.path.expanduser(file_path), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except OSError as e:
+        raise ValueError(f"The {what} file could not be read: {e}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"The {what} file `{file_path}` is not valid JSON: {e}")
+
+
 @plugin_function("msm.listSchemaDiagrams", shell=True, cli=True, web=True)
 def list_schema_diagrams(**kwargs) -> dict:
     """Lists the schema diagrams of a schema project
@@ -161,17 +178,7 @@ def set_schema_diagram(document: dict = None, **kwargs) -> list:
     Returns:
         The files written.
     """
-    document_file = kwargs.get("document_file")
-    if document_file is not None:
-        if document:
-            raise ValueError("Give the diagram as document or as document_file, not both.")
-        try:
-            with open(os.path.expanduser(document_file), "r", encoding="utf-8") as f:
-                document = json.load(f)
-        except OSError as e:
-            raise ValueError(f"The diagram file could not be read: {e}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"The diagram file `{document_file}` is not valid JSON: {e}")
+    document = _json_argument(document, kwargs, "document", "diagram")
     if document is None:
         raise ValueError("No diagram given: pass document or document_file.")
     return lib.modeling.set_diagram(_project(kwargs), dict(document))
@@ -209,17 +216,7 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
         rows (the diagrams VIEW afterwards), files written, migration (the statements kept for
         the next update script), migration_file and notes on what was not changed.
     """
-    edits_file = kwargs.get("edits_file")
-    if edits_file is not None:
-        if edits:
-            raise ValueError("Give the edits as edits or as edits_file, not both.")
-        try:
-            with open(os.path.expanduser(edits_file), "r", encoding="utf-8") as f:
-                edits = json.load(f)
-        except OSError as e:
-            raise ValueError(f"The edits file could not be read: {e}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"The edits file `{edits_file}` is not valid JSON: {e}")
+    edits = _json_argument(edits, kwargs, "edits", "edits")
     if base_hash is None:
         raise ValueError("No base_hash given: the source_hash of the snapshot the edits are for.")
     return lib.editing.edit_schema(

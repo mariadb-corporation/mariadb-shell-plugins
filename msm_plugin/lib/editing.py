@@ -106,22 +106,32 @@ def edit_spans(text: str, edits: list) -> list:
     return spans
 
 
-def apply_text_edits(text: str, edits: list) -> str:
-    """Applies LSP text edits ({range, new_text}) to a text, see edit_spans."""
+def apply_spans(text: str, spans: list) -> str:
+    """Applies the (start, end, new_text) spans of edit_spans to a text."""
     result, at = [], 0
-    for start, end, new_text in edit_spans(text, edits):
+    for start, end, new_text in spans:
         result += [text[at:start], new_text]
         at = end
     result.append(text[at:])
     return "".join(result)
 
 
+def apply_text_edits(text: str, edits: list) -> str:
+    """Applies LSP text edits ({range, new_text}) to a text, see edit_spans."""
+    return apply_spans(text, edit_spans(text, edits))
+
+
 # -----------------------------------------------------------------------------
 # The diagrams
 
 
-def _same(a, b) -> bool:
-    return isinstance(a, str) and isinstance(b, str) and a.lower() == b.lower()
+# The rename edits a diagram follows: the figure type showing the object,
+# and the edit's member naming it.
+_RENAMES = {
+    "rename_table": (diagrams.TABLE_FIGURE, "table"),
+    "rename_view": (diagrams.VIEW_FIGURE, "view"),
+    "rename_routine": (diagrams.ROUTINE_GROUP_FIGURE, "routine"),
+}
 
 
 def rename_in_diagram(diagram: dict, edit: dict) -> bool:
@@ -133,35 +143,33 @@ def rename_in_diagram(diagram: dict, edit: dict) -> bool:
         Whether the diagram changed.
     """
     op, new_name = edit.get("op"), edit.get("new_name")
-    kinds = {
-        "rename_table": diagrams.TABLE_FIGURE,
-        "rename_view": diagrams.VIEW_FIGURE,
-        "rename_routine": diagrams.ROUTINE_GROUP_FIGURE,
-    }
-    if op not in kinds or not isinstance(new_name, str):
+    if op not in _RENAMES or not isinstance(new_name, str):
         return False
-    figure_type = kinds[op]
-    key = diagrams.FIGURE_KINDS[figure_type].key
-    old = edit.get({"rename_table": "table", "rename_view": "view"}.get(op, "routine"))
+    figure_type, name_key = _RENAMES[op]
+    old = edit.get(name_key)
+    same = diagrams.same_name
+    figures = [
+        figure for figure in diagram.get("figures", [])
+        if diagrams.figure_type(figure) == figure_type
+    ]
     changed = False
-    for figure in diagram.get("figures", []):
-        if diagrams.figure_type(figure) != figure_type:
-            continue
-        if figure_type == diagrams.ROUTINE_GROUP_FIGURE:
-            routines = [new_name if _same(name, old) else name for name in figure.get("routines") or []]
-            if routines != (figure.get("routines") or []):
-                figure["routines"] = routines
+    if figure_type == diagrams.ROUTINE_GROUP_FIGURE:
+        for figure in figures:
+            routines = diagrams.figure_routines(figure)
+            if any(same(name, old) for name in routines):
+                figure["routines"] = [new_name if same(name, old) else name for name in routines]
                 changed = True
-            continue
-        if not _same(diagrams.figure_object_name(figure), old):
-            continue
-        figure[key] = new_name
-        if _same(figure.get("name"), old):
-            figure["name"] = new_name
-        changed = True
+        return changed
+
+    for figure in figures:
+        if same(diagrams.figure_object_name(figure), old):
+            figure[name_key] = new_name
+            if same(figure.get("name"), old):
+                figure["name"] = new_name
+            changed = True
     if op == "rename_table":
         for connection in diagram.get("connections", []):
-            if _same(connection.get("table"), old):
+            if same(connection.get("table"), old):
                 connection["table"] = new_name
                 changed = True
     return changed
@@ -205,6 +213,14 @@ def _pending_update_template(project_settings: dict) -> str:
     )
 
 
+def _read_or_none(path: str) -> Optional[str]:
+    """A file's text, or None where there is no file."""
+    if not os.path.exists(path):
+        return None
+    with open(path, "r") as f:
+        return f.read()
+
+
 def _section_body(section: Optional[dict]) -> str:
     return (section or {}).get("sql_content", "").strip("\n")
 
@@ -212,10 +228,10 @@ def _section_body(section: Optional[dict]) -> str:
 def read_pending_update(path: str) -> dict:
     """The statements of a pending update script, by section ({"240": sql,
     "290": sql}, empty where none)."""
-    if not os.path.exists(path):
+    text = _read_or_none(path)
+    if text is None:
         return {CHANGES_SECTION_ID: "", REMOVALS_SECTION_ID: ""}
-    with open(path, "r") as f:
-        sections = management.get_script_sections(f.read())
+    sections = management.get_script_sections(text)
     return {
         section_id: _section_body(sections.get(section_id))
         for section_id in (CHANGES_SECTION_ID, REMOVALS_SECTION_ID)
@@ -249,11 +265,33 @@ def clear_pending_update(path: str, project_settings: dict) -> bool:
     Returns:
         Whether it was written.
     """
-    if not os.path.exists(path):
+    old = _read_or_none(path)
+    if old is None:
         return False
-    with open(path, "r") as f:
-        old = f.read()
     return sections_lib.write_if_changed(path, _pending_update_template(project_settings), old)
+
+
+def move_pending_update(
+    schema_project_path: str, project_settings: dict, update_file_path: str
+) -> Optional[str]:
+    """Moves the statements of the pending update script into the sections
+    of a release's update script, and empties the pending script.
+
+    Returns:
+        The pending script, where it was emptied; else None.
+    """
+    path = pending_update_path(schema_project_path, project_settings)
+    pending = read_pending_update(path)
+    if not any(pending.values()):
+        return None
+    update_sections = management.get_file_sections(update_file_path)
+    for section_id, sql in pending.items():
+        if sql:
+            sections_lib.set_section_body(update_sections[section_id], sql)
+    management.write_sections_to_file(
+        file_path=update_file_path, sections=update_sections, overwrite_existing=True
+    )
+    return path if clear_pending_update(path, project_settings) else None
 
 
 def _describe(edit: dict) -> str:
@@ -372,29 +410,26 @@ def edit_schema(
                 source.resolve_include_path(name, project.development)
             )
             old = project.read(path)[1]
-        new = apply_text_edits(old, changed.get("edits", []))
+        spans = edit_spans(old, changed.get("edits", []))
         if path == project.dev_file and section is not None:
             # The VIEW is msm's to write: an edit there would be lost.
             start = section["start_position"] + section["sql_start"]
             end = section["end_position"]
             if any(
                 edit_start < end and edit_end > start
-                for edit_start, edit_end, _ in edit_spans(old, changed.get("edits", []))
+                for edit_start, edit_end, _ in spans
             ):
                 raise ValueError(
                     "The language server's edits reach into MSM Section "
                     f"{modeling.DIAGRAMS_SECTION_ID}, which msm writes itself."
                 )
-        texts[path] = (old, new)
+        texts[path] = (old, apply_spans(old, spans))
 
     migration = result.get("migration", [])
     migration_file = None
     if migration and management.get_last_released_version(schema_project_path) is not None:
         migration_file = pending_update_path(schema_project_path, project.settings)
-        old = None
-        if os.path.exists(migration_file):
-            with open(migration_file, "r") as f:
-                old = f.read()
+        old = _read_or_none(migration_file)
         texts[migration_file] = (
             old,
             pending_update_text(old, project.settings, migration_statements(edits, migration)),
