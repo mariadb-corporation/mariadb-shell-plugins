@@ -395,9 +395,32 @@ def validate_diagram(document) -> None:
             raise ValueError(f"A diagram's `{member}` has to be a list.")
 
 
+TABLE_FIGURE = "TableFigure"
+VIEW_FIGURE = "ViewFigure"
+ROUTINE_GROUP_FIGURE = "RoutineGroupFigure"
+# A note's text and an image embedded as a data URL: msm keeps them as they
+# are, the schema has no say in them.
+NOTE_FIGURE = "NoteFigure"
+IMAGE_FIGURE = "ImageFigure"
+
+
+def figure_type(figure: dict) -> str:
+    """A figure's type: a table (the default), a view, a group of routines,
+    or something msm leaves alone."""
+    return figure.get("type") or TABLE_FIGURE
+
+
 def is_table_figure(figure: dict) -> bool:
     """Whether a diagram figure shows a table (the default type)."""
-    return figure.get("type", "TableFigure") == "TableFigure"
+    return figure_type(figure) == TABLE_FIGURE
+
+
+def is_view_figure(figure: dict) -> bool:
+    return figure_type(figure) == VIEW_FIGURE
+
+
+def is_routine_group_figure(figure: dict) -> bool:
+    return figure_type(figure) == ROUTINE_GROUP_FIGURE
 
 
 def figure_table(figure: dict) -> str:
@@ -405,12 +428,36 @@ def figure_table(figure: dict) -> str:
     return (figure.get("table") or figure.get("name") or "").lower()
 
 
+def figure_view(figure: dict) -> str:
+    """The lower-case name of the view a figure shows."""
+    return (figure.get("view") or figure.get("name") or "").lower()
+
+
+def figure_routines(figure: dict) -> list:
+    """The names of the routines a routine group figure lists, as written."""
+    return [name for name in figure.get("routines") or [] if isinstance(name, str)]
+
+
+def routine_label(routine: dict) -> str:
+    """The row a routine group figure shows for a routine: its name with the
+    parameters' types, and what a function returns."""
+    parameters = ", ".join(
+        parameter.get("type") or "" for parameter in routine.get("parameters") or []
+    )
+    label = f"{routine.get('name', '')}({parameters})"
+    if routine.get("returns"):
+        label += f": {routine['returns']}"
+    return label
+
+
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
-    A figure shows a table; a connection a foreign key of the table of its
-    start figure. New tables are not added: placing them is up to the user
-    or the layout.
+    A table figure shows a table, a view figure a view, and a routine group
+    figure lists routines, losing the ones the schema no longer has and
+    going with the last of them; a connection is a foreign key of the table
+    of its start figure. Figures of other types are left alone. New objects
+    are not added: placing them is up to the user or the layout.
 
     Args:
         diagram: The msm-diagram/1 document, changed in place.
@@ -420,12 +467,28 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         Whether anything was dropped.
     """
     tables = {table["name"].lower(): table for table in schema_document.get("tables", [])}
+    views = {view["name"].lower() for view in schema_document.get("views", [])}
+    routines = {routine["name"].lower() for routine in schema_document.get("routines", [])}
     figures, connections = diagram["figures"], diagram["connections"]
-    kept_figures = [
-        figure
-        for figure in figures
-        if not is_table_figure(figure) or figure_table(figure) in tables
-    ]
+
+    changed = False
+    kept_figures = []
+    for figure in figures:
+        if is_table_figure(figure):
+            if figure_table(figure) not in tables:
+                continue
+        elif is_view_figure(figure):
+            if figure_view(figure) not in views:
+                continue
+        elif is_routine_group_figure(figure):
+            listed = figure.get("routines") or []
+            shown = [name for name in figure_routines(figure) if name.lower() in routines]
+            if len(shown) != len(listed):
+                figure["routines"] = shown
+                changed = True
+            if not shown:
+                continue
+        kept_figures.append(figure)
     figure_ids = {figure.get("id") for figure in kept_figures}
 
     def has_foreign_key(connection) -> bool:
@@ -443,8 +506,8 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         and has_foreign_key(connection)
     ]
 
-    changed = len(kept_figures) != len(figures) or len(kept_connections) != len(connections)
-    if changed:
+    if len(kept_figures) != len(figures) or len(kept_connections) != len(connections):
+        changed = True
         diagram["figures"] = kept_figures
         diagram["connections"] = kept_connections
         for layer in diagram.get("layers", []):

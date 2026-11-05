@@ -258,6 +258,25 @@ def test_a_diagram_loses_what_the_schema_no_longer_has():
 # Section 160 of a project
 
 
+def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
+    schema = {"tables": [], "views": [{"name": "V"}], "routines": [{"name": "f"}]}
+    document = {
+        "format": diagrams.DIAGRAM_FORMAT, "name": "D", "layers": [], "connections": [],
+        "figures": [
+            {"id": "v", "type": "ViewFigure", "view": "v"},
+            {"id": "gone", "type": "ViewFigure", "view": "gone"},
+            {"id": "g", "type": "RoutineGroupFigure", "name": "G", "routines": ["F", "gone"]},
+            {"id": "empty", "type": "RoutineGroupFigure", "name": "E", "routines": ["gone"]},
+            {"id": "n", "type": "NoteFigure", "text": "kept as it is"},
+            {"id": "i", "type": "ImageFigure", "image": "data:image/png;base64,AA=="},
+        ],
+    }
+    assert diagrams.reconcile_diagram(document, schema)
+    assert [f["id"] for f in document["figures"]] == ["v", "g", "n", "i"]
+    assert document["figures"][1]["routines"] == ["F"]
+    assert not diagrams.reconcile_diagram(document, schema)
+
+
 def test_a_new_project_has_an_empty_diagrams_section(project):
     assert "MSM Section 160: Schema Diagrams" in dev_script(project)
     assert modeling.read_diagram_rows(project) == []

@@ -479,7 +479,25 @@ def _new_id(taken: set) -> str:
             return new
 
 
-def _add_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
+def _catalog(document: dict) -> dict:
+    """The snapshot's tables, views and routines by their lower-case name."""
+    return {
+        kind: {item["name"].lower(): item for item in document.get(kind, [])}
+        for kind in ("tables", "views", "routines")
+    }
+
+
+def _require_known(kind: str, objects: dict, names: list) -> None:
+    unknown = [name for name in names if name.lower() not in objects]
+    if unknown:
+        raise ValueError(
+            f"The schema has no {kind} "
+            + ", ".join(f"`{name}`" for name in unknown)
+            + " (the snapshot is made from the development script's CREATE statements)."
+        )
+
+
+def _add_table_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
     """Adds a figure, not placed yet, for each of the tables not on the diagram.
 
     Args:
@@ -491,13 +509,7 @@ def _add_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
     Returns:
         The names of the tables added.
     """
-    unknown = [name for name in names if name.lower() not in tables]
-    if unknown:
-        raise ValueError(
-            "The schema has no table "
-            + ", ".join(f"`{name}`" for name in unknown)
-            + " (the snapshot is made from the development script's CREATE statements)."
-        )
+    _require_known("table", tables, names)
     shown = {
         diagrams.figure_table(figure)
         for figure in diagram["figures"]
@@ -512,7 +524,7 @@ def _add_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
         diagram["figures"].append(
             {
                 "id": _new_id(taken),
-                "type": "TableFigure",
+                "type": diagrams.TABLE_FIGURE,
                 "name": table["name"],
                 "table": table["name"],
                 "width": layout.figure_width(table),
@@ -523,6 +535,80 @@ def _add_figures(diagram: dict, tables: dict, names: list, taken: set) -> list:
             }
         )
         added.append(table["name"])
+    return added
+
+
+def _add_view_figures(diagram: dict, views: dict, names: list, taken: set) -> list:
+    """Adds a figure, not placed yet, for each of the views not on the diagram.
+
+    Returns:
+        The names of the views added.
+    """
+    _require_known("view", views, names)
+    shown = {
+        diagrams.figure_view(figure)
+        for figure in diagram["figures"]
+        if diagrams.is_view_figure(figure)
+    }
+    added = []
+    for name in names:
+        view = views[name.lower()]
+        if name.lower() in shown:
+            continue
+        shown.add(name.lower())
+        diagram["figures"].append(
+            {
+                "id": _new_id(taken),
+                "type": diagrams.VIEW_FIGURE,
+                "name": view["name"],
+                "view": view["name"],
+                "width": layout.view_figure_width(view),
+                "height": layout.view_figure_height(view),
+                "color": layout.VIEW_FIGURE_COLOR,
+                "expanded": True,
+                "manualSizing": False,
+            }
+        )
+        added.append(view["name"])
+    return added
+
+
+ROUTINE_FIGURE_NAME = "Routines"
+
+
+def _add_routines(diagram: dict, routines: dict, names: list, taken: set) -> list:
+    """Lists routines on the diagram's routine group figure, adding the
+    figure (not placed yet) where there is none.
+
+    Routines the diagram lists already, on any of its routine group
+    figures, are left where they are. The figure grows with its list unless
+    it is sized by hand.
+
+    Returns:
+        The names of the routines added.
+    """
+    _require_known("routine", routines, names)
+    groups = [figure for figure in diagram["figures"] if diagrams.is_routine_group_figure(figure)]
+    shown = {name.lower() for group in groups for name in diagrams.figure_routines(group)}
+    added = [routines[name.lower()]["name"] for name in names if name.lower() not in shown]
+    added = list(dict.fromkeys(added))
+    if not added:
+        return []
+    if groups:
+        group = groups[0]
+        group["routines"] = diagrams.figure_routines(group) + added
+    else:
+        group = {
+            "id": _new_id(taken),
+            "type": diagrams.ROUTINE_GROUP_FIGURE,
+            "name": ROUTINE_FIGURE_NAME,
+            "routines": added,
+            "color": layout.ROUTINE_FIGURE_COLOR,
+            "expanded": True,
+            "manualSizing": False,
+        }
+        diagram["figures"].append(group)
+    _size_figure(group, _figure_objects(group, {"routines": routines}), grow=True)
     return added
 
 
@@ -571,16 +657,64 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
+def _figure_objects(figure: dict, catalog: dict):
+    """What of the snapshot a figure shows: a table, a view, the routines of
+    a routine group figure (those the schema has), or None for a figure msm
+    does not lay out (a note, an image, an object the schema lost)."""
+    if diagrams.is_table_figure(figure):
+        return catalog.get("tables", {}).get(diagrams.figure_table(figure))
+    if diagrams.is_view_figure(figure):
+        return catalog.get("views", {}).get(diagrams.figure_view(figure))
+    if diagrams.is_routine_group_figure(figure):
+        routines = catalog.get("routines", {})
+        found = [
+            routines[name.lower()]
+            for name in diagrams.figure_routines(figure)
+            if name.lower() in routines
+        ]
+        return found or None
+    return None
+
+
+def _size_figure(figure: dict, objects, grow: bool = False) -> None:
+    """Gives a figure the size its card needs: the width where it has none,
+    the height unless sized by hand. With grow, a width it has is kept only
+    when it is wide enough."""
+    if diagrams.is_table_figure(figure):
+        width, height = layout.figure_width(objects), layout.figure_height(objects, figure)
+    elif diagrams.is_view_figure(figure):
+        width = layout.view_figure_width(objects)
+        height = layout.view_figure_height(objects, figure)
+    else:
+        width = layout.routine_figure_width(figure.get("name") or "", objects)
+        height = layout.routine_figure_height(objects, figure)
+    manual = figure.get("manualSizing") is True
+    if not _is_number(figure.get("width")) or (grow and not manual and figure["width"] < width):
+        figure["width"] = width
+    if not (manual and _is_number(figure.get("height"))):
+        figure["height"] = height
+
+
+def _figure_label(figure: dict) -> str:
+    if diagrams.is_table_figure(figure):
+        return figure.get("table") or figure.get("name") or ""
+    if diagrams.is_view_figure(figure):
+        return figure.get("view") or figure.get("name") or ""
+    return figure.get("name") or ""
+
+
+def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     """Lays out the figures of the diagram that are to move.
 
     Figures on a layer keep their place: the layer is the user's grouping
     and their positions are relative to it. With keep_placed, so does every
-    figure that has a position. The others are laid out (see lib/layout.py),
-    as one block below everything that stays, or at the diagram's corner.
+    figure that has a position. Notes, images and figures of objects the
+    schema does not have are never moved. The others are laid out (see
+    lib/layout.py), as one block below everything that stays, or at the
+    diagram's corner.
 
     Returns:
-        The names of the tables placed.
+        The names of the tables, views and routine groups placed.
     """
     layers = {layer.get("id"): layer for layer in diagram.get("layers", [])}
     member_of = {}
@@ -599,8 +733,7 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
     for figure in diagram["figures"]:
         placed = _is_number(figure.get("left")) and _is_number(figure.get("top"))
         if (
-            diagrams.is_table_figure(figure)
-            and diagrams.figure_table(figure) in tables
+            _figure_objects(figure, catalog) is not None
             and layer_of(figure) is None
             and not (keep_placed and placed)
         ):
@@ -625,12 +758,7 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
     if moving:
         sizes = {}
         for figure in moving:
-            table = tables[diagrams.figure_table(figure)]
-            manual = figure.get("manualSizing") is True
-            if not _is_number(figure.get("width")):
-                figure["width"] = layout.figure_width(table)
-            if not (manual and _is_number(figure.get("height"))):
-                figure["height"] = layout.figure_height(table, figure)
+            _size_figure(figure, _figure_objects(figure, catalog))
             sizes[figure["id"]] = (figure["width"], figure["height"])
 
         ids = {figure["id"] for figure in moving}
@@ -660,31 +788,41 @@ def _place(diagram: dict, tables: dict, keep_placed: bool) -> list:
         width, height = diagram.get("width"), diagram.get("height")
         diagram["width"] = float(max(right, width if _is_number(width) else 0))
         diagram["height"] = float(max(bottom, height if _is_number(height) else 0))
-    return [figure.get("table") or figure.get("name") for figure in moving]
+    return [_figure_label(figure) for figure in moving]
 
 
-def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool) -> tuple:
-    """Adds the tables' figures and the missing connections, and lays the
-    figures out.
+def _fill(
+    diagram: dict, document: dict, tables: list, views: list, routines: list, keep_placed: bool
+) -> tuple:
+    """Adds the figures of the tables, views and routines, the missing
+    connections, and lays the figures out.
 
     Returns:
-        The tables added, the number of connections added and the tables placed.
+        The objects added, the number of connections added and the figures
+        placed (by what they show).
     """
-    by_name = {table["name"].lower(): table for table in document["tables"]}
+    catalog = _catalog(document)
     items = diagram["figures"] + diagram["connections"]
     taken = {item["id"] for item in items if item.get("id")}
     # The layout keys the figures by id; a document may leave one out.
     for item in items:
         if not item.get("id"):
             item["id"] = _new_id(taken)
-    added = _add_figures(diagram, by_name, tables, taken)
-    connections_added = _add_connections(diagram, by_name, document["schema"], taken)
-    placed = _place(diagram, by_name, keep_placed)
+    added = _add_table_figures(diagram, catalog["tables"], tables, taken)
+    added += _add_view_figures(diagram, catalog["views"], views, taken)
+    added += _add_routines(diagram, catalog["routines"], routines, taken)
+    connections_added = _add_connections(diagram, catalog["tables"], document["schema"], taken)
+    placed = _place(diagram, catalog, keep_placed)
     return added, connections_added, placed
 
 
 def create_diagram(
-    schema_project_path: str, name: str, tables: list = None, lsp_path: str = None
+    schema_project_path: str,
+    name: str,
+    tables: list = None,
+    lsp_path: str = None,
+    views: list = None,
+    routines: list = None,
 ) -> dict:
     """Adds a diagram of the schema's tables, laid out.
 
@@ -696,6 +834,8 @@ def create_diagram(
         name: The new diagram's name.
         tables: The tables to show; all of the schema's by default.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        views: Views to show as well; none by default.
+        routines: Routines to list on a routine group figure; none by default.
 
     Returns:
         {name, figures, connections, files}.
@@ -718,7 +858,7 @@ def create_diagram(
         "connections": [],
     }
     names = [table["name"] for table in document["tables"]] if tables is None else list(tables)
-    _fill(diagram, document, names, keep_placed=False)
+    _fill(diagram, document, names, list(views or []), list(routines or []), keep_placed=False)
     if not diagram["figures"]:
         diagram["width"], diagram["height"] = 1000.0, 800.0
     rows.append({"name": name, "format": diagrams.DIAGRAM_FORMAT, "document": diagram})
@@ -736,8 +876,10 @@ def layout_diagram(
     tables: list = None,
     keep_placed: bool = True,
     lsp_path: str = None,
+    views: list = None,
+    routines: list = None,
 ) -> dict:
-    """Adds tables to a diagram and lays its figures out.
+    """Adds tables, views and routines to a diagram and lays its figures out.
 
     The snapshot is made again first where the development script changed
     since it was made. Foreign keys between tables on the diagram that are
@@ -751,10 +893,14 @@ def layout_diagram(
             the ones added or without a position are laid out; else all are.
             Figures on a layer always keep theirs.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        views: Views to add; none by default.
+        routines: Routines to list on the diagram's routine group figure,
+            added where it has none; none by default.
 
     Returns:
-        {name, added: the tables added, placed: the tables laid out,
-        connections_added, files}.
+        {name, added: the objects added, placed: the figures laid out (the
+        tables, views and routine groups they show), connections_added,
+        files}.
     """
     project = _Project.load(schema_project_path)
     rows = _rows(project)
@@ -762,7 +908,9 @@ def layout_diagram(
         raise ValueError(f"The project has no diagram `{name}`.")
     document, rows = _current_snapshot(project, rows, lsp_path)
     diagram = next(row for row in rows if _is_diagram(row, name))["document"]
-    added, connections_added, placed = _fill(diagram, document, list(tables or []), keep_placed)
+    added, connections_added, placed = _fill(
+        diagram, document, list(tables or []), list(views or []), list(routines or []), keep_placed
+    )
     return {
         "name": name,
         "added": added,

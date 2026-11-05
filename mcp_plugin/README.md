@@ -318,12 +318,16 @@ diagram. `msm.update_schema_definition` and `msm.prepare_release` run the binary
 a release fails without it, or when a statement of the script cannot be read. Every
 file a SOURCE directive of the script includes must be within the allowed paths.
 `msm.create_schema_diagram` and `msm.layout_schema_diagram` lay tables out in layers,
-a table a foreign key refers to above the tables referring to it; they make the
-snapshot again first when the script changed since it was made.
+a table a foreign key refers to above the tables referring to it; views (a figure
+each) and routines (listed on one routine group figure) go below the tables, without
+connections. Notes and images stay where they are. Both tools make the snapshot again
+first when the script changed since it was made.
 `msm.import_workbench_model` creates a project from a MySQL Workbench model (`.mwb`):
 the CREATE statements of a schema of the model (sections 140, 150 and 170, in breakout
 files under `development/sections/` where a section is large), its snapshot and its EER
-diagrams. Scripts attached to the model are listed, not imported.
+diagrams with their table, view, routine group, note and image figures (a picture is
+embedded as a data URL, up to 1 MB). Scripts attached to the model are listed, not
+imported.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of

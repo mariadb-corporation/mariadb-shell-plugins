@@ -167,6 +167,25 @@ def test_figure_sizes_follow_the_table_card():
     assert layout.figure_width(huge) == layout.MAX_FIGURE_WIDTH
 
 
+def test_view_and_routine_cards_are_sized_like_table_cards():
+    view = {"name": "big_orders", "columns": []}
+    assert layout.view_figure_height(view) == 30 + 2 * 8
+    assert layout.view_figure_height({"name": "v", "columns": ["a", "b"]}) == 30 + 8 + 16 + 36 + 8
+    assert layout.view_figure_width({"name": "v", "columns": []}) == layout.MIN_FIGURE_WIDTH
+    assert layout.view_figure_width(view) == 140  # its title
+    routines = [
+        {"name": "order_count", "kind": "function", "parameters": [], "returns": "INT"},
+        {"name": "add_order", "kind": "procedure",
+         "parameters": [{"mode": "IN", "name": "c", "type": "INT UNSIGNED"}], "returns": None},
+    ]
+    assert [diagrams.routine_label(r) for r in routines] == [
+        "order_count(): INT", "add_order(INT UNSIGNED)",
+    ]
+    assert layout.routine_figure_height(routines) == 30 + 8 + 16 + 36 + 8
+    assert layout.routine_figure_height(routines, {"expanded": False}) == 30
+    assert layout.routine_figure_width("Routines", routines) > layout.MIN_FIGURE_WIDTH
+
+
 # -----------------------------------------------------------------------------
 # Unnamed foreign keys
 
@@ -333,6 +352,78 @@ def test_figures_without_an_id_are_placed(project):
     figures = diagram_document(project)["figures"]
     assert len({figure["id"] for figure in figures}) == 2
     assert result["connections_added"] == 2
+
+
+ROUTINES_SQL = """CREATE OR REPLACE VIEW `big_orders` AS SELECT `id` FROM `orders` WHERE `id` > 10;
+
+DELIMITER %%
+
+CREATE FUNCTION `order_count`() RETURNS INT
+READS SQL DATA
+BEGIN
+    RETURN (SELECT COUNT(*) FROM `orders`);
+END%%
+
+CREATE PROCEDURE `add_order`(IN `customer` INT UNSIGNED)
+BEGIN
+    INSERT INTO `orders` (`customer_id`) VALUES (`customer`);
+END%%
+
+DELIMITER ;
+"""
+
+
+def with_routines(project_path, sql=ROUTINES_SQL):
+    dev_file = management.get_schema_development_file_path(project_path)
+    management.set_section_sql_content("150", sql, dev_file)
+
+
+@needs_lsp
+def test_views_and_routines_are_placed_without_connections(project):
+    with_routines(project)
+    result = modeling.create_diagram(
+        project, "Main", views=["big_orders"], routines=["order_count", "ADD_ORDER"]
+    )
+    assert (result["figures"], result["connections"]) == (5, 3)
+    document = diagram_document(project)
+    by_type = {}
+    for figure in document["figures"]:
+        by_type.setdefault(figure["type"], []).append(figure)
+    (view,) = by_type["ViewFigure"]
+    assert (view["view"], view["name"], view["color"]) == (
+        "big_orders", "big_orders", layout.VIEW_FIGURE_COLOR,
+    )
+    (group,) = by_type["RoutineGroupFigure"]
+    assert group["routines"] == ["order_count", "add_order"]
+    assert group["name"] == modeling.ROUTINE_FIGURE_NAME
+    assert group["height"] == layout.routine_figure_height([{}, {}])
+    # Below the tables, which are connected; nothing connects to them.
+    lowest_table = max(f["top"] + f["height"] for f in by_type["TableFigure"])
+    assert view["top"] >= lowest_table and group["top"] >= lowest_table
+    assert len(document["connections"]) == 3
+
+    with pytest.raises(ValueError, match="no view `nothing`"):
+        modeling.layout_diagram(project, "Main", views=["nothing"])
+    with pytest.raises(ValueError, match="no routine `nothing`"):
+        modeling.layout_diagram(project, "Main", routines=["nothing"])
+    # Listed already: nothing to add; the view keeps its place.
+    again = modeling.layout_diagram(project, "Main", views=["BIG_ORDERS"], routines=["order_count"])
+    assert (again["added"], again["placed"]) == ([], [])
+
+    # A routine added later joins the card, which grows; it stays in place.
+    with_routines(project, ROUTINES_SQL + "\nCREATE FUNCTION `two`() RETURNS INT RETURN 2;\n")
+    later = modeling.layout_diagram(project, "Main", routines=["two"])
+    assert (later["added"], later["placed"]) == (["two"], [])
+    (group2,) = [f for f in diagram_document(project)["figures"] if f["type"] == "RoutineGroupFigure"]
+    assert group2["routines"] == ["order_count", "add_order", "two"]
+    assert (group2["left"], group2["top"]) == (group["left"], group["top"])
+    assert group2["height"] == group["height"] + 18
+
+    # Objects the schema loses leave the diagram: the view, and the routines
+    # of the card, which goes with the last one.
+    with_routines(project, "SELECT 1;")
+    modeling.update_schema_definition(project)
+    assert [f["type"] for f in diagram_document(project)["figures"]] == ["TableFigure"] * 3
 
 
 @needs_lsp
