@@ -30,7 +30,6 @@ script in one file.
 """
 
 import os
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -189,7 +188,18 @@ def write_diagram_rows(schema_project_path: str, rows: list) -> list:
             start = source.get_source_slice_offset(old, included[1], False) or 0
             end = source.get_source_slice_offset(old, included[2], True)
             before, after = old[:start], "" if end is None else old[end:]
-        if _write_if_changed(path, before + view_sql + "\n" + after):
+        text = before + view_sql + "\n" + after
+        # A bound that does not move with the VIEW (an end line or offset
+        # counted from the start, a start past the file's end) would select
+        # part of it only.
+        if source.get_source_slice(text, included[1], included[2]).strip("\n") != view_sql:
+            raise ValueError(
+                f"The SOURCE directive of MSM Section {DIAGRAMS_SECTION_ID} selects "
+                f"[{included[1]}:{included[2]}] of `{included[0]}`, which would not hold "
+                "the whole diagrams VIEW once written. Leave the end bound out (or count "
+                "it from the end of the file) and make sure the file exists."
+            )
+        if _write_if_changed(path, text):
             written.append(path)
 
     if body is not None:
@@ -211,8 +221,9 @@ def outline_input(schema_project_path: str) -> tuple:
 
     The snapshot must not describe the VIEW that holds it, so Section 160 is
     left out: blanked for the outline, its lines kept so that positions stay
-    those of the file, and removed for the hash, which then does not change
-    when only the diagrams do.
+    those of the file, and removed for the hash with its banner and the line
+    break joining it to the next section, which then does not change when
+    only the diagrams do, nor when msm adds the section to an older script.
 
     Returns:
         The script for the outline, the script for the hash, and the script's
@@ -226,7 +237,7 @@ def outline_input(schema_project_path: str) -> tuple:
     if section is not None:
         start = section["start_position"] + section["sql_start"]
         end = section["end_position"]
-        hashed = script[:start] + script[end:]
+        hashed = script[: section["start_position"]] + script[end + 1 :]
         script = script[:start] + "\n" * script.count("\n", start, end) + script[end:]
     return script, hashed, os.path.basename(dev_file)
 
@@ -259,13 +270,6 @@ def build_schema_definition(schema_project_path: str, lsp_path: str = None) -> d
     development = _development_folder(schema_project_path)
     script, hashed, script_name = outline_input(schema_project_path)
 
-    # msm's reading of the directives decides what is included (and checked),
-    # and the binary must not find others: it also ends a line at a lone "\r".
-    if re.search(r"\r(?!\n)", script):
-        raise ValueError(
-            f"`{script_name}` has a line ending in a lone carriage return; "
-            "save it with \\n or \\r\\n line endings."
-        )
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(schema_project_path, hashed)
 

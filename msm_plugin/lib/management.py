@@ -1262,6 +1262,15 @@ def prepare_release(
             f"{version}."
         )
 
+    # Refused before the snapshot below changes the development files.
+    schema_version_file_path = os.path.join(
+        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
+    )
+    if os.path.exists(schema_version_file_path) and not overwrite_existing:
+        raise ValueError(
+            f"The file {schema_version_file_path} already exists. Please explicitly allow to replace existing files."
+        )
+
     # The release carries the snapshot of its CREATE statements. Like section
     # 910 it changes the development files, which are not listed. (Imported
     # here: lib.modeling imports this module.)
@@ -1329,9 +1338,6 @@ def prepare_release(
     )
 
     # Write the schema version file out
-    schema_version_file_path = os.path.join(
-        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
-    )
     write_sections_to_file(
         file_path=schema_version_file_path,
         sections=schema_version_sections,

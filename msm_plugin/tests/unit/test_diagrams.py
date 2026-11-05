@@ -304,9 +304,31 @@ def test_a_project_without_the_section_gets_it(project):
     management.write_sections_to_file(dev_file, sections, overwrite_existing=True)
     assert "Section 160" not in dev_script(project)
 
+    hash_without = modeling.current_source_hash(project)
     modeling.set_diagram(project, diagram())
     ids = list(management.get_script_sections(dev_script(project)))
     assert ids.index("160") == ids.index("150") + 1
+    # The section msm added does not make a snapshot out of date
+    assert modeling.current_source_hash(project) == hash_without
+
+
+def test_an_include_that_would_cut_the_view_is_refused(project):
+    sections_dir = os.path.join(project, "development", "sections")
+    os.makedirs(sections_dir)
+    with open(os.path.join(sections_dir, "160.sql"), "w") as f:
+        f.write("-- header\n" + diagrams.render_view_sql([]) + "\n-- footer\n")
+    dev_file = management.get_schema_development_file_path(project)
+    # An end line counted from the start does not move with a larger VIEW
+    management.set_section_sql_content("160", "SOURCE './sections/160.sql'[ln2:ln3];", dev_file)
+    with pytest.raises(ValueError, match="whole diagrams VIEW"):
+        modeling.set_diagram(project, diagram())
+    # Counted from the end, it does
+    management.set_section_sql_content("160", "SOURCE './sections/160.sql'[ln2:ln-2];", dev_file)
+    modeling.set_diagram(project, diagram())
+    assert [row["name"] for row in modeling.read_diagram_rows(project)] == ["Main"]
+    with open(os.path.join(sections_dir, "160.sql")) as f:
+        content = f.read()
+    assert content.startswith("-- header\n") and content.endswith("\n-- footer\n")
 
 
 def test_an_include_can_be_refused(project):
