@@ -254,7 +254,8 @@ def read_model(path: str) -> Model:
     Raises:
         ValueError: For a file that is not a Workbench model.
     """
-    path = os.path.expanduser(path)
+    # Absolute: diagram_documents opens the file again for the images.
+    path = os.path.abspath(os.path.expanduser(path))
     try:
         archive = zipfile.ZipFile(path)
     except (OSError, zipfile.BadZipFile) as e:
@@ -862,7 +863,12 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
         for kind in ("tables", "views", "routines")
     }
     # The model file, open while the figures' pictures are read.
-    opened = zipfile.ZipFile(model.path) if model.images and model.path else nullcontext()
+    opened = nullcontext()
+    if model.images and model.path:
+        try:
+            opened = zipfile.ZipFile(model.path)
+        except (OSError, zipfile.BadZipFile) as e:
+            raise ValueError(f"`{model.path}` cannot be read for the diagrams' images: {e}")
     with opened as archive:
         return _diagram_documents(model, schema_ids, archive)
 

@@ -442,8 +442,9 @@ class FigureKind:
     card shows of them.
 
     Attributes:
-        key: The figure's member naming what it shows: the object's name, or
-            for a group the names listed. Workbench's link key as well.
+        key: The figure's member naming what it shows: the object's name
+            (Workbench's link key as well), or for a group the names listed
+            (Workbench links the group instead, ``routineGroup``).
         objects: The snapshot list the objects are in, a catalog() key.
         many: Whether the figure lists several objects (a routine group).
         color: The colour a new figure gets.
@@ -503,6 +504,7 @@ def is_table_figure(figure: dict) -> bool:
 
 
 def is_routine_group_figure(figure: dict) -> bool:
+    """Whether a diagram figure lists routines."""
     return figure_type(figure) == ROUTINE_GROUP_FIGURE
 
 
@@ -580,7 +582,9 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
             if shown != (figure.get("routines") or []):
                 figure["routines"] = shown
                 changed = True
-        if kind is not None and figure_objects(figure, objects) is None:
+            if not shown:
+                continue
+        elif kind is not None and figure_objects(figure, objects) is None:
             continue
         kept_figures.append(figure)
     figure_ids = {figure.get("id") for figure in kept_figures}

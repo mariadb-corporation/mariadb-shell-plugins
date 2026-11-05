@@ -489,6 +489,20 @@ def _require_known(what: str, objects: dict, names: list) -> None:
         )
 
 
+def _new_figure(figure_type: str, name: str, taken: set, **members) -> dict:
+    """A figure msm adds: not placed or sized yet, expanded, in the kind's
+    colour, with the members naming what it shows."""
+    return {
+        "id": _new_id(taken),
+        "type": figure_type,
+        "name": name,
+        **members,
+        "color": diagrams.FIGURE_KINDS[figure_type].color,
+        "expanded": True,
+        "manualSizing": False,
+    }
+
+
 def _add_object_figures(
     diagram: dict, figure_type: str, catalog: dict, names: list, taken: set
 ) -> list:
@@ -520,15 +534,7 @@ def _add_object_figures(
             continue
         shown.add(name.lower())
         diagram["figures"].append(
-            {
-                "id": _new_id(taken),
-                "type": figure_type,
-                "name": item["name"],
-                kind.key: item["name"],
-                "color": kind.color,
-                "expanded": True,
-                "manualSizing": False,
-            }
+            _new_figure(figure_type, item["name"], taken, **{kind.key: item["name"]})
         )
         added.append(item["name"])
     return added
@@ -557,19 +563,14 @@ def _add_routines(diagram: dict, catalog: dict, names: list, taken: set) -> list
     if groups:
         group = groups[0]
         group["routines"] = diagrams.figure_routines(group) + added
+        # A placed group is not laid out again: its card grows here.
+        _size_figure(group, diagrams.figure_objects(group, catalog), grow=True)
     else:
-        kind = diagrams.FIGURE_KINDS[diagrams.ROUTINE_GROUP_FIGURE]
-        group = {
-            "id": _new_id(taken),
-            "type": diagrams.ROUTINE_GROUP_FIGURE,
-            "name": diagrams.ROUTINE_GROUP_NAME,
-            "routines": added,
-            "color": kind.color,
-            "expanded": True,
-            "manualSizing": False,
-        }
-        diagram["figures"].append(group)
-    _size_figure(group, diagrams.figure_objects(group, catalog), grow=True)
+        diagram["figures"].append(
+            _new_figure(
+                diagrams.ROUTINE_GROUP_FIGURE, diagrams.ROUTINE_GROUP_NAME, taken, routines=added
+            )
+        )
     return added
 
 
