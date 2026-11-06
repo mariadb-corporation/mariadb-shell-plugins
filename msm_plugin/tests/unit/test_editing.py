@@ -23,13 +23,18 @@
 
 """Tests for schema edits: lib/editing.py.
 
-The binary's `edit` command is stood in for by a fake that renames a
+Most tests stand a fake in for the binary's `edit` command, which renames a
 backtick-quoted name wherever the script has it; the snapshot is still made
-by the real binary's `outline`.
+by the real binary's `outline`. The tests at the end run the real `edit`
+where a binary has it (MSM_TEST_LSP names one, the binary or its folder, else
+the binaries msm would find are tried): on a project of their own, released
+and deployed on the sandbox, and on a copy of the MRS metadata project
+(MSM_TEST_MRS_PROJECT, else the mariadb-shell checkout next to this one).
 """
 
 import os
 import re
+import shutil
 
 import pytest
 
@@ -38,6 +43,31 @@ from msm_plugin.lib.management import create_schema_project_folder
 
 LSP = lsp.find_lsp()
 needs_lsp = pytest.mark.skipif(LSP is None, reason="no mariadb-lsp binary")
+
+
+def _find_edit_lsp():
+    """A binary that has the edit command, or None."""
+    given = os.environ.get("MSM_TEST_LSP")
+    candidates = [given] if given else lsp._candidates(None)
+    for candidate in candidates:
+        binary = lsp.find_lsp(candidate)
+        if binary is not None and lsp.supports_edit(binary):
+            return binary
+    return None
+
+
+EDIT_LSP = _find_edit_lsp()
+needs_edit_lsp = pytest.mark.skipif(
+    EDIT_LSP is None,
+    reason="no mariadb-lsp binary with the edit command (MSM_TEST_LSP names one)",
+)
+
+MRS_PROJECT = os.environ.get("MSM_TEST_MRS_PROJECT") or os.path.join(
+    # The runner links the plugin into its config home: the checkout is where the link points
+    os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..", "mariadb-shell",
+    "mysqlshdk", "libs",
+    "mrs", "db_schema", "mariadb_rest_service.msm.project",
+)
 
 TABLES_SQL = """CREATE TABLE IF NOT EXISTS `customer` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -119,8 +149,9 @@ def renaming_edit(calls=None):
                 migration.append({"edit": index, "sql": f"DROP PROCEDURE IF EXISTS `{item['routine']}`"})
                 migration.append({"edit": index, "sql": (
                     f"CREATE PROCEDURE `{item['new_name']}`()\nBEGIN\n    SELECT 1;\nEND")})
+        # No outline: the snapshot is made by running the real binary.
         return {"format": 1, "files": [{"file": "-", "edits": changes}], "migration": migration,
-                "notes": [], "outline": {}}
+                "notes": []}
 
     return edit
 
@@ -179,14 +210,17 @@ def test_migrations_are_sorted_into_the_sections():
     edits = [RENAME, {"op": "rename_routine", "routine": "p", "new_name": "q"}]
     statements = editing.migration_statements(edits, [
         {"edit": 0, "sql": "RENAME TABLE `customer` TO `client`;"},
-        {"edit": 1, "sql": "DROP PROCEDURE IF EXISTS `p`"},
+        # As the binary writes it; Section 150 may have dropped it already
+        {"edit": 1, "sql": "DROP PROCEDURE `p`"},
         # Section 150 creates it again; it cannot run inside Section 240.
         {"edit": 1, "sql": "CREATE PROCEDURE `q`()\nBEGIN\n    SELECT 1;\nEND"},
+        {"edit": 1, "sql": "drop function if exists `f`"},
     ])
     assert statements == {
         "240": "-- msm.editSchema: rename_table customer -> client\n"
                "RENAME TABLE `customer` TO `client`;",
-        "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;",
+        "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;\n"
+               "drop function if exists `f`;",
     }
 
 
@@ -306,3 +340,201 @@ def test_a_release_takes_the_pending_migration(project, fake_edit):
     # The next section's banner keeps its blank lines.
     assert "`client`;\n\n\n-- ####" in sections["240"]["full_content"] + "\n-- ####"
     assert editing.read_pending_update(pending) == {"240": "", "290": ""}
+
+
+# -----------------------------------------------------------------------------
+# Against the real binary
+
+ROUTINES_SQL = """DELIMITER %%
+
+DROP PROCEDURE IF EXISTS `count_customers`%%
+CREATE PROCEDURE `count_customers`()
+BEGIN
+    SELECT COUNT(*) AS `customers` FROM `customer`;
+END%%
+
+CREATE OR REPLACE VIEW `customer_ids` AS
+    SELECT `id` FROM `customer`%%
+
+DELIMITER ;"""
+
+RENAMES = [
+    RENAME,
+    {"op": "rename_column", "table": "client", "column": "id", "new_name": "client_id"},
+    {"op": "rename_routine", "routine": "count_customers", "new_name": "count_clients",
+     "kind": "procedure"},
+]
+
+
+def real_project(tmp_path, schema_name="shop") -> str:
+    """A project with two tables, a procedure and a view on one of them, a
+    diagram of both tables and a current snapshot, all by the real binary."""
+    path = create_schema_project_folder(
+        schema_name=schema_name, target_path=str(tmp_path), copyright_holder="Example Ltd.",
+        license="MIT",
+    )
+    dev_file = management.get_schema_development_file_path(path)
+    management.set_section_sql_content("140", "\n" + TABLES_SQL + "\n", dev_file)
+    management.set_section_sql_content("150", "\n" + ROUTINES_SQL + "\n", dev_file)
+    modeling.create_diagram(path, "Main", lsp_path=EDIT_LSP)
+    return path
+
+
+def fresh_snapshot(path) -> dict:
+    """The snapshot as the binary's outline of the files on disk gives it."""
+    return modeling.build_schema_definition(path, lsp_path=EDIT_LSP)
+
+
+@needs_edit_lsp
+def test_the_real_binary_renames_and_its_outline_is_the_snapshot(tmp_path, monkeypatch):
+    path = real_project(tmp_path)
+    outlines = []
+    real_outline = lsp.outline
+    monkeypatch.setattr(lsp, "outline", lambda *args: outlines.append(args) or real_outline(*args))
+
+    result = editing.edit_schema(path, RENAMES, base_hash(path), lsp_path=EDIT_LSP)
+
+    # The snapshot is made from the outline edit returned, not by a second run
+    assert outlines == []
+    monkeypatch.setattr(lsp, "outline", real_outline)
+    snapshot = result["rows"][0]["document"]
+    assert snapshot == fresh_snapshot(path)
+    assert snapshot["source_hash"] == modeling.current_source_hash(path)
+
+    script = dev_script(path)
+    assert "`customer`" not in script
+    assert "CREATE PROCEDURE `count_clients`()" in script
+    assert "REFERENCES `client` (`client_id`)" in script
+    assert "SELECT COUNT(*) AS `customers` FROM `client`" in script
+    assert "SELECT `client_id` FROM `client`" in script
+    tables = {table["name"]: table for table in snapshot["tables"]}
+    assert sorted(tables) == ["client", "orders"]
+    assert [column["name"] for column in tables["client"]["columns"]] == ["client_id"]
+    assert "count_clients" in [routine["name"] for routine in snapshot["routines"]]
+
+    # The diagram follows: the figure and its connection are kept, renamed
+    main = result["rows"][1]["document"]
+    assert sorted(figure["table"] for figure in main["figures"]) == ["client", "orders"]
+    assert [connection["table"] for connection in main["connections"]] == ["orders"]
+    # No release yet, so nothing is kept for an update script
+    assert result["migration_file"] is None and result["migration"] == []
+
+
+@needs_edit_lsp
+@pytest.mark.xfail(
+    strict=True,
+    reason="lsp-server: rename_routine renames the CREATE but not the DROP ... IF EXISTS "
+    "before it, so Section 150 fails on the next deployment (the routine exists)",
+)
+def test_a_renamed_routine_is_dropped_under_its_new_name_before_its_create(tmp_path):
+    path = real_project(tmp_path)
+    editing.edit_schema(path, RENAMES[2:], base_hash(path), lsp_path=EDIT_LSP)
+    assert "DROP PROCEDURE IF EXISTS `count_clients`%%" in dev_script(path)
+
+
+@needs_edit_lsp
+def test_renames_reach_a_deployed_schema_through_the_next_release(sandbox_session, tmp_path):
+    from msm_plugin import lib as msm_lib
+    from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
+
+    schema_name = "msm_edit_test"
+    path = real_project(tmp_path, schema_name)
+
+    def query(sql):
+        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
+
+    def names(kind_sql):
+        return sorted(row["name"] for row in query(kind_sql))
+
+    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+    try:
+        prepare_release(schema_project_path=path, version="1.0.0", next_version="1.0.1",
+                        lsp_path=EDIT_LSP)
+        generate_deployment_script(schema_project_path=path, version="1.0.0")
+        deploy_schema(schema_project_path=path, version="1.0.0")
+        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`customer` VALUES (7)")
+        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`orders` VALUES (1, 7)")
+
+        result = editing.edit_schema(path, RENAMES, base_hash(path), lsp_path=EDIT_LSP)
+        pending = editing.pending_update_path(path, management.get_project_settings(path))
+        assert result["migration_file"] == pending
+        kept = editing.read_pending_update(pending)
+        assert "RENAME TABLE `customer` TO `client`;" in kept["240"]
+        assert "ALTER TABLE `client` RENAME COLUMN `id` TO `client_id`;" in kept["240"]
+        # Section 150 creates the routine under its new name; the old one goes in 290
+        assert "CREATE PROCEDURE" not in kept["240"] + kept["290"]
+        assert "DROP PROCEDURE" in kept["290"] and "count_customers" in kept["290"]
+
+        files = prepare_release(schema_project_path=path, version="1.0.1", next_version="1.0.2",
+                                lsp_path=EDIT_LSP)
+        update = os.path.join(path, "releases", "updates", f"{schema_name}_1.0.0_to_1.0.1.sql")
+        assert update in files
+        assert editing.read_pending_update(pending) == {"240": "", "290": ""}
+        generate_deployment_script(schema_project_path=path, version="1.0.1")
+        deploy_schema(schema_project_path=path, version="1.0.1")
+
+        assert names(
+            "SELECT TABLE_NAME AS name FROM information_schema.TABLES "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_TYPE = 'BASE TABLE'"
+        ) == ["client", "orders"]
+        # The row came along, and the foreign key follows the renames
+        assert [row["client_id"] for row in query(
+            f"SELECT `client_id` FROM `{schema_name}`.`client`")] == [7]
+        assert [row["REFERENCED_TABLE_NAME"] for row in query(
+            "SELECT REFERENCED_TABLE_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
+            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["client"]
+        assert names(
+            "SELECT ROUTINE_NAME AS name FROM information_schema.ROUTINES "
+            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'"
+        ) == ["count_clients"]
+        assert [row["client_id"] for row in query(
+            f"SELECT `client_id` FROM `{schema_name}`.`customer_ids`")] == [7]
+    finally:
+        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+
+
+@needs_edit_lsp
+@pytest.mark.skipif(not os.path.isdir(MRS_PROJECT), reason="no MRS metadata project")
+def test_the_real_binary_renames_a_table_of_the_mrs_project(tmp_path):
+    path = str(tmp_path / "mariadb_rest_service.msm.project")
+    shutil.copytree(MRS_PROJECT, path)
+    schema = next((row for row in modeling.read_diagram_rows(path)
+                   if row["format"] == diagrams.SCHEMA_FORMAT), None)
+    if not modeling._snapshot_is_current(modeling._Project.load(path), schema):
+        modeling.update_schema_definition(path, lsp_path=EDIT_LSP)
+    before = modeling.read_diagram_rows(path)
+
+    # url_host is referenced by foreign keys, triggers, views, routines,
+    # GRANTs and INSERTs, in several of the project's breakout files
+    result = editing.edit_schema(
+        path,
+        [{"op": "rename_table", "table": "url_host", "new_name": "url_hosts"},
+         {"op": "rename_column", "table": "url_hosts", "column": "name",
+          "new_name": "host_name"}],
+        base_hash(path),
+        lsp_path=EDIT_LSP,
+    )
+
+    snapshot = result["rows"][0]["document"]
+    assert snapshot == fresh_snapshot(path)
+    tables = {table["name"]: table for table in snapshot["tables"]}
+    assert "url_host" not in tables
+    assert "host_name" in [column["name"] for column in tables["url_hosts"]["columns"]]
+    referenced = {
+        key["references"]["table"]
+        for table in snapshot["tables"] for key in table.get("foreign_keys", [])
+    }
+    assert "url_hosts" in referenced and "url_host" not in referenced
+    assert len([f for f in result["files"] if os.sep + "sections" + os.sep in f]) > 1
+    # The release migration is kept: the project has releases
+    assert result["migration"][0] == "RENAME TABLE `url_host` TO `url_hosts`"
+    # Every diagram that showed the table shows it under its new name
+    shown_before = {
+        row["name"] for row in before if row["format"] == diagrams.DIAGRAM_FORMAT
+        and "url_host" in {figure.get("table") for figure in row["document"]["figures"]}
+    }
+    assert shown_before
+    for row in result["rows"][1:]:
+        tables = {figure.get("table") for figure in row["document"]["figures"]}
+        assert "url_host" not in tables
+        assert ("url_hosts" in tables) == (row["name"] in shown_before)

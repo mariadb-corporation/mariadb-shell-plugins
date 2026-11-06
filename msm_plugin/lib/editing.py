@@ -54,6 +54,13 @@ REMOVALS_SECTION_ID = "290"
 # A statement that cannot run inside the update procedure of Section 240
 # (MariaDB 1357: a stored routine is not dropped from within another).
 _ROUTINE_DROP = re.compile(r"^\s*DROP\s+(?:PROCEDURE|FUNCTION)\b", re.IGNORECASE)
+# A routine's DROP without IF EXISTS. Section 290 runs after the target's
+# Section 150, which may have dropped the routine already (a DROP ... IF
+# EXISTS of the old name left in the script), so the DROP must not fail on a
+# routine that is gone (MariaDB 1305).
+_ROUTINE_DROP_WITHOUT_IF_EXISTS = re.compile(
+    r"^(\s*DROP\s+(?:PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)", re.IGNORECASE
+)
 # A routine's CREATE (rename_routine drops the routine and creates it again):
 # it cannot run inside the update procedure either (MariaDB 1303), and its
 # body would need a DELIMITER. Section 150 of the release, which every
@@ -318,10 +325,12 @@ def _describe(edit: dict) -> str:
 
 def _kept_statement(item: dict) -> Optional[str]:
     """A migration statement as the pending update script keeps it, without
-    its delimiter; None for one it does not keep (empty, or a routine's
-    CREATE)."""
+    its delimiter, a routine's DROP with IF EXISTS; None for one it does not
+    keep (empty, or a routine's CREATE)."""
     sql = (item.get("sql") or "").strip().rstrip(";").strip()
-    return sql if sql and not _ROUTINE_CREATE.match(sql) else None
+    if not sql or _ROUTINE_CREATE.match(sql):
+        return None
+    return _ROUTINE_DROP_WITHOUT_IF_EXISTS.sub(r"\1IF EXISTS ", sql, count=1)
 
 
 def migration_statements(edits: list, migration: list) -> dict:
@@ -483,7 +492,13 @@ def edit_schema(
             if modeling._is_diagram(row):
                 for edit in edits:
                     rename_in_diagram(row["document"], edit)
-        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path)
+        # The binary's outline of the texts it edited is the outline of the
+        # files as now written (Section 160 blanked as in the request); an
+        # older answer without it has the binary run again.
+        outline = result.get("outline")
+        _, rows, _ = modeling._replace_snapshot(
+            project, rows, lsp_path, outline if isinstance(outline, dict) and outline else None
+        )
         # _write may write the script and the VIEW's breakout file.
         touched += [path for path in originals if path not in touched]
         written += [path for path in modeling._write(project, rows) if path not in written]
@@ -502,7 +517,7 @@ def edit_schema(
         "rows": rows,
         "files": written,
         "migration": [
-            item.get("sql") for item in migration if _kept_statement(item) is not None
+            sql for sql in map(_kept_statement, migration) if sql is not None
         ] if migration_file else [],
         "migration_file": migration_file,
         "notes": result.get("notes", []),

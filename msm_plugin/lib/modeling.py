@@ -241,22 +241,33 @@ def _source_hash(project: _Project, hashed: str) -> str:
     return diagrams.source_hash(expanded)
 
 
-def _build_schema_definition(project: _Project, lsp_path: str = None) -> dict:
+def _build_schema_definition(
+    project: _Project, lsp_path: str = None, outline: dict = None
+) -> dict:
     """Makes the msm-schema/1 snapshot of the project's development script.
+
+    Args:
+        project: The project, as it is on disk.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        outline: The binary's outline of the script as _outline_input()
+            gives it, where the caller has one already (``mariadb-lsp edit``
+            returns the outline of the texts it edited); else the binary is
+            run.
 
     Raises:
         ValueError: Without the binary, for an include that is refused, or
             when a statement could not be read: the snapshot would miss what
             it defines.
     """
-    binary = lsp.require_lsp(lsp_path)
+    binary = lsp.require_lsp(lsp_path) if outline is None else None
     script, hashed = _outline_input(project)
     script_name = os.path.basename(project.dev_file)
 
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(project, hashed)
 
-    outline = lsp.outline(binary, script, project.development)
+    if outline is None:
+        outline = lsp.outline(binary, script, project.development)
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])
@@ -306,16 +317,25 @@ def _is_diagram(row: dict, name: str = None) -> bool:
     return row["format"] == diagrams.DIAGRAM_FORMAT and (name is None or row["name"] == name)
 
 
-def _replace_snapshot(project: _Project, rows: list, lsp_path: str = None) -> tuple:
+def _replace_snapshot(
+    project: _Project, rows: list, lsp_path: str = None, outline: dict = None
+) -> tuple:
     """Makes the snapshot again and puts it in the rows, first.
 
     Diagrams lose the figures and connections of objects the schema no
     longer has.
 
+    Args:
+        project: The project, as it is on disk.
+        rows: The rows of the diagrams VIEW.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        outline: The outline to make the snapshot from, see
+            _build_schema_definition().
+
     Returns:
         The snapshot, the rows and the names of the diagrams that changed.
     """
-    document = _build_schema_definition(project, lsp_path)
+    document = _build_schema_definition(project, lsp_path, outline)
     rows = [row for row in rows if row["format"] != diagrams.SCHEMA_FORMAT]
     changed = [
         row["name"] for row in rows
