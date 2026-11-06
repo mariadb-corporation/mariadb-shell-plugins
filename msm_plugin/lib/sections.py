@@ -34,6 +34,7 @@ its whole script in one file.
 
 import functools
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -322,6 +323,55 @@ def complete_sections(
     return dict(pairs), missing
 
 
+# The commented-out examples of the templates (templates/scripts), in
+# Sections 140 and 150 of a new development script: a block comment whose
+# first line is a `-- ToDo:` note.
+_TEMPLATE_EXAMPLE = re.compile(r"[ \t]*/\*[ \t]*\n[ \t]*--[ \t]*ToDo:.*?\*/[ \t]*\n?", re.DOTALL)
+# What Section 150's example leaves behind: a DELIMITER pair around nothing.
+_EMPTY_DELIMITER_PAIR = re.compile(
+    r"^[ \t]*DELIMITER[ \t]+\S+[ \t]*\n(?:[ \t]*\n)*[ \t]*DELIMITER[ \t]+;[ \t]*\n?",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def without_template_examples(script: str) -> str:
+    """The script without the templates' commented-out examples in every
+    section that has a statement of its own (or a SOURCE line): they make
+    sense only while a section is empty. Other sections, and every other
+    comment, are left as they are.
+
+    Returns:
+        The script; the one given where no example goes.
+    """
+    sections = management.get_script_sections(script)
+    changed = False
+    for section in sections.values():
+        changed = drop_template_example(section) or changed
+    if not changed:
+        return script
+    return "\n".join(section["full_content"] for section in sections.values())
+
+
+def drop_template_example(section: dict) -> bool:
+    """Drops the template's example from a section (of get_script_sections)
+    that has a statement of its own, in its full_content; see
+    without_template_examples.
+
+    Returns:
+        Whether it had one to drop.
+    """
+    text = section["full_content"]
+    if not _TEMPLATE_EXAMPLE.search(text):
+        return False
+    body = _TEMPLATE_EXAMPLE.sub("", text[section["sql_start"]:])
+    if not statements_lib.strip_statement(body):
+        return False
+    text = _EMPTY_DELIMITER_PAIR.sub("", _TEMPLATE_EXAMPLE.sub("", text))
+    # At most the two blank lines the sections end with
+    section["full_content"] = re.sub(r"\n{4,}", "\n\n\n", text)
+    return True
+
+
 def complete_script(
     schema_project_path: str, script: str, project_settings: dict = None
 ) -> tuple:
@@ -474,6 +524,8 @@ def split_sections(
             inline_before=before, inline_after=after,
         )
         set_section_body(sections[section_id], body)
+        # The example would stay behind the SOURCE lines.
+        drop_template_example(sections[section_id])
         result.split[section_id] = [part.file_name for part in parts]
         files.update(dict.fromkeys(written))
     if plans or added:

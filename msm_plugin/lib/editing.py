@@ -510,6 +510,17 @@ def edit_schema(
                 )
         texts[path] = (old, apply_spans(old, spans))
 
+    # A section the edits gave its first statement loses the template's
+    # example; the binary's outline then has the lines before it, so the
+    # snapshot is made from a new one.
+    outline = result.get("outline")
+    if project.dev_file in texts:
+        old, new = texts[project.dev_file]
+        cleaned = sections_lib.without_template_examples(new)
+        if cleaned != new:
+            texts[project.dev_file] = (old, cleaned)
+            outline = None
+
     migration = result.get("migration", [])
     migration_file, kept = None, []
     if migration and management.get_last_released_version(schema_project_path) is not None:
@@ -543,7 +554,7 @@ def edit_schema(
         # The binary's outline of the texts it edited is the outline of the
         # files as now written (Section 160 blanked as in the request); an
         # older answer without it has the binary run again.
-        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, result.get("outline"))
+        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, outline)
         # _write may write the script and the VIEW's breakout file.
         touched += [path for path in originals if path not in touched]
         written += [path for path in modeling._write(project, rows) if path not in written]

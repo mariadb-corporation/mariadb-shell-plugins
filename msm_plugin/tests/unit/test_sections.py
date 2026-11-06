@@ -186,6 +186,42 @@ def test_statements_are_written_back_in_delimiter_blocks():
 # Splitting
 
 
+def test_the_template_examples_go_once_a_section_has_a_statement(tmp_path):
+    path = create_schema_project_folder(
+        schema_name="shop", target_path=str(tmp_path), copyright_holder="X", license="MIT")
+    script = helpers_read(management.get_schema_development_file_path(path))
+    assert script.count("-- ToDo:") == 2
+    # Empty sections keep them
+    assert sections.without_template_examples(script) is script
+
+    with_table = script.replace(
+        "-- #############################################################################\n\n/*\n-- ToDo: Add schema TABLEs",
+        "-- #############################################################################\n\n"
+        "CREATE TABLE `t` (`id` INT);\n\n/*\n-- ToDo: Add schema TABLEs", 1)
+    cleaned = sections.without_template_examples(with_table)
+    tables = management.get_script_sections(cleaned)["140"]["sql_content"]
+    assert tables.strip() == "CREATE TABLE `t` (`id` INT);"
+    assert "CREATE TABLE `my_table`" not in cleaned
+    # Section 150 has no statement yet: its example stays
+    assert cleaned.count("-- ToDo:") == 1 and "my_view" in cleaned
+    # Every other section is as it was
+    before, after = (management.get_script_sections(text) for text in (with_table, cleaned))
+    assert [k for k in before if before[k]["full_content"] != after[k]["full_content"]] == ["140"]
+
+    # A SOURCE line counts as a statement; the empty DELIMITER pair goes too
+    with_source = script.replace(
+        "DELIMITER %%\n\n/*\n-- ToDo: Add schema objects",
+        "SOURCE './sections/150-20_views.sql';\n\nDELIMITER %%\n\n/*\n-- ToDo: Add schema objects", 1)
+    objects = management.get_script_sections(
+        sections.without_template_examples(with_source))["150"]["sql_content"]
+    assert objects.strip() == "SOURCE './sections/150-20_views.sql';"
+
+
+def helpers_read(file_path):
+    with open(file_path) as f:
+        return f.read()
+
+
 @needs_lsp
 def test_sections_are_split_by_object_kind(tmp_path):
     path = make_project(tmp_path)
@@ -208,7 +244,8 @@ def test_sections_are_split_by_object_kind(tmp_path):
     assert breakout(path, "150-10_procedures_functions.sql").count("DELIMITER %%") == 1
     # The rest stays inline, the routines are included before the views
     assert body(path, "140").startswith("SET @msm_split_note")
-    assert body(path, "150").startswith("/*\n-- ToDo")
+    # The template's examples went with the first statements of the sections
+    assert "ToDo" not in body(path, "140") and "ToDo" not in body(path, "150")
     included = [os.path.basename(file) for _, file in source.directives(body(path, "150"))]
     assert included == [
         "150-10_procedures_functions.sql", "150-20_views.sql",
