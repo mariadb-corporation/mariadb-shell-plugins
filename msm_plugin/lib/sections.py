@@ -325,9 +325,15 @@ def complete_sections(
 
 # The commented-out examples of the templates (templates/scripts), in
 # Sections 140 and 150 of a new development script: a block comment whose
-# first line is a `-- ToDo:` note. Every existing project has this text, so
-# the pattern stays as it is even where the templates change.
-_TEMPLATE_EXAMPLE = re.compile(r"[ \t]*/\*[ \t]*\n[ \t]*--[ \t]*ToDo:.*?\*/[ \t]*\n?", re.DOTALL)
+# first line is the template's `-- ToDo: Add schema ... create statements`
+# note (a ToDo block comment of the user's own stays). Every existing
+# project has this text, so the pattern stays as it is even where the
+# templates change.
+_TEMPLATE_EXAMPLE = re.compile(
+    r"[ \t]*/\*[ \t]*\n[ \t]*--[ \t]*ToDo: Add schema (?:TABLEs|objects) create statements"
+    r"\n.*?\*/[ \t]*\n?",
+    re.DOTALL,
+)
 _TEMPLATE_EXAMPLE_MARK = "-- ToDo:"
 # What Section 150's example leaves behind: its DELIMITER pair around nothing.
 _EMPTY_DELIMITER_PAIR = re.compile(r"^DELIMITER %%\n\s*DELIMITER ;\n?", re.MULTILINE)

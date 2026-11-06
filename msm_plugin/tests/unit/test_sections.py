@@ -207,6 +207,10 @@ def test_the_template_examples_go_once_a_section_has_a_statement(tmp_path):
     assert [k for k in before if before[k]["full_content"] != after[k]["full_content"]] == ["140"]
     # Only the sections asked for
     assert sections.without_template_examples(with_table, {"150"}) is with_table
+    # A ToDo block comment of the user's own stays
+    own = "/*\n-- ToDo: an index on `id`\nCREATE INDEX `i` ON `t` (`id`);\n*/"
+    with_own = with_table.replace("CREATE TABLE `t` (`id` INT);", "CREATE TABLE `t` (`id` INT);\n" + own)
+    assert own in sections.without_template_examples(with_own)
 
     # A SOURCE line counts as a statement; the empty DELIMITER pair goes too
     with_source = script.replace(

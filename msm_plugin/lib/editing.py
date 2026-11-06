@@ -405,23 +405,18 @@ def _diagrams_breakout_path(project) -> str:
     return source.resolve_include_path(modeling.BREAKOUT_FILE, project.development)
 
 
-def _edited_sections(project, result: dict) -> set:
+def _edited_sections(project, starts: list, includes: set) -> set:
     """The ids of the development script's sections the binary's edits
-    write into."""
-    starts = [
-        _offset_of(project.script, edit["range"]["start"])
-        for changed in result.get("files", []) if changed.get("file") == "-"
-        for edit in changed.get("edits", [])
-    ]
+    write into: at the starts (indexes into the script), or into one of
+    the includes (resolved paths of the files a SOURCE line names)."""
     return {
         section_id for section_id, section in project.sections.items()
         if any(section["start_position"] <= start <= section["end_position"] for start in starts)
+        or any(
+            source.resolve_include_path(path, project.development) in includes
+            for _, path in source.directives(section["sql_content"])
+        )
     }
-
-
-def _offset_of(text: str, position: dict) -> int:
-    line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
-    return _offset(text, line_starts, position)
 
 
 def _check_request(edits) -> None:
@@ -504,17 +499,21 @@ def edit_schema(
 
     # The new texts, worked out before anything is written.
     texts = {}
+    # Where the edits go, for the template's examples below.
+    starts, includes = [], set()
     section = project.sections.get(modeling.DIAGRAMS_SECTION_ID)
     for changed in result.get("files", []):
         name = changed.get("file")
         if name == "-":
             path, old = project.dev_file, project.script
         else:
-            path = source.checked_include_path(
-                source.resolve_include_path(name, project.development)
-            )
+            resolved = source.resolve_include_path(name, project.development)
+            includes.add(resolved)
+            path = source.checked_include_path(resolved)
             old = project.read(path)[1]
         spans = edit_spans(old, changed.get("edits", []))
+        if path == project.dev_file:
+            starts += [start for start, _, _ in spans]
         if path == project.dev_file and section is not None:
             # The VIEW is msm's to write: an edit there would be lost.
             start = section["start_position"] + section["sql_start"]
@@ -533,12 +532,13 @@ def edit_schema(
     # example; the binary's outline then has the lines before it, so the
     # snapshot is made from a new one.
     outline = result.get("outline")
-    if project.dev_file in texts:
-        old, new = texts[project.dev_file]
-        cleaned = sections_lib.without_template_examples(new, _edited_sections(project, result))
-        if cleaned != new:
-            texts[project.dev_file] = (old, cleaned)
-            outline = None
+    old, new = texts.get(project.dev_file, (project.script, project.script))
+    cleaned = sections_lib.without_template_examples(
+        new, _edited_sections(project, starts, includes)
+    )
+    if cleaned != new:
+        texts[project.dev_file] = (old, cleaned)
+        outline = None
 
     migration = result.get("migration", [])
     migration_file, kept = None, []
