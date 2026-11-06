@@ -700,35 +700,48 @@ def register_msm_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Changes schema objects in the SQL of a schema project.
 
-        The CREATE statements are the source of truth, so a change to a
-        table, column, index or foreign key is made in the development
+        The CREATE statements are the source of truth, so tables, columns,
+        indexes, keys, views and routines are changed in the development
         script and the files it includes (by the MariaDB SQL language
-        server's binary); diagrams follow renamed objects and the schema
-        snapshot is made again. Once the project has a release, the
-        statements that take a deployed schema along are kept for the next
-        release's update script. Everything is written, or nothing.
+        server's binary): new tables go into MSM Section 140, views and
+        routines into Section 150, written so it can run again. Diagrams
+        follow renamed objects and the schema snapshot is made again. Once
+        the project has a release, the statements that take a deployed
+        schema along are kept for the next release's update script.
+        Everything is written, or nothing.
 
         Args:
-            edits: The edits in order, each an object with its op:
-                rename_table (table, new_name), rename_column (table,
-                column, new_name), rename_view, rename_routine,
-                add_table (table: name, columns, indexes, foreign_keys,
-                options), drop_table (table), add_column (table, column,
-                after or first), modify_column (table, column, definition),
-                drop_column (table, column), add_index / drop_index,
-                add_foreign_key / drop_foreign_key, set_table_options.
-                Columns, indexes and foreign keys are given as
-                msm.get_schema_diagrams' snapshot has them.
+            edits: The edits, applied in order (a later one uses the names
+                an earlier one gave), each an object with its op and members.
+                rename_table (table, new_name), rename_view (view,
+                new_name), rename_column (table, column, new_name),
+                rename_routine (routine, new_name, kind), add_table (table),
+                drop_table (table), add_column (table, column, after or
+                first), modify_column (table, column, new_column),
+                drop_column (table, column), set_table_options (table,
+                options; null removes one), add_index (table, index),
+                drop_index (table, and name, kind "primary" or columns),
+                set_primary_key (table, columns), add_foreign_key (table,
+                foreign_key), drop_foreign_key (table, and name or columns),
+                add_view (view), drop_view (view), add_routine (routine),
+                drop_routine (routine, kind). kind is "procedure" or
+                "function", needed when both kinds have the name. Tables,
+                columns, indexes, foreign keys, views and routines are given
+                as msm.get_schema_diagrams' snapshot has them; a member left
+                out takes the snapshot's default, so modify_column needs the
+                column's whole definition. A binary without an op refuses it.
             base_hash: The snapshot's source_hash the edits were made
                 against; refused when the snapshot was made again since.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
-            rows (the diagrams VIEW afterwards, pictures left out as by
+            rows (the diagrams VIEW afterwards, the new snapshot first, with
+            the source_hash for the next call; pictures left out as by
             msm.get_schema_diagrams), files written, migration (the
             statements kept for the next update script), migration_file and
-            notes on what the edits could not change.
+            notes on what the edits could not change, for a person to check
+            (still-referenced, no-migration, name-in-string, ...).
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
