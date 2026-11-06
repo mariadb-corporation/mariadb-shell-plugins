@@ -353,6 +353,32 @@ def test_small_diagrams_stay_inline(project):
         modeling.remove_diagram(project, "Main")
 
 
+@needs_lsp
+@pytest.mark.parametrize("breaks_out", [False, True])
+def test_the_snapshot_positions_follow_a_section_160_that_changes_size(project, breaks_out):
+    # Inline, the VIEW holding the snapshot grows with every diagram, which
+    # moves everything after it (the version VIEW of Section 910); past the
+    # limit it moves into the breakout file and shrinks to one line.
+    modeling.update_schema_definition(project)
+    settings_file = os.path.join(project, "msm.project.json")
+    with open(settings_file) as f:
+        settings = json.load(f)
+    # Just above the snapshot alone: the first diagram moves the VIEW out
+    settings["maxInlineSectionSize"] = len(section_160(project)) + 100 if breaks_out else 10**7
+    with open(settings_file, "w") as f:
+        json.dump(settings, f)
+
+    for name in ("Main", "Second", "Third"):
+        modeling.create_diagram(project, name)
+        stored = modeling.read_diagram_rows(project)[0]["document"]
+        assert stored == modeling.build_schema_definition(project)
+    version_view = next(view for view in stored["views"] if view["name"] == "msm_schema_version")
+    line = version_view["range"]["start"]["line"]
+    assert dev_script(project).split("\n")[line].startswith("CREATE OR REPLACE")
+    if breaks_out:
+        assert "SOURCE './sections/160_schema_diagrams.sql'" in section_160(project)
+
+
 def test_large_diagrams_move_into_a_breakout_file(project):
     settings_file = os.path.join(project, "msm.project.json")
     with open(settings_file) as f:

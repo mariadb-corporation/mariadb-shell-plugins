@@ -421,15 +421,187 @@ def test_the_real_binary_renames_and_its_outline_is_the_snapshot(tmp_path, monke
 
 
 @needs_edit_lsp
-@pytest.mark.xfail(
-    strict=True,
-    reason="lsp-server: rename_routine renames the CREATE but not the DROP ... IF EXISTS "
-    "before it, so Section 150 fails on the next deployment (the routine exists)",
-)
 def test_a_renamed_routine_is_dropped_under_its_new_name_before_its_create(tmp_path):
+    # Section 150 runs on every deployment: the DROP before the CREATE has
+    # to name the routine the CREATE makes (lsp-server #26)
     path = real_project(tmp_path)
     editing.edit_schema(path, RENAMES[2:], base_hash(path), lsp_path=EDIT_LSP)
-    assert "DROP PROCEDURE IF EXISTS `count_clients`%%" in dev_script(path)
+    script = dev_script(path)
+    assert "DROP PROCEDURE IF EXISTS `count_clients`%%" in script
+    assert "count_customers" not in script
+
+
+# The edits beyond the renames (lsp-server #26), each of a kind the update
+# script places differently.
+STRUCTURAL_EDITS = [
+    {"op": "add_table", "table": {
+        "name": "note",
+        "columns": [{"name": "id", "type": "INT UNSIGNED", "nullable": False},
+                    {"name": "text", "type": "VARCHAR(200)"}],
+        "indexes": [{"kind": "primary", "columns": ["id"]}],
+    }},
+    {"op": "add_column", "table": "customer",
+     "column": {"name": "email", "type": "VARCHAR(255)"}},
+    # A foreign key uses the column: it is dropped and added again (1833)
+    {"op": "modify_column", "table": "orders", "column": "customer_id",
+     "new_column": {"name": "customer_id", "type": "INT UNSIGNED", "nullable": False,
+                    "comment": "The buyer"}},
+    {"op": "set_table_options", "table": "orders", "options": {"comment": "Orders"}},
+    {"op": "drop_view", "view": "customer_ids"},
+    {"op": "drop_routine", "routine": "count_customers", "kind": "procedure"},
+]
+
+
+def test_edit_ops_come_from_the_help(monkeypatch):
+    help_texts = {
+        "renames": "  edit     apply schema edits\n  format   print\n",
+        "listed": "  edit     apply schema edits\n"
+                  "           edit ops: rename_table add_table drop_view\n  format   print\n",
+        "none": "  format   print\n",
+    }
+    monkeypatch.setattr(lsp, "_help", lambda binary: help_texts[binary])
+    assert lsp.edit_ops("renames") == lsp.RENAME_OPS
+    assert lsp.edit_ops("listed") == {"rename_table", "add_table", "drop_view"}
+    assert lsp.edit_ops("none") == frozenset()
+
+
+@needs_lsp
+def test_ops_the_binary_lacks_are_refused_before_it_runs(project, fake_edit, monkeypatch):
+    monkeypatch.setattr(lsp, "edit_ops", lambda binary: lsp.RENAME_OPS)
+    with pytest.raises(lsp.LspError, match=r"cannot do `add_column`, `drop_routine`, `drop_view`, `modify_column`, `set_table_options` yet"):
+        editing.edit_schema(project, STRUCTURAL_EDITS[1:] + [RENAME], base_hash(project))
+    assert fake_edit == []
+
+
+def test_the_update_script_gets_tables_and_drops_but_no_views_or_routines():
+    statements = editing.migration_statements(STRUCTURAL_EDITS, [
+        {"edit": 0, "sql": "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n)"},
+        {"edit": 4, "sql": "DROP VIEW `customer_ids`"},
+        {"edit": 5, "sql": "DROP PROCEDURE `count_customers`"},
+        # Section 150 creates views and routines on every deployment
+        {"edit": 0, "sql": "CREATE VIEW `note_texts` AS SELECT `text` FROM `note`"},
+        {"edit": 0, "sql": "CREATE OR REPLACE ALGORITHM=MERGE SQL SECURITY INVOKER VIEW `v` AS "
+                           "SELECT 1"},
+        {"edit": 0, "sql": "CREATE DEFINER=`root`@`%` FUNCTION `f`() RETURNS INT RETURN 1"},
+    ])
+    assert statements == {
+        "240": "-- msm.editSchema: add_table note\n"
+               "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n);\n"
+               "-- msm.editSchema: drop_view customer_ids\n"
+               "DROP VIEW IF EXISTS `customer_ids`;",
+        "290": "-- msm.editSchema: drop_routine count_customers\n"
+               "DROP PROCEDURE IF EXISTS `count_customers`;",
+    }
+    assert editing._describe(STRUCTURAL_EDITS[2]) == "modify_column orders customer_id"
+
+
+@needs_edit_lsp
+def test_structural_edits_reach_a_deployed_schema_through_the_next_release(
+    sandbox_session, tmp_path
+):
+    from msm_plugin import lib as msm_lib
+    from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
+
+    schema_name = "msm_edit_test"
+    path = real_project(tmp_path, schema_name)
+
+    def query(sql):
+        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
+
+    def release(version, next_version):
+        prepare_release(schema_project_path=path, version=version, next_version=next_version,
+                        lsp_path=EDIT_LSP)
+        generate_deployment_script(schema_project_path=path, version=version)
+        deploy_schema(schema_project_path=path, version=version)
+
+    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+    try:
+        release("1.0.0", "1.0.1")
+        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`customer` VALUES (7)")
+        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`orders` VALUES (1, 7)")
+
+        result = editing.edit_schema(path, STRUCTURAL_EDITS, base_hash(path), lsp_path=EDIT_LSP)
+        assert result["rows"][0]["document"] == fresh_snapshot(path)
+        tables = {table["name"]: table for table in result["rows"][0]["document"]["tables"]}
+        assert sorted(tables) == ["customer", "note", "orders"]
+        assert [column["name"] for column in tables["customer"]["columns"]] == ["id", "email"]
+        assert "customer_ids" not in dev_script(path)
+        assert "count_customers" not in dev_script(path)
+        kept = editing.read_pending_update(
+            editing.pending_update_path(path, management.get_project_settings(path)))
+        assert "CREATE TABLE `note`" in kept["240"]
+        assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
+        assert "DROP VIEW IF EXISTS `customer_ids`;" in kept["240"]
+        assert kept["290"].endswith("DROP PROCEDURE IF EXISTS `count_customers`;")
+
+        release("1.0.1", "1.0.2")
+        columns = query(
+            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_COMMENT FROM information_schema.COLUMNS "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME <> 'msm_schema_version' "
+            "AND TABLE_NAME NOT LIKE 'msm_schema_diagrams' ORDER BY TABLE_NAME, ORDINAL_POSITION")
+        assert [(row["TABLE_NAME"], row["COLUMN_NAME"]) for row in columns] == [
+            ("customer", "id"), ("customer", "email"), ("note", "id"), ("note", "text"),
+            ("orders", "id"), ("orders", "customer_id"),
+        ]
+        assert columns[-1]["COLUMN_COMMENT"] == "The buyer"
+        assert [row["TABLE_COMMENT"] for row in query(
+            "SELECT TABLE_COMMENT FROM information_schema.TABLES "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME = 'orders'")] == ["Orders"]
+        # The foreign key is back after the column change, and the row is kept
+        assert [row["REFERENCED_TABLE_NAME"] for row in query(
+            "SELECT REFERENCED_TABLE_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
+            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["customer"]
+        assert [row["customer_id"] for row in query(
+            f"SELECT `customer_id` FROM `{schema_name}`.`orders`")] == [7]
+        assert query(
+            "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
+            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'") == []
+        assert [row["TABLE_NAME"] for row in query(
+            "SELECT TABLE_NAME FROM information_schema.VIEWS "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME NOT LIKE 'msm%'")] == []
+
+        # The next upgrade runs Section 150 again over what the edits wrote
+        release("1.0.2", "1.0.3")
+    finally:
+        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+
+
+@needs_edit_lsp
+@pytest.mark.xfail(
+    strict=True,
+    reason="lsp-server: add_view writes CREATE VIEW, not CREATE OR REPLACE VIEW, and "
+    "add_routine no DROP ... IF EXISTS before its CREATE, so Section 150 fails on the "
+    "next deployment (the object exists)",
+)
+def test_added_views_and_routines_can_be_created_again(tmp_path):
+    path = real_project(tmp_path)
+    editing.edit_schema(path, [
+        {"op": "add_view", "view": {"name": "order_ids", "definition": "SELECT `id` FROM `orders`"}},
+        {"op": "add_routine", "routine": {
+            "name": "count_orders", "kind": "procedure", "parameters": [],
+            "body": "BEGIN\n    SELECT COUNT(*) FROM `orders`;\nEND"}},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    script = dev_script(path)
+    assert "CREATE OR REPLACE VIEW `order_ids`" in script
+    assert re.search(r"DROP PROCEDURE IF EXISTS `count_orders`%%\s*CREATE PROCEDURE "
+                     r"`count_orders`|CREATE OR REPLACE PROCEDURE `count_orders`", script)
+
+
+@needs_edit_lsp
+@pytest.mark.xfail(
+    strict=True,
+    reason="lsp-server: add_view in a schema without views goes after the last table, "
+    "i.e. into Section 140, which an upgrade never runs",
+)
+def test_a_first_view_goes_into_section_150(tmp_path):
+    path = real_project(tmp_path)
+    editing.edit_schema(path, [
+        {"op": "drop_view", "view": "customer_ids"},
+        {"op": "add_view", "view": {"name": "order_ids", "definition": "SELECT `id` FROM `orders`"}},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    sections = management.get_file_sections(management.get_schema_development_file_path(path))
+    assert "`order_ids`" in sections["150"]["sql_content"]
+    assert "`order_ids`" not in sections["140"]["sql_content"]
 
 
 @needs_edit_lsp

@@ -29,6 +29,7 @@ SOURCE directive includes. Both stay supported: a project may keep its whole
 script in one file.
 """
 
+import copy
 import os
 import shutil
 import uuid
@@ -132,22 +133,22 @@ def read_diagram_rows(schema_project_path: str) -> list:
     return _rows(_Project.load(schema_project_path))
 
 
-def _write(project: _Project, rows: list) -> list:
-    """Writes the rows of the project's diagrams VIEW into Section 160.
+# How often _write moves the snapshot's positions before the line count of
+# Section 160 settles (a moved number can change how the VIEW's text wraps).
+_MAX_POSITION_SHIFTS = 5
 
-    A section that includes a file keeps doing so: the file's part the
-    directive selects is replaced, its header and footer stay. An inline
-    section stays inline while the VIEW fits maxInlineSectionSize; a larger
-    one moves into the breakout file sections/160_schema_diagrams.sql. A file
-    that would not change is not written.
+
+def _plan_write(project: _Project, rows: list) -> tuple:
+    """Works out what _write writes, writing nothing.
 
     Returns:
-        The files written.
+        (breakout, sections): the VIEW's breakout file as (path, text, old
+        text), or None where the section stays inline; and the script's
+        sections with Section 160's new body (project.sections unchanged).
     """
-    sections = project.sections
-    section = sections[DIAGRAMS_SECTION_ID]
+    section = dict(project.sections[DIAGRAMS_SECTION_ID])
     view_sql = diagrams.render_view_sql(rows)
-    written = []
+    breakout = None
 
     included = _section_directive(section["sql_content"])
     if included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
@@ -190,13 +191,83 @@ def _write(project: _Project, rows: list) -> list:
                 "the whole diagrams VIEW once written. Leave the end bound out (or count "
                 "it from the end of the file) and make sure the file exists."
             )
-        if sections_lib.write_if_changed(path, text, old):
-            written.append(path)
-            project.files[path] = (path, text)
+        breakout = (path, text, old)
 
     if body is not None:
         sections_lib.set_section_body(section, body)
-    script = "\n".join(item["full_content"] for item in sections.values())
+    sections = dict(project.sections)
+    sections[DIAGRAMS_SECTION_ID] = section
+    return breakout, sections
+
+
+def _shift_script_lines(node, first_line: int, delta: int, in_script: bool = True) -> None:
+    """Moves the positions in the development script on or after first_line
+    by delta lines; positions in included files (under a `source`) stay."""
+    if isinstance(node, dict):
+        if isinstance(node.get("source"), int):
+            in_script = False
+        if set(node) == {"line", "character"}:
+            if in_script and isinstance(node["line"], int) and node["line"] >= first_line:
+                node["line"] += delta
+            return
+        for value in node.values():
+            _shift_script_lines(value, first_line, delta, in_script)
+    elif isinstance(node, list):
+        for value in node:
+            _shift_script_lines(value, first_line, delta, in_script)
+
+
+def _write(project: _Project, rows: list) -> list:
+    """Writes the rows of the project's diagrams VIEW into Section 160.
+
+    A section that includes a file keeps doing so: the file's part the
+    directive selects is replaced, its header and footer stay. An inline
+    section stays inline while the VIEW fits maxInlineSectionSize; a larger
+    one moves into the breakout file sections/160_schema_diagrams.sql. A file
+    that would not change is not written.
+
+    The snapshot's positions are those of the script as it is: where the
+    section's new body has another number of lines (an inline VIEW that
+    grew, or one moved into the breakout file), the positions after it are
+    moved with it, so they are those of the script as written.
+
+    Returns:
+        The files written.
+    """
+    old_lines = project.script.count("\n")
+    first_line = project.script.count(
+        "\n", 0, project.sections[DIAGRAMS_SECTION_ID]["end_position"]
+    )
+    schema_index = next(
+        (index for index, row in enumerate(rows) if row["format"] == diagrams.SCHEMA_FORMAT),
+        None,
+    )
+    shift, planned = 0, rows
+    for _ in range(_MAX_POSITION_SHIFTS):
+        breakout, sections = _plan_write(project, planned)
+        script = "\n".join(item["full_content"] for item in sections.values())
+        delta = script.count("\n") - old_lines
+        if delta == shift or schema_index is None:
+            break
+        shift = delta
+        planned = list(rows)
+        document = copy.deepcopy(rows[schema_index]["document"])
+        _shift_script_lines(document, first_line, shift)
+        planned[schema_index] = dict(rows[schema_index], document=document)
+    else:
+        raise ValueError(
+            f"The line count of MSM Section {DIAGRAMS_SECTION_ID} does not settle while "
+            "the snapshot's positions are moved with it."
+        )
+    # The caller's rows are those written
+    rows[:] = planned
+
+    written = []
+    if breakout is not None:
+        path, text, old = breakout
+        if sections_lib.write_if_changed(path, text, old):
+            written.append(path)
+            project.files[path] = (path, text)
     if script != project.script:
         management.write_sections_to_file(project.dev_file, sections, overwrite_existing=True)
         written.insert(0, project.dev_file)
