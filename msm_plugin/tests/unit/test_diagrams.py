@@ -330,6 +330,31 @@ def test_a_new_project_has_an_empty_diagrams_section(project):
     assert modeling.read_diagram_rows(project) == []
 
 
+def test_only_script_positions_after_section_160_move():
+    def at(line):
+        return {"start": {"line": line, "character": 0}, "end": {"line": line, "character": 1}}
+
+    document = {"range": at(3), "tables": [
+        # Included, but a column an ALTER TABLE of the script adds is in the script
+        {"source": 0, "range": at(20), "columns": [
+            {"range": at(30)}, {"source": 0, "range": at(40)}]},
+        {"range": at(50), "columns": [{"source": 1, "range": at(60)}]},
+    ], "notes": [{"start": {"line": 70, "character": 0}},
+                 {"source": 0, "start": {"line": 80, "character": 0}}]}
+    modeling._shift_script_lines(document, 10, 5)
+    lines = [
+        document["range"]["start"]["line"],
+        document["tables"][0]["range"]["start"]["line"],
+        document["tables"][0]["columns"][0]["range"]["start"]["line"],
+        document["tables"][0]["columns"][1]["range"]["start"]["line"],
+        document["tables"][1]["range"]["end"]["line"],
+        document["tables"][1]["columns"][0]["range"]["start"]["line"],
+        document["notes"][0]["start"]["line"],
+        document["notes"][1]["start"]["line"],
+    ]
+    assert lines == [3, 20, 35, 40, 55, 60, 75, 80]
+
+
 def test_small_diagrams_stay_inline(project):
     modeling.set_diagram(project, diagram())
     assert "CREATE OR REPLACE SQL SECURITY INVOKER" in section_160(project)

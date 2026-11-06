@@ -159,6 +159,8 @@ def renaming_edit(calls=None):
 def fake_edit(monkeypatch):
     calls = []
     monkeypatch.setattr(lsp, "supports_edit", lambda binary: True)
+    # The ops the fake does, whatever binary the machine has
+    monkeypatch.setattr(lsp, "edit_ops", lambda binary: lsp.RENAME_OPS)
     monkeypatch.setattr(lsp, "edit", renaming_edit(calls))
     return calls
 
@@ -481,8 +483,7 @@ def test_edit_ops_come_from_the_help(monkeypatch):
 
 
 @needs_lsp
-def test_ops_the_binary_lacks_are_refused_before_it_runs(project, fake_edit, monkeypatch):
-    monkeypatch.setattr(lsp, "edit_ops", lambda binary: lsp.RENAME_OPS)
+def test_ops_the_binary_lacks_are_refused_before_it_runs(project, fake_edit):
     with pytest.raises(lsp.LspError, match=r"cannot do `add_column`, `drop_routine`, `drop_view`, `modify_column`, `set_table_options` yet"):
         editing.edit_schema(project, STRUCTURAL_EDITS[1:] + [RENAME], base_hash(project))
     assert fake_edit == []

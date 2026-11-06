@@ -137,22 +137,31 @@ def read_diagram_rows(schema_project_path: str) -> list:
 _MAX_POSITION_SHIFTS = 5
 
 
-def _plan_write(project: _Project, rows: list) -> tuple:
+def _plan_write(project: _Project, rows: list, moves_out: bool = None) -> tuple:
     """Works out what _write writes, writing nothing.
 
+    Args:
+        project: The project, as it is on disk.
+        rows: The rows of the diagrams VIEW.
+        moves_out: Whether an inline section moves into the breakout file;
+            None decides by maxInlineSectionSize.
+
     Returns:
-        (breakout, sections): the VIEW's breakout file as (path, text, old
-        text), or None where the section stays inline; and the script's
-        sections with Section 160's new body (project.sections unchanged).
+        (breakout, sections, moves_out): the VIEW's breakout file as (path,
+        text, old text), or None where the section stays inline; the
+        script's sections with Section 160's new body (project.sections
+        unchanged); and whether an inline section moved out.
     """
     section = dict(project.sections[DIAGRAMS_SECTION_ID])
     view_sql = diagrams.render_view_sql(rows)
     breakout = None
 
     included = _section_directive(section["sql_content"])
-    if included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
-        project.settings
-    ):
+    if moves_out is None:
+        moves_out = included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
+            project.settings
+        )
+    if included is None and moves_out:
         header = sections_lib.breakout_header(
             project.settings, DIAGRAMS_SECTION_ID, "Schema Diagrams, written by msm"
         )
@@ -196,15 +205,18 @@ def _plan_write(project: _Project, rows: list) -> tuple:
         sections_lib.set_section_body(section, body)
     sections = dict(project.sections)
     sections[DIAGRAMS_SECTION_ID] = section
-    return breakout, sections
+    return breakout, sections, moves_out
 
 
 def _shift_script_lines(node, first_line: int, delta: int, in_script: bool = True) -> None:
     """Moves the positions in the development script on or after first_line
-    by delta lines; positions in included files (under a `source`) stay."""
+    by delta lines; positions in included files (of an object or note with a
+    `source`) stay."""
     if isinstance(node, dict):
-        if isinstance(node.get("source"), int):
-            in_script = False
+        if "range" in node or isinstance(node.get("source"), int):
+            # An object (or a note) and its members each carry their own
+            # `source`: one without it is in the script.
+            in_script = not isinstance(node.get("source"), int)
         if len(node) == 2 and "line" in node and "character" in node:
             if in_script and isinstance(node["line"], int) and node["line"] >= first_line:
                 node["line"] += delta
@@ -240,8 +252,11 @@ def _write(project: _Project, rows: list) -> list:
     )
     schema = _schema_row(rows)
     shift = 0
+    # Decided once: positions moved by a section that moved out could bring
+    # the VIEW back under the limit, and back in again.
+    moves_out = None
     for _ in range(_MAX_POSITION_SHIFTS):
-        breakout, sections = _plan_write(project, rows)
+        breakout, sections, moves_out = _plan_write(project, rows, moves_out)
         script = "\n".join(item["full_content"] for item in sections.values())
         delta = script.count("\n") - old_lines
         if delta == shift or schema is None:
