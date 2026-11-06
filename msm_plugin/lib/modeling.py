@@ -132,27 +132,31 @@ def read_diagram_rows(schema_project_path: str) -> list:
     return _rows(_Project.load(schema_project_path))
 
 
-def _write(project: _Project, rows: list) -> list:
-    """Writes the rows of the project's diagrams VIEW into Section 160.
+def _plan_write(project: _Project, rows: list, moves_out: bool = None) -> tuple:
+    """Works out what _write writes, writing nothing.
 
-    A section that includes a file keeps doing so: the file's part the
-    directive selects is replaced, its header and footer stay. An inline
-    section stays inline while the VIEW fits maxInlineSectionSize; a larger
-    one moves into the breakout file sections/160_schema_diagrams.sql. A file
-    that would not change is not written.
+    Args:
+        project: The project, as it is on disk.
+        rows: The rows of the diagrams VIEW.
+        moves_out: Whether an inline section moves into the breakout file;
+            None decides by maxInlineSectionSize.
 
     Returns:
-        The files written.
+        (breakout, sections, moves_out): the VIEW's breakout file as (path,
+        text, old text), or None where the section stays inline; the
+        script's sections with Section 160's new body (project.sections
+        unchanged); and whether an inline section moved out.
     """
-    sections = project.sections
-    section = sections[DIAGRAMS_SECTION_ID]
+    section = dict(project.sections[DIAGRAMS_SECTION_ID])
     view_sql = diagrams.render_view_sql(rows)
-    written = []
+    breakout = None
 
     included = _section_directive(section["sql_content"])
-    if included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
-        project.settings
-    ):
+    if moves_out is None:
+        moves_out = included is None and len(view_sql) > sections_lib.get_max_inline_section_size(
+            project.settings
+        )
+    if included is None and moves_out:
         header = sections_lib.breakout_header(
             project.settings, DIAGRAMS_SECTION_ID, "Schema Diagrams, written by msm"
         )
@@ -190,13 +194,86 @@ def _write(project: _Project, rows: list) -> list:
                 "the whole diagrams VIEW once written. Leave the end bound out (or count "
                 "it from the end of the file) and make sure the file exists."
             )
-        if sections_lib.write_if_changed(path, text, old):
-            written.append(path)
-            project.files[path] = (path, text)
+        breakout = (path, text, old)
 
     if body is not None:
         sections_lib.set_section_body(section, body)
-    script = "\n".join(item["full_content"] for item in sections.values())
+    sections = dict(project.sections)
+    sections[DIAGRAMS_SECTION_ID] = section
+    return breakout, sections, moves_out
+
+
+def _shift_script_lines(node, first_line: int, delta: int, in_script: bool = True) -> None:
+    """Moves the positions in the development script on or after first_line
+    by delta lines; positions in included files (of an object or note with a
+    `source`) stay."""
+    if isinstance(node, dict):
+        if "range" in node or isinstance(node.get("source"), int):
+            # An object (or a note) and its members each carry their own
+            # `source`: one without it is in the script.
+            in_script = not isinstance(node.get("source"), int)
+        # The positions dump_document lays out at a fixed width
+        if diagrams.is_position(node):
+            if in_script and node["line"] >= first_line:
+                node["line"] += delta
+            return
+        for value in node.values():
+            _shift_script_lines(value, first_line, delta, in_script)
+    elif isinstance(node, list):
+        for value in node:
+            _shift_script_lines(value, first_line, delta, in_script)
+
+
+def _write(project: _Project, rows: list) -> list:
+    """Writes the rows of the project's diagrams VIEW into Section 160.
+
+    A section that includes a file keeps doing so: the file's part the
+    directive selects is replaced, its header and footer stay. An inline
+    section stays inline while the VIEW fits maxInlineSectionSize; a larger
+    one moves into the breakout file sections/160_schema_diagrams.sql. A file
+    that would not change is not written.
+
+    The snapshot's positions are those of the script as it is: where the
+    section's new body has another number of lines (an inline VIEW that
+    grew, or one moved into the breakout file), the positions after it are
+    moved with it, so they are those of the script as written; the snapshot
+    in rows is changed in place.
+
+    Returns:
+        The files written.
+    """
+    old_lines = project.script.count("\n")
+    first_line = project.script.count(
+        "\n", 0, project.sections[DIAGRAMS_SECTION_ID]["end_position"]
+    )
+    schema = _schema_row(rows)
+
+    def joined(sections) -> str:
+        return "\n".join(item["full_content"] for item in sections.values())
+
+    breakout, sections, moves_out = _plan_write(project, rows)
+    script = joined(sections)
+    delta = script.count("\n") - old_lines
+    if delta and schema is not None:
+        # In place, so the caller's snapshot is the one written. Moving a
+        # position changes no line break (diagrams.dump_document), so the
+        # section keeps its line count; whether it moves into its breakout
+        # file stays as decided.
+        _shift_script_lines(schema["document"], first_line, delta)
+        breakout, sections, _ = _plan_write(project, rows, moves_out)
+        script = joined(sections)
+        if script.count("\n") - old_lines != delta:
+            raise ValueError(
+                f"MSM Section {DIAGRAMS_SECTION_ID} changed its line count when the "
+                "snapshot's positions were moved with it."
+            )
+
+    written = []
+    if breakout is not None:
+        path, text, old = breakout
+        if sections_lib.write_if_changed(path, text, old):
+            written.append(path)
+            project.files[path] = (path, text)
     if script != project.script:
         management.write_sections_to_file(project.dev_file, sections, overwrite_existing=True)
         written.insert(0, project.dev_file)
@@ -241,22 +318,32 @@ def _source_hash(project: _Project, hashed: str) -> str:
     return diagrams.source_hash(expanded)
 
 
-def _build_schema_definition(project: _Project, lsp_path: str = None) -> dict:
+def _build_schema_definition(
+    project: _Project, lsp_path: str = None, outline: dict = None
+) -> dict:
     """Makes the msm-schema/1 snapshot of the project's development script.
+
+    Args:
+        project: The project, as it is on disk.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        outline: The binary's outline of the script as _outline_input()
+            gives it, where the caller has one already (``mariadb-lsp edit``
+            returns the outline of the texts it edited); without one the
+            binary is run.
 
     Raises:
         ValueError: Without the binary, for an include that is refused, or
             when a statement could not be read: the snapshot would miss what
             it defines.
     """
-    binary = lsp.require_lsp(lsp_path)
     script, hashed = _outline_input(project)
     script_name = os.path.basename(project.dev_file)
 
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(project, hashed)
 
-    outline = lsp.outline(binary, script, project.development)
+    if not outline:
+        outline = lsp.outline(lsp.require_lsp(lsp_path), script, project.development)
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])
@@ -306,16 +393,25 @@ def _is_diagram(row: dict, name: str = None) -> bool:
     return row["format"] == diagrams.DIAGRAM_FORMAT and (name is None or row["name"] == name)
 
 
-def _replace_snapshot(project: _Project, rows: list, lsp_path: str = None) -> tuple:
+def _replace_snapshot(
+    project: _Project, rows: list, lsp_path: str = None, outline: dict = None
+) -> tuple:
     """Makes the snapshot again and puts it in the rows, first.
 
     Diagrams lose the figures and connections of objects the schema no
     longer has.
 
+    Args:
+        project: The project, as it is on disk.
+        rows: The rows of the diagrams VIEW.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        outline: The outline to make the snapshot from, see
+            _build_schema_definition().
+
     Returns:
         The snapshot, the rows and the names of the diagrams that changed.
     """
-    document = _build_schema_definition(project, lsp_path)
+    document = _build_schema_definition(project, lsp_path, outline)
     rows = [row for row in rows if row["format"] != diagrams.SCHEMA_FORMAT]
     changed = [
         row["name"] for row in rows

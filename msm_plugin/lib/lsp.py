@@ -45,9 +45,14 @@ _RUN_TIMEOUT = 120
 # The edit request's format (lsp-server docs/edit-format.md).
 EDIT_FORMAT = 1
 
-# Whether a binary has the edit command, by its path and modification time:
-# --help is asked once per build, so an updated binary is asked again.
-_supports_edit = {}
+# A binary's answers to --version, --help and `edit --ops`, by its path,
+# modification time and the arguments: asked once per build, so an updated
+# binary is asked again.
+_answers = {}
+
+# The edit ops of a binary whose --help has the edit command but no
+# `edit ops:` line (lsp-server #25): the renames.
+RENAME_OPS = frozenset(("rename_table", "rename_column", "rename_view", "rename_routine"))
 
 
 class LspError(ValueError):
@@ -103,18 +108,8 @@ def find_lsp(lsp_path: Optional[str] = None) -> Optional[str]:
     for candidate in _candidates(lsp_path):
         if not (os.path.isfile(candidate) and os.access(candidate, os.X_OK)):
             continue
-        try:
-            answer = subprocess.run(
-                [candidate, "--version"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=_VERSION_TIMEOUT,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if answer.returncode == 0 and answer.stdout.startswith(LSP_BINARY_NAME + " "):
+        code, stdout, _ = _answer(candidate, ("--version",))
+        if code == 0 and stdout.startswith(LSP_BINARY_NAME + " "):
             return candidate
     return None
 
@@ -214,31 +209,79 @@ def split(binary: str, sql: str) -> list:
     return result.get("statements", [])
 
 
-def supports_edit(binary: str) -> bool:
-    """Whether the binary has the ``edit`` command, as its --help lists it.
-
-    A binary from before the command answers ``edit`` with an unknown
-    command, which would read as an edit that failed.
-    """
+def _answer(binary: str, arguments: tuple) -> tuple:
+    """The binary's (exit code, stdout, stderr) for arguments without
+    input, asked once per build; (None, "", "") where it could not be run
+    (asked again next time)."""
     try:
-        key = (binary, os.stat(binary).st_mtime_ns)
+        key = (binary, os.stat(binary).st_mtime_ns, arguments)
     except OSError:
-        key = (binary, None)
-    if key not in _supports_edit:
+        key = (binary, None, arguments)
+    if key not in _answers:
         try:
             answer = subprocess.run(
-                [binary, "--help"],
+                [binary, *arguments],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=_VERSION_TIMEOUT,
                 check=False,
             )
-            text = answer.stdout + answer.stderr
         except (OSError, subprocess.SubprocessError):
-            text = ""
-        _supports_edit[key] = re.search(r"^\s+edit\s", text, re.MULTILINE) is not None
-    return _supports_edit[key]
+            # Not kept: a run that timed out (a first, slow start) is tried again
+            return None, "", ""
+        _answers[key] = (answer.returncode, answer.stdout, answer.stderr)
+    return _answers[key]
+
+
+def _help(binary: str) -> str:
+    """The binary's --help."""
+    _, stdout, stderr = _answer(binary, ("--help",))
+    return stdout + stderr
+
+
+def _listed_ops(binary: str) -> Optional[frozenset]:
+    """The ops `edit --ops` lists; None for a binary that does not answer it
+    (exit 2 from #25 to #28, an unknown command before)."""
+    code, stdout, _ = _answer(binary, ("edit", "--ops"))
+    if code != 0:
+        return None
+    try:
+        ops = json.loads(stdout).get("ops")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        return None
+    return frozenset(ops)
+
+
+def supports_edit(binary: str) -> bool:
+    """Whether the binary has the ``edit`` command, as its --help lists it.
+
+    A binary from before the command answers ``edit`` with an unknown
+    command, which would read as an edit that failed.
+    """
+    return re.search(r"^\s+edit\s", _help(binary), re.MULTILINE) is not None
+
+
+def tags_migration(binary: str) -> bool:
+    """Whether the binary tags each migration statement with what it does
+    (``action``, ``object``, ``name``, ``table``, ``new_name``): one that
+    answers ``edit --ops``."""
+    return _listed_ops(binary) is not None
+
+
+def edit_ops(binary: str) -> frozenset:
+    """The edit ops the binary does: what ``edit --ops`` lists; for an
+    older binary its --help's ``edit ops:`` line, the renames for one with
+    ``edit`` but without that line, none without ``edit``."""
+    listed = _listed_ops(binary)
+    if listed is not None:
+        return listed
+    if not supports_edit(binary):
+        return frozenset()
+    listed = re.search(r"^\s+edit ops:(.*)$", _help(binary), re.MULTILINE)
+    return frozenset(listed.group(1).split()) if listed else RENAME_OPS
 
 
 def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
@@ -253,7 +296,8 @@ def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
 
     Returns:
         {format, files: [{file, edits: [{range, new_text}]}], migration:
-        [{edit, sql}], notes, outline}: ``file`` is "-" for sql, else a path
+        [{edit, sql, action?, object?, name?, table?, new_name?}], notes,
+        outline}: the tags where tags_migration(binary): ``file`` is "-" for sql, else a path
         relative to source_dir.
 
     Raises:

@@ -48,6 +48,12 @@ _CREATE = re.compile(
 _DROP = re.compile(
     r"^\s*DROP\s+(?P<kind>VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\b", re.IGNORECASE
 )
+# A DROP of a table or an object, for dropped_kind: object_kind leaves a
+# table's DROP out of the kinds the sections group.
+_DROP_ANY = re.compile(
+    r"^\s*DROP\s+(?P<kind>TABLE|SEQUENCE|VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\b",
+    re.IGNORECASE,
+)
 _TABLE = re.compile(
     r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMPORARY\s+)?(?:TABLE|SEQUENCE)\b", re.IGNORECASE
 )
@@ -145,6 +151,12 @@ def _is_table_addition(text: str) -> bool:
 def statement_kind(sql: str) -> Optional[str]:
     """VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT: what a CREATE statement creates."""
     match = _CREATE.match(strip_statement(sql))
+    return match.group("kind").upper() if match else None
+
+
+def dropped_kind(sql: str) -> Optional[str]:
+    """TABLE, SEQUENCE, VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT: what a DROP statement drops."""
+    match = _DROP_ANY.match(strip_statement(sql))
     return match.group("kind").upper() if match else None
 
 

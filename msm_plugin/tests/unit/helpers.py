@@ -41,3 +41,22 @@ def create_shell_session() -> mysqlsh.globals.session:
     return shell.connect(
         f"{connection_data['user']}:{connection_data['password']}@{connection_data['host']}:{connection_data['port']}"
     )
+
+
+def query(session, sql: str) -> list:
+    """The rows of a query, run as msm runs its SQL."""
+    from msm_plugin import lib as msm_lib
+
+    return msm_lib.core.MsmDbExec(sql).exec(session).items
+
+
+def set_project_setting(project_path: str, key: str, value) -> None:
+    """Sets one setting of a project's msm.project.json."""
+    import json
+
+    settings_file = os.path.join(project_path, "msm.project.json")
+    with open(settings_file) as f:
+        settings = json.load(f)
+    settings[key] = value
+    with open(settings_file, "w") as f:
+        json.dump(settings, f)

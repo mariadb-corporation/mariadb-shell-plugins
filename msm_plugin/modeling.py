@@ -188,20 +188,22 @@ def set_schema_diagram(document: dict = None, **kwargs) -> list:
 def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
     """Changes schema objects in the SQL of a schema project
 
-    The CREATE statements of the development script, and the files it includes, are changed by
-    the MariaDB SQL language server's binary mariadb-lsp; diagrams follow renamed objects, and the
-    schema snapshot is made again. Once the project has a release, the statements that take a
-    deployed schema along are kept in development/<schema>_update_next.sql, whose sections
-    msm.prepareRelease moves into the next release's update script. Everything is written, or
-    nothing.
+    Tables, columns, indexes, keys, views and routines are changed in the CREATE statements of
+    the development script, and the files it includes, by the MariaDB SQL language server's
+    binary mariadb-lsp; diagrams follow renamed objects, and the schema snapshot is made again.
+    Once the project has a release, the statements that take a deployed schema along are kept
+    in development/<schema>_update_next.sql, whose sections msm.prepareRelease moves into the
+    next release's update script. Everything is written, or nothing.
 
     On the command line give the edits as a JSON file with --editsFile.
 
     Args:
-        edits (list): The edits, each an object with its op: rename_table, rename_column,
-            rename_view, rename_routine, add_table, drop_table, add_column, modify_column,
-            drop_column, add_index, drop_index, add_foreign_key, drop_foreign_key,
-            set_table_options (the language server's docs/edit-format.md).
+        edits (list): The edits in order, each an object with its op: rename_table,
+            rename_view, rename_column, rename_routine, add_table, drop_table, add_column,
+            modify_column, drop_column, set_table_options, add_index, drop_index,
+            set_primary_key, add_foreign_key, drop_foreign_key, add_view, drop_view,
+            add_routine, drop_routine, with their members as the language server's
+            docs/edit-format.md gives them (modify_column takes new_column, the whole column).
         base_hash (str): The source_hash of the schema snapshot the edits were made against. They
             are refused when the project's snapshot was made again since.
         **kwargs: Additional options.

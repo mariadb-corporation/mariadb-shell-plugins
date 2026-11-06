@@ -28,6 +28,7 @@ import os
 
 import pytest
 
+from msm_plugin.tests.unit import helpers
 from msm_plugin.lib import diagrams, lsp, management, modeling, sections, source
 from msm_plugin.lib.management import create_schema_project_folder
 
@@ -171,6 +172,20 @@ def test_documents_are_laid_out_one_short_value_per_line():
     assert any('"foreignKey": "fk_orders_customer"' in line for line in lines)
     assert json.loads(text) == diagram()
     assert diagrams.dump_document({"a": []}) == '{"a": []}'
+
+
+def test_moved_positions_do_not_change_the_layout():
+    # msm moves the snapshot's positions after writing Section 160 and relies
+    # on the line count staying: the numbers of a position count as fixed
+    # width, so no line wraps differently however many digits they have.
+    # Every name length up to the width meets the line-width limit somewhere.
+    def line_count(name_length, line):
+        position = {"line": line, "character": 0}
+        column = {"name": "a" * name_length, "range": {"start": position, "end": position}}
+        return diagrams.dump_document({"columns": [column]}).count("\n")
+
+    for name_length in range(1, 161):
+        assert line_count(name_length, 0) == line_count(name_length, 9999999), name_length
 
 
 def test_a_diagram_is_checked():
@@ -329,6 +344,31 @@ def test_a_new_project_has_an_empty_diagrams_section(project):
     assert modeling.read_diagram_rows(project) == []
 
 
+def test_only_script_positions_after_section_160_move():
+    def at(line):
+        return {"start": {"line": line, "character": 0}, "end": {"line": line, "character": 1}}
+
+    document = {"range": at(3), "tables": [
+        # Included, but a column an ALTER TABLE of the script adds is in the script
+        {"source": 0, "range": at(20), "columns": [
+            {"range": at(30)}, {"source": 0, "range": at(40)}]},
+        {"range": at(50), "columns": [{"source": 1, "range": at(60)}]},
+    ], "notes": [{"start": {"line": 70, "character": 0}},
+                 {"source": 0, "start": {"line": 80, "character": 0}}]}
+    modeling._shift_script_lines(document, 10, 5)
+    lines = [
+        document["range"]["start"]["line"],
+        document["tables"][0]["range"]["start"]["line"],
+        document["tables"][0]["columns"][0]["range"]["start"]["line"],
+        document["tables"][0]["columns"][1]["range"]["start"]["line"],
+        document["tables"][1]["range"]["end"]["line"],
+        document["tables"][1]["columns"][0]["range"]["start"]["line"],
+        document["notes"][0]["start"]["line"],
+        document["notes"][1]["start"]["line"],
+    ]
+    assert lines == [3, 20, 35, 40, 55, 60, 75, 80]
+
+
 def test_small_diagrams_stay_inline(project):
     modeling.set_diagram(project, diagram())
     assert "CREATE OR REPLACE SQL SECURITY INVOKER" in section_160(project)
@@ -353,13 +393,30 @@ def test_small_diagrams_stay_inline(project):
         modeling.remove_diagram(project, "Main")
 
 
+@needs_lsp
+@pytest.mark.parametrize("breaks_out", [False, True])
+def test_the_snapshot_positions_follow_a_section_160_that_changes_size(project, breaks_out):
+    # Inline, the VIEW holding the snapshot grows with every diagram, which
+    # moves everything after it (the version VIEW of Section 910); past the
+    # limit it moves into the breakout file and shrinks to one line.
+    modeling.update_schema_definition(project)
+    # Just above the snapshot alone: the first diagram moves the VIEW out
+    limit = len(section_160(project)) + 100 if breaks_out else 10**7
+    helpers.set_project_setting(project, "maxInlineSectionSize", limit)
+
+    for name in ("Main", "Second", "Third"):
+        modeling.create_diagram(project, name)
+        stored = modeling.read_diagram_rows(project)[0]["document"]
+        assert stored == modeling.build_schema_definition(project)
+    version_view = next(view for view in stored["views"] if view["name"] == "msm_schema_version")
+    line = version_view["range"]["start"]["line"]
+    assert dev_script(project).split("\n")[line].startswith("CREATE OR REPLACE")
+    if breaks_out:
+        assert "SOURCE './sections/160_schema_diagrams.sql'" in section_160(project)
+
+
 def test_large_diagrams_move_into_a_breakout_file(project):
-    settings_file = os.path.join(project, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
-    settings["maxInlineSectionSize"] = 200
-    with open(settings_file, "w") as f:
-        json.dump(settings, f)
+    helpers.set_project_setting(project, "maxInlineSectionSize", 200)
 
     modeling.set_diagram(project, diagram())
     body = section_160(project)
@@ -418,12 +475,7 @@ def test_an_include_that_would_cut_the_view_is_refused(project):
 
 
 def test_an_include_can_be_refused(project):
-    settings_file = os.path.join(project, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
-    settings["maxInlineSectionSize"] = 0
-    with open(settings_file, "w") as f:
-        json.dump(settings, f)
+    helpers.set_project_setting(project, "maxInlineSectionSize", 0)
 
     def refuse(path):
         raise ValueError(f"not allowed: {path}")
