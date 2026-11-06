@@ -463,15 +463,16 @@ async def _confirm_trust(ctx) -> bool:
     )
 
 
-async def _confirm_install(ctx) -> bool:
+async def _confirm_install(ctx, minimum: str, pinned: Optional[str]) -> bool:
     """Asks the user, via MCP elicitation, whether to install mariadb-restd."""
+    release = f"release {pinned}" if pinned else "latest release"
     return await general.confirm(
         ctx,
-        "The MariaDB REST Daemon (mariadb-restd) is not installed. "
-        "Download and install its latest release into "
+        f"The MariaDB REST Daemon (mariadb-restd) {minimum} or newer is not "
+        f"installed. Download and install its {release} into "
         f"{restd.install_prefix()}?",
         "install",
-        "Download and install the latest mariadb-restd release?",
+        f"Download and install the mariadb-restd {release}?",
     )
 
 
@@ -488,6 +489,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
         port: Optional[int] = None,
         metadata_schema: Optional[str] = None,
         restd_path: Optional[str] = None,
+        restd_version: Optional[str] = None,
     ) -> dict:
         """Sets up a MariaDB REST Daemon for a server and starts it.
 
@@ -517,14 +519,34 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             metadata_schema: The REST metadata schema to serve. Needed only
                 when the server has several.
             restd_path: The mariadb-restd executable to use, or its folder.
+            restd_version: The lowest mariadb-restd version to use, such as
+                '26.10.1'. An installed one that is older is passed over, and
+                when none is new enough, exactly this release is installed.
+                When empty, the lowest is MARIADB_RESTD_VERSION or a built-in
+                default, and the newest release is installed, stable
+                preferred. Not applied to restd_path.
 
         Returns:
             The deployment's status, as restd.get_restd_status reports it, plus
             'installed' (whether mariadb-restd was installed for it) and
-            'setup_output', what the setup printed.
+            'setup_output', what the setup printed; and 'install_warning'
+            when the newest release is still older than the lowest version
+            wanted, and was used anyway.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         await general.require_allowed_path(ctx, restd_path)
+        # The same two ways the shell is installed. A version given is pinned
+        # as the extension pins the shell: the release tag it names is the one
+        # installed. Without one, as the ai-plugins launchers: a default
+        # lowest version, and the newest release installed.
+        pinned = restd_version.strip().lstrip("vV") if restd_version else None
+        minimum = pinned or restd.minimum_version()
+        if restd.parse_version(minimum) is None:
+            source = "restd_version" if pinned else "MARIADB_RESTD_VERSION"
+            raise tool_error(
+                f"{source} has to be <major>.<minor>.<patch>, not "
+                f"'{restd_version if pinned else minimum}'."
+            )
 
         client = general.get_client_identity(ctx)
         base_dir = sandbox_base_dir(sandbox_dir)
@@ -568,21 +590,41 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             uri, connection, secret, schema, exists, reported_port
         ) = await anyio.to_thread.run_sync(prepare)
 
-        executable = await anyio.to_thread.run_sync(restd.find_restd, restd_path)
+        executable = await anyio.to_thread.run_sync(
+            restd.find_restd, restd_path, None if restd_path else minimum
+        )
         installed = False
+        install_warning = None
         if executable is None:
-            if not general.is_gui_mode() and not await _confirm_install(ctx):
+            if not general.is_gui_mode() and not await _confirm_install(
+                ctx, minimum, pinned
+            ):
                 raise tool_error(
                     f"{restd.RESTD_NAME} was not found in "
                     f"{restd.searched_places()}, and was not installed. "
                     "Install it, or pass restd_path."
                 )
-            await anyio.to_thread.run_sync(restd_install.install)
-            executable = await anyio.to_thread.run_sync(restd.find_restd)
+            tag = f"v{pinned}" if pinned else None
+            await anyio.to_thread.run_sync(restd_install.install, tag)
+            executable = await anyio.to_thread.run_sync(
+                restd.find_restd, None, minimum
+            )
+            if executable is None and not pinned:
+                # As the launchers: below the lowest version is worth saying,
+                # not worth refusing over, since the newest published release
+                # is the best that can be had.
+                executable = await anyio.to_thread.run_sync(restd.find_restd)
+                if executable is not None:
+                    version = restd.restd_version(executable)
+                    found = ".".join(map(str, version)) if version else "of unknown version"
+                    install_warning = (
+                        f"The installed {restd.RESTD_NAME} {found} is below "
+                        f"the required {minimum}; using it anyway."
+                    )
             if executable is None:
                 raise tool_error(
-                    f"{restd.RESTD_NAME} was installed but is not in "
-                    f"{restd.searched_places()}."
+                    f"{restd.RESTD_NAME} {minimum} was installed but is not "
+                    f"in {restd.searched_places()}."
                 )
             installed = True
 
@@ -651,6 +693,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             report = restd.start(executable, directory)
             report["installed"] = installed
             report["setup_output"] = output
+            if install_warning:
+                report["install_warning"] = install_warning
             return report
 
         return await anyio.to_thread.run_sync(work)

@@ -44,6 +44,11 @@ import json, os, signal, socket, sys, time
 state = os.environ["FAKE_RESTD_STATE"]
 mode = os.environ.get("FAKE_RESTD_MODE", "")
 argv = sys.argv[1:]
+if argv == ["--version"]:
+    # As the real one prints it.
+    version = os.environ.get("FAKE_RESTD_VERSION", "26.10.1")
+    print(f"MariaDB REST Daemon  Ver {version} for Linux on x86_64 (Source distribution)")
+    sys.exit(0)
 def record(entry):
     runs = json.load(open(state)) if os.path.exists(state) else []
     runs.append(entry)
@@ -230,6 +235,33 @@ def test_mariadb_restd_is_looked_for_on_the_path_then_in_local_bin_then_installe
     )
     with pytest.raises(Exception, match="no mariadb-restd executable"):
         restd.find_restd(str(tmp_path / "nowhere"))
+
+
+def test_with_a_minimum_version_an_older_mariadb_restd_is_passed_over(
+    home, tmp_path, monkeypatch
+):
+    """As the extension finds the shell: each place in turn, too old skipped."""
+    if os.name == "nt":
+        pytest.skip("POSIX layout")
+
+    def executable(path, version):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"#!/bin/sh\necho 'MariaDB REST Daemon  Ver {version} for Linux'\n")
+        path.chmod(0o755)
+        return str(path)
+
+    prefix = home / ".local" / "share" / "mariadb-restd"
+    managed = executable(prefix / "26.10.1" / "bin" / "mariadb-restd", "26.10.1")
+    on_path = executable(tmp_path / "path" / "mariadb-restd", "26.10.0")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'path'}:/usr/bin:/bin")
+
+    assert restd.restd_version(on_path) == (26, 10, 0)
+    assert restd.find_restd() == on_path
+    assert restd.find_restd(minimum_version="26.10.0") == on_path
+    assert restd.find_restd(minimum_version="26.10.1") == managed
+    assert restd.find_restd(minimum_version="26.11.0") is None
+    # An explicit one is used as it is.
+    assert restd.find_restd(on_path, "26.11.0") == on_path
 
 
 def test_a_daemon_listens_on_the_first_free_port_from_8443(monkeypatch):
@@ -787,6 +819,77 @@ def test_a_missing_daemon_is_installed_in_gui_mode(configure, home, monkeypatch,
     assert result["installed"] is True
 
 
+def test_a_pinned_version_installs_that_release_tag(
+    configure, home, monkeypatch, tmp_path
+):
+    """As the extension pins the shell: an older daemon is not used."""
+    monkeypatch.setenv("FAKE_RESTD_VERSION", "26.10.0")
+    installs = []
+
+    def install(tag=None):
+        installs.append(tag)
+        monkeypatch.setenv("FAKE_RESTD_VERSION", "26.10.1")
+        return "installed"
+
+    monkeypatch.setattr(restd_functions.restd_install, "install", install)
+    port = helpers.find_free_port()
+
+    result, _, _ = configure(
+        schemas=["mariadb_rest_service"], port=port, restd_version="26.10.1"
+    )
+    assert installs == ["v26.10.1"]
+    assert result["installed"] is True
+
+    with pytest.raises(Exception, match="has to be <major>.<minor>.<patch>"):
+        configure(schemas=["mariadb_rest_service"], restd_version="latest")
+
+
+def test_without_a_version_an_older_daemon_gets_the_newest_release(
+    configure, home, monkeypatch, tmp_path
+):
+    """As the shell's launchers: a default lowest version, the newest installed."""
+    monkeypatch.delenv("MARIADB_RESTD_VERSION", raising=False)
+    monkeypatch.setenv("FAKE_RESTD_VERSION", "26.9.0")
+    installs = []
+
+    def install(tag=None):
+        installs.append(tag)
+        monkeypatch.setenv("FAKE_RESTD_VERSION", restd.DEFAULT_MINIMUM_VERSION)
+        return "installed"
+
+    monkeypatch.setattr(restd_functions.restd_install, "install", install)
+
+    result, _, _ = configure(
+        schemas=["mariadb_rest_service"], port=helpers.find_free_port()
+    )
+    assert installs == [None]
+    assert result["installed"] is True
+    assert "install_warning" not in result
+
+
+def test_a_newest_release_below_the_lowest_version_is_used_with_a_warning(
+    configure, home, monkeypatch, tmp_path
+):
+    """As the launchers: worth saying, not worth refusing over."""
+    monkeypatch.setenv("MARIADB_RESTD_VERSION", "99.0.0")
+    monkeypatch.setenv("FAKE_RESTD_VERSION", "26.10.1")
+    installs = []
+    monkeypatch.setattr(
+        restd_functions.restd_install,
+        "install",
+        lambda tag=None: installs.append(tag) or "installed",
+    )
+
+    result, _, _ = configure(
+        schemas=["mariadb_rest_service"], port=helpers.find_free_port()
+    )
+    assert installs == [None]
+    assert result["install_warning"] == (
+        "The installed mariadb-restd 26.10.1 is below the required 99.0.0; "
+        "using it anyway."
+    )
+
+
 def test_an_agent_is_asked_before_anything_is_installed(configure, monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.setattr(general, "is_gui_mode", lambda: False)
@@ -971,6 +1074,63 @@ def test_the_install_script_is_run_and_its_failure_reported(tmp_path, monkeypatc
     assert marker.exists()
     with pytest.raises(Exception, match="install.sh: no release v0"):
         restd_install.install("v0")
+
+
+def test_the_install_falls_back_to_a_prerelease_as_the_shell_does(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("install.sh")
+
+    # Only prereleases are published: a run without --pre-release fails.
+    script = tmp_path / "install.sh"
+    script.write_text(
+        'echo "args:[$*] tag:[$MARIADB_RESTD_TAG] env:[$MARIADB_RESTD_PRERELEASE]"\n'
+        'if [ -z "$*" ] && [ -z "$MARIADB_RESTD_TAG" ]; then\n'
+        '  echo "install.sh: could not download SHA256SUMS" >&2; exit 1\n'
+        "fi\n"
+    )
+    monkeypatch.setattr(restd_install, "INSTALL_SCRIPT_URL_POSIX", script.as_uri())
+
+    monkeypatch.delenv("MARIADB_RESTD_PRERELEASE", raising=False)
+    output = restd_install.install()
+    assert "args:[] tag:[]" in output
+    assert "args:[--pre-release] tag:[]" in output
+
+    assert "args:[] tag:[v1]" in restd_install.install("v1")
+
+    monkeypatch.setenv("MARIADB_RESTD_PRERELEASE", "1")
+    output = restd_install.install()
+    assert "args:[--pre-release] tag:[] env:[]" in output
+    assert "args:[] tag:[]" not in output
+
+    monkeypatch.setenv("MARIADB_RESTD_PRERELEASE", "0")
+    with pytest.raises(Exception, match="could not download SHA256SUMS"):
+        restd_install.install()
+
+
+def test_on_windows_the_prerelease_is_asked_for_through_the_environment(monkeypatch):
+    """As the shell's .cmd launcher does: MARIADB_RESTD_PRERELEASE=1."""
+    runs = []
+
+    class _Completed:
+        def __init__(self, returncode):
+            self.returncode, self.stdout, self.stderr = returncode, "", ""
+
+    def run(command, env):
+        runs.append((command, env.get("MARIADB_RESTD_PRERELEASE")))
+        return _Completed(1 if len(runs) == 1 else 0)
+
+    monkeypatch.setattr(restd_install, "_download", lambda url: b"")
+    monkeypatch.setattr(restd_install, "_run", run)
+    monkeypatch.delenv("MARIADB_RESTD_PRERELEASE", raising=False)
+    monkeypatch.setattr(restd_install.os, "name", "nt")
+    try:
+        restd_install.install()
+    finally:
+        monkeypatch.undo()
+
+    assert [env for _, env in runs] == [None, "1"]
+    assert runs[0][0] == runs[1][0]
+    assert not any("PreRelease" in part for part in runs[1][0])
 
 
 def test_an_install_script_that_cannot_be_downloaded_says_what_to_do(tmp_path, monkeypatch):

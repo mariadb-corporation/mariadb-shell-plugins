@@ -73,6 +73,20 @@ from mcp_plugin.lib.tool_registrar import tool_error
 # The executable, as the packages name it.
 RESTD_NAME = "mariadb-restd"
 
+# The lowest mariadb-restd a setup accepts when the caller names none, as
+# the shell's ai-plugins launchers default MARIADB_SHELL_VERSION: an older
+# one is passed over and the newest release installed. MARIADB_RESTD_VERSION
+# overrides it, as MARIADB_SHELL_VERSION does the launchers'.
+DEFAULT_MINIMUM_VERSION = "26.10.1"
+
+
+def minimum_version() -> str:
+    """The lowest version to accept: MARIADB_RESTD_VERSION, else the default."""
+    return (
+        os.environ.get("MARIADB_RESTD_VERSION", "").strip().lstrip("vV")
+        or DEFAULT_MINIMUM_VERSION
+    )
+
 # The folder a sandbox's deployment is in, inside the sandbox's own folder.
 SANDBOX_DEPLOYMENT_DIR = "mariadb-restd"
 
@@ -332,27 +346,60 @@ def _version_key(name: str) -> tuple:
     return (1, tuple(int(part) for part in parts)) if parts else (0, ())
 
 
-def _newest_managed_binary() -> Optional[str]:
-    """The executable of the newest installed release, or None."""
+def _managed_binaries() -> list:
+    """The executables of the installed releases, newest first."""
     prefix = install_prefix()
     try:
         names = os.listdir(prefix)
     except OSError:
-        return None
+        return []
 
+    found = []
     for name in sorted(names, key=_version_key, reverse=True):
         candidate = os.path.join(prefix, name, "bin", _binary_name())
         if os.path.isfile(candidate):
-            return candidate
+            found.append(candidate)
 
-    return None
+    return found
+
+
+# How long `mariadb-restd --version` may take.
+VERSION_PROBE_TIMEOUT = 10
+
+
+def parse_version(text: str) -> Optional[tuple]:
+    """The first x.y.z in text, such as 'Ver 26.10.1' or 'v26.10.1', as ints."""
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def restd_version(executable: str) -> Optional[tuple]:
+    """What `mariadb-restd --version` reports, or None if it says nothing usable.
+
+    It prints ``MariaDB REST Daemon  Ver 26.10.1 for Darwin on arm64 (...)``.
+    """
+    try:
+        completed = subprocess.run(
+            [executable, "--version"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=VERSION_PROBE_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.search(r"\bVer\s+(\S+)", completed.stdout or "")
+    return parse_version(match.group(1)) if match else None
 
 
 def _is_executable(path: str) -> bool:
     return os.path.isfile(path) and os.access(path, os.X_OK)
 
 
-def find_restd(restd_path: Optional[str] = None) -> Optional[str]:
+def find_restd(
+    restd_path: Optional[str] = None, minimum_version: Optional[str] = None
+) -> Optional[str]:
     """Finds the mariadb-restd executable.
 
     Looked for on the PATH, then in ``~/.local/bin``, which is where the
@@ -367,6 +414,10 @@ def find_restd(restd_path: Optional[str] = None) -> Optional[str]:
     Args:
         restd_path (str): An executable to use instead, or a folder holding
             it. Not searched any further when given.
+        minimum_version (str): The lowest version to accept, such as
+            '26.10.1'. Every place is then tried in turn, and an executable
+            that reports an older version, or none, is passed over. Not
+            applied to restd_path.
 
     Returns:
         The absolute path of the executable, or None if there is none.
@@ -387,16 +438,30 @@ def find_restd(restd_path: Optional[str] = None) -> Optional[str]:
             return candidate
         raise tool_error(f"There is no {RESTD_NAME} executable at '{restd_path}'.")
 
+    candidates = []
     found = shutil.which(_binary_name())
     if found:
-        return os.path.abspath(found)
+        candidates.append(os.path.abspath(found))
 
     if os.name != "nt":
         linked = os.path.join(general.get_bin_home(), RESTD_NAME)
         if _is_executable(linked):
-            return linked
+            candidates.append(linked)
 
-    return _newest_managed_binary()
+    candidates.extend(_managed_binaries())
+
+    if minimum_version is None:
+        return candidates[0] if candidates else None
+
+    # As the extension finds the shell: one that is too old, or says nothing
+    # of its version, is passed over rather than used.
+    wanted = parse_version(minimum_version)
+    for candidate in candidates:
+        version = restd_version(candidate)
+        if version is not None and version >= wanted:
+            return candidate
+
+    return None
 
 
 def searched_places() -> str:
