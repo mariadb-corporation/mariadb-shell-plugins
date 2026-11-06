@@ -337,12 +337,12 @@ def test_reconcile_keeps_the_events_and_sequences_the_schema_has():
 def test_a_sequence_card_shows_what_its_create_writes():
     rows = diagrams.sequence_rows
     assert rows({"name": "s", "type": None, "start": None, "increment": None, "minvalue": None,
-                 "maxvalue": None, "cache": None, "cycle": None}) == [""]
+                 "maxvalue": None, "cache": None, "cycle": None}) == []
     assert rows({"name": "s", "type": "INT UNSIGNED", "start": "1000", "increment": "10",
                  "minvalue": "1", "maxvalue": None, "cache": "0", "cycle": False}) == [
-        "INT UNSIGNED", "START WITH 1000", "INCREMENT BY 10", "MINVALUE 1", "NOCACHE", "NOCYCLE"]
-    assert rows({"name": "s", "cache": "20", "cycle": True}) == ["CACHE 20", "CYCLE"]
-    assert diagrams.FIGURE_KINDS["SequenceFigure"].sections({"name": "s"}, {}) == [1]
+        "type INT UNSIGNED", "start 1000", "increment 10", "min 1", "cache 0"]
+    assert rows({"name": "s", "cache": "20", "cycle": True}) == ["cache 20", "cycle yes"]
+    assert diagrams.FIGURE_KINDS["SequenceFigure"].sections({"name": "s"}, {}) == [0]
 
 
 def test_a_tables_card_counts_its_triggers():

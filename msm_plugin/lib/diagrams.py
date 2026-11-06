@@ -469,30 +469,32 @@ def event_label(event: dict) -> str:
     return f"{event.get('name', '')} {schedule}" if schedule else event.get("name", "")
 
 
-# The options of a sequence its card shows, where written, in this order.
-_SEQUENCE_OPTIONS = (
-    ("start", "START WITH {}"),
-    ("increment", "INCREMENT BY {}"),
-    ("minvalue", "MINVALUE {}"),
-    ("maxvalue", "MAXVALUE {}"),
+# The values of a sequence its card shows, by the outline's member, with
+# the label the VS Code extension's modeler gives them (tableCard.ts,
+# sequenceCardContent).
+_SEQUENCE_VALUES = (
+    ("type", "type"),
+    ("start", "start"),
+    ("increment", "increment"),
+    ("minvalue", "min"),
+    ("maxvalue", "max"),
+    ("cache", "cache"),
 )
 
 
 def sequence_rows(sequence: dict) -> list:
-    """The rows a sequence figure shows: the type and options the CREATE
-    SEQUENCE writes (the outline's null for one it does not), at least one
-    row, empty for a sequence written without any."""
-    rows = [sequence["type"]] if sequence.get("type") else []
-    rows += [
-        label.format(sequence[key]) for key, label in _SEQUENCE_OPTIONS
-        if sequence.get(key) is not None
+    """The rows a sequence figure shows, as the VS Code extension's modeler
+    draws them: a label and the value for each value the CREATE SEQUENCE
+    writes (the outline's null for one it does not), cycle only where it is
+    CYCLE; no rows (the card is its header) for a sequence written without
+    any."""
+    rows = [
+        f"{label} {sequence[key]}" for key, label in _SEQUENCE_VALUES
+        if sequence.get(key) not in (None, "")
     ]
-    cache = sequence.get("cache")
-    if cache is not None:
-        rows.append("NOCACHE" if str(cache) == "0" else f"CACHE {cache}")
-    if sequence.get("cycle") is not None:
-        rows.append("CYCLE" if sequence["cycle"] else "NOCYCLE")
-    return rows or [""]
+    if sequence.get("cycle") is True:
+        rows.append("cycle yes")
+    return rows
 
 
 def _table_sections(table: dict, figure: dict) -> list:
@@ -544,9 +546,15 @@ class FigureKind:
 FIGURE_KINDS = {
     TABLE_FIGURE: FigureKind(
         "table", "table", "tables", False, FIGURE_COLOR,
+        # The triggers' rows as well (name, timing and events), so the card
+        # is wide enough for them.
         rows=lambda table: [
             column.get("name", "") + (column.get("type") or "")
             for column in table.get("columns", [])
+        ] + [
+            " ".join((trigger.get("name", ""), trigger.get("timing") or "",
+                      trigger.get("events") or ""))
+            for trigger in table.get(TABLE_TRIGGERS, [])
         ],
         sections=_table_sections,
     ),
@@ -661,7 +669,7 @@ def catalog(schema_document: dict) -> dict:
     lower-case name; a table with triggers lists them as TABLE_TRIGGERS."""
     objects = {
         kind: {item["name"].lower(): item for item in schema_document.get(kind, [])}
-        for kind in ("tables", "views", "routines", "events", "sequences")
+        for kind in dict.fromkeys(each.objects for each in FIGURE_KINDS.values())
     }
     tables = objects["tables"]
     by_table = {}
@@ -695,9 +703,10 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
 
     A table figure shows a table, a view figure a view, a sequence figure a
     sequence, and a group figure lists routines or events, losing the ones
-    the schema no longer has and going with the last of them; a connection is a foreign key of the table
-    of its start figure. Figures of other types are left alone. New objects
-    are not added: placing them is up to the user or the layout.
+    the schema no longer has and going with the last of them; a connection
+    is a foreign key of the table of its start figure. Figures of other
+    types are left alone. New objects are not added: placing them is up to
+    the user or the layout.
 
     Args:
         diagram: The msm-diagram/1 document, changed in place.

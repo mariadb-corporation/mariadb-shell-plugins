@@ -651,12 +651,12 @@ def _new_figure(figure_type: str, name: str, taken: set, **members) -> dict:
 def _add_object_figures(
     diagram: dict, figure_type: str, catalog: dict, names: list, taken: set
 ) -> list:
-    """Adds a figure, not placed or sized yet, for each of the named tables
-    or views not on the diagram.
+    """Adds a figure, not placed or sized yet, for each of the named tables,
+    views or sequences not on the diagram.
 
     Args:
         diagram: The diagram, changed in place.
-        figure_type: diagrams.TABLE_FIGURE or VIEW_FIGURE.
+        figure_type: diagrams.TABLE_FIGURE, VIEW_FIGURE or SEQUENCE_FIGURE.
         catalog: The snapshot's objects, see diagrams.catalog.
         names: The objects to add.
         taken: The ids in use, which the new ones join.
@@ -796,7 +796,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     diagram's corner.
 
     Returns:
-        The names of the tables, views and routine groups placed.
+        The names of the tables, views, sequences and groups placed.
     """
     layers = {layer.get("id"): layer for layer in diagram.get("layers", [])}
     member_of = {}
