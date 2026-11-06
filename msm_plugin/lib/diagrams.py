@@ -428,18 +428,27 @@ def validate_diagram(document) -> None:
 TABLE_FIGURE = "TableFigure"
 VIEW_FIGURE = "ViewFigure"
 ROUTINE_GROUP_FIGURE = "RoutineGroupFigure"
+EVENT_GROUP_FIGURE = "EventGroupFigure"
+SEQUENCE_FIGURE = "SequenceFigure"
 # A note's text and an image embedded as a data URL: msm keeps them as they
 # are, the schema has no say in them.
 NOTE_FIGURE = "NoteFigure"
 IMAGE_FIGURE = "ImageFigure"
 
+# The member of a table in catalog() listing its triggers, for the card.
+TABLE_TRIGGERS = "triggers"
+
 # The colours new figures get, Workbench's.
 FIGURE_COLOR = "#98BFDA"
 VIEW_FIGURE_COLOR = "#FEDE58"
 ROUTINE_FIGURE_COLOR = "#98D8A5"
+# Workbench has neither: msm's own.
+EVENT_FIGURE_COLOR = "#F5C39A"
+SEQUENCE_FIGURE_COLOR = "#C9B8E8"
 NOTE_FIGURE_COLOR = "#FEFDED"
-# The name of the routine group figure msm adds to a diagram.
+# The names of the group figures msm adds to a diagram.
 ROUTINE_GROUP_NAME = "Routines"
+EVENT_GROUP_NAME = "Events"
 
 
 def routine_label(routine: dict) -> str:
@@ -454,7 +463,29 @@ def routine_label(routine: dict) -> str:
     return label
 
 
+def event_label(event: dict) -> str:
+    """The row an event group figure shows for an event: its name and schedule."""
+    schedule = event.get("schedule")
+    return f"{event.get('name', '')} {schedule}" if schedule else event.get("name", "")
+
+
+def sequence_rows(sequence: dict) -> list:
+    """The rows a sequence figure shows, as the VS Code extension's modeler
+    draws them: the type, START WITH and INCREMENT BY, BIGINT and 1 where
+    the CREATE SEQUENCE does not write them (the server's default type and
+    increment; its START is then MINVALUE, or MAXVALUE for a negative
+    INCREMENT, which the card does not work out)."""
+    return [
+        sequence.get("type") or "BIGINT",
+        f"START WITH {sequence.get('start') or 1}",
+        f"INCREMENT BY {sequence.get('increment') or 1}",
+    ]
+
+
 def _table_sections(table: dict, figure: dict) -> list:
+    """The table card's sections: the columns and triggers unless collapsed,
+    the indexes and foreign keys where expanded (Workbench's defaults, the
+    triggers shown like the columns)."""
     sections = []
     if figure.get("columnsExpanded") is not False:
         sections.append(len(table.get("columns", [])))
@@ -462,6 +493,8 @@ def _table_sections(table: dict, figure: dict) -> list:
         sections.append(len(table.get("indexes", [])))
     if figure.get("foreignKeysExpanded") is True:
         sections.append(len(table.get("foreign_keys", [])))
+    if figure.get("triggersExpanded") is not False:
+        sections.append(len(table.get(TABLE_TRIGGERS, [])))
     return sections
 
 
@@ -471,6 +504,8 @@ class FigureKind:
     card shows of them.
 
     Attributes:
+        object: What one of its objects is called: an edit's member naming
+            it (rename_<object>) and the word in messages.
         key: The figure's member naming what it shows: the object's name
             (Workbench's link key as well), or for a group the names listed
             (Workbench links the group instead, ``routineGroup``).
@@ -480,27 +515,36 @@ class FigureKind:
         rows: The card's rows for the object (or the objects), a text each.
         sections: The rows of each expanded section of the card, for the
             object(s) and the figure's flags; an empty section takes no room.
+        group_name: The name of the group figure msm adds (many only).
     """
 
+    object: str
     key: str
     objects: str
     many: bool
     color: str
     rows: Callable
     sections: Callable
+    group_name: str = ""
 
 
 FIGURE_KINDS = {
     TABLE_FIGURE: FigureKind(
-        "table", "tables", False, FIGURE_COLOR,
+        "table", "table", "tables", False, FIGURE_COLOR,
+        # The triggers' rows as well (name, timing and events), so the card
+        # is wide enough for them.
         rows=lambda table: [
             column.get("name", "") + (column.get("type") or "")
             for column in table.get("columns", [])
+        ] + [
+            " ".join((trigger.get("name", ""), trigger.get("timing") or "",
+                      trigger.get("events") or ""))
+            for trigger in table.get(TABLE_TRIGGERS, [])
         ],
         sections=_table_sections,
     ),
     VIEW_FIGURE: FigureKind(
-        "view", "views", False, VIEW_FIGURE_COLOR,
+        "view", "view", "views", False, VIEW_FIGURE_COLOR,
         rows=lambda view: [str(column) for column in view.get("columns") or []],
         sections=lambda view, figure: (
             [len(view.get("columns") or [])] if figure.get("columnsExpanded") is not False
@@ -508,16 +552,28 @@ FIGURE_KINDS = {
         ),
     ),
     ROUTINE_GROUP_FIGURE: FigureKind(
-        "routines", "routines", True, ROUTINE_FIGURE_COLOR,
+        "routine", "routines", "routines", True, ROUTINE_FIGURE_COLOR,
         rows=lambda routines: [routine_label(routine) for routine in routines],
         sections=lambda routines, figure: [len(routines)],
+        group_name=ROUTINE_GROUP_NAME,
+    ),
+    EVENT_GROUP_FIGURE: FigureKind(
+        "event", "events", "events", True, EVENT_FIGURE_COLOR,
+        rows=lambda events: [event_label(event) for event in events],
+        sections=lambda events, figure: [len(events)],
+        group_name=EVENT_GROUP_NAME,
+    ),
+    SEQUENCE_FIGURE: FigureKind(
+        "sequence", "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
+        rows=sequence_rows,
+        sections=lambda sequence, figure: [len(sequence_rows(sequence))],
     ),
 }
 
 
 def figure_type(figure: dict) -> str:
-    """A figure's type: a table (the default), a view, a group of routines,
-    or something msm leaves alone."""
+    """A figure's type: a table (the default), a view, a sequence, a group
+    of routines or events, or something msm leaves alone."""
     return figure.get("type") or TABLE_FIGURE
 
 
@@ -532,14 +588,9 @@ def is_table_figure(figure: dict) -> bool:
     return figure_type(figure) == TABLE_FIGURE
 
 
-def is_routine_group_figure(figure: dict) -> bool:
-    """Whether a diagram figure lists routines."""
-    return figure_type(figure) == ROUTINE_GROUP_FIGURE
-
-
 def figure_object_name(figure: dict) -> str:
-    """The name of the table or view a figure shows, as written; the
-    figure's own name for every other kind."""
+    """The name of the table, view or sequence a figure shows, as written;
+    the figure's own name for every other kind."""
     kind = figure_kind(figure)
     if kind is not None and not kind.many:
         return figure.get(kind.key) or figure.get("name") or ""
@@ -551,9 +602,13 @@ def figure_table(figure: dict) -> str:
     return (figure.get("table") or figure.get("name") or "").lower()
 
 
-def figure_routines(figure: dict) -> list:
-    """The names of the routines a routine group figure lists, as written."""
-    return [name for name in figure.get("routines") or [] if isinstance(name, str)]
+def figure_members(figure: dict) -> list:
+    """The names of the objects a group figure (routines, events) lists, as
+    written; none for other figures."""
+    kind = figure_kind(figure)
+    if kind is None or not kind.many:
+        return []
+    return [name for name in figure.get(kind.key) or [] if isinstance(name, str)]
 
 
 def elide_images(document: dict) -> dict:
@@ -595,24 +650,34 @@ def keep_images(document: dict, stored: Optional[dict]) -> None:
 
 
 def catalog(schema_document: dict) -> dict:
-    """The snapshot's tables, views and routines by their lower-case name."""
-    return {
+    """The snapshot's tables, views, routines, events and sequences by their
+    lower-case name; a table with triggers lists them as TABLE_TRIGGERS."""
+    objects = {
         kind: {item["name"].lower(): item for item in schema_document.get(kind, [])}
-        for kind in ("tables", "views", "routines")
+        for kind in dict.fromkeys(each.objects for each in FIGURE_KINDS.values())
     }
+    tables = objects["tables"]
+    by_table = {}
+    for trigger in schema_document.get("triggers", []):
+        by_table.setdefault((trigger.get("table") or "").lower(), []).append(trigger)
+    for name, triggers in by_table.items():
+        if name in tables:
+            # A copy: the snapshot's table stays as the outline has it.
+            tables[name] = {**tables[name], TABLE_TRIGGERS: triggers}
+    return objects
 
 
 def figure_objects(figure: dict, catalog: dict):
-    """What of the snapshot a figure shows: the table or view, the routines
-    a routine group lists (those the schema has), or None for a figure of
-    nothing the schema has, a note or an image."""
+    """What of the snapshot a figure shows: the table, view or sequence, the
+    routines or events a group lists (those the schema has), or None for a
+    figure of nothing the schema has, a note or an image."""
     kind = figure_kind(figure)
     if kind is None:
         return None
     objects = catalog[kind.objects]
     if kind.many:
         found = [
-            objects[name.lower()] for name in figure_routines(figure) if name.lower() in objects
+            objects[name.lower()] for name in figure_members(figure) if name.lower() in objects
         ]
         return found or None
     return objects.get(figure_object_name(figure).lower())
@@ -621,11 +686,12 @@ def figure_objects(figure: dict, catalog: dict):
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
-    A table figure shows a table, a view figure a view, and a routine group
-    figure lists routines, losing the ones the schema no longer has and
-    going with the last of them; a connection is a foreign key of the table
-    of its start figure. Figures of other types are left alone. New objects
-    are not added: placing them is up to the user or the layout.
+    A table figure shows a table, a view figure a view, a sequence figure a
+    sequence, and a group figure lists routines or events, losing the ones
+    the schema no longer has and going with the last of them; a connection
+    is a foreign key of the table of its start figure. Figures of other
+    types are left alone. New objects are not added: placing them is up to
+    the user or the layout.
 
     Args:
         diagram: The msm-diagram/1 document, changed in place.
@@ -644,10 +710,10 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         kind = figure_kind(figure)
         if kind is not None and kind.many:
             shown = [
-                name for name in figure_routines(figure) if name.lower() in objects[kind.objects]
+                name for name in figure_members(figure) if name.lower() in objects[kind.objects]
             ]
-            if shown != (figure.get("routines") or []):
-                figure["routines"] = shown
+            if shown != (figure.get(kind.key) or []):
+                figure[kind.key] = shown
                 changed = True
             if not shown:
                 continue

@@ -52,23 +52,27 @@ CHANGES_SECTION_ID = "240"
 REMOVALS_SECTION_ID = "290"
 
 # What a migration statement does, as the binary tags it (action, object):
-# - the CREATE of a view or routine is not kept. Section 150 of the release,
-#   which every deployment runs in full after the 240 steps, creates it
-#   (add_view, add_routine, the second statement of rename_routine), and a
-#   routine's CREATE cannot run inside the update procedure (MariaDB 1303);
+# - the CREATE of a view, routine, trigger or event is not kept. Section 150
+#   of the release, which every deployment runs in full after the 240
+#   steps, creates it (add_view, add_routine, add_trigger, add_event, the
+#   second statement of rename_routine and rename_trigger), and none but a
+#   view's CREATE can run inside the update procedure (MariaDB 1303 for a
+#   routine or trigger, 1576 for an event);
 # - the DROP of a routine goes in Section 290: a stored routine is not
 #   dropped from within another (MariaDB 1357);
-# - the DROP of a table, view or routine is kept with IF EXISTS, as the
-#   binary writes it without: Section 150 runs before 290 and may have
-#   dropped the routine already (MariaDB 1305);
-# - everything else goes in Section 240.
+# - the DROP of a table, sequence, view, routine, trigger or event is kept
+#   with IF EXISTS, as the binary writes it without: Section 150 runs before
+#   290 and may have dropped the routine already (MariaDB 1305);
+# - everything else goes in Section 240: a trigger's or event's DROP and an
+#   event's ALTER EVENT ... RENAME TO run inside a procedure, and sequences
+#   go with the tables.
 _ROUTINES = ("procedure", "function")
-_NOT_KEPT_CREATES = ("view",) + _ROUTINES
-_DROPPED_IF_EXISTS = ("table", "view") + _ROUTINES
+_NOT_KEPT_CREATES = ("view", "trigger", "event") + _ROUTINES
+_DROPPED_IF_EXISTS = ("table", "sequence", "view", "trigger", "event") + _ROUTINES
 # The comments before it are skipped, as statements.strip_statement does.
 _DROP_WITHOUT_IF_EXISTS = re.compile(
     r"^((?:\s*(?:--[^\n]*\n|#[^\n]*\n|/\*(?!!).*?\*/))*"
-    r"\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)",
+    rf"\s*DROP\s+(?:{'|'.join(_DROPPED_IF_EXISTS)})\s+)(?!IF\s+EXISTS\b)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -147,19 +151,20 @@ def apply_text_edits(text: str, edits: list) -> str:
 # The diagrams
 
 
-# The rename edits a diagram follows: the figure type showing the object,
-# and the edit's member naming it.
+# The rename edits a diagram follows (rename_table, rename_view, ...): the
+# figure type showing the object, and the edit's member naming it.
 _RENAMES = {
-    "rename_table": (diagrams.TABLE_FIGURE, "table"),
-    "rename_view": (diagrams.VIEW_FIGURE, "view"),
-    "rename_routine": (diagrams.ROUTINE_GROUP_FIGURE, "routine"),
+    f"rename_{kind.object}": (figure_type, kind.object)
+    for figure_type, kind in diagrams.FIGURE_KINDS.items()
 }
 
 
 def rename_in_diagram(diagram: dict, edit: dict) -> bool:
-    """Makes a diagram follow an edit that renames a table, a view or a
-    routine: its figures and connections name objects, and would otherwise
-    be dropped as showing what the schema no longer has.
+    """Makes a diagram follow an edit that renames a table, a view, a
+    routine, an event or a sequence: its figures and connections name
+    objects, and would otherwise be dropped as showing what the schema no
+    longer has. A renamed trigger needs nothing: the table card lists the
+    snapshot's triggers.
 
     Returns:
         Whether the diagram changed.
@@ -174,18 +179,19 @@ def rename_in_diagram(diagram: dict, edit: dict) -> bool:
         figure for figure in diagram.get("figures", [])
         if diagrams.figure_type(figure) == figure_type
     ]
+    kind = diagrams.FIGURE_KINDS[figure_type]
     changed = False
-    if figure_type == diagrams.ROUTINE_GROUP_FIGURE:
+    if kind.many:
         for figure in figures:
-            routines = diagrams.figure_routines(figure)
-            if any(same(name, old) for name in routines):
-                figure["routines"] = [new_name if same(name, old) else name for name in routines]
+            members = diagrams.figure_members(figure)
+            if any(same(name, old) for name in members):
+                figure[kind.key] = [new_name if same(name, old) else name for name in members]
                 changed = True
         return changed
 
     for figure in figures:
         if same(diagrams.figure_object_name(figure), old):
-            figure[name_key] = new_name
+            figure[kind.key] = new_name
             if same(figure.get("name"), old):
                 figure["name"] = new_name
             changed = True
@@ -308,14 +314,17 @@ def move_pending_update(
     return path if clear_pending_update(path, project_settings) else None
 
 
+# The members of an edit naming the object it is about.
+_OBJECT_MEMBERS = ("table", "view", "routine", "trigger", "event", "sequence", "column")
+
+
 def _describe(edit: dict) -> str:
     """One line naming an edit, for the comment above its statements."""
     names = [
-        str(edit[key]) for key in ("table", "view", "routine", "column", "name")
-        if isinstance(edit.get(key), str)
+        str(edit[key]) for key in _OBJECT_MEMBERS + ("name",) if isinstance(edit.get(key), str)
     ]
     # The objects add_* and modify_column send, in the outline's shape
-    for key in ("table", "view", "routine", "column", "new_column", "index", "foreign_key"):
+    for key in _OBJECT_MEMBERS + ("new_column", "index", "foreign_key"):
         value = edit.get(key)
         if isinstance(value, dict) and isinstance(value.get("name"), str):
             # modify_column names the column twice where it keeps its name
@@ -328,9 +337,9 @@ def _describe(edit: dict) -> str:
 
 def _tags(item: dict, sql: str, tagged: bool) -> tuple:
     """A migration statement's (action, object), as the binary tagged it;
-    for a binary without tags, read from the SQL as far as msm needs them
-    (a CREATE of a view or routine, a DROP of a table, view or routine,
-    else (None, None))."""
+    for a binary without tags (whose ops are those of tables, views and
+    routines), read from the SQL as far as msm needs them: a CREATE or DROP
+    of an object, else (None, None)."""
     if tagged:
         action, kind = item.get("action"), item.get("object")
         if not isinstance(action, str) or not isinstance(kind, str):
@@ -350,7 +359,7 @@ def _tags(item: dict, sql: str, tagged: bool) -> tuple:
 def _placed_statement(item: dict, tagged: bool) -> Optional[tuple]:
     """A migration statement as the pending update script keeps it: its
     (section id, SQL without the delimiter); None for one it does not keep
-    (empty, or the CREATE of a view or routine). See _ROUTINES."""
+    (empty, or the CREATE of what Section 150 creates). See _ROUTINES."""
     sql = (item.get("sql") or "").strip().rstrip(";").strip()
     if not sql:
         return None

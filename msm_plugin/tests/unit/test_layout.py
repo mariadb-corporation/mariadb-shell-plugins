@@ -436,6 +436,76 @@ def test_views_and_routines_are_placed_without_connections(project):
     assert [f["type"] for f in diagram_document(project)["figures"]] == ["TableFigure"] * 3
 
 
+EVENTS_AND_SEQUENCES_SQL = """
+DELIMITER %%
+
+CREATE OR REPLACE TRIGGER `orders_check` BEFORE INSERT ON `orders` FOR EACH ROW
+    SET NEW.`customer_id` = NEW.`customer_id`%%
+
+CREATE OR REPLACE TRIGGER `orders_audit` AFTER UPDATE ON `orders` FOR EACH ROW
+    SET @changed = 1%%
+
+CREATE OR REPLACE EVENT `nightly` ON SCHEDULE EVERY 1 DAY DO
+    DELETE FROM `orders` WHERE 0%%
+
+CREATE OR REPLACE EVENT `hourly` ON SCHEDULE EVERY 1 HOUR DO SELECT 1%%
+
+DELIMITER ;
+"""
+
+
+def with_sequence(project_path, sequence=True):
+    """Section 140 with the tables, after a sequence unless sequence is False."""
+    dev_file = management.get_schema_development_file_path(project_path)
+    first = (
+        "CREATE SEQUENCE `order_numbers` AS INT UNSIGNED START WITH 1000 INCREMENT BY 10;\n\n"
+        if sequence else ""
+    )
+    management.set_section_sql_content("140", "\n" + first + TABLES_SQL + "\n", dev_file)
+
+
+@needs_lsp
+def test_events_sequences_and_a_tables_triggers_are_shown(project):
+    modeling.create_diagram(project, "Before")
+    with_routines(project, EVENTS_AND_SEQUENCES_SQL)
+    with_sequence(project)
+    modeling.create_diagram(project, "Main", events=["NIGHTLY"], sequences=["order_numbers"])
+    by_type = figures_by_type(diagram_document(project))
+    (group,) = by_type["EventGroupFigure"]
+    assert (group["events"], group["name"], group["color"]) == (
+        ["nightly"], diagrams.EVENT_GROUP_NAME, diagrams.EVENT_FIGURE_COLOR)
+    assert group["height"] == 30 + 8 + 16 + 1 * 18 + 8
+    (sequence,) = by_type["SequenceFigure"]
+    assert (sequence["sequence"], sequence["name"], sequence["color"]) == (
+        "order_numbers", "order_numbers", diagrams.SEQUENCE_FIGURE_COLOR)
+    # A row for each of the type, start and increment written
+    assert sequence["height"] == 30 + 8 + 16 + 3 * 18 + 8
+    # The orders card has a section for its two triggers: a heading, two
+    # rows and the gap to the columns.
+    def heights(name):
+        return {figure["table"]: figure["height"]
+                for figure in figures_by_type(diagram_document(project, name))["TableFigure"]}
+    before, after = heights("Before"), heights("Main")
+    assert after["orders"] == before["orders"] + 16 + 2 * 18 + layout._SECTION_GAP
+    assert after["customer"] == before["customer"]
+
+    with pytest.raises(ValueError, match="no event `nothing`"):
+        modeling.layout_diagram(project, "Main", events=["nothing"])
+    with pytest.raises(ValueError, match="no sequence `nothing`"):
+        modeling.layout_diagram(project, "Main", sequences=["nothing"])
+    later = modeling.layout_diagram(project, "Main", events=["hourly"])
+    assert (later["added"], later["placed"]) == (["hourly"], [])
+    (group2,) = figures_by_type(diagram_document(project))["EventGroupFigure"]
+    assert group2["events"] == ["nightly", "hourly"]
+    assert group2["height"] == group["height"] + 18
+
+    # Gone from the schema, gone from the diagram.
+    with_routines(project, "SELECT 1;")
+    with_sequence(project, sequence=False)
+    modeling.update_schema_definition(project)
+    assert [f["type"] for f in diagram_document(project)["figures"]] == ["TableFigure"] * 3
+
+
 @needs_lsp
 def test_a_changed_script_gets_a_new_snapshot_before_the_layout(project):
     modeling.create_diagram(project, "Main", ["customer"])

@@ -651,12 +651,12 @@ def _new_figure(figure_type: str, name: str, taken: set, **members) -> dict:
 def _add_object_figures(
     diagram: dict, figure_type: str, catalog: dict, names: list, taken: set
 ) -> list:
-    """Adds a figure, not placed or sized yet, for each of the named tables
-    or views not on the diagram.
+    """Adds a figure, not placed or sized yet, for each of the named tables,
+    views or sequences not on the diagram.
 
     Args:
         diagram: The diagram, changed in place.
-        figure_type: diagrams.TABLE_FIGURE or VIEW_FIGURE.
+        figure_type: diagrams.TABLE_FIGURE, VIEW_FIGURE or SEQUENCE_FIGURE.
         catalog: The snapshot's objects, see diagrams.catalog.
         names: The objects to add.
         taken: The ids in use, which the new ones join.
@@ -666,7 +666,7 @@ def _add_object_figures(
     """
     kind = diagrams.FIGURE_KINDS[figure_type]
     objects = catalog[kind.objects]
-    _require_known(kind.key, objects, names)
+    _require_known(kind.object, objects, names)
     shown = {
         diagrams.figure_object_name(figure).lower()
         for figure in diagram["figures"]
@@ -685,36 +685,40 @@ def _add_object_figures(
     return added
 
 
-def _add_routines(diagram: dict, catalog: dict, names: list, taken: set) -> list:
-    """Lists routines on the diagram's routine group figure, adding the
-    figure (not placed yet) where there is none.
+def _add_group_members(
+    diagram: dict, figure_type: str, catalog: dict, names: list, taken: set
+) -> list:
+    """Lists routines or events on the diagram's group figure of that kind,
+    adding the figure (not placed yet) where there is none.
 
-    Routines the diagram lists already, on any of its routine group
-    figures, are left where they are. The figure grows with its list unless
-    it is sized by hand.
+    Objects the diagram lists already, on any of its group figures of the
+    kind, are left where they are. The figure grows with its list unless it
+    is sized by hand.
+
+    Args:
+        figure_type: diagrams.ROUTINE_GROUP_FIGURE or EVENT_GROUP_FIGURE.
 
     Returns:
-        The names of the routines added.
+        The names of the objects added.
     """
-    routines = catalog["routines"]
-    _require_known("routine", routines, names)
-    groups = [figure for figure in diagram["figures"] if diagrams.is_routine_group_figure(figure)]
-    shown = {name.lower() for group in groups for name in diagrams.figure_routines(group)}
+    kind = diagrams.FIGURE_KINDS[figure_type]
+    objects = catalog[kind.objects]
+    _require_known(kind.object, objects, names)
+    groups = [figure for figure in diagram["figures"] if diagrams.figure_type(figure) == figure_type]
+    shown = {name.lower() for group in groups for name in diagrams.figure_members(group)}
     added = list(dict.fromkeys(
-        routines[name.lower()]["name"] for name in names if name.lower() not in shown
+        objects[name.lower()]["name"] for name in names if name.lower() not in shown
     ))
     if not added:
         return []
     if groups:
         group = groups[0]
-        group["routines"] = diagrams.figure_routines(group) + added
+        group[kind.key] = diagrams.figure_members(group) + added
         # A placed group is not laid out again: its card grows here.
         _size_figure(group, diagrams.figure_objects(group, catalog), grow=True)
     else:
         diagram["figures"].append(
-            _new_figure(
-                diagrams.ROUTINE_GROUP_FIGURE, diagrams.ROUTINE_GROUP_NAME, taken, routines=added
-            )
+            _new_figure(figure_type, kind.group_name, taken, **{kind.key: added})
         )
     return added
 
@@ -792,7 +796,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     diagram's corner.
 
     Returns:
-        The names of the tables, views and routine groups placed.
+        The names of the tables, views, sequences and groups placed.
     """
     layers = {layer.get("id"): layer for layer in diagram.get("layers", [])}
     member_of = {}
@@ -866,15 +870,20 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     return [diagrams.figure_object_name(figure) for figure, _ in moving]
 
 
-def _fill(
-    diagram: dict,
-    document: dict,
-    tables: list,
-    views: Optional[list],
-    routines: Optional[list],
-    keep_placed: bool,
-) -> tuple:
-    """Adds the figures of the tables, views and routines, the missing
+# The figures a diagram shows besides its tables, in the order they are
+# added; create_diagram and layout_diagram name their objects by the kind's
+# `objects` (views=, sequences=, routines=, events=).
+_OTHER_FIGURES = (
+    diagrams.VIEW_FIGURE,
+    diagrams.SEQUENCE_FIGURE,
+    diagrams.ROUTINE_GROUP_FIGURE,
+    diagrams.EVENT_GROUP_FIGURE,
+)
+
+
+def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool, **others) -> tuple:
+    """Adds the figures of the tables and of the other objects (lists named
+    by the kinds' `objects`, see _OTHER_FIGURES; None for none), the missing
     connections, and lays the figures out.
 
     Returns:
@@ -889,8 +898,10 @@ def _fill(
         if not item.get("id"):
             item["id"] = _new_id(taken)
     added = _add_object_figures(diagram, diagrams.TABLE_FIGURE, catalog, tables, taken)
-    added += _add_object_figures(diagram, diagrams.VIEW_FIGURE, catalog, views or [], taken)
-    added += _add_routines(diagram, catalog, routines or [], taken)
+    for figure_type in _OTHER_FIGURES:
+        kind = diagrams.FIGURE_KINDS[figure_type]
+        add = _add_group_members if kind.many else _add_object_figures
+        added += add(diagram, figure_type, catalog, others.get(kind.objects) or [], taken)
     connections_added = _add_connections(diagram, catalog["tables"], document["schema"], taken)
     placed = _place(diagram, catalog, keep_placed)
     return added, connections_added, placed
@@ -903,6 +914,8 @@ def create_diagram(
     lsp_path: str = None,
     views: list = None,
     routines: list = None,
+    events: list = None,
+    sequences: list = None,
 ) -> dict:
     """Adds a diagram of the schema's tables, laid out.
 
@@ -916,6 +929,8 @@ def create_diagram(
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
         views: Views to show as well; none by default.
         routines: Routines to list on a routine group figure; none by default.
+        events: Events to list on an event group figure; none by default.
+        sequences: Sequences to show; none by default.
 
     Returns:
         {name, figures, connections, files}.
@@ -938,7 +953,10 @@ def create_diagram(
         "connections": [],
     }
     names = [table["name"] for table in document["tables"]] if tables is None else list(tables)
-    _fill(diagram, document, names, views, routines, keep_placed=False)
+    _fill(
+        diagram, document, names, False,
+        views=views, routines=routines, events=events, sequences=sequences,
+    )
     if not diagram["figures"]:
         diagram["width"], diagram["height"] = 1000.0, 800.0
     rows.append({"name": name, "format": diagrams.DIAGRAM_FORMAT, "document": diagram})
@@ -958,8 +976,11 @@ def layout_diagram(
     lsp_path: str = None,
     views: list = None,
     routines: list = None,
+    events: list = None,
+    sequences: list = None,
 ) -> dict:
-    """Adds tables, views and routines to a diagram and lays its figures out.
+    """Adds tables, views, sequences, routines and events to a diagram and
+    lays its figures out.
 
     The snapshot is made again first where the development script changed
     since it was made. Foreign keys between tables on the diagram that are
@@ -976,11 +997,13 @@ def layout_diagram(
         views: Views to add; none by default.
         routines: Routines to list on the diagram's routine group figure,
             added where it has none; none by default.
+        events: Events to list on its event group figure, likewise.
+        sequences: Sequences to add; none by default.
 
     Returns:
         {name, added: the objects added, placed: the figures laid out (the
-        tables, views and routine groups they show), connections_added,
-        files}.
+        tables, views and sequences, and the groups they show),
+        connections_added, files}.
     """
     project = _Project.load(schema_project_path)
     rows = _rows(project)
@@ -989,7 +1012,8 @@ def layout_diagram(
     document, rows = _current_snapshot(project, rows, lsp_path)
     diagram = next(row for row in rows if _is_diagram(row, name))["document"]
     added, connections_added, placed = _fill(
-        diagram, document, tables or [], views, routines, keep_placed
+        diagram, document, tables or [], keep_placed,
+        views=views, routines=routines, events=events, sequences=sequences,
     )
     return {
         "name": name,
