@@ -564,7 +564,7 @@ FIGURE_KINDS = {
     SEQUENCE_FIGURE: FigureKind(
         "sequence", "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
         rows=sequence_rows,
-        sections=lambda sequence, figure: [3],
+        sections=lambda sequence, figure: [len(sequence_rows(sequence))],
     ),
 }
 

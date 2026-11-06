@@ -62,6 +62,14 @@ needs_edit_lsp = pytest.mark.skipif(
     reason="no mariadb-lsp binary with the edit command (MSM_TEST_LSP names one)",
 )
 
+
+def needs_edit_ops(*ops):
+    """Skips a test where the binary lacks one of the ops."""
+    return pytest.mark.skipif(
+        EDIT_LSP is None or not set(ops) <= lsp.edit_ops(EDIT_LSP),
+        reason="no mariadb-lsp binary with the ops " + ", ".join(ops),
+    )
+
 MRS_PROJECT = os.environ.get("MSM_TEST_MRS_PROJECT") or os.path.join(
     # The runner links the plugin into its config home: the checkout is where the link points
     os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..",
@@ -648,13 +656,25 @@ def deployed(sandbox_session, tmp_path):
         sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
 
 
+# The information_schema tables of user_objects: their name and schema
+# columns, and a condition of their own.
+_USER_OBJECTS = {
+    "VIEWS": ("TABLE_NAME", "TABLE_SCHEMA", ""),
+    "ROUTINES": ("ROUTINE_NAME", "ROUTINE_SCHEMA", ""),
+    "SEQUENCES": ("TABLE_NAME", "TABLE_SCHEMA", " AND TABLE_TYPE = 'SEQUENCE'"),
+    "TRIGGERS": ("TRIGGER_NAME", "TRIGGER_SCHEMA", ""),
+    "EVENTS": ("EVENT_NAME", "EVENT_SCHEMA", ""),
+}
+
+
 def user_objects(column, kind: str) -> list:
-    """The views (VIEWS) or routines (ROUTINES) of the deployed schema, msm's own left out."""
-    name, schema = ("TABLE_NAME", "TABLE_SCHEMA") if kind == "VIEWS" else (
-        "ROUTINE_NAME", "ROUTINE_SCHEMA")
+    """The views, routines, sequences, triggers or events (VIEWS, ROUTINES,
+    SEQUENCES, TRIGGERS, EVENTS) of the deployed schema, msm's own left out."""
+    name, schema, condition = _USER_OBJECTS[kind]
+    table = "TABLES" if kind == "SEQUENCES" else kind
     return sorted(column(
-        f"SELECT {name} FROM information_schema.{kind} "
-        f"WHERE {schema} = '{DEPLOYED_SCHEMA}' AND {name} NOT LIKE 'msm%'"))
+        f"SELECT {name} FROM information_schema.{table} "
+        f"WHERE {schema} = '{DEPLOYED_SCHEMA}' AND {name} NOT LIKE 'msm%'{condition}"))
 
 
 def foreign_keys(column, what: str = "CONSTRAINT_NAME") -> list:
@@ -733,32 +753,16 @@ def test_added_views_and_routines_can_be_created_again(tmp_path):
                      r"`count_orders`|CREATE OR REPLACE PROCEDURE `count_orders`", script)
 
 
-def needs_edit_ops(*ops):
-    """Skips a test where the binary lacks one of the ops."""
-    return pytest.mark.skipif(
-        EDIT_LSP is None or not set(ops) <= lsp.edit_ops(EDIT_LSP),
-        reason="no mariadb-lsp binary with the ops " + ", ".join(ops),
-    )
-
-
-def object_names(column, sql: str) -> list:
-    return sorted(column(sql.format(schema=DEPLOYED_SCHEMA)))
-
-
 @needs_edit_ops("add_sequence", "rename_sequence", "drop_sequence", "add_trigger",
                 "rename_trigger", "drop_trigger", "add_event", "rename_event", "drop_event")
 def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
     path, column = deployed
 
     def deployed_objects():
-        return (
-            object_names(column, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE "
-                                 "TABLE_SCHEMA = '{schema}' AND TABLE_TYPE = 'SEQUENCE'"),
-            object_names(column, "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS "
-                                 "WHERE TRIGGER_SCHEMA = '{schema}'"),
-            object_names(column, "SELECT EVENT_NAME FROM information_schema.EVENTS "
-                                 "WHERE EVENT_SCHEMA = '{schema}'"),
-        )
+        return tuple(user_objects(column, kind) for kind in ("SEQUENCES", "TRIGGERS", "EVENTS"))
+
+    def numbers():
+        return column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` ORDER BY `id`")
 
     result = editing.edit_schema(path, [
         {"op": "add_sequence", "sequence": {"name": "order_numbers", "type": "INT UNSIGNED",
@@ -787,8 +791,7 @@ def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
     sandbox_insert = f"INSERT INTO `{DEPLOYED_SCHEMA}`.`orders` (`id`, `customer_id`) VALUES "
     column(sandbox_insert + "(2, 7)")
     # The order deployed before took the first number when the column came
-    assert column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` ORDER BY `id`") == [
-        1000, 1001]
+    assert numbers() == [1000, 1001]
 
     result = editing.edit_schema(path, [
         {"op": "rename_sequence", "sequence": "order_numbers", "new_name": "order_ids"},
@@ -809,9 +812,9 @@ def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
     assert deployed_objects() == (["order_ids"], ["orders_guard"], ["daily"])
     # The deployed default takes its values from the renamed sequence
     column(sandbox_insert + "(3, 7)")
-    (number,) = column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` WHERE `id` = 3")
+    *kept_numbers, number = numbers()
     # Past the cached values (CACHE 1000 by default), which the rename drops
-    assert number > 1001
+    assert kept_numbers == [1000, 1001] and number > 1001
     assert column(f"SELECT NEXT VALUE FOR `{DEPLOYED_SCHEMA}`.`order_ids`") == [number + 1]
 
     editing.edit_schema(path, [
@@ -825,8 +828,9 @@ def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
                       "DROP TRIGGER IF EXISTS `orders_guard`;", "DROP EVENT IF EXISTS `daily`;"):
         assert statement in kept["240"]
     # The diagram lost what the schema lost
-    assert [row for row in modeling._rows(modeling._Project.load(path))
-            if row["name"] == "Objects"][0]["document"]["figures"] == []
+    (diagram,) = [row["document"] for row in modeling.read_diagram_rows(path)
+                  if row["name"] == "Objects"]
+    assert diagram["figures"] == []
 
     release(path, "1.0.3", "1.0.4")
     assert deployed_objects() == ([], [], [])
