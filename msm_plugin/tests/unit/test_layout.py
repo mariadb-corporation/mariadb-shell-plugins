@@ -478,6 +478,7 @@ def test_events_sequences_and_a_tables_triggers_are_shown(project):
     (sequence,) = by_type["SequenceFigure"]
     assert (sequence["sequence"], sequence["name"], sequence["color"]) == (
         "order_numbers", "order_numbers", diagrams.SEQUENCE_FIGURE_COLOR)
+    # A row for each of the type, start and increment written
     assert sequence["height"] == 30 + 8 + 16 + 3 * 18 + 8
     # The orders card has a section for its two triggers: a heading, two
     # rows and the gap to the columns.

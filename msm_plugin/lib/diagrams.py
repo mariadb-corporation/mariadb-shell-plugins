@@ -469,14 +469,30 @@ def event_label(event: dict) -> str:
     return f"{event.get('name', '')} {schedule}" if schedule else event.get("name", "")
 
 
+# The options of a sequence its card shows, where written, in this order.
+_SEQUENCE_OPTIONS = (
+    ("start", "START WITH {}"),
+    ("increment", "INCREMENT BY {}"),
+    ("minvalue", "MINVALUE {}"),
+    ("maxvalue", "MAXVALUE {}"),
+)
+
+
 def sequence_rows(sequence: dict) -> list:
-    """The rows a sequence figure shows: its type, start and increment, as
-    written, else the server's defaults."""
-    return [
-        sequence.get("type") or "BIGINT",
-        f"START WITH {sequence.get('start') or 1}",
-        f"INCREMENT BY {sequence.get('increment') or 1}",
+    """The rows a sequence figure shows: the type and options the CREATE
+    SEQUENCE writes (the outline's null for one it does not), at least one
+    row, empty for a sequence written without any."""
+    rows = [sequence["type"]] if sequence.get("type") else []
+    rows += [
+        label.format(sequence[key]) for key, label in _SEQUENCE_OPTIONS
+        if sequence.get(key) is not None
     ]
+    cache = sequence.get("cache")
+    if cache is not None:
+        rows.append("NOCACHE" if str(cache) == "0" else f"CACHE {cache}")
+    if sequence.get("cycle") is not None:
+        rows.append("CYCLE" if sequence["cycle"] else "NOCYCLE")
+    return rows or [""]
 
 
 def _table_sections(table: dict, figure: dict) -> list:
@@ -554,7 +570,7 @@ FIGURE_KINDS = {
     SEQUENCE_FIGURE: FigureKind(
         "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
         rows=sequence_rows,
-        sections=lambda sequence, figure: [3],
+        sections=lambda sequence, figure: [len(sequence_rows(sequence))],
     ),
 }
 
