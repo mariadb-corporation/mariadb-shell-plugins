@@ -159,8 +159,10 @@ def renaming_edit(calls=None):
 def fake_edit(monkeypatch):
     calls = []
     monkeypatch.setattr(lsp, "supports_edit", lambda binary: True)
-    # The ops the fake does, whatever binary the machine has
+    # The ops the fake does, whatever binary the machine has, and its
+    # statements are untagged, as from a binary before `edit --ops`
     monkeypatch.setattr(lsp, "edit_ops", lambda binary: lsp.RENAME_OPS)
+    monkeypatch.setattr(lsp, "tags_migration", lambda binary: False)
     monkeypatch.setattr(lsp, "edit", renaming_edit(calls))
     return calls
 
@@ -207,7 +209,8 @@ def test_diagrams_follow_renamed_views_and_routines():
     assert not editing.rename_in_diagram(diagram, {"op": "add_column", "table": "totals"})
 
 
-def test_migrations_are_sorted_into_the_sections():
+def test_untagged_migrations_are_sorted_into_the_sections():
+    """A binary before `edit --ops`: msm reads what a statement does from its SQL."""
     edits = [RENAME, {"op": "rename_routine", "routine": "p", "new_name": "q"}]
     statements = editing.migration_statements(edits, [
         {"edit": 0, "sql": "RENAME TABLE `customer` TO `client`;"},
@@ -216,13 +219,40 @@ def test_migrations_are_sorted_into_the_sections():
         # Section 150 creates it again; it cannot run inside Section 240.
         {"edit": 1, "sql": "CREATE PROCEDURE `q`()\nBEGIN\n    SELECT 1;\nEND"},
         {"edit": 1, "sql": "drop function if exists `f`"},
-    ])
+    ], tagged=False)
     assert statements == {
         "240": "-- msm.editSchema: rename_table customer -> client\n"
                "RENAME TABLE `customer` TO `client`;",
         "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;\n"
                "drop function if exists `f`;",
     }
+
+
+def test_tagged_migrations_are_placed_by_their_tags():
+    """The tags decide, not the SQL: the SQL below would mislead the reading
+    of an untagged statement."""
+    edits = [{"op": "rename_routine", "routine": "p", "new_name": "q"},
+             {"op": "drop_table", "table": "t"}, {"op": "drop_column", "table": "t", "column": "c"}]
+    statements = editing.migration_statements(edits, [
+        {"edit": 0, "sql": "DROP PROCEDURE `p`", "action": "drop", "object": "procedure",
+         "name": "p"},
+        {"edit": 0, "sql": "/* q */ CREATE PROCEDURE `q`() SELECT 1", "action": "create",
+         "object": "procedure", "name": "q"},
+        {"edit": 1, "sql": "/* t */ DROP TABLE `t`", "action": "drop", "object": "table",
+         "name": "t"},
+        {"edit": 2, "sql": "ALTER TABLE `t` DROP COLUMN `c`", "action": "drop",
+         "object": "column", "name": "c", "table": "t"},
+        {"edit": 2, "sql": "CREATE VIEW `v` AS SELECT 1", "action": "create", "object": "table",
+         "name": "v"},
+    ])
+    assert statements == {
+        "240": "-- msm.editSchema: drop_table t\n/* t */ DROP TABLE `t`;\n"
+               "-- msm.editSchema: drop_column t c\nALTER TABLE `t` DROP COLUMN `c`;\n"
+               "CREATE VIEW `v` AS SELECT 1;",
+        "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;",
+    }
+    with pytest.raises(ValueError, match="without its `action`"):
+        editing.migration_statements(edits, [{"edit": 1, "sql": "DROP TABLE `t`"}])
 
 
 # -----------------------------------------------------------------------------
@@ -315,7 +345,7 @@ def test_edits_inside_the_diagrams_section_are_refused(project, monkeypatch):
 
 @needs_lsp
 def test_a_binary_without_edit_is_named(project, monkeypatch):
-    monkeypatch.setattr(lsp, "supports_edit", lambda binary: False)
+    monkeypatch.setattr(lsp, "edit_ops", lambda binary: frozenset())
     with pytest.raises(lsp.LspError, match="no `mariadb-lsp edit` command"):
         editing.edit_schema(project, [RENAME], base_hash(project))
 
@@ -469,17 +499,31 @@ KEY_AND_OBJECT_EDITS = [
 ]
 
 
-def test_edit_ops_come_from_the_help(monkeypatch):
-    help_texts = {
-        "renames": "  edit     apply schema edits\n  format   print\n",
-        "listed": "  edit     apply schema edits\n"
-                  "           edit ops: rename_table add_table drop_view\n  format   print\n",
-        "none": "  format   print\n",
+def test_edit_ops_come_from_the_binary(monkeypatch):
+    answers = {
+        # lsp-server #29 and later: `edit --ops`, and tagged statements
+        ("current", ("edit", "--ops")): (0, '{"format": 1, "ops": ["rename_table", "add_view"]}', ""),
+        ("current", ("--help",)): (0, "  edit     apply schema edits\n"
+                                      "           edit ops: rename_table add_view\n", ""),
+        # #26 to #28: the `edit ops:` line of --help
+        ("listed", ("edit", "--ops")): (2, "", "unknown option --ops"),
+        ("listed", ("--help",)): (0, "  edit     apply schema edits\n"
+                                     "           edit ops: rename_table add_table drop_view\n"
+                                     "  format   print\n", ""),
+        # #25: the renames
+        ("renames", ("edit", "--ops")): (2, "", "unknown option --ops"),
+        ("renames", ("--help",)): (0, "  edit     apply schema edits\n  format   print\n", ""),
+        # Before the edit command
+        ("none", ("edit", "--ops")): (1, "", "unknown command edit"),
+        ("none", ("--help",)): (0, "  format   print\n", ""),
     }
-    monkeypatch.setattr(lsp, "_help", lambda binary: help_texts[binary])
-    assert lsp.edit_ops("renames") == lsp.RENAME_OPS
+    monkeypatch.setattr(lsp, "_answer", lambda binary, arguments: answers[binary, arguments])
+    assert lsp.edit_ops("current") == {"rename_table", "add_view"}
     assert lsp.edit_ops("listed") == {"rename_table", "add_table", "drop_view"}
+    assert lsp.edit_ops("renames") == lsp.RENAME_OPS
     assert lsp.edit_ops("none") == frozenset()
+    assert [lsp.tags_migration(binary) for binary in ("current", "listed", "renames", "none")] == [
+        True, False, False, False]
 
 
 @needs_lsp
@@ -489,7 +533,7 @@ def test_ops_the_binary_lacks_are_refused_before_it_runs(project, fake_edit):
     assert fake_edit == []
 
 
-def test_the_update_script_gets_tables_and_drops_but_no_views_or_routines():
+def test_untagged_update_script_gets_tables_and_drops_but_no_views_or_routines():
     statements = editing.migration_statements(STRUCTURAL_EDITS, [
         {"edit": 0, "sql": "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n)"},
         {"edit": 4, "sql": "DROP VIEW `customer_ids`"},
@@ -499,7 +543,7 @@ def test_the_update_script_gets_tables_and_drops_but_no_views_or_routines():
         {"edit": 0, "sql": "CREATE OR REPLACE ALGORITHM=MERGE SQL SECURITY INVOKER VIEW `v` AS "
                            "SELECT 1"},
         {"edit": 0, "sql": "CREATE DEFINER=`root`@`%` FUNCTION `f`() RETURNS INT RETURN 1"},
-    ])
+    ], tagged=False)
     assert statements == {
         "240": "-- msm.editSchema: add_table note\n"
                "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n);\n"

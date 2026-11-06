@@ -45,9 +45,10 @@ _RUN_TIMEOUT = 120
 # The edit request's format (lsp-server docs/edit-format.md).
 EDIT_FORMAT = 1
 
-# A binary's --help, by its path and modification time: asked once per
-# build, so an updated binary is asked again.
-_help_texts = {}
+# A binary's answers to --help and `edit --ops`, by its path, modification
+# time and the arguments: asked once per build, so an updated binary is
+# asked again.
+_answers = {}
 
 # The edit ops of a binary whose --help has the edit command but no
 # `edit ops:` line (lsp-server #25): the renames.
@@ -218,26 +219,48 @@ def split(binary: str, sql: str) -> list:
     return result.get("statements", [])
 
 
-def _help(binary: str) -> str:
-    """The binary's --help, read once per build."""
+def _answer(binary: str, arguments: tuple) -> tuple:
+    """The binary's (exit code, stdout, stderr) for arguments without
+    input, asked once per build; (None, "", "") where it could not be run."""
     try:
-        key = (binary, os.stat(binary).st_mtime_ns)
+        key = (binary, os.stat(binary).st_mtime_ns, arguments)
     except OSError:
-        key = (binary, None)
-    if key not in _help_texts:
+        key = (binary, None, arguments)
+    if key not in _answers:
         try:
             answer = subprocess.run(
-                [binary, "--help"],
+                [binary, *arguments],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=_VERSION_TIMEOUT,
                 check=False,
             )
-            _help_texts[key] = answer.stdout + answer.stderr
+            _answers[key] = (answer.returncode, answer.stdout, answer.stderr)
         except (OSError, subprocess.SubprocessError):
-            _help_texts[key] = ""
-    return _help_texts[key]
+            _answers[key] = (None, "", "")
+    return _answers[key]
+
+
+def _help(binary: str) -> str:
+    """The binary's --help."""
+    _, stdout, stderr = _answer(binary, ("--help",))
+    return stdout + stderr
+
+
+def _listed_ops(binary: str) -> Optional[frozenset]:
+    """The ops `edit --ops` lists; None for a binary that does not answer it
+    (exit 2 from #25 to #28, an unknown command before)."""
+    code, stdout, _ = _answer(binary, ("edit", "--ops"))
+    if code != 0:
+        return None
+    try:
+        ops = json.loads(stdout).get("ops")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        return None
+    return frozenset(ops)
 
 
 def supports_edit(binary: str) -> bool:
@@ -249,10 +272,20 @@ def supports_edit(binary: str) -> bool:
     return re.search(r"^\s+edit\s", _help(binary), re.MULTILINE) is not None
 
 
+def tags_migration(binary: str) -> bool:
+    """Whether the binary tags each migration statement with what it does
+    (``action``, ``object``, ``name``, ``table``, ``new_name``): one that
+    answers ``edit --ops``."""
+    return _listed_ops(binary) is not None
+
+
 def edit_ops(binary: str) -> frozenset:
-    """The edit ops the binary does: its --help's ``edit ops:`` line, the
-    renames for a binary with ``edit`` but without that line, none without
-    ``edit``."""
+    """The edit ops the binary does: what ``edit --ops`` lists; for an
+    older binary its --help's ``edit ops:`` line, the renames for one with
+    ``edit`` but without that line, none without ``edit``."""
+    listed = _listed_ops(binary)
+    if listed is not None:
+        return listed
     if not supports_edit(binary):
         return frozenset()
     listed = re.search(r"^\s+edit ops:(.*)$", _help(binary), re.MULTILINE)
@@ -271,7 +304,8 @@ def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
 
     Returns:
         {format, files: [{file, edits: [{range, new_text}]}], migration:
-        [{edit, sql}], notes, outline}: ``file`` is "-" for sql, else a path
+        [{edit, sql, action?, object?, name?, table?, new_name?}], notes,
+        outline}: the tags where tags_migration(binary): ``file`` is "-" for sql, else a path
         relative to source_dir.
 
     Raises:

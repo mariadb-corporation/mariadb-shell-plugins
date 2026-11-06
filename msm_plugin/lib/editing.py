@@ -51,24 +51,26 @@ from msm_plugin.lib import sections as sections_lib
 CHANGES_SECTION_ID = "240"
 REMOVALS_SECTION_ID = "290"
 
-# Statements of these kinds (statements.object_kind) cannot run inside the
-# update procedure of Section 240: a routine's DROP (MariaDB 1357: a stored
-# routine is not dropped from within another) goes in Section 290.
-_ROUTINE_KINDS = ("PROCEDURE", "FUNCTION")
-# A CREATE of these kinds (statements.statement_kind) is not kept: a
-# routine's (rename_routine drops the routine and creates it again,
-# add_routine creates it) cannot run inside the update procedure either
-# (MariaDB 1303) and its body would need a DELIMITER, and Section 150 of the
-# release, which every deployment runs in full after the 240 steps, creates
-# routines and views (add_view) anyway.
-_SECTION_150_KINDS = ("VIEW",) + _ROUTINE_KINDS
-# A DROP of a table, view or routine without IF EXISTS, as the binary writes
-# it: kept with IF EXISTS, as the update script's sections are written. A
-# routine's DROP in Section 290 needs it: the target's Section 150 runs
-# first and may have dropped the routine already (MariaDB 1305).
+# What a migration statement does, as the binary tags it (action, object):
+# - the CREATE of a view or routine is not kept. Section 150 of the release,
+#   which every deployment runs in full after the 240 steps, creates it
+#   (add_view, add_routine, the second statement of rename_routine), and a
+#   routine's CREATE cannot run inside the update procedure (MariaDB 1303);
+# - the DROP of a routine goes in Section 290: a stored routine is not
+#   dropped from within another (MariaDB 1357);
+# - the DROP of a table, view or routine is kept with IF EXISTS, as the
+#   binary writes it without: Section 150 runs before 290 and may have
+#   dropped the routine already (MariaDB 1305);
+# - everything else goes in Section 240.
+_ROUTINES = ("procedure", "function")
+_NOT_KEPT_CREATES = ("view",) + _ROUTINES
+_DROPPED_IF_EXISTS = ("table", "view") + _ROUTINES
 _DROP_WITHOUT_IF_EXISTS = re.compile(
     r"^(\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)", re.IGNORECASE
 )
+# A binary that does not tag its statements (lsp-server #25 to #28): the
+# tags msm needs, read from the SQL.
+_DROP_OBJECT = re.compile(r"^\s*DROP\s+(TABLE|VIEW|PROCEDURE|FUNCTION)\b", re.IGNORECASE)
 
 
 class StaleSchemaError(ValueError):
@@ -324,30 +326,61 @@ def _describe(edit: dict) -> str:
     return " ".join([str(edit.get("op"))] + names)
 
 
-def _kept_statement(item: dict) -> Optional[str]:
-    """A migration statement as the pending update script keeps it, without
-    its delimiter, a DROP with IF EXISTS; None for one it does not keep
-    (empty, or the CREATE of a routine or view, see _SECTION_150_KINDS)."""
+def _tags(item: dict, sql: str, tagged: bool) -> tuple:
+    """A migration statement's (action, object), as the binary tagged it;
+    for a binary without tags, read from the SQL as far as msm needs them
+    (a CREATE of a view or routine, a DROP of a table, view or routine,
+    else (None, None))."""
+    if tagged:
+        action, kind = item.get("action"), item.get("object")
+        if not isinstance(action, str) or not isinstance(kind, str):
+            raise ValueError(
+                "The language server sent a migration statement without its `action` "
+                f"and `object`: {sql}"
+            )
+        return action, kind
+    created = statements.statement_kind(sql)
+    if created:
+        return "create", created.lower()
+    dropped = _DROP_OBJECT.match(sql)
+    return ("drop", dropped.group(1).lower()) if dropped else (None, None)
+
+
+def _placed_statement(item: dict, tagged: bool) -> Optional[tuple]:
+    """A migration statement as the pending update script keeps it: its
+    (section id, SQL without the delimiter); None for one it does not keep
+    (empty, or the CREATE of a view or routine). See _ROUTINES."""
     sql = (item.get("sql") or "").strip().rstrip(";").strip()
-    if not sql or statements.statement_kind(sql) in _SECTION_150_KINDS:
+    if not sql:
         return None
-    return _DROP_WITHOUT_IF_EXISTS.sub(r"\1IF EXISTS ", sql, count=1)
+    action, kind = _tags(item, sql, tagged)
+    if action == "create" and kind in _NOT_KEPT_CREATES:
+        return None
+    if action == "drop" and kind in _DROPPED_IF_EXISTS:
+        sql = _DROP_WITHOUT_IF_EXISTS.sub(r"\1IF EXISTS ", sql, count=1)
+        if kind in _ROUTINES:
+            return REMOVALS_SECTION_ID, sql
+    return CHANGES_SECTION_ID, sql
 
 
-def migration_statements(edits: list, migration: list) -> dict:
+def migration_statements(edits: list, migration: list, tagged: bool = True) -> dict:
     """The binary's migration statements as the sections of the pending
-    update script: each edit's statements under a comment naming it, a
-    routine's DROP in Section 290, the CREATE of a routine or view left to
-    Section 150 (see _SECTION_150_KINDS), everything else in 240."""
+    update script: each edit's statements under a comment naming it, placed
+    by what they do (see _ROUTINES).
+
+    Args:
+        edits: The edits of the request.
+        migration: The binary's statements, [{edit, sql, action, object, ...}].
+        tagged: Whether the binary tags them (lsp.tags_migration); else
+            msm reads what it needs from the SQL.
+    """
     by_section = {CHANGES_SECTION_ID: [], REMOVALS_SECTION_ID: []}
     described = {CHANGES_SECTION_ID: set(), REMOVALS_SECTION_ID: set()}
     for item in migration:
-        sql = _kept_statement(item)
-        if sql is None:
+        placed = _placed_statement(item, tagged)
+        if placed is None:
             continue
-        # The CREATEs of routines are left out already, so this is a DROP
-        routine = statements.object_kind(sql) in _ROUTINE_KINDS
-        section_id = REMOVALS_SECTION_ID if routine else CHANGES_SECTION_ID
+        section_id, sql = placed
         index = item.get("edit")
         if index not in described[section_id]:
             described[section_id].add(index)
@@ -472,13 +505,14 @@ def edit_schema(
         texts[path] = (old, apply_spans(old, spans))
 
     migration = result.get("migration", [])
+    tagged = lsp.tags_migration(binary)
     migration_file = None
     if migration and management.get_last_released_version(schema_project_path) is not None:
         migration_file = pending_update_path(schema_project_path, project.settings)
         old = sections_lib.read_if_exists(migration_file)
         texts[migration_file] = (
             old,
-            pending_update_text(old, project.settings, migration_statements(edits, migration)),
+            pending_update_text(old, project.settings, migration_statements(edits, migration, tagged)),
         )
 
     # The files as they are on disk, to put back: the development script's
@@ -525,7 +559,8 @@ def edit_schema(
         "rows": rows,
         "files": written,
         "migration": [
-            sql for sql in map(_kept_statement, migration) if sql is not None
+            placed[1] for placed in (_placed_statement(item, tagged) for item in migration)
+            if placed is not None
         ] if migration_file else [],
         "migration_file": migration_file,
         "notes": result.get("notes", []),
