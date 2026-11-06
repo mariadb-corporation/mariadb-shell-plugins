@@ -469,32 +469,15 @@ def event_label(event: dict) -> str:
     return f"{event.get('name', '')} {schedule}" if schedule else event.get("name", "")
 
 
-# The values of a sequence its card shows, by the outline's member, with
-# the label the VS Code extension's modeler gives them (tableCard.ts,
-# sequenceCardContent).
-_SEQUENCE_VALUES = (
-    ("type", "type"),
-    ("start", "start"),
-    ("increment", "increment"),
-    ("minvalue", "min"),
-    ("maxvalue", "max"),
-    ("cache", "cache"),
-)
-
-
 def sequence_rows(sequence: dict) -> list:
     """The rows a sequence figure shows, as the VS Code extension's modeler
-    draws them: a label and the value for each value the CREATE SEQUENCE
-    writes (the outline's null for one it does not), cycle only where it is
-    CYCLE; no rows (the card is its header) for a sequence written without
-    any."""
-    rows = [
-        f"{label} {sequence[key]}" for key, label in _SEQUENCE_VALUES
-        if sequence.get(key) not in (None, "")
+    draws them: the type, START WITH and INCREMENT BY, the server's defaults
+    (BIGINT, 1) where the CREATE SEQUENCE does not write them."""
+    return [
+        sequence.get("type") or "BIGINT",
+        f"START WITH {sequence.get('start') or 1}",
+        f"INCREMENT BY {sequence.get('increment') or 1}",
     ]
-    if sequence.get("cycle") is True:
-        rows.append("cycle yes")
-    return rows
 
 
 def _table_sections(table: dict, figure: dict) -> list:
@@ -581,7 +564,7 @@ FIGURE_KINDS = {
     SEQUENCE_FIGURE: FigureKind(
         "sequence", "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
         rows=sequence_rows,
-        sections=lambda sequence, figure: [len(sequence_rows(sequence))],
+        sections=lambda sequence, figure: [3],
     ),
 }
 
