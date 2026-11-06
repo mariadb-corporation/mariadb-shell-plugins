@@ -34,6 +34,7 @@ its whole script in one file.
 
 import functools
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -322,6 +323,61 @@ def complete_sections(
     return dict(pairs), missing
 
 
+# The commented-out examples of the templates (templates/scripts), in
+# Sections 140 and 150 of a new development script: a block comment whose
+# first line is the template's `-- ToDo: Add schema ... create statements`
+# note (a ToDo block comment of the user's own stays). Every existing
+# project has this text, so the pattern stays as it is even where the
+# templates change.
+_TEMPLATE_EXAMPLE = re.compile(
+    r"[ \t]*/\*[ \t]*\n[ \t]*--[ \t]*ToDo: Add schema (?:TABLEs|objects) create statements"
+    r"\n.*?\*/[ \t]*\n?",
+    re.DOTALL,
+)
+_TEMPLATE_EXAMPLE_MARK = "-- ToDo:"
+# What Section 150's example leaves behind: its DELIMITER pair around nothing.
+_EMPTY_DELIMITER_PAIR = re.compile(r"^DELIMITER %%\n\s*DELIMITER ;\n?", re.MULTILINE)
+
+
+def without_template_examples(script: str, section_ids=None) -> str:
+    """The script without the templates' commented-out examples in the
+    sections that have a statement of their own (or a SOURCE line): they
+    make sense only while a section is empty. Other sections, and every
+    other comment, are left as they are.
+
+    Args:
+        script: The development script.
+        section_ids: The sections to look at; all by default.
+
+    Returns:
+        The script; the one given where no example goes.
+    """
+    if _TEMPLATE_EXAMPLE_MARK not in script:
+        return script
+    sections = management.get_script_sections(script)
+    changed = False
+    for section_id, section in sections.items():
+        if section_ids is None or section_id in section_ids:
+            changed = drop_template_example(section) or changed
+    if not changed:
+        return script
+    return "\n".join(section["full_content"] for section in sections.values())
+
+
+def drop_template_example(section: dict) -> bool:
+    """Drops the template's example from a section (of get_script_sections)
+    that has a statement of its own, see without_template_examples.
+
+    Returns:
+        Whether it had one to drop.
+    """
+    body, found = _TEMPLATE_EXAMPLE.subn("", section["full_content"][section["sql_start"]:])
+    if not found or not statements_lib.strip_statement(body):
+        return False
+    set_section_body(section, _EMPTY_DELIMITER_PAIR.sub("", body).strip("\n"))
+    return True
+
+
 def complete_script(
     schema_project_path: str, script: str, project_settings: dict = None
 ) -> tuple:
@@ -474,6 +530,8 @@ def split_sections(
             inline_before=before, inline_after=after,
         )
         set_section_body(sections[section_id], body)
+        # The example would stay behind the SOURCE lines.
+        drop_template_example(sections[section_id])
         result.split[section_id] = [part.file_name for part in parts]
         files.update(dict.fromkeys(written))
     if plans or added:

@@ -414,6 +414,20 @@ def _diagrams_breakout_path(project) -> str:
     return source.resolve_include_path(modeling.BREAKOUT_FILE, project.development)
 
 
+def _edited_sections(project, starts: list, includes: set) -> set:
+    """The ids of the development script's sections the binary's edits
+    write into: at the starts (indexes into the script), or into one of
+    the includes (resolved paths of the files a SOURCE line names)."""
+    return {
+        section_id for section_id, section in project.sections.items()
+        if any(section["start_position"] <= start <= section["end_position"] for start in starts)
+        or any(
+            source.resolve_include_path(path, project.development) in includes
+            for _, path in source.directives(section["sql_content"])
+        )
+    }
+
+
 def _check_request(edits) -> None:
     if not isinstance(edits, list) or not edits:
         raise ValueError("No edits given: pass a list of edits, each with its `op`.")
@@ -494,17 +508,21 @@ def edit_schema(
 
     # The new texts, worked out before anything is written.
     texts = {}
+    # Where the edits go, for the template's examples below.
+    starts, includes = [], set()
     section = project.sections.get(modeling.DIAGRAMS_SECTION_ID)
     for changed in result.get("files", []):
         name = changed.get("file")
         if name == "-":
             path, old = project.dev_file, project.script
         else:
-            path = source.checked_include_path(
-                source.resolve_include_path(name, project.development)
-            )
+            resolved = source.resolve_include_path(name, project.development)
+            includes.add(resolved)
+            path = source.checked_include_path(resolved)
             old = project.read(path)[1]
         spans = edit_spans(old, changed.get("edits", []))
+        if path == project.dev_file:
+            starts += [start for start, _, _ in spans]
         if path == project.dev_file and section is not None:
             # The VIEW is msm's to write: an edit there would be lost.
             start = section["start_position"] + section["sql_start"]
@@ -518,6 +536,18 @@ def edit_schema(
                     f"{modeling.DIAGRAMS_SECTION_ID}, which msm writes itself."
                 )
         texts[path] = (old, apply_spans(old, spans))
+
+    # A section the edits gave its first statement loses the template's
+    # example; the binary's outline then has the lines before it, so the
+    # snapshot is made from a new one.
+    outline = result.get("outline")
+    old, new = texts.get(project.dev_file, (project.script, project.script))
+    cleaned = sections_lib.without_template_examples(
+        new, _edited_sections(project, starts, includes)
+    )
+    if cleaned != new:
+        texts[project.dev_file] = (old, cleaned)
+        outline = None
 
     migration = result.get("migration", [])
     migration_file, kept = None, []
@@ -552,7 +582,7 @@ def edit_schema(
         # The binary's outline of the texts it edited is the outline of the
         # files as now written (Section 160 blanked as in the request); an
         # older answer without it has the binary run again.
-        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, result.get("outline"))
+        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, outline)
         # _write may write the script and the VIEW's breakout file.
         touched += [path for path in originals if path not in touched]
         written += [path for path in modeling._write(project, rows) if path not in written]

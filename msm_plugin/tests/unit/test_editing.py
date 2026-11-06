@@ -850,6 +850,69 @@ def test_a_first_view_goes_into_section_150(tmp_path):
 
 
 @needs_edit_lsp
+def test_the_template_examples_go_with_a_sections_first_statement(tmp_path):
+    from msm_plugin.lib.management import create_schema_project_folder
+
+    path = create_schema_project_folder(
+        schema_name="shop", target_path=str(tmp_path), copyright_holder="X", license="MIT")
+    modeling.update_schema_definition(path, lsp_path=EDIT_LSP)
+
+    def bodies():
+        found = management.get_file_sections(management.get_schema_development_file_path(path))
+        return found["140"]["sql_content"], found["150"]["sql_content"]
+
+    result = editing.edit_schema(path, [{"op": "add_table", "table": {
+        "name": "t", "columns": [{"name": "id", "type": "INT"}]}}],
+        base_hash(path), lsp_path=EDIT_LSP)
+    tables, objects = bodies()
+    assert "CREATE TABLE `t`" in tables and "ToDo" not in tables and "my_table" not in tables
+    assert "-- ToDo:" in objects  # no statement there yet
+    # The snapshot is that of the script as written, without the example
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+
+    result = editing.edit_schema(path, [{"op": "add_view", "view": {
+        "name": "v", "definition": "SELECT `id` FROM `t`"}}], base_hash(path), lsp_path=EDIT_LSP)
+    tables, objects = bodies()
+    assert "CREATE OR REPLACE VIEW `v`" in objects and "ToDo" not in objects
+    assert "DELIMITER" not in objects
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+
+
+@needs_edit_lsp
+def test_a_first_procedure_keeps_its_delimiters_and_deploys(tmp_path, sandbox_session):
+    """Section 150's example goes with its DELIMITER pair; the procedure the
+    edit adds brings its own, so the script still runs."""
+    from msm_plugin.lib.management import create_schema_project_folder
+    from msm_plugin.tests.unit import helpers
+
+    path = create_schema_project_folder(
+        schema_name=DEPLOYED_SCHEMA, target_path=str(tmp_path), copyright_holder="X",
+        license="MIT")
+    modeling.update_schema_definition(path, lsp_path=EDIT_LSP)
+    editing.edit_schema(path, [
+        {"op": "add_table", "table": {"name": "t", "columns": [{"name": "id", "type": "INT"}]}},
+        {"op": "add_routine", "routine": {
+            "name": "count_t", "kind": "procedure", "parameters": [],
+            "body": "BEGIN\n    SELECT COUNT(*) FROM `t`;\nEND"}},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    objects = management.get_file_sections(
+        management.get_schema_development_file_path(path))["150"]["sql_content"]
+    assert "ToDo" not in objects and objects.count("DELIMITER %%") == 1
+    assert objects.index("DELIMITER %%") < objects.index("CREATE PROCEDURE `count_t`") < (
+        objects.index("DELIMITER ;"))
+
+    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
+    try:
+        release(path, "1.0.0", "1.0.1")
+        assert [row["ROUTINE_NAME"] for row in helpers.query(sandbox_session, (
+            "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
+            f"WHERE ROUTINE_SCHEMA = '{DEPLOYED_SCHEMA}' AND ROUTINE_NAME NOT LIKE 'msm%'"
+        ))] == ["count_t"]
+    finally:
+        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
+
+
+@needs_edit_lsp
 def test_renames_reach_a_deployed_schema_through_the_next_release(deployed):
     path, column = deployed
     result = editing.edit_schema(path, RENAMES, base_hash(path), lsp_path=EDIT_LSP)
