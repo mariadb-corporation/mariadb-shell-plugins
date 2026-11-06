@@ -451,6 +451,22 @@ STRUCTURAL_EDITS = [
     {"op": "drop_routine", "routine": "count_customers", "kind": "procedure"},
 ]
 
+# Keys, views and routines (lsp-server #27), on the schema STRUCTURAL_EDITS left.
+KEY_AND_OBJECT_EDITS = [
+    {"op": "add_column", "table": "note",
+     "column": {"name": "customer_id", "type": "INT UNSIGNED"}},
+    {"op": "add_index", "table": "customer",
+     "index": {"name": "customer_email", "kind": "unique", "columns": ["email"]}},
+    {"op": "add_foreign_key", "table": "note", "foreign_key": {
+        "name": "fk_note_customer", "columns": ["customer_id"],
+        "references": {"table": "customer", "columns": ["id"]}}},
+    {"op": "drop_foreign_key", "table": "orders", "name": "fk_orders_customer"},
+    {"op": "add_view", "view": {"name": "note_texts", "definition": "SELECT `text` FROM `note`"}},
+    {"op": "add_routine", "routine": {
+        "name": "count_notes", "kind": "procedure", "parameters": [],
+        "body": "BEGIN\n    SELECT COUNT(*) FROM `note`;\nEND"}},
+]
+
 
 def test_edit_ops_come_from_the_help(monkeypatch):
     help_texts = {
@@ -560,19 +576,39 @@ def test_structural_edits_reach_a_deployed_schema_through_the_next_release(
             "SELECT TABLE_NAME FROM information_schema.VIEWS "
             f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME NOT LIKE 'msm%'")] == []
 
-        # The next upgrade runs Section 150 again over what the edits wrote
+        # Keys, a view and a routine: the key changes go into 240, the view
+        # and the routine reach the server through Section 150
+        result = editing.edit_schema(
+            path, KEY_AND_OBJECT_EDITS, base_hash(path), lsp_path=EDIT_LSP)
+        assert result["rows"][0]["document"] == fresh_snapshot(path)
+        kept = editing.read_pending_update(
+            editing.pending_update_path(path, management.get_project_settings(path)))
+        assert "ADD CONSTRAINT `fk_note_customer` FOREIGN KEY" in kept["240"]
+        assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
+        assert "CREATE" not in kept["240"].replace("CREATE TABLE", "") + kept["290"]
         release("1.0.2", "1.0.3")
+        assert [row["CONSTRAINT_NAME"] for row in query(
+            "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
+            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["fk_note_customer"]
+        assert [row["NON_UNIQUE"] for row in query(
+            "SELECT NON_UNIQUE FROM information_schema.STATISTICS "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND INDEX_NAME = 'customer_email'")] == [0]
+        assert [row["TABLE_NAME"] for row in query(
+            "SELECT TABLE_NAME FROM information_schema.VIEWS "
+            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME NOT LIKE 'msm%'")] == [
+            "note_texts"]
+        assert [row["ROUTINE_NAME"] for row in query(
+            "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
+            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'")] == [
+            "count_notes"]
+
+        # The next upgrade runs Section 150 again over what the edits wrote
+        release("1.0.3", "1.0.4")
     finally:
         sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
 
 
 @needs_edit_lsp
-@pytest.mark.xfail(
-    strict=True,
-    reason="lsp-server: add_view writes CREATE VIEW, not CREATE OR REPLACE VIEW, and "
-    "add_routine no DROP ... IF EXISTS before its CREATE, so Section 150 fails on the "
-    "next deployment (the object exists)",
-)
 def test_added_views_and_routines_can_be_created_again(tmp_path):
     path = real_project(tmp_path)
     editing.edit_schema(path, [
@@ -588,11 +624,6 @@ def test_added_views_and_routines_can_be_created_again(tmp_path):
 
 
 @needs_edit_lsp
-@pytest.mark.xfail(
-    strict=True,
-    reason="lsp-server: add_view in a schema without views goes after the last table, "
-    "i.e. into Section 140, which an upgrade never runs",
-)
 def test_a_first_view_goes_into_section_150(tmp_path):
     path = real_project(tmp_path)
     editing.edit_schema(path, [
