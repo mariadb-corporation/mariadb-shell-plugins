@@ -17,8 +17,8 @@
 
 The same scheme as the MariaDB Shell's install: ``install.sh`` (or
 ``install.ps1`` on Windows) from the repository's main branch downloads the
-newest release for this platform, or the one ``MARIADB_RESTD_TAG`` names, and
-unpacks it into a folder per version under
+release ``MARIADB_RESTD_TAG`` names, or the newest one for this platform (a
+prerelease only when there is no stable one), and unpacks it into a folder per version under
 :func:`mcp_plugin.lib.restd.install_prefix`, linking it from ``~/.local/bin``.
 
 The script runs with its own stdin and its output captured: it must not read
@@ -77,12 +77,46 @@ def _failure(output: str) -> str:
     return "\n".join(own[-3:] if own else lines[-_TAIL_LINES:])
 
 
+def _run(command: list, env: dict) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=INSTALL_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise tool_error(
+            f"The mariadb-restd install did not finish within "
+            f"{INSTALL_TIMEOUT} seconds."
+        ) from error
+    except OSError as error:
+        raise tool_error(
+            f"The mariadb-restd install script could not be run: {error}"
+        ) from error
+
+
+def _output(completed: subprocess.CompletedProcess) -> str:
+    return "\n".join(
+        part.strip() for part in (completed.stdout, completed.stderr) if part.strip()
+    )
+
+
 def install(tag: str = None) -> str:
     """Installs a mariadb-restd release.
 
+    Prereleases are taken as the MariaDB Shell's launchers take them: a stable
+    release is preferred, and a prerelease installed only when there is no
+    stable one. ``MARIADB_RESTD_PRERELEASE`` decides it instead: truthy goes
+    straight for a prerelease, ``0``/``false``/``no``/``off`` refuses one.
+
     Args:
-        tag (str): The release to install, for example 'v1.0.0'. The newest
-            one when None.
+        tag (str): The release to install, for example 'v26.10.1', with one
+            run of the script; the script still comes from main, since no
+            release carries its own yet. The newest one when None.
 
     Returns:
         str: What the install script printed.
@@ -94,6 +128,9 @@ def install(tag: str = None) -> str:
     script = _download(url)
 
     env = dict(os.environ)
+    # The scripts read any non-empty value as "take prereleases", so it is
+    # decided here, and set again only for a run that takes one.
+    choice = env.pop("MARIADB_RESTD_PRERELEASE", "").strip().lower()
     if tag:
         env["MARIADB_RESTD_TAG"] = tag
 
@@ -114,35 +151,33 @@ def install(tag: str = None) -> str:
         path = os.path.join(temp_dir, file_name)
         with open(path, "wb") as file:
             file.write(script)
-        command = runner + [path]
+        stable = (runner + [path], env)
+        # As the shell's launchers ask for one: --pre-release to install.sh,
+        # MARIADB_RESTD_PRERELEASE=1 to install.ps1, which the .cmd launcher
+        # reaches through the environment.
+        if os.name == "nt":
+            prerelease = (runner + [path], dict(env, MARIADB_RESTD_PRERELEASE="1"))
+        else:
+            prerelease = (runner + [path, "--pre-release"], env)
 
-        try:
-            completed = subprocess.run(
-                command,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=INSTALL_TIMEOUT,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as error:
-            raise tool_error(
-                f"The mariadb-restd install did not finish within "
-                f"{INSTALL_TIMEOUT} seconds."
-            ) from error
-        except OSError as error:
-            raise tool_error(
-                f"The mariadb-restd install script could not be run: {error}"
-            ) from error
+        # A pinned tag already names the release.
+        if tag or choice in ("0", "false", "no", "off"):
+            attempts = [stable]
+        elif choice:
+            attempts = [prerelease]
+        else:
+            # Without it the scripts take /releases/latest, which skips
+            # prereleases, so while every release is one the first run fails.
+            attempts = [stable, prerelease]
 
-    output = "\n".join(
-        part.strip() for part in (completed.stdout, completed.stderr) if part.strip()
+        outputs = []
+        for command, run_env in attempts:
+            completed = _run(command, run_env)
+            outputs.append(_output(completed))
+            if completed.returncode == 0:
+                return "\n".join(part for part in outputs if part)
+
+    raise tool_error(
+        f"The mariadb-restd install failed (exit code "
+        f"{completed.returncode}).\n{_failure(outputs[-1])}"
     )
-    if completed.returncode != 0:
-        raise tool_error(
-            f"The mariadb-restd install failed (exit code "
-            f"{completed.returncode}).\n{_failure(output)}"
-        )
-
-    return output

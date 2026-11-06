@@ -646,9 +646,19 @@ cookies, a login session included, and it could pose as the site's login page.
    with `CONFIGURE REST METADATA`.
 3. Finds `mariadb-restd` on the PATH, in `~/.local/bin`, or among the releases its install
    script unpacked into `~/.local/share/mariadb-restd/<version>`
-   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows). When there is none,
-   it runs the install script from the rest-daemon repository - without asking in GUI
-   mode, after asking through MCP elicitation otherwise.
+   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows), passing over one
+   older than the lowest version wanted: `restd_version` (the VS Code extension always
+   passes the version it needs), else `MARIADB_RESTD_VERSION`, else 26.10.1. When there
+   is none new enough, it runs the install script from the rest-daemon repository -
+   without asking in GUI mode, after asking through MCP elicitation otherwise. The
+   MariaDB Shell is installed the same two ways:
+   - with `restd_version`, exactly that release (`MARIADB_RESTD_TAG=v<version>`), as the
+     extension installs the shell;
+   - without it, as the shell's launchers do: the newest stable release, and a
+     prerelease only when there is no stable one. `MARIADB_RESTD_PRERELEASE=1` goes
+     straight for a prerelease, and `MARIADB_RESTD_PRERELEASE=0` never takes one. If the
+     newest release is still below the lowest version, it is used anyway, and the
+     result's `install_warning` says so.
 4. Checks that the account can do the setup: `CREATE USER` with the `GRANT OPTION`,
    `SELECT`, `INSERT` and `UPDATE` on the metadata schema, and its roles
    `WITH ADMIN OPTION`.

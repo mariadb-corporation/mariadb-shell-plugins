@@ -38,11 +38,33 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   (`db_functions.connection_credentials`). It is tested by opening a session of
   its own with it, then the privileges `--setup` needs are checked from
   `SHOW GRANTS` (`restd_functions._missing_privileges`).
-- **Install.** `restd.find_restd`: PATH, `~/.local/bin`, then the newest
-  version folder under `~/.local/share/mariadb-restd` (Windows
-  `%LOCALAPPDATA%\Programs\mariadb-restd`), the shell's install layout. If
-  none: `restd_install.install` runs the rest-daemon repo's `install.sh` /
-  `install.ps1` (`MARIADB_RESTD_TAG`, `_PREFIX`, `_BINDIR`, as the shell's).
+- **Install.** `restd.find_restd`: PATH, `~/.local/bin`, then the version
+  folders under `~/.local/share/mariadb-restd` newest first (Windows
+  `%LOCALAPPDATA%\Programs\mariadb-restd`), the shell's install layout. With
+  `minimum_version` (configure_restd's `restd_version`, else the default
+  below) each is probed with
+  `--version` (`MariaDB REST Daemon  Ver 26.10.1 for ...`) and one older, or
+  silent, is passed over - as the extension finds the shell. If none:
+  `restd_install.install` runs the rest-daemon repo's `install.sh` /
+  `install.ps1` from `main` (`MARIADB_RESTD_TAG`, `_PREFIX`, `_BINDIR`, as the
+  shell's). The same two schemes as the shell's installs:
+  - **Pinned** (`restd_version`, which the extension always sends as its
+    `MINIMUM_RESTD_VERSION`): `MARIADB_RESTD_TAG=v<version>`, one run. The
+    extension takes the shell's script from the tag itself
+    (`raw/v<version>/`); no restd release carries its scripts yet (added to
+    `main` after v26.10.1), so `main`'s script is used with the tag.
+  - **Not pinned**, as the ai-plugins launchers: lowest version
+    `MARIADB_RESTD_VERSION`, else `restd.DEFAULT_MINIMUM_VERSION` (26.10.1;
+    the launchers' `MARIADB_SHELL_VERSION` default), older ones passed over;
+    the newest release installed; if that is still below, used anyway with
+    `install_warning` in the result (the launchers log a warning and start
+    it). Install: stable first, then a retry
+    with `--pre-release` (POSIX) or `MARIADB_RESTD_PRERELEASE=1` in the
+    environment (Windows, as the `.cmd` launcher) - `/releases/latest` skips
+    prereleases, and every release is one so far. `MARIADB_RESTD_PRERELEASE`
+    from the caller: truthy = prerelease straight away, 0/false/no/off =
+    stable only; it is popped from the script's env, since the scripts treat
+    any non-empty value as truthy.
   `--gui`: without asking. Agent mode: MCP elicitation first.
 - **Sandbox hooks live in the `sandbox.*` tools**, not only in the extension,
   so an agent deleting a sandbox never leaves a daemon serving from a deleted
