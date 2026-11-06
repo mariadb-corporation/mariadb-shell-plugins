@@ -833,7 +833,7 @@ def diagram_documents(model: Model, schema: dict) -> tuple:
     """
     schema_ids = {
         kind: {item["_id"] for item in schema.get(kind, [])}
-        for kind in ("tables", "views", "routines")
+        for kind in dict.fromkeys(each.objects for each in diagrams.FIGURE_KINDS.values())
     }
     # The model file, open while the figures' pictures are read.
     opened = nullcontext()

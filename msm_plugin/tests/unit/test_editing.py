@@ -62,6 +62,15 @@ needs_edit_lsp = pytest.mark.skipif(
     reason="no mariadb-lsp binary with the edit command (MSM_TEST_LSP names one)",
 )
 
+
+def needs_edit_ops(*ops):
+    """Skips a test where the binary lacks one of the ops."""
+    return pytest.mark.skipif(
+        EDIT_LSP is None or not set(ops) <= lsp.edit_ops(EDIT_LSP),
+        reason="no mariadb-lsp binary with the ops " + ", ".join(ops),
+    )
+
+
 MRS_PROJECT = os.environ.get("MSM_TEST_MRS_PROJECT") or os.path.join(
     # The runner links the plugin into its config home: the checkout is where the link points
     os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..",
@@ -252,6 +261,55 @@ def test_tagged_migrations_are_placed_by_their_tags():
     }
     with pytest.raises(ValueError, match="without its `action`"):
         editing.migration_statements(edits, [{"edit": 1, "sql": "DROP TABLE `t`"}])
+
+
+def test_triggers_events_and_sequences_are_placed_by_their_tags():
+    edits = [{"op": "rename_trigger", "trigger": "t", "new_name": "u"},
+             {"op": "add_event", "event": {"name": "e"}}, {"op": "rename_event", "event": "e",
+                                                         "new_name": "f"},
+             {"op": "drop_event", "event": "f"}, {"op": "add_sequence", "sequence": {"name": "s"}},
+             {"op": "drop_sequence", "sequence": "s"}]
+    by_section, kept = editing.migration_statements(edits, [
+        {"edit": 0, "sql": "DROP TRIGGER `t`", "action": "drop", "object": "trigger", "name": "t"},
+        # MariaDB 1303 and 1576 inside the update procedure: Section 150 creates them
+        {"edit": 0, "sql": "CREATE TRIGGER `u` BEFORE INSERT ON `x` FOR EACH ROW SET @a = 1",
+         "action": "create", "object": "trigger", "name": "u"},
+        {"edit": 1, "sql": "CREATE EVENT `e` ON SCHEDULE EVERY 1 DAY DO SELECT 1",
+         "action": "create", "object": "event", "name": "e"},
+        {"edit": 2, "sql": "ALTER EVENT `e` RENAME TO `f`", "action": "rename", "object": "event",
+         "name": "e", "new_name": "f"},
+        {"edit": 3, "sql": "DROP EVENT `f`", "action": "drop", "object": "event", "name": "f"},
+        {"edit": 4, "sql": "CREATE SEQUENCE `s`", "action": "create", "object": "sequence",
+         "name": "s"},
+        {"edit": 5, "sql": "DROP SEQUENCE `s`", "action": "drop", "object": "sequence", "name": "s"},
+    ])
+    assert by_section == {
+        "240": "-- msm.editSchema: rename_trigger t -> u\nDROP TRIGGER IF EXISTS `t`;\n"
+               "-- msm.editSchema: rename_event e -> f\nALTER EVENT `e` RENAME TO `f`;\n"
+               "-- msm.editSchema: drop_event f\nDROP EVENT IF EXISTS `f`;\n"
+               "-- msm.editSchema: add_sequence s\nCREATE SEQUENCE `s`;\n"
+               "-- msm.editSchema: drop_sequence s\nDROP SEQUENCE IF EXISTS `s`;",
+        "290": "",
+    }
+    assert kept == ["DROP TRIGGER IF EXISTS `t`", "ALTER EVENT `e` RENAME TO `f`",
+                    "DROP EVENT IF EXISTS `f`", "CREATE SEQUENCE `s`",
+                    "DROP SEQUENCE IF EXISTS `s`"]
+
+
+def test_diagrams_follow_renamed_events_and_sequences():
+    diagram = {"figures": [
+        {"id": "e", "type": "EventGroupFigure", "name": "Events", "events": ["a", "NIGHTLY"]},
+        {"id": "s", "type": "SequenceFigure", "name": "numbers", "sequence": "numbers"},
+    ], "connections": []}
+    assert editing.rename_in_diagram(
+        diagram, {"op": "rename_event", "event": "nightly", "new_name": "daily"})
+    assert diagram["figures"][0]["events"] == ["a", "daily"]
+    assert editing.rename_in_diagram(
+        diagram, {"op": "rename_sequence", "sequence": "numbers", "new_name": "ids"})
+    assert (diagram["figures"][1]["sequence"], diagram["figures"][1]["name"]) == ("ids", "ids")
+    # The table card lists the snapshot's triggers: nothing to follow
+    assert not editing.rename_in_diagram(
+        diagram, {"op": "rename_trigger", "trigger": "t", "new_name": "u"})
 
 
 # -----------------------------------------------------------------------------
@@ -599,13 +657,25 @@ def deployed(sandbox_session, tmp_path):
         sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
 
 
+# The information_schema tables of user_objects: their name and schema
+# columns, and a condition of their own.
+_USER_OBJECTS = {
+    "VIEWS": ("TABLE_NAME", "TABLE_SCHEMA", ""),
+    "ROUTINES": ("ROUTINE_NAME", "ROUTINE_SCHEMA", ""),
+    "SEQUENCES": ("TABLE_NAME", "TABLE_SCHEMA", " AND TABLE_TYPE = 'SEQUENCE'"),
+    "TRIGGERS": ("TRIGGER_NAME", "TRIGGER_SCHEMA", ""),
+    "EVENTS": ("EVENT_NAME", "EVENT_SCHEMA", ""),
+}
+
+
 def user_objects(column, kind: str) -> list:
-    """The views (VIEWS) or routines (ROUTINES) of the deployed schema, msm's own left out."""
-    name, schema = ("TABLE_NAME", "TABLE_SCHEMA") if kind == "VIEWS" else (
-        "ROUTINE_NAME", "ROUTINE_SCHEMA")
+    """The views, routines, sequences, triggers or events (VIEWS, ROUTINES,
+    SEQUENCES, TRIGGERS, EVENTS) of the deployed schema, msm's own left out."""
+    name, schema, condition = _USER_OBJECTS[kind]
+    table = "TABLES" if kind == "SEQUENCES" else kind
     return sorted(column(
-        f"SELECT {name} FROM information_schema.{kind} "
-        f"WHERE {schema} = '{DEPLOYED_SCHEMA}' AND {name} NOT LIKE 'msm%'"))
+        f"SELECT {name} FROM information_schema.{table} "
+        f"WHERE {schema} = '{DEPLOYED_SCHEMA}' AND {name} NOT LIKE 'msm%'{condition}"))
 
 
 def foreign_keys(column, what: str = "CONSTRAINT_NAME") -> list:
@@ -682,6 +752,89 @@ def test_added_views_and_routines_can_be_created_again(tmp_path):
     assert "CREATE OR REPLACE VIEW `order_ids`" in script
     assert re.search(r"DROP PROCEDURE IF EXISTS `count_orders`%%\s*CREATE PROCEDURE "
                      r"`count_orders`|CREATE OR REPLACE PROCEDURE `count_orders`", script)
+
+
+@needs_edit_ops("add_sequence", "rename_sequence", "drop_sequence", "add_trigger",
+                "rename_trigger", "drop_trigger", "add_event", "rename_event", "drop_event")
+def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
+    path, column = deployed
+
+    def deployed_objects():
+        return tuple(user_objects(column, kind) for kind in ("SEQUENCES", "TRIGGERS", "EVENTS"))
+
+    def numbers():
+        return column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` ORDER BY `id`")
+
+    result = editing.edit_schema(path, [
+        {"op": "add_sequence", "sequence": {"name": "order_numbers", "type": "INT UNSIGNED",
+                                            "start": "1000"}},
+        {"op": "add_column", "table": "orders", "column": {
+            "name": "number", "type": "INT UNSIGNED",
+            "default": "(NEXT VALUE FOR `order_numbers`)"}},
+        {"op": "add_trigger", "trigger": {
+            "name": "orders_check", "timing": "BEFORE", "events": "INSERT", "table": "orders",
+            "body": "SET NEW.`customer_id` = NEW.`customer_id`"}},
+        {"op": "add_event", "event": {
+            "name": "nightly", "schedule": "EVERY 1 DAY",
+            "body": "DELETE FROM `orders` WHERE 0"}},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    kept = pending(path)
+    # Section 150 creates the trigger and the event; the sequence goes with the tables
+    assert "CREATE SEQUENCE `order_numbers`" in kept["240"]
+    assert "CREATE TRIGGER" not in kept["240"] + kept["290"]
+    assert "CREATE EVENT" not in kept["240"] + kept["290"]
+    modeling.create_diagram(path, "Objects", tables=[], lsp_path=EDIT_LSP,
+                            events=["nightly"], sequences=["order_numbers"])
+
+    release(path, "1.0.1", "1.0.2")
+    assert deployed_objects() == (["order_numbers"], ["orders_check"], ["nightly"])
+    sandbox_insert = f"INSERT INTO `{DEPLOYED_SCHEMA}`.`orders` (`id`, `customer_id`) VALUES "
+    column(sandbox_insert + "(2, 7)")
+    # The order deployed before took the first number when the column came
+    assert numbers() == [1000, 1001]
+
+    result = editing.edit_schema(path, [
+        {"op": "rename_sequence", "sequence": "order_numbers", "new_name": "order_ids"},
+        {"op": "rename_trigger", "trigger": "orders_check", "new_name": "orders_guard"},
+        {"op": "rename_event", "event": "nightly", "new_name": "daily"},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    (diagram,) = [row["document"] for row in result["rows"] if row["name"] == "Objects"]
+    by_type = {figure["type"]: figure for figure in diagram["figures"]}
+    assert by_type["SequenceFigure"]["sequence"] == "order_ids"
+    assert by_type["EventGroupFigure"]["events"] == ["daily"]
+    kept = pending(path)
+    assert "RENAME TABLE `order_numbers` TO `order_ids`;" in kept["240"]
+    assert "SET DEFAULT" in kept["240"] and "DROP TRIGGER IF EXISTS `orders_check`;" in kept["240"]
+    assert "ALTER EVENT `nightly` RENAME TO `daily`;" in kept["240"]
+
+    release(path, "1.0.2", "1.0.3")
+    assert deployed_objects() == (["order_ids"], ["orders_guard"], ["daily"])
+    # The deployed default takes its values from the renamed sequence
+    column(sandbox_insert + "(3, 7)")
+    *kept_numbers, number = numbers()
+    # Past the cached values (CACHE 1000 by default), which the rename drops
+    assert kept_numbers == [1000, 1001] and number > 1001
+    assert column(f"SELECT NEXT VALUE FOR `{DEPLOYED_SCHEMA}`.`order_ids`") == [number + 1]
+
+    editing.edit_schema(path, [
+        {"op": "drop_column", "table": "orders", "column": "number"},
+        {"op": "drop_sequence", "sequence": "order_ids"},
+        {"op": "drop_trigger", "trigger": "orders_guard"},
+        {"op": "drop_event", "event": "daily"},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    kept = pending(path)
+    for statement in ("DROP SEQUENCE IF EXISTS `order_ids`;",
+                      "DROP TRIGGER IF EXISTS `orders_guard`;", "DROP EVENT IF EXISTS `daily`;"):
+        assert statement in kept["240"]
+    # The diagram lost what the schema lost
+    (diagram,) = [row["document"] for row in modeling.read_diagram_rows(path)
+                  if row["name"] == "Objects"]
+    assert diagram["figures"] == []
+
+    release(path, "1.0.3", "1.0.4")
+    assert deployed_objects() == ([], [], [])
 
 
 @needs_edit_lsp
