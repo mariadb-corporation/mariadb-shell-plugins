@@ -29,7 +29,6 @@ SOURCE directive includes. Both stay supported: a project may keep its whole
 script in one file.
 """
 
-import copy
 import os
 import shutil
 import uuid
@@ -206,7 +205,7 @@ def _shift_script_lines(node, first_line: int, delta: int, in_script: bool = Tru
     if isinstance(node, dict):
         if isinstance(node.get("source"), int):
             in_script = False
-        if set(node) == {"line", "character"}:
+        if len(node) == 2 and "line" in node and "character" in node:
             if in_script and isinstance(node["line"], int) and node["line"] >= first_line:
                 node["line"] += delta
             return
@@ -229,7 +228,8 @@ def _write(project: _Project, rows: list) -> list:
     The snapshot's positions are those of the script as it is: where the
     section's new body has another number of lines (an inline VIEW that
     grew, or one moved into the breakout file), the positions after it are
-    moved with it, so they are those of the script as written.
+    moved with it, so they are those of the script as written; the snapshot
+    in rows is changed in place.
 
     Returns:
         The files written.
@@ -238,29 +238,22 @@ def _write(project: _Project, rows: list) -> list:
     first_line = project.script.count(
         "\n", 0, project.sections[DIAGRAMS_SECTION_ID]["end_position"]
     )
-    schema_index = next(
-        (index for index, row in enumerate(rows) if row["format"] == diagrams.SCHEMA_FORMAT),
-        None,
-    )
-    shift, planned = 0, rows
+    schema = _schema_row(rows)
+    shift = 0
     for _ in range(_MAX_POSITION_SHIFTS):
-        breakout, sections = _plan_write(project, planned)
+        breakout, sections = _plan_write(project, rows)
         script = "\n".join(item["full_content"] for item in sections.values())
         delta = script.count("\n") - old_lines
-        if delta == shift or schema_index is None:
+        if delta == shift or schema is None:
             break
+        # In place, so the caller's snapshot is the one written
+        _shift_script_lines(schema["document"], first_line, delta - shift)
         shift = delta
-        planned = list(rows)
-        document = copy.deepcopy(rows[schema_index]["document"])
-        _shift_script_lines(document, first_line, shift)
-        planned[schema_index] = dict(rows[schema_index], document=document)
     else:
         raise ValueError(
             f"The line count of MSM Section {DIAGRAMS_SECTION_ID} does not settle while "
             "the snapshot's positions are moved with it."
         )
-    # The caller's rows are those written
-    rows[:] = planned
 
     written = []
     if breakout is not None:
@@ -322,23 +315,22 @@ def _build_schema_definition(
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
         outline: The binary's outline of the script as _outline_input()
             gives it, where the caller has one already (``mariadb-lsp edit``
-            returns the outline of the texts it edited); else the binary is
-            run.
+            returns the outline of the texts it edited); without one the
+            binary is run.
 
     Raises:
         ValueError: Without the binary, for an include that is refused, or
             when a statement could not be read: the snapshot would miss what
             it defines.
     """
-    binary = lsp.require_lsp(lsp_path) if outline is None else None
     script, hashed = _outline_input(project)
     script_name = os.path.basename(project.dev_file)
 
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(project, hashed)
 
-    if outline is None:
-        outline = lsp.outline(binary, script, project.development)
+    if not outline:
+        outline = lsp.outline(lsp.require_lsp(lsp_path), script, project.development)
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])

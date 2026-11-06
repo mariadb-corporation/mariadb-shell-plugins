@@ -27,6 +27,7 @@ import os
 
 import pytest
 
+from msm_plugin.tests.unit import helpers
 from msm_plugin.lib import lsp, management, sections, source, statements
 from msm_plugin.lib.management import create_schema_project_folder
 
@@ -368,7 +369,6 @@ def test_missing_template_sections_are_added(tmp_path):
 
 @needs_lsp
 def test_a_split_project_deploys(sandbox_session, tmp_path):
-    from msm_plugin import lib as msm_lib
     from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
 
     schema_name = "msm_split_test"
@@ -378,7 +378,7 @@ def test_a_split_project_deploys(sandbox_session, tmp_path):
     generate_deployment_script(schema_project_path=path, version="1.0.0")
 
     def query(sql):
-        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
+        return helpers.query(sandbox_session, sql)
 
     sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
     try:

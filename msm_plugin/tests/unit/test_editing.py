@@ -64,9 +64,8 @@ needs_edit_lsp = pytest.mark.skipif(
 
 MRS_PROJECT = os.environ.get("MSM_TEST_MRS_PROJECT") or os.path.join(
     # The runner links the plugin into its config home: the checkout is where the link points
-    os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..", "mariadb-shell",
-    "mysqlshdk", "libs",
-    "mrs", "db_schema", "mariadb_rest_service.msm.project",
+    os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..",
+    "mariadb-shell", "mysqlshdk", "libs", "mrs", "db_schema", "mariadb_rest_service.msm.project",
 )
 
 TABLES_SQL = """CREATE TABLE IF NOT EXISTS `customer` (
@@ -396,7 +395,7 @@ def test_the_real_binary_renames_and_its_outline_is_the_snapshot(tmp_path, monke
 
     # The snapshot is made from the outline edit returned, not by a second run
     assert outlines == []
-    monkeypatch.setattr(lsp, "outline", real_outline)
+    monkeypatch.undo()
     snapshot = result["rows"][0]["document"]
     assert snapshot == fresh_snapshot(path)
     assert snapshot["source_hash"] == modeling.current_source_hash(path)
@@ -511,101 +510,119 @@ def test_the_update_script_gets_tables_and_drops_but_no_views_or_routines():
     assert editing._describe(STRUCTURAL_EDITS[2]) == "modify_column orders customer_id"
 
 
-@needs_edit_lsp
-def test_structural_edits_reach_a_deployed_schema_through_the_next_release(
-    sandbox_session, tmp_path
-):
-    from msm_plugin import lib as msm_lib
+# The schema the deployment tests deploy on the sandbox.
+DEPLOYED_SCHEMA = "msm_edit_test"
+
+
+def release(path, version: str, next_version: str) -> list:
+    """Releases the version, generates its deployment script and deploys it.
+
+    Returns:
+        The files the release wrote.
+    """
     from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
 
-    schema_name = "msm_edit_test"
-    path = real_project(tmp_path, schema_name)
+    files = prepare_release(schema_project_path=path, version=version,
+                            next_version=next_version, lsp_path=EDIT_LSP)
+    generate_deployment_script(schema_project_path=path, version=version)
+    deploy_schema(schema_project_path=path, version=version)
+    return files
 
-    def query(sql):
-        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
 
-    def release(version, next_version):
-        prepare_release(schema_project_path=path, version=version, next_version=next_version,
-                        lsp_path=EDIT_LSP)
-        generate_deployment_script(schema_project_path=path, version=version)
-        deploy_schema(schema_project_path=path, version=version)
+def pending(path) -> dict:
+    """The sections of the project's pending update script."""
+    return editing.read_pending_update(
+        editing.pending_update_path(path, management.get_project_settings(path)))
 
-    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+
+@pytest.fixture
+def deployed(sandbox_session, tmp_path):
+    """real_project, released as 1.0.0 and deployed with a customer and an order;
+    yields the project and a function returning the first column of a query."""
+    from msm_plugin.tests.unit import helpers
+
+    def column(sql) -> list:
+        return [next(iter(row.values())) for row in helpers.query(sandbox_session, sql)]
+
+    path = real_project(tmp_path, DEPLOYED_SCHEMA)
+    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
     try:
-        release("1.0.0", "1.0.1")
-        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`customer` VALUES (7)")
-        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`orders` VALUES (1, 7)")
-
-        result = editing.edit_schema(path, STRUCTURAL_EDITS, base_hash(path), lsp_path=EDIT_LSP)
-        assert result["rows"][0]["document"] == fresh_snapshot(path)
-        tables = {table["name"]: table for table in result["rows"][0]["document"]["tables"]}
-        assert sorted(tables) == ["customer", "note", "orders"]
-        assert [column["name"] for column in tables["customer"]["columns"]] == ["id", "email"]
-        assert "customer_ids" not in dev_script(path)
-        assert "count_customers" not in dev_script(path)
-        kept = editing.read_pending_update(
-            editing.pending_update_path(path, management.get_project_settings(path)))
-        assert "CREATE TABLE `note`" in kept["240"]
-        assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
-        assert "DROP VIEW IF EXISTS `customer_ids`;" in kept["240"]
-        assert kept["290"].endswith("DROP PROCEDURE IF EXISTS `count_customers`;")
-
-        release("1.0.1", "1.0.2")
-        columns = query(
-            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_COMMENT FROM information_schema.COLUMNS "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME <> 'msm_schema_version' "
-            "AND TABLE_NAME NOT LIKE 'msm_schema_diagrams' ORDER BY TABLE_NAME, ORDINAL_POSITION")
-        assert [(row["TABLE_NAME"], row["COLUMN_NAME"]) for row in columns] == [
-            ("customer", "id"), ("customer", "email"), ("note", "id"), ("note", "text"),
-            ("orders", "id"), ("orders", "customer_id"),
-        ]
-        assert columns[-1]["COLUMN_COMMENT"] == "The buyer"
-        assert [row["TABLE_COMMENT"] for row in query(
-            "SELECT TABLE_COMMENT FROM information_schema.TABLES "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME = 'orders'")] == ["Orders"]
-        # The foreign key is back after the column change, and the row is kept
-        assert [row["REFERENCED_TABLE_NAME"] for row in query(
-            "SELECT REFERENCED_TABLE_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
-            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["customer"]
-        assert [row["customer_id"] for row in query(
-            f"SELECT `customer_id` FROM `{schema_name}`.`orders`")] == [7]
-        assert query(
-            "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
-            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'") == []
-        assert [row["TABLE_NAME"] for row in query(
-            "SELECT TABLE_NAME FROM information_schema.VIEWS "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME NOT LIKE 'msm%'")] == []
-
-        # Keys, a view and a routine: the key changes go into 240, the view
-        # and the routine reach the server through Section 150
-        result = editing.edit_schema(
-            path, KEY_AND_OBJECT_EDITS, base_hash(path), lsp_path=EDIT_LSP)
-        assert result["rows"][0]["document"] == fresh_snapshot(path)
-        kept = editing.read_pending_update(
-            editing.pending_update_path(path, management.get_project_settings(path)))
-        assert "ADD CONSTRAINT `fk_note_customer` FOREIGN KEY" in kept["240"]
-        assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
-        assert "CREATE" not in kept["240"].replace("CREATE TABLE", "") + kept["290"]
-        release("1.0.2", "1.0.3")
-        assert [row["CONSTRAINT_NAME"] for row in query(
-            "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
-            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["fk_note_customer"]
-        assert [row["NON_UNIQUE"] for row in query(
-            "SELECT NON_UNIQUE FROM information_schema.STATISTICS "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND INDEX_NAME = 'customer_email'")] == [0]
-        assert [row["TABLE_NAME"] for row in query(
-            "SELECT TABLE_NAME FROM information_schema.VIEWS "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME NOT LIKE 'msm%'")] == [
-            "note_texts"]
-        assert [row["ROUTINE_NAME"] for row in query(
-            "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
-            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'")] == [
-            "count_notes"]
-
-        # The next upgrade runs Section 150 again over what the edits wrote
-        release("1.0.3", "1.0.4")
+        release(path, "1.0.0", "1.0.1")
+        sandbox_session.run_sql(f"INSERT INTO `{DEPLOYED_SCHEMA}`.`customer` VALUES (7)")
+        sandbox_session.run_sql(f"INSERT INTO `{DEPLOYED_SCHEMA}`.`orders` VALUES (1, 7)")
+        yield path, column
     finally:
-        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
+
+
+def user_objects(column, kind: str) -> list:
+    """The views (VIEWS) or routines (ROUTINES) of the deployed schema, msm's own left out."""
+    name, schema = ("TABLE_NAME", "TABLE_SCHEMA") if kind == "VIEWS" else (
+        "ROUTINE_NAME", "ROUTINE_SCHEMA")
+    return sorted(column(
+        f"SELECT {name} FROM information_schema.{kind} "
+        f"WHERE {schema} = '{DEPLOYED_SCHEMA}' AND {name} NOT LIKE 'msm%'"))
+
+
+def foreign_keys(column, what: str = "CONSTRAINT_NAME") -> list:
+    return column(
+        f"SELECT {what} FROM information_schema.REFERENTIAL_CONSTRAINTS "
+        f"WHERE CONSTRAINT_SCHEMA = '{DEPLOYED_SCHEMA}'")
+
+
+@needs_edit_lsp
+def test_structural_edits_reach_a_deployed_schema_through_the_next_release(deployed):
+    path, column = deployed
+    result = editing.edit_schema(path, STRUCTURAL_EDITS, base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    tables = {table["name"]: table for table in result["rows"][0]["document"]["tables"]}
+    assert sorted(tables) == ["customer", "note", "orders"]
+    assert [c["name"] for c in tables["customer"]["columns"]] == ["id", "email"]
+    assert "customer_ids" not in dev_script(path)
+    assert "count_customers" not in dev_script(path)
+    kept = pending(path)
+    assert "CREATE TABLE `note`" in kept["240"]
+    assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
+    assert "DROP VIEW IF EXISTS `customer_ids`;" in kept["240"]
+    assert kept["290"].endswith("DROP PROCEDURE IF EXISTS `count_customers`;")
+
+    release(path, "1.0.1", "1.0.2")
+    assert column(
+        "SELECT CONCAT(TABLE_NAME, '.', COLUMN_NAME) FROM information_schema.COLUMNS "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND TABLE_NAME NOT LIKE 'msm%' "
+        "ORDER BY TABLE_NAME, ORDINAL_POSITION"
+    ) == ["customer.id", "customer.email", "note.id", "note.text", "orders.id",
+          "orders.customer_id"]
+    assert column(
+        "SELECT COLUMN_COMMENT FROM information_schema.COLUMNS "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND COLUMN_NAME = 'customer_id'"
+    ) == ["The buyer"]
+    assert column(
+        "SELECT TABLE_COMMENT FROM information_schema.TABLES "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND TABLE_NAME = 'orders'") == ["Orders"]
+    # The foreign key is back after the column change, and the row is kept
+    assert foreign_keys(column, "REFERENCED_TABLE_NAME") == ["customer"]
+    assert column(f"SELECT `customer_id` FROM `{DEPLOYED_SCHEMA}`.`orders`") == [7]
+    assert user_objects(column, "ROUTINES") == user_objects(column, "VIEWS") == []
+
+    # Keys, a view and a routine: the key changes go into 240, the view and
+    # the routine reach the server through Section 150
+    result = editing.edit_schema(path, KEY_AND_OBJECT_EDITS, base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    kept = pending(path)
+    assert "ADD CONSTRAINT `fk_note_customer` FOREIGN KEY" in kept["240"]
+    assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
+    assert "CREATE" not in kept["240"].replace("CREATE TABLE", "") + kept["290"]
+    release(path, "1.0.2", "1.0.3")
+    assert foreign_keys(column) == ["fk_note_customer"]
+    assert column(
+        "SELECT NON_UNIQUE FROM information_schema.STATISTICS "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND INDEX_NAME = 'customer_email'") == [0]
+    assert user_objects(column, "VIEWS") == ["note_texts"]
+    assert user_objects(column, "ROUTINES") == ["count_notes"]
+
+    # The next upgrade runs Section 150 again over what the edits wrote
+    release(path, "1.0.3", "1.0.4")
 
 
 @needs_edit_lsp
@@ -636,64 +653,32 @@ def test_a_first_view_goes_into_section_150(tmp_path):
 
 
 @needs_edit_lsp
-def test_renames_reach_a_deployed_schema_through_the_next_release(sandbox_session, tmp_path):
-    from msm_plugin import lib as msm_lib
-    from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
+def test_renames_reach_a_deployed_schema_through_the_next_release(deployed):
+    path, column = deployed
+    result = editing.edit_schema(path, RENAMES, base_hash(path), lsp_path=EDIT_LSP)
+    assert result["migration_file"] == editing.pending_update_path(
+        path, management.get_project_settings(path))
+    kept = pending(path)
+    assert "RENAME TABLE `customer` TO `client`;" in kept["240"]
+    assert "ALTER TABLE `client` RENAME COLUMN `id` TO `client_id`;" in kept["240"]
+    # Section 150 creates the routine under its new name; the old one goes in 290
+    assert "CREATE PROCEDURE" not in kept["240"] + kept["290"]
+    assert "DROP PROCEDURE" in kept["290"] and "count_customers" in kept["290"]
 
-    schema_name = "msm_edit_test"
-    path = real_project(tmp_path, schema_name)
+    files = release(path, "1.0.1", "1.0.2")
+    update = os.path.join(path, "releases", "updates", f"{DEPLOYED_SCHEMA}_1.0.0_to_1.0.1.sql")
+    assert update in files
+    assert pending(path) == {"240": "", "290": ""}
 
-    def query(sql):
-        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
-
-    def names(kind_sql):
-        return sorted(row["name"] for row in query(kind_sql))
-
-    sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
-    try:
-        prepare_release(schema_project_path=path, version="1.0.0", next_version="1.0.1",
-                        lsp_path=EDIT_LSP)
-        generate_deployment_script(schema_project_path=path, version="1.0.0")
-        deploy_schema(schema_project_path=path, version="1.0.0")
-        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`customer` VALUES (7)")
-        sandbox_session.run_sql(f"INSERT INTO `{schema_name}`.`orders` VALUES (1, 7)")
-
-        result = editing.edit_schema(path, RENAMES, base_hash(path), lsp_path=EDIT_LSP)
-        pending = editing.pending_update_path(path, management.get_project_settings(path))
-        assert result["migration_file"] == pending
-        kept = editing.read_pending_update(pending)
-        assert "RENAME TABLE `customer` TO `client`;" in kept["240"]
-        assert "ALTER TABLE `client` RENAME COLUMN `id` TO `client_id`;" in kept["240"]
-        # Section 150 creates the routine under its new name; the old one goes in 290
-        assert "CREATE PROCEDURE" not in kept["240"] + kept["290"]
-        assert "DROP PROCEDURE" in kept["290"] and "count_customers" in kept["290"]
-
-        files = prepare_release(schema_project_path=path, version="1.0.1", next_version="1.0.2",
-                                lsp_path=EDIT_LSP)
-        update = os.path.join(path, "releases", "updates", f"{schema_name}_1.0.0_to_1.0.1.sql")
-        assert update in files
-        assert editing.read_pending_update(pending) == {"240": "", "290": ""}
-        generate_deployment_script(schema_project_path=path, version="1.0.1")
-        deploy_schema(schema_project_path=path, version="1.0.1")
-
-        assert names(
-            "SELECT TABLE_NAME AS name FROM information_schema.TABLES "
-            f"WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_TYPE = 'BASE TABLE'"
-        ) == ["client", "orders"]
-        # The row came along, and the foreign key follows the renames
-        assert [row["client_id"] for row in query(
-            f"SELECT `client_id` FROM `{schema_name}`.`client`")] == [7]
-        assert [row["REFERENCED_TABLE_NAME"] for row in query(
-            "SELECT REFERENCED_TABLE_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
-            f"WHERE CONSTRAINT_SCHEMA = '{schema_name}'")] == ["client"]
-        assert names(
-            "SELECT ROUTINE_NAME AS name FROM information_schema.ROUTINES "
-            f"WHERE ROUTINE_SCHEMA = '{schema_name}' AND ROUTINE_NAME NOT LIKE 'msm%'"
-        ) == ["count_clients"]
-        assert [row["client_id"] for row in query(
-            f"SELECT `client_id` FROM `{schema_name}`.`customer_ids`")] == [7]
-    finally:
-        sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
+    assert sorted(column(
+        "SELECT TABLE_NAME FROM information_schema.TABLES "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND TABLE_TYPE = 'BASE TABLE'"
+    )) == ["client", "orders"]
+    # The row came along, and the foreign key follows the renames
+    assert column(f"SELECT `client_id` FROM `{DEPLOYED_SCHEMA}`.`client`") == [7]
+    assert foreign_keys(column, "REFERENCED_TABLE_NAME") == ["client"]
+    assert user_objects(column, "ROUTINES") == ["count_clients"]
+    assert column(f"SELECT `client_id` FROM `{DEPLOYED_SCHEMA}`.`customer_ids`") == [7]
 
 
 @needs_edit_lsp

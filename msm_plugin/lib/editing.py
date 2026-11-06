@@ -44,33 +44,30 @@ import os
 import re
 from typing import Optional
 
-from msm_plugin.lib import diagrams, lsp, management, modeling, source
+from msm_plugin.lib import diagrams, lsp, management, modeling, source, statements
 from msm_plugin.lib import sections as sections_lib
 
 # The sections of the pending update script, as in the update script.
 CHANGES_SECTION_ID = "240"
 REMOVALS_SECTION_ID = "290"
 
-# A statement that cannot run inside the update procedure of Section 240
-# (MariaDB 1357: a stored routine is not dropped from within another).
-_ROUTINE_DROP = re.compile(r"^\s*DROP\s+(?:PROCEDURE|FUNCTION)\b", re.IGNORECASE)
+# Statements of these kinds (statements.object_kind) cannot run inside the
+# update procedure of Section 240: a routine's DROP (MariaDB 1357: a stored
+# routine is not dropped from within another) goes in Section 290.
+_ROUTINE_KINDS = ("PROCEDURE", "FUNCTION")
+# A CREATE of these kinds (statements.statement_kind) is not kept: a
+# routine's (rename_routine drops the routine and creates it again,
+# add_routine creates it) cannot run inside the update procedure either
+# (MariaDB 1303) and its body would need a DELIMITER, and Section 150 of the
+# release, which every deployment runs in full after the 240 steps, creates
+# routines and views (add_view) anyway.
+_SECTION_150_KINDS = ("VIEW",) + _ROUTINE_KINDS
 # A DROP of a table, view or routine without IF EXISTS, as the binary writes
 # it: kept with IF EXISTS, as the update script's sections are written. A
 # routine's DROP in Section 290 needs it: the target's Section 150 runs
 # first and may have dropped the routine already (MariaDB 1305).
 _DROP_WITHOUT_IF_EXISTS = re.compile(
     r"^(\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)", re.IGNORECASE
-)
-# A routine's CREATE (rename_routine drops the routine and creates it again,
-# add_routine creates it): it cannot run inside the update procedure either
-# (MariaDB 1303), and its body would need a DELIMITER. A view's CREATE
-# (add_view). Section 150 of the release, which every deployment runs in
-# full after the 240 steps, creates both, so neither is kept.
-_SECTION_150_CREATE = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:ALGORITHM\s*=\s*\w+\s+)?"
-    r"(?:DEFINER\s*=\s*\S+\s+)?(?:SQL\s+SECURITY\s+\w+\s+)?"
-    r"(?:AGGREGATE\s+)?(?:PROCEDURE|FUNCTION|VIEW)\b",
-    re.IGNORECASE,
 )
 
 
@@ -330,9 +327,9 @@ def _describe(edit: dict) -> str:
 def _kept_statement(item: dict) -> Optional[str]:
     """A migration statement as the pending update script keeps it, without
     its delimiter, a DROP with IF EXISTS; None for one it does not keep
-    (empty, or the CREATE of a routine or view, see _SECTION_150_CREATE)."""
+    (empty, or the CREATE of a routine or view, see _SECTION_150_KINDS)."""
     sql = (item.get("sql") or "").strip().rstrip(";").strip()
-    if not sql or _SECTION_150_CREATE.match(sql):
+    if not sql or statements.statement_kind(sql) in _SECTION_150_KINDS:
         return None
     return _DROP_WITHOUT_IF_EXISTS.sub(r"\1IF EXISTS ", sql, count=1)
 
@@ -341,14 +338,16 @@ def migration_statements(edits: list, migration: list) -> dict:
     """The binary's migration statements as the sections of the pending
     update script: each edit's statements under a comment naming it, a
     routine's DROP in Section 290, the CREATE of a routine or view left to
-    Section 150 (see _SECTION_150_CREATE), everything else in 240."""
+    Section 150 (see _SECTION_150_KINDS), everything else in 240."""
     by_section = {CHANGES_SECTION_ID: [], REMOVALS_SECTION_ID: []}
     described = {CHANGES_SECTION_ID: set(), REMOVALS_SECTION_ID: set()}
     for item in migration:
         sql = _kept_statement(item)
         if sql is None:
             continue
-        section_id = REMOVALS_SECTION_ID if _ROUTINE_DROP.match(sql) else CHANGES_SECTION_ID
+        # The CREATEs of routines are left out already, so this is a DROP
+        routine = statements.object_kind(sql) in _ROUTINE_KINDS
+        section_id = REMOVALS_SECTION_ID if routine else CHANGES_SECTION_ID
         index = item.get("edit")
         if index not in described[section_id]:
             described[section_id].add(index)
@@ -423,12 +422,12 @@ def edit_schema(
         )
 
     binary = lsp.require_lsp(lsp_path)
-    if not lsp.supports_edit(binary):
+    supported = lsp.edit_ops(binary)
+    if not supported:
         raise lsp.LspError(
             f"The MariaDB SQL language server's binary `{binary}` cannot edit schemas: "
             f"it has no `{lsp.LSP_BINARY_NAME} edit` command. Update the MariaDB Shell."
         )
-    supported = lsp.edit_ops(binary)
     unsupported = sorted({edit["op"] for edit in edits} - supported)
     if unsupported:
         raise lsp.LspError(
@@ -507,10 +506,7 @@ def edit_schema(
         # The binary's outline of the texts it edited is the outline of the
         # files as now written (Section 160 blanked as in the request); an
         # older answer without it has the binary run again.
-        outline = result.get("outline")
-        _, rows, _ = modeling._replace_snapshot(
-            project, rows, lsp_path, outline if isinstance(outline, dict) and outline else None
-        )
+        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, result.get("outline"))
         # _write may write the script and the VIEW's breakout file.
         touched += [path for path in originals if path not in touched]
         written += [path for path in modeling._write(project, rows) if path not in written]

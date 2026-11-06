@@ -31,6 +31,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
+from msm_plugin.tests.unit import helpers
 from msm_plugin.lib import diagrams, management, modeling, projects, sections, statements, workbench
 
 # The project, as the diagram tests have it, and their mark for the binary.
@@ -584,7 +585,6 @@ def test_a_model_with_several_schemas_needs_one_named(tmp_path):
 @needs_lsp
 def test_an_imported_project_deploys(sandbox_session, tmp_path, monkeypatch):
     """The SQL written for the model runs on the server, from breakout files."""
-    from msm_plugin import lib as msm_lib
     from msm_plugin.management import deploy_schema, generate_deployment_script, prepare_release
 
     schema_name = "msm_wb_import_test"
@@ -608,7 +608,7 @@ def test_an_imported_project_deploys(sandbox_session, tmp_path, monkeypatch):
     generate_deployment_script(schema_project_path=path, version="1.0.0")
 
     def query(sql):
-        return msm_lib.core.MsmDbExec(sql).exec(sandbox_session).items
+        return helpers.query(sandbox_session, sql)
 
     sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{schema_name}`")
     try:

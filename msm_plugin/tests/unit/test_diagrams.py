@@ -28,6 +28,7 @@ import os
 
 import pytest
 
+from msm_plugin.tests.unit import helpers
 from msm_plugin.lib import diagrams, lsp, management, modeling, sections, source
 from msm_plugin.lib.management import create_schema_project_folder
 
@@ -360,13 +361,9 @@ def test_the_snapshot_positions_follow_a_section_160_that_changes_size(project, 
     # moves everything after it (the version VIEW of Section 910); past the
     # limit it moves into the breakout file and shrinks to one line.
     modeling.update_schema_definition(project)
-    settings_file = os.path.join(project, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
     # Just above the snapshot alone: the first diagram moves the VIEW out
-    settings["maxInlineSectionSize"] = len(section_160(project)) + 100 if breaks_out else 10**7
-    with open(settings_file, "w") as f:
-        json.dump(settings, f)
+    limit = len(section_160(project)) + 100 if breaks_out else 10**7
+    helpers.set_project_setting(project, "maxInlineSectionSize", limit)
 
     for name in ("Main", "Second", "Third"):
         modeling.create_diagram(project, name)
@@ -380,12 +377,7 @@ def test_the_snapshot_positions_follow_a_section_160_that_changes_size(project, 
 
 
 def test_large_diagrams_move_into_a_breakout_file(project):
-    settings_file = os.path.join(project, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
-    settings["maxInlineSectionSize"] = 200
-    with open(settings_file, "w") as f:
-        json.dump(settings, f)
+    helpers.set_project_setting(project, "maxInlineSectionSize", 200)
 
     modeling.set_diagram(project, diagram())
     body = section_160(project)
@@ -444,12 +436,7 @@ def test_an_include_that_would_cut_the_view_is_refused(project):
 
 
 def test_an_include_can_be_refused(project):
-    settings_file = os.path.join(project, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
-    settings["maxInlineSectionSize"] = 0
-    with open(settings_file, "w") as f:
-        json.dump(settings, f)
+    helpers.set_project_setting(project, "maxInlineSectionSize", 0)
 
     def refuse(path):
         raise ValueError(f"not allowed: {path}")
