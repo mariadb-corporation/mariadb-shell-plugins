@@ -733,6 +733,105 @@ def test_added_views_and_routines_can_be_created_again(tmp_path):
                      r"`count_orders`|CREATE OR REPLACE PROCEDURE `count_orders`", script)
 
 
+def needs_edit_ops(*ops):
+    """Skips a test where the binary lacks one of the ops."""
+    return pytest.mark.skipif(
+        EDIT_LSP is None or not set(ops) <= lsp.edit_ops(EDIT_LSP),
+        reason="no mariadb-lsp binary with the ops " + ", ".join(ops),
+    )
+
+
+def object_names(column, sql: str) -> list:
+    return sorted(column(sql.format(schema=DEPLOYED_SCHEMA)))
+
+
+@needs_edit_ops("add_sequence", "rename_sequence", "drop_sequence", "add_trigger",
+                "rename_trigger", "drop_trigger", "add_event", "rename_event", "drop_event")
+def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
+    path, column = deployed
+
+    def deployed_objects():
+        return (
+            object_names(column, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE "
+                                 "TABLE_SCHEMA = '{schema}' AND TABLE_TYPE = 'SEQUENCE'"),
+            object_names(column, "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS "
+                                 "WHERE TRIGGER_SCHEMA = '{schema}'"),
+            object_names(column, "SELECT EVENT_NAME FROM information_schema.EVENTS "
+                                 "WHERE EVENT_SCHEMA = '{schema}'"),
+        )
+
+    result = editing.edit_schema(path, [
+        {"op": "add_sequence", "sequence": {"name": "order_numbers", "type": "INT UNSIGNED",
+                                            "start": "1000"}},
+        {"op": "add_column", "table": "orders", "column": {
+            "name": "number", "type": "INT UNSIGNED",
+            "default": "(NEXT VALUE FOR `order_numbers`)"}},
+        {"op": "add_trigger", "trigger": {
+            "name": "orders_check", "timing": "BEFORE", "events": "INSERT", "table": "orders",
+            "body": "SET NEW.`customer_id` = NEW.`customer_id`"}},
+        {"op": "add_event", "event": {
+            "name": "nightly", "schedule": "EVERY 1 DAY",
+            "body": "DELETE FROM `orders` WHERE 0"}},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    kept = pending(path)
+    # Section 150 creates the trigger and the event; the sequence goes with the tables
+    assert "CREATE SEQUENCE `order_numbers`" in kept["240"]
+    assert "CREATE TRIGGER" not in kept["240"] + kept["290"]
+    assert "CREATE EVENT" not in kept["240"] + kept["290"]
+    modeling.create_diagram(path, "Objects", tables=[], lsp_path=EDIT_LSP,
+                            events=["nightly"], sequences=["order_numbers"])
+
+    release(path, "1.0.1", "1.0.2")
+    assert deployed_objects() == (["order_numbers"], ["orders_check"], ["nightly"])
+    sandbox_insert = f"INSERT INTO `{DEPLOYED_SCHEMA}`.`orders` (`id`, `customer_id`) VALUES "
+    column(sandbox_insert + "(2, 7)")
+    # The order deployed before took the first number when the column came
+    assert column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` ORDER BY `id`") == [
+        1000, 1001]
+
+    result = editing.edit_schema(path, [
+        {"op": "rename_sequence", "sequence": "order_numbers", "new_name": "order_ids"},
+        {"op": "rename_trigger", "trigger": "orders_check", "new_name": "orders_guard"},
+        {"op": "rename_event", "event": "nightly", "new_name": "daily"},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    assert result["rows"][0]["document"] == fresh_snapshot(path)
+    (diagram,) = [row["document"] for row in result["rows"] if row["name"] == "Objects"]
+    by_type = {figure["type"]: figure for figure in diagram["figures"]}
+    assert by_type["SequenceFigure"]["sequence"] == "order_ids"
+    assert by_type["EventGroupFigure"]["events"] == ["daily"]
+    kept = pending(path)
+    assert "RENAME TABLE `order_numbers` TO `order_ids`;" in kept["240"]
+    assert "SET DEFAULT" in kept["240"] and "DROP TRIGGER IF EXISTS `orders_check`;" in kept["240"]
+    assert "ALTER EVENT `nightly` RENAME TO `daily`;" in kept["240"]
+
+    release(path, "1.0.2", "1.0.3")
+    assert deployed_objects() == (["order_ids"], ["orders_guard"], ["daily"])
+    # The deployed default takes its values from the renamed sequence
+    column(sandbox_insert + "(3, 7)")
+    (number,) = column(f"SELECT `number` FROM `{DEPLOYED_SCHEMA}`.`orders` WHERE `id` = 3")
+    # Past the cached values (CACHE 1000 by default), which the rename drops
+    assert number > 1001
+    assert column(f"SELECT NEXT VALUE FOR `{DEPLOYED_SCHEMA}`.`order_ids`") == [number + 1]
+
+    editing.edit_schema(path, [
+        {"op": "drop_column", "table": "orders", "column": "number"},
+        {"op": "drop_sequence", "sequence": "order_ids"},
+        {"op": "drop_trigger", "trigger": "orders_guard"},
+        {"op": "drop_event", "event": "daily"},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    kept = pending(path)
+    for statement in ("DROP SEQUENCE IF EXISTS `order_ids`;",
+                      "DROP TRIGGER IF EXISTS `orders_guard`;", "DROP EVENT IF EXISTS `daily`;"):
+        assert statement in kept["240"]
+    # The diagram lost what the schema lost
+    assert [row for row in modeling._rows(modeling._Project.load(path))
+            if row["name"] == "Objects"][0]["document"]["figures"] == []
+
+    release(path, "1.0.3", "1.0.4")
+    assert deployed_objects() == ([], [], [])
+
+
 @needs_edit_lsp
 def test_a_first_view_goes_into_section_150(tmp_path):
     path = real_project(tmp_path)
