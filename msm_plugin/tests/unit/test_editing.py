@@ -70,6 +70,7 @@ def needs_edit_ops(*ops):
         reason="no mariadb-lsp binary with the ops " + ", ".join(ops),
     )
 
+
 MRS_PROJECT = os.environ.get("MSM_TEST_MRS_PROJECT") or os.path.join(
     # The runner links the plugin into its config home: the checkout is where the link points
     os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..",

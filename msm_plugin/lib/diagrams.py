@@ -471,8 +471,10 @@ def event_label(event: dict) -> str:
 
 def sequence_rows(sequence: dict) -> list:
     """The rows a sequence figure shows, as the VS Code extension's modeler
-    draws them: the type, START WITH and INCREMENT BY, the server's defaults
-    (BIGINT, 1) where the CREATE SEQUENCE does not write them."""
+    draws them: the type, START WITH and INCREMENT BY, BIGINT and 1 where
+    the CREATE SEQUENCE does not write them (the server's default type and
+    increment; its START is then MINVALUE, or MAXVALUE for a negative
+    INCREMENT, which the card does not work out)."""
     return [
         sequence.get("type") or "BIGINT",
         f"START WITH {sequence.get('start') or 1}",
