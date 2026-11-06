@@ -287,8 +287,9 @@ def name_foreign_keys(table: dict) -> None:
             foreign_key["generated_name"] = True
 
 
-def _same_name(a: Optional[str], b: Optional[str]) -> bool:
-    return a is not None and b is not None and a.lower() == b.lower()
+def same_name(a, b) -> bool:
+    """Whether two names are the same, ignoring case; never for a non-name."""
+    return isinstance(a, str) and isinstance(b, str) and a.lower() == b.lower()
 
 
 def schema_document_from_outline(
@@ -338,7 +339,7 @@ def schema_document_from_outline(
     for schema in outline.get("schemas", []):
         name = schema.get("name")
         if name is not None:
-            if not _same_name(name, schema_name):
+            if not same_name(name, schema_name):
                 continue
             document["options"] = schema.get("options", {})
             for key in ("range", "selection_range"):
@@ -541,6 +542,16 @@ def elide_images(document: dict) -> dict:
     return {**document, "figures": figures}
 
 
+def elide_row_images(rows: list) -> list:
+    """The rows of the diagrams VIEW with the diagrams' pictures left out,
+    see elide_images."""
+    return [
+        {**row, "document": elide_images(row["document"])}
+        if row["format"] == DIAGRAM_FORMAT else row
+        for row in rows
+    ]
+
+
 def keep_images(document: dict, stored: Optional[dict]) -> None:
     """Gives an image figure that comes without its picture the one the
     stored diagram holds for the figure of the same id, in place."""
@@ -620,7 +631,7 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     def has_foreign_key(connection) -> bool:
         table = tables.get((connection.get("table") or "").lower())
         return table is not None and any(
-            _same_name(foreign_key.get("name"), connection.get("foreignKey"))
+            same_name(foreign_key.get("name"), connection.get("foreignKey"))
             for foreign_key in table.get("foreign_keys", [])
         )
 

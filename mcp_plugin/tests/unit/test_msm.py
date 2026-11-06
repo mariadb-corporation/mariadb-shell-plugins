@@ -895,6 +895,46 @@ def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
     _call(tools, "msm.set_schema_diagram", rows[-1]["document"], path)
     stored = modeling.get_diagram_rows(path, "Pics")[-1]["document"]
     assert next(f for f in stored["figures"] if f["id"] == "logo")["image"] == picture
+    # And the picture itself comes by its figure.
+    assert _call(tools, "msm.get_schema_diagram_image", "Pics", "logo", path) == picture
+
+
+@pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
+def test_schema_edits_go_through_the_tool(project_lists, allowed_temp_dir, monkeypatch):
+    """The binary's edit command is stood in for: a rename of `customer`."""
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    picture = "data:image/png;base64,iVBORw0KGgo="
+    document = _diagram()
+    document["figures"].append({"id": "logo", "type": "ImageFigure", "name": "Logo", "image": picture})
+    _call(tools, "msm.set_schema_diagram", document, path)
+    _call(tools, "msm.update_schema_definition", path)
+    base = _call(tools, "msm.get_schema_diagrams", path)[0]["document"]["source_hash"]
+
+    def edit(binary, sql, source_dir, request):
+        lines = sql.split("\n")
+        edits = [
+            {"range": {"start": {"line": number, "character": line.index("`customer`")},
+                       "end": {"line": number, "character": line.index("`customer`") + 10}},
+             "new_text": "`client`"}
+            for number, line in enumerate(lines) if "`customer`" in line
+        ]
+        return {"files": [{"file": "-", "edits": edits}],
+                "migration": [{"edit": 0, "sql": "RENAME TABLE `customer` TO `client`"}],
+                "notes": []}
+
+    monkeypatch.setattr(msm_lsp, "supports_edit", lambda binary: True)
+    monkeypatch.setattr(msm_lsp, "edit", edit)
+    rename = {"op": "rename_table", "table": "customer", "new_name": "client"}
+    result = _call(tools, "msm.edit_schema", [rename], base, path)
+    assert {table["name"] for table in result["rows"][0]["document"]["tables"]} == {"client", "orders"}
+    figures = result["rows"][1]["document"]["figures"]
+    assert figures[0]["table"] == "client"
+    # Pictures stay out, as from msm.get_schema_diagrams.
+    assert "image" not in figures[1] and figures[1]["image_size"] == len(picture)
+    assert result["migration_file"] is None
+    with pytest.raises(Exception, match="changed since"):
+        _call(tools, "msm.edit_schema", [rename], base, path)
 
 
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(

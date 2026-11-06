@@ -31,8 +31,10 @@ the module can be tested without a shell.
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
 from typing import Optional
 
 LSP_BINARY_NAME = "mariadb-lsp"
@@ -40,6 +42,12 @@ LSP_BINARY_NAME = "mariadb-lsp"
 # How long the binary may take: --version, and an outline or split of a large script.
 _VERSION_TIMEOUT = 10
 _RUN_TIMEOUT = 120
+# The edit request's format (lsp-server docs/edit-format.md).
+EDIT_FORMAT = 1
+
+# Whether a binary has the edit command, by its path and modification time:
+# --help is asked once per build, so an updated binary is asked again.
+_supports_edit = {}
 
 
 class LspError(ValueError):
@@ -124,13 +132,18 @@ def require_lsp(lsp_path: Optional[str] = None) -> str:
     return binary
 
 
-def _run_json(binary: str, arguments: list, sql: str):
-    """Runs a subcommand of the binary on SQL text from stdin; returns its JSON."""
+def _run(binary: str, arguments: list, sql: str) -> subprocess.CompletedProcess:
+    """Runs a subcommand of the binary on SQL text from stdin; stdout and
+    stderr are bytes.
+
+    Raises:
+        LspError: Where the binary could not be run or did not finish.
+    """
     name = f"{LSP_BINARY_NAME} {arguments[0]}"
     # Bytes, not text mode: text mode writes os.linesep for every line break,
     # and the offsets `split` answers count the bytes the binary read.
     try:
-        answer = subprocess.run(
+        return subprocess.run(
             [binary, *arguments, "-"],
             input=sql.encode("utf-8"),
             capture_output=True,
@@ -141,9 +154,18 @@ def _run_json(binary: str, arguments: list, sql: str):
         raise LspError(f"`{name}` did not finish in {_RUN_TIMEOUT} s.")
     except OSError as e:
         raise LspError(f"`{LSP_BINARY_NAME}` could not be run: {e}")
+
+
+def _stderr(answer: subprocess.CompletedProcess) -> str:
+    return answer.stderr.decode("utf-8", "replace").strip()
+
+
+def _run_json(binary: str, arguments: list, sql: str):
+    """Runs a subcommand of the binary on SQL text from stdin; returns its JSON."""
+    name = f"{LSP_BINARY_NAME} {arguments[0]}"
+    answer = _run(binary, arguments, sql)
     if answer.returncode != 0:
-        stderr = answer.stderr.decode("utf-8", "replace").strip()
-        raise LspError(f"`{name}` failed (exit {answer.returncode}): {stderr}")
+        raise LspError(f"`{name}` failed (exit {answer.returncode}): {_stderr(answer)}")
     try:
         return json.loads(answer.stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -190,3 +212,75 @@ def split(binary: str, sql: str) -> list:
             "into statements."
         )
     return result.get("statements", [])
+
+
+def supports_edit(binary: str) -> bool:
+    """Whether the binary has the ``edit`` command, as its --help lists it.
+
+    A binary from before the command answers ``edit`` with an unknown
+    command, which would read as an edit that failed.
+    """
+    try:
+        key = (binary, os.stat(binary).st_mtime_ns)
+    except OSError:
+        key = (binary, None)
+    if key not in _supports_edit:
+        try:
+            answer = subprocess.run(
+                [binary, "--help"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=_VERSION_TIMEOUT,
+                check=False,
+            )
+            text = answer.stdout + answer.stderr
+        except (OSError, subprocess.SubprocessError):
+            text = ""
+        _supports_edit[key] = re.search(r"^\s+edit\s", text, re.MULTILINE) is not None
+    return _supports_edit[key]
+
+
+def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
+    """Has the binary work out schema edits on SQL text and the files it
+    includes, without writing anything.
+
+    Args:
+        binary: The binary, from find_lsp(); one that supports_edit().
+        sql: The SQL text, as for outline().
+        source_dir: The folder relative SOURCE paths are taken from.
+        request: {format, schema, edits} (lsp-server docs/edit-format.md).
+
+    Returns:
+        {format, files: [{file, edits: [{range, new_text}]}], migration:
+        [{edit, sql}], notes, outline}: ``file`` is "-" for sql, else a path
+        relative to source_dir.
+
+    Raises:
+        LspError: Where the binary refused the edits (naming the edit and
+            why) or did not answer as it should.
+    """
+    with tempfile.TemporaryDirectory() as folder:
+        edits_file = os.path.join(folder, "edits.json")
+        with open(edits_file, "w", encoding="utf-8") as f:
+            json.dump(request, f)
+        answer = _run(binary, ["edit", "--source-dir", source_dir, "--edits", edits_file], sql)
+    try:
+        result = json.loads(answer.stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        result = None
+    if answer.returncode != 0 or not isinstance(result, dict) or "error" in result:
+        error = result.get("error") if isinstance(result, dict) else None
+        if isinstance(error, dict):
+            which = error.get("edit")
+            where = f"Edit {which + 1}" if isinstance(which, int) else "The edits"
+            raise LspError(
+                f"{where} could not be made ({error.get('kind', 'error')}): "
+                f"{error.get('message', '')}"
+            )
+        if isinstance(error, str) and error:
+            raise LspError(f"The edits could not be made: {error}")
+        raise LspError(
+            f"`{LSP_BINARY_NAME} edit` failed (exit {answer.returncode}): {_stderr(answer)}"
+        )
+    return result

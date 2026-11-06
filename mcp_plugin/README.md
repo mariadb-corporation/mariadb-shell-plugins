@@ -304,7 +304,9 @@ Management (`msm`) plugin:
 | `msm.remove_project` | `remove_project` |
 | `msm.list_schema_diagrams` | `list_schema_diagrams` (`msm_plugin/modeling.py`) |
 | `msm.get_schema_diagrams` | `get_schema_diagrams` (`msm_plugin/modeling.py`) |
+| `msm.get_schema_diagram_image` | `get_schema_diagram_image` (`msm_plugin/modeling.py`) |
 | `msm.update_schema_definition` | `update_schema_definition` (`msm_plugin/modeling.py`) |
+| `msm.edit_schema` | `edit_schema` (`msm_plugin/modeling.py`) |
 | `msm.set_schema_diagram` | `set_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.remove_schema_diagram` | `remove_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.create_schema_diagram` | `create_schema_diagram` (`msm_plugin/modeling.py`) |
@@ -333,8 +335,13 @@ files under `development/sections/` where a section is large), its snapshot and 
 diagrams with their table, view, routine group, note and image figures (a picture is
 embedded as a data URL, up to 512 KB each and 4 MB per diagram). Scripts attached to
 the model are listed, not imported. `msm.get_schema_diagrams` leaves the pictures out
-(`image_size` says their length), and `msm.set_schema_diagram` keeps the stored one for
-a figure sent without it.
+(`image_size` says their length; `msm.get_schema_diagram_image` returns one by its
+figure's id), and `msm.set_schema_diagram` keeps the stored one for a figure sent
+without it. `msm.edit_schema` changes tables, columns, indexes and foreign keys in the
+SQL (the CREATE statements stay the source of truth) through `mariadb-lsp edit`:
+diagrams follow renamed objects, the snapshot is made again, and once the project has
+a release the statements that take a deployed schema along are kept in
+`development/<schema>_update_next.sql` for the next release's update script.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of

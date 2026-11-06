@@ -35,6 +35,23 @@ def _project(kwargs) -> str:
     return kwargs.get("schema_project_path") or lib.core.get_working_dir()
 
 
+def _json_argument(value, kwargs: dict, name: str, what: str):
+    """An argument given as itself or, on the command line, as a JSON file
+    (the keyword argument <name>_file)."""
+    file_path = kwargs.get(f"{name}_file")
+    if file_path is None:
+        return value
+    if value:
+        raise ValueError(f"Give the {what} as {name} or as {name}_file, not both.")
+    try:
+        with open(os.path.expanduser(file_path), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except OSError as e:
+        raise ValueError(f"The {what} file could not be read: {e}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"The {what} file `{file_path}` is not valid JSON: {e}")
+
+
 @plugin_function("msm.listSchemaDiagrams", shell=True, cli=True, web=True)
 def list_schema_diagrams(**kwargs) -> dict:
     """Lists the schema diagrams of a schema project
@@ -86,6 +103,26 @@ def get_schema_diagrams(**kwargs) -> list:
         diagram) and the document.
     """
     return lib.modeling.get_diagram_rows(_project(kwargs), kwargs.get("diagram"))
+
+
+@plugin_function("msm.getSchemaDiagramImage", shell=True, cli=True, web=True)
+def get_schema_diagram_image(diagram: str, figure_id: str, **kwargs) -> str:
+    """Returns the picture of an image figure of a schema diagram
+
+    The MCP server's msm.get_schema_diagrams leaves pictures out; this returns one.
+
+    Args:
+        diagram (str): The name of the diagram.
+        figure_id (str): The id of the ImageFigure.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+
+    Returns:
+        The picture, a data URL.
+    """
+    return lib.modeling.get_diagram_image(_project(kwargs), diagram, figure_id)
 
 
 @plugin_function("msm.updateSchemaDefinition", shell=True, cli=True, web=True)
@@ -141,20 +178,52 @@ def set_schema_diagram(document: dict = None, **kwargs) -> list:
     Returns:
         The files written.
     """
-    document_file = kwargs.get("document_file")
-    if document_file is not None:
-        if document:
-            raise ValueError("Give the diagram as document or as document_file, not both.")
-        try:
-            with open(os.path.expanduser(document_file), "r", encoding="utf-8") as f:
-                document = json.load(f)
-        except OSError as e:
-            raise ValueError(f"The diagram file could not be read: {e}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"The diagram file `{document_file}` is not valid JSON: {e}")
+    document = _json_argument(document, kwargs, "document", "diagram")
     if document is None:
         raise ValueError("No diagram given: pass document or document_file.")
     return lib.modeling.set_diagram(_project(kwargs), dict(document))
+
+
+@plugin_function("msm.editSchema", shell=True, cli=True, web=True)
+def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
+    """Changes schema objects in the SQL of a schema project
+
+    The CREATE statements of the development script, and the files it includes, are changed by
+    the MariaDB SQL language server's binary mariadb-lsp; diagrams follow renamed objects, and the
+    schema snapshot is made again. Once the project has a release, the statements that take a
+    deployed schema along are kept in development/<schema>_update_next.sql, whose sections
+    msm.prepareRelease moves into the next release's update script. Everything is written, or
+    nothing.
+
+    On the command line give the edits as a JSON file with --editsFile.
+
+    Args:
+        edits (list): The edits, each an object with its op: rename_table, rename_column,
+            rename_view, rename_routine, add_table, drop_table, add_column, modify_column,
+            drop_column, add_index, drop_index, add_foreign_key, drop_foreign_key,
+            set_table_options (the language server's docs/edit-format.md).
+        base_hash (str): The source_hash of the schema snapshot the edits were made against. They
+            are refused when the project's snapshot was made again since.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        edits_file (str): A JSON file holding the edits, instead of edits.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        rows (the diagrams VIEW afterwards), files written, migration (the statements kept for
+        the next update script), migration_file and notes on what was not changed.
+    """
+    edits = _json_argument(edits, kwargs, "edits", "edits")
+    if base_hash is None:
+        raise ValueError("No base_hash given: the source_hash of the snapshot the edits are for.")
+    if hasattr(edits, "__iter__") and not isinstance(edits, str) and not hasattr(edits, "keys"):
+        # The shell's dictionaries as Python's; anything else is for
+        # edit_schema to refuse, naming the edit.
+        edits = [dict(edit) if hasattr(edit, "keys") else edit for edit in edits]
+    return lib.editing.edit_schema(_project(kwargs), edits, base_hash, kwargs.get("lsp_path"))
 
 
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)

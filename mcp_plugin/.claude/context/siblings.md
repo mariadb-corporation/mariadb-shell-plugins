@@ -30,9 +30,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
-- **Schema diagrams (#82 section 160, #83 layout, #84 Workbench import, #85 views/routines/notes/images):** eight tools in
+- **Schema diagrams (#82 section 160, #83 layout, #84 Workbench import, #85 views/routines/notes/images):** ten tools in
   `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
-  `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.update_schema_definition`,
+  `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.get_schema_diagram_image`
+  (one ImageFigure's picture, the data URL `get_schema_diagrams` elides; for the VS Code
+  extension's diagram viewer), `msm.edit_schema` (schema edits made in the SQL through
+  `mariadb-lsp edit`, rows returned with pictures elided like `get_schema_diagrams`; the
+  `lsp_path` is passed as for the snapshot tools), `msm.update_schema_definition`,
   `msm.set_schema_diagram`, `msm.remove_schema_diagram`, `msm.create_schema_diagram`
   and `msm.layout_schema_diagram` (both pass `lsp_path`: they make the snapshot again
   when the script changed; `tables`, `views` and `routines` name what to show, tables

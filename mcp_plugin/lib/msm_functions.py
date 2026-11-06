@@ -568,11 +568,32 @@ def register_msm_tools(server, function_groups=()) -> None:
         rows = await _in_project(
             ctx, schema_project_path, msm_modeling.get_schema_diagrams, **_kwargs(diagram=diagram)
         )
-        return [
-            {**row, "document": msm_diagrams.elide_images(row["document"])}
-            if row["format"] == msm_diagrams.DIAGRAM_FORMAT else row
-            for row in rows
-        ]
+        return msm_diagrams.elide_row_images(rows)
+
+    @tool(name="msm.get_schema_diagram_image")
+    async def get_schema_diagram_image(
+        ctx: Context,
+        diagram: str,
+        figure_id: str,
+        schema_project_path: Optional[str] = None,
+    ) -> str:
+        """Returns the picture of an ImageFigure of a schema project's diagram.
+
+        msm.get_schema_diagrams leaves pictures out (image_size says their
+        length); this returns one, for a client that draws the diagram.
+
+        Args:
+            diagram: The name of the diagram.
+            figure_id: The id of the ImageFigure.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The picture, a data URL (up to 512 KB as msm imports them).
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.get_schema_diagram_image, diagram, figure_id
+        )
 
     @tool(name="msm.update_schema_definition")
     async def update_schema_definition(
@@ -669,6 +690,58 @@ def register_msm_tools(server, function_groups=()) -> None:
         return await _in_project(
             ctx, schema_project_path, msm_modeling.set_schema_diagram, document
         )
+
+    @tool(name="msm.edit_schema")
+    async def edit_schema(
+        ctx: Context,
+        edits: list,
+        base_hash: str,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Changes schema objects in the SQL of a schema project.
+
+        The CREATE statements are the source of truth, so a change to a
+        table, column, index or foreign key is made in the development
+        script and the files it includes (by the MariaDB SQL language
+        server's binary); diagrams follow renamed objects and the schema
+        snapshot is made again. Once the project has a release, the
+        statements that take a deployed schema along are kept for the next
+        release's update script. Everything is written, or nothing.
+
+        Args:
+            edits: The edits in order, each an object with its op:
+                rename_table (table, new_name), rename_column (table,
+                column, new_name), rename_view, rename_routine,
+                add_table (table: name, columns, indexes, foreign_keys,
+                options), drop_table (table), add_column (table, column,
+                after or first), modify_column (table, column, definition),
+                drop_column (table, column), add_index / drop_index,
+                add_foreign_key / drop_foreign_key, set_table_options.
+                Columns, indexes and foreign keys are given as
+                msm.get_schema_diagrams' snapshot has them.
+            base_hash: The snapshot's source_hash the edits were made
+                against; refused when the snapshot was made again since.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            rows (the diagrams VIEW afterwards, pictures left out as by
+            msm.get_schema_diagrams), files written, migration (the
+            statements kept for the next update script), migration_file and
+            notes on what the edits could not change.
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.edit_schema,
+            edits,
+            base_hash,
+            **_kwargs(lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
 
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(
