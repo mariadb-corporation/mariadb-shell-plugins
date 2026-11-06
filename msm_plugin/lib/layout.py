@@ -131,8 +131,9 @@ def figure_height(table: dict, figure: Optional[dict] = None) -> float:
     """The height of a table's card with the figure's sections expanded.
 
     As the card lays it out: the header, then the columns unless collapsed,
-    the indexes and the foreign keys where expanded, each a heading and a
-    row per member.
+    the indexes and the foreign keys where expanded, and the triggers unless
+    collapsed, each a heading and a row per member. The triggers are those
+    the table of diagrams.catalog() lists; a snapshot's table lists none.
     """
     figure = figure or {}
     return _card_height(_TABLE.sections(table, figure), figure)

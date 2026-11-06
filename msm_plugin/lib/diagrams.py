@@ -517,6 +517,8 @@ class FigureKind:
     card shows of them.
 
     Attributes:
+        object: What one of its objects is called: an edit's member naming
+            it (rename_<object>) and the word in messages.
         key: The figure's member naming what it shows: the object's name
             (Workbench's link key as well), or for a group the names listed
             (Workbench links the group instead, ``routineGroup``).
@@ -529,6 +531,7 @@ class FigureKind:
         group_name: The name of the group figure msm adds (many only).
     """
 
+    object: str
     key: str
     objects: str
     many: bool
@@ -540,7 +543,7 @@ class FigureKind:
 
 FIGURE_KINDS = {
     TABLE_FIGURE: FigureKind(
-        "table", "tables", False, FIGURE_COLOR,
+        "table", "table", "tables", False, FIGURE_COLOR,
         rows=lambda table: [
             column.get("name", "") + (column.get("type") or "")
             for column in table.get("columns", [])
@@ -548,7 +551,7 @@ FIGURE_KINDS = {
         sections=_table_sections,
     ),
     VIEW_FIGURE: FigureKind(
-        "view", "views", False, VIEW_FIGURE_COLOR,
+        "view", "view", "views", False, VIEW_FIGURE_COLOR,
         rows=lambda view: [str(column) for column in view.get("columns") or []],
         sections=lambda view, figure: (
             [len(view.get("columns") or [])] if figure.get("columnsExpanded") is not False
@@ -556,19 +559,19 @@ FIGURE_KINDS = {
         ),
     ),
     ROUTINE_GROUP_FIGURE: FigureKind(
-        "routines", "routines", True, ROUTINE_FIGURE_COLOR,
+        "routine", "routines", "routines", True, ROUTINE_FIGURE_COLOR,
         rows=lambda routines: [routine_label(routine) for routine in routines],
         sections=lambda routines, figure: [len(routines)],
         group_name=ROUTINE_GROUP_NAME,
     ),
     EVENT_GROUP_FIGURE: FigureKind(
-        "events", "events", True, EVENT_FIGURE_COLOR,
+        "event", "events", "events", True, EVENT_FIGURE_COLOR,
         rows=lambda events: [event_label(event) for event in events],
         sections=lambda events, figure: [len(events)],
         group_name=EVENT_GROUP_NAME,
     ),
     SEQUENCE_FIGURE: FigureKind(
-        "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
+        "sequence", "sequence", "sequences", False, SEQUENCE_FIGURE_COLOR,
         rows=sequence_rows,
         sections=lambda sequence, figure: [len(sequence_rows(sequence))],
     ),
@@ -661,12 +664,13 @@ def catalog(schema_document: dict) -> dict:
         for kind in ("tables", "views", "routines", "events", "sequences")
     }
     tables = objects["tables"]
+    by_table = {}
     for trigger in schema_document.get("triggers", []):
-        name = (trigger.get("table") or "").lower()
+        by_table.setdefault((trigger.get("table") or "").lower(), []).append(trigger)
+    for name, triggers in by_table.items():
         if name in tables:
             # A copy: the snapshot's table stays as the outline has it.
-            table = tables[name] = {**tables[name]}
-            table[TABLE_TRIGGERS] = table.get(TABLE_TRIGGERS, []) + [trigger]
+            tables[name] = {**tables[name], TABLE_TRIGGERS: triggers}
     return objects
 
 

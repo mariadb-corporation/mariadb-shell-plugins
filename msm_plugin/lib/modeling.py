@@ -666,7 +666,7 @@ def _add_object_figures(
     """
     kind = diagrams.FIGURE_KINDS[figure_type]
     objects = catalog[kind.objects]
-    _require_known(kind.key, objects, names)
+    _require_known(kind.object, objects, names)
     shown = {
         diagrams.figure_object_name(figure).lower()
         for figure in diagram["figures"]
@@ -703,7 +703,7 @@ def _add_group_members(
     """
     kind = diagrams.FIGURE_KINDS[figure_type]
     objects = catalog[kind.objects]
-    _require_known(kind.objects[:-1], objects, names)
+    _require_known(kind.object, objects, names)
     groups = [figure for figure in diagram["figures"] if diagrams.figure_type(figure) == figure_type]
     shown = {name.lower() for group in groups for name in diagrams.figure_members(group)}
     added = list(dict.fromkeys(
@@ -870,20 +870,21 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     return [diagrams.figure_object_name(figure) for figure, _ in moving]
 
 
-# The objects a diagram shows besides its tables, by the argument naming
-# them, and the figure type showing them: in the order they are added.
+# The figures a diagram shows besides its tables, in the order they are
+# added; create_diagram and layout_diagram name their objects by the kind's
+# `objects` (views=, sequences=, routines=, events=).
 _OTHER_FIGURES = (
-    ("views", diagrams.VIEW_FIGURE),
-    ("sequences", diagrams.SEQUENCE_FIGURE),
-    ("routines", diagrams.ROUTINE_GROUP_FIGURE),
-    ("events", diagrams.EVENT_GROUP_FIGURE),
+    diagrams.VIEW_FIGURE,
+    diagrams.SEQUENCE_FIGURE,
+    diagrams.ROUTINE_GROUP_FIGURE,
+    diagrams.EVENT_GROUP_FIGURE,
 )
 
 
-def _fill(diagram: dict, document: dict, tables: list, others: dict, keep_placed: bool) -> tuple:
-    """Adds the figures of the tables and the other objects (views,
-    sequences, routines, events: lists by those names in others, None for
-    none), the missing connections, and lays the figures out.
+def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool, **others) -> tuple:
+    """Adds the figures of the tables and of the other objects (lists named
+    by the kinds' `objects`, see _OTHER_FIGURES; None for none), the missing
+    connections, and lays the figures out.
 
     Returns:
         The objects added, the number of connections added and the figures
@@ -897,12 +898,10 @@ def _fill(diagram: dict, document: dict, tables: list, others: dict, keep_placed
         if not item.get("id"):
             item["id"] = _new_id(taken)
     added = _add_object_figures(diagram, diagrams.TABLE_FIGURE, catalog, tables, taken)
-    for key, figure_type in _OTHER_FIGURES:
-        add = (
-            _add_group_members if diagrams.FIGURE_KINDS[figure_type].many
-            else _add_object_figures
-        )
-        added += add(diagram, figure_type, catalog, others.get(key) or [], taken)
+    for figure_type in _OTHER_FIGURES:
+        kind = diagrams.FIGURE_KINDS[figure_type]
+        add = _add_group_members if kind.many else _add_object_figures
+        added += add(diagram, figure_type, catalog, others.get(kind.objects) or [], taken)
     connections_added = _add_connections(diagram, catalog["tables"], document["schema"], taken)
     placed = _place(diagram, catalog, keep_placed)
     return added, connections_added, placed
@@ -954,8 +953,10 @@ def create_diagram(
         "connections": [],
     }
     names = [table["name"] for table in document["tables"]] if tables is None else list(tables)
-    others = {"views": views, "routines": routines, "events": events, "sequences": sequences}
-    _fill(diagram, document, names, others, keep_placed=False)
+    _fill(
+        diagram, document, names, False,
+        views=views, routines=routines, events=events, sequences=sequences,
+    )
     if not diagram["figures"]:
         diagram["width"], diagram["height"] = 1000.0, 800.0
     rows.append({"name": name, "format": diagrams.DIAGRAM_FORMAT, "document": diagram})
@@ -1010,8 +1011,10 @@ def layout_diagram(
         raise ValueError(f"The project has no diagram `{name}`.")
     document, rows = _current_snapshot(project, rows, lsp_path)
     diagram = next(row for row in rows if _is_diagram(row, name))["document"]
-    others = {"views": views, "routines": routines, "events": events, "sequences": sequences}
-    added, connections_added, placed = _fill(diagram, document, tables or [], others, keep_placed)
+    added, connections_added, placed = _fill(
+        diagram, document, tables or [], keep_placed,
+        views=views, routines=routines, events=events, sequences=sequences,
+    )
     return {
         "name": name,
         "added": added,

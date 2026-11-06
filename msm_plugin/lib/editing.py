@@ -72,7 +72,7 @@ _DROPPED_IF_EXISTS = ("table", "sequence", "view", "trigger", "event") + _ROUTIN
 # The comments before it are skipped, as statements.strip_statement does.
 _DROP_WITHOUT_IF_EXISTS = re.compile(
     r"^((?:\s*(?:--[^\n]*\n|#[^\n]*\n|/\*(?!!).*?\*/))*"
-    r"\s*DROP\s+(?:TABLE|SEQUENCE|VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\s+)(?!IF\s+EXISTS\b)",
+    rf"\s*DROP\s+(?:{'|'.join(_DROPPED_IF_EXISTS)})\s+)(?!IF\s+EXISTS\b)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -151,14 +151,11 @@ def apply_text_edits(text: str, edits: list) -> str:
 # The diagrams
 
 
-# The rename edits a diagram follows: the figure type showing the object,
-# and the edit's member naming it.
+# The rename edits a diagram follows (rename_table, rename_view, ...): the
+# figure type showing the object, and the edit's member naming it.
 _RENAMES = {
-    "rename_table": (diagrams.TABLE_FIGURE, "table"),
-    "rename_view": (diagrams.VIEW_FIGURE, "view"),
-    "rename_routine": (diagrams.ROUTINE_GROUP_FIGURE, "routine"),
-    "rename_event": (diagrams.EVENT_GROUP_FIGURE, "event"),
-    "rename_sequence": (diagrams.SEQUENCE_FIGURE, "sequence"),
+    f"rename_{kind.object}": (figure_type, kind.object)
+    for figure_type, kind in diagrams.FIGURE_KINDS.items()
 }
 
 
@@ -317,16 +314,17 @@ def move_pending_update(
     return path if clear_pending_update(path, project_settings) else None
 
 
+# The members of an edit naming the object it is about.
+_OBJECT_MEMBERS = ("table", "view", "routine", "trigger", "event", "sequence", "column")
+
+
 def _describe(edit: dict) -> str:
     """One line naming an edit, for the comment above its statements."""
     names = [
-        str(edit[key])
-        for key in ("table", "view", "routine", "trigger", "event", "sequence", "column", "name")
-        if isinstance(edit.get(key), str)
+        str(edit[key]) for key in _OBJECT_MEMBERS + ("name",) if isinstance(edit.get(key), str)
     ]
     # The objects add_* and modify_column send, in the outline's shape
-    for key in ("table", "view", "routine", "trigger", "event", "sequence", "column",
-                "new_column", "index", "foreign_key"):
+    for key in _OBJECT_MEMBERS + ("new_column", "index", "foreign_key"):
         value = edit.get(key)
         if isinstance(value, dict) and isinstance(value.get("name"), str):
             # modify_column names the column twice where it keeps its name
@@ -339,9 +337,9 @@ def _describe(edit: dict) -> str:
 
 def _tags(item: dict, sql: str, tagged: bool) -> tuple:
     """A migration statement's (action, object), as the binary tagged it;
-    for a binary without tags, read from the SQL as far as msm needs them
-    (a CREATE of a view or routine, a DROP of a table, view or routine,
-    else (None, None))."""
+    for a binary without tags (whose ops are those of tables, views and
+    routines), read from the SQL as far as msm needs them: a CREATE or DROP
+    of an object, else (None, None)."""
     if tagged:
         action, kind = item.get("action"), item.get("object")
         if not isinstance(action, str) or not isinstance(kind, str):
@@ -361,7 +359,7 @@ def _tags(item: dict, sql: str, tagged: bool) -> tuple:
 def _placed_statement(item: dict, tagged: bool) -> Optional[tuple]:
     """A migration statement as the pending update script keeps it: its
     (section id, SQL without the delimiter); None for one it does not keep
-    (empty, or the CREATE of a view or routine). See _ROUTINES."""
+    (empty, or the CREATE of what Section 150 creates). See _ROUTINES."""
     sql = (item.get("sql") or "").strip().rstrip(";").strip()
     if not sql:
         return None
