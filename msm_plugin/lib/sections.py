@@ -325,28 +325,34 @@ def complete_sections(
 
 # The commented-out examples of the templates (templates/scripts), in
 # Sections 140 and 150 of a new development script: a block comment whose
-# first line is a `-- ToDo:` note.
+# first line is a `-- ToDo:` note. Every existing project has this text, so
+# the pattern stays as it is even where the templates change.
 _TEMPLATE_EXAMPLE = re.compile(r"[ \t]*/\*[ \t]*\n[ \t]*--[ \t]*ToDo:.*?\*/[ \t]*\n?", re.DOTALL)
-# What Section 150's example leaves behind: a DELIMITER pair around nothing.
-_EMPTY_DELIMITER_PAIR = re.compile(
-    r"^[ \t]*DELIMITER[ \t]+\S+[ \t]*\n(?:[ \t]*\n)*[ \t]*DELIMITER[ \t]+;[ \t]*\n?",
-    re.MULTILINE | re.IGNORECASE,
-)
+_TEMPLATE_EXAMPLE_MARK = "-- ToDo:"
+# What Section 150's example leaves behind: its DELIMITER pair around nothing.
+_EMPTY_DELIMITER_PAIR = re.compile(r"^DELIMITER %%\n\s*DELIMITER ;\n?", re.MULTILINE)
 
 
-def without_template_examples(script: str) -> str:
-    """The script without the templates' commented-out examples in every
-    section that has a statement of its own (or a SOURCE line): they make
-    sense only while a section is empty. Other sections, and every other
-    comment, are left as they are.
+def without_template_examples(script: str, section_ids=None) -> str:
+    """The script without the templates' commented-out examples in the
+    sections that have a statement of their own (or a SOURCE line): they
+    make sense only while a section is empty. Other sections, and every
+    other comment, are left as they are.
+
+    Args:
+        script: The development script.
+        section_ids: The sections to look at; all by default.
 
     Returns:
         The script; the one given where no example goes.
     """
+    if _TEMPLATE_EXAMPLE_MARK not in script:
+        return script
     sections = management.get_script_sections(script)
     changed = False
-    for section in sections.values():
-        changed = drop_template_example(section) or changed
+    for section_id, section in sections.items():
+        if section_ids is None or section_id in section_ids:
+            changed = drop_template_example(section) or changed
     if not changed:
         return script
     return "\n".join(section["full_content"] for section in sections.values())
@@ -354,21 +360,15 @@ def without_template_examples(script: str) -> str:
 
 def drop_template_example(section: dict) -> bool:
     """Drops the template's example from a section (of get_script_sections)
-    that has a statement of its own, in its full_content; see
-    without_template_examples.
+    that has a statement of its own, see without_template_examples.
 
     Returns:
         Whether it had one to drop.
     """
-    text = section["full_content"]
-    if not _TEMPLATE_EXAMPLE.search(text):
+    body, found = _TEMPLATE_EXAMPLE.subn("", section["full_content"][section["sql_start"]:])
+    if not found or not statements_lib.strip_statement(body):
         return False
-    body = _TEMPLATE_EXAMPLE.sub("", text[section["sql_start"]:])
-    if not statements_lib.strip_statement(body):
-        return False
-    text = _EMPTY_DELIMITER_PAIR.sub("", _TEMPLATE_EXAMPLE.sub("", text))
-    # At most the two blank lines the sections end with
-    section["full_content"] = re.sub(r"\n{4,}", "\n\n\n", text)
+    set_section_body(section, _EMPTY_DELIMITER_PAIR.sub("", body).strip("\n"))
     return True
 
 

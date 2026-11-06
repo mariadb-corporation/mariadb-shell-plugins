@@ -189,15 +189,13 @@ def test_statements_are_written_back_in_delimiter_blocks():
 def test_the_template_examples_go_once_a_section_has_a_statement(tmp_path):
     path = create_schema_project_folder(
         schema_name="shop", target_path=str(tmp_path), copyright_holder="X", license="MIT")
-    script = helpers_read(management.get_schema_development_file_path(path))
+    script = dev_script(path)
     assert script.count("-- ToDo:") == 2
     # Empty sections keep them
     assert sections.without_template_examples(script) is script
 
     with_table = script.replace(
-        "-- #############################################################################\n\n/*\n-- ToDo: Add schema TABLEs",
-        "-- #############################################################################\n\n"
-        "CREATE TABLE `t` (`id` INT);\n\n/*\n-- ToDo: Add schema TABLEs", 1)
+        "/*\n-- ToDo: Add schema TABLEs", "CREATE TABLE `t` (`id` INT);\n\n/*\n-- ToDo: Add schema TABLEs", 1)
     cleaned = sections.without_template_examples(with_table)
     tables = management.get_script_sections(cleaned)["140"]["sql_content"]
     assert tables.strip() == "CREATE TABLE `t` (`id` INT);"
@@ -207,6 +205,8 @@ def test_the_template_examples_go_once_a_section_has_a_statement(tmp_path):
     # Every other section is as it was
     before, after = (management.get_script_sections(text) for text in (with_table, cleaned))
     assert [k for k in before if before[k]["full_content"] != after[k]["full_content"]] == ["140"]
+    # Only the sections asked for
+    assert sections.without_template_examples(with_table, {"150"}) is with_table
 
     # A SOURCE line counts as a statement; the empty DELIMITER pair goes too
     with_source = script.replace(
@@ -215,11 +215,6 @@ def test_the_template_examples_go_once_a_section_has_a_statement(tmp_path):
     objects = management.get_script_sections(
         sections.without_template_examples(with_source))["150"]["sql_content"]
     assert objects.strip() == "SOURCE './sections/150-20_views.sql';"
-
-
-def helpers_read(file_path):
-    with open(file_path) as f:
-        return f.read()
 
 
 @needs_lsp

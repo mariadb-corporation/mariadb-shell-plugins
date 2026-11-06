@@ -405,6 +405,25 @@ def _diagrams_breakout_path(project) -> str:
     return source.resolve_include_path(modeling.BREAKOUT_FILE, project.development)
 
 
+def _edited_sections(project, result: dict) -> set:
+    """The ids of the development script's sections the binary's edits
+    write into."""
+    starts = [
+        _offset_of(project.script, edit["range"]["start"])
+        for changed in result.get("files", []) if changed.get("file") == "-"
+        for edit in changed.get("edits", [])
+    ]
+    return {
+        section_id for section_id, section in project.sections.items()
+        if any(section["start_position"] <= start <= section["end_position"] for start in starts)
+    }
+
+
+def _offset_of(text: str, position: dict) -> int:
+    line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
+    return _offset(text, line_starts, position)
+
+
 def _check_request(edits) -> None:
     if not isinstance(edits, list) or not edits:
         raise ValueError("No edits given: pass a list of edits, each with its `op`.")
@@ -516,7 +535,7 @@ def edit_schema(
     outline = result.get("outline")
     if project.dev_file in texts:
         old, new = texts[project.dev_file]
-        cleaned = sections_lib.without_template_examples(new)
+        cleaned = sections_lib.without_template_examples(new, _edited_sections(project, result))
         if cleaned != new:
             texts[project.dev_file] = (old, cleaned)
             outline = None
