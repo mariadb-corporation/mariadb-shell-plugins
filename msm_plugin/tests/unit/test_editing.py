@@ -245,7 +245,7 @@ def test_tagged_migrations_are_placed_by_their_tags():
          "name": "v"},
     ])
     assert statements == {
-        "240": "-- msm.editSchema: drop_table t\n/* t */ DROP TABLE `t`;\n"
+        "240": "-- msm.editSchema: drop_table t\n/* t */ DROP TABLE IF EXISTS `t`;\n"
                "-- msm.editSchema: drop_column t c\nALTER TABLE `t` DROP COLUMN `c`;\n"
                "CREATE VIEW `v` AS SELECT 1;",
         "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;",

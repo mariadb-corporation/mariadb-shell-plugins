@@ -45,9 +45,9 @@ _RUN_TIMEOUT = 120
 # The edit request's format (lsp-server docs/edit-format.md).
 EDIT_FORMAT = 1
 
-# A binary's answers to --version, --help and `edit --ops`, by its path, modification
-# time and the arguments: asked once per build, so an updated binary is
-# asked again.
+# A binary's answers to --version, --help and `edit --ops`, by its path,
+# modification time and the arguments: asked once per build, so an updated
+# binary is asked again.
 _answers = {}
 
 # The edit ops of a binary whose --help has the edit command but no
@@ -211,7 +211,8 @@ def split(binary: str, sql: str) -> list:
 
 def _answer(binary: str, arguments: tuple) -> tuple:
     """The binary's (exit code, stdout, stderr) for arguments without
-    input, asked once per build; (None, "", "") where it could not be run."""
+    input, asked once per build; (None, "", "") where it could not be run
+    (asked again next time)."""
     try:
         key = (binary, os.stat(binary).st_mtime_ns, arguments)
     except OSError:
@@ -226,9 +227,10 @@ def _answer(binary: str, arguments: tuple) -> tuple:
                 timeout=_VERSION_TIMEOUT,
                 check=False,
             )
-            _answers[key] = (answer.returncode, answer.stdout, answer.stderr)
         except (OSError, subprocess.SubprocessError):
-            _answers[key] = (None, "", "")
+            # Not kept: a run that timed out (a first, slow start) is tried again
+            return None, "", ""
+        _answers[key] = (answer.returncode, answer.stdout, answer.stderr)
     return _answers[key]
 
 

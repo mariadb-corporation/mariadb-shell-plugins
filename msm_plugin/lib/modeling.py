@@ -247,11 +247,13 @@ def _write(project: _Project, rows: list) -> list:
         "\n", 0, project.sections[DIAGRAMS_SECTION_ID]["end_position"]
     )
     schema = _schema_row(rows)
-    def line_count(sections) -> int:
-        return sum(item["full_content"].count("\n") for item in sections.values()) + len(sections) - 1
+
+    def joined(sections) -> str:
+        return "\n".join(item["full_content"] for item in sections.values())
 
     breakout, sections, moves_out = _plan_write(project, rows)
-    delta = line_count(sections) - old_lines
+    script = joined(sections)
+    delta = script.count("\n") - old_lines
     if delta and schema is not None:
         # In place, so the caller's snapshot is the one written. Moving a
         # position changes no line break (diagrams.dump_document), so the
@@ -259,13 +261,13 @@ def _write(project: _Project, rows: list) -> list:
         # file stays as decided.
         _shift_script_lines(schema["document"], first_line, delta)
         breakout, sections, _ = _plan_write(project, rows, moves_out)
-        if line_count(sections) - old_lines != delta:
+        script = joined(sections)
+        if script.count("\n") - old_lines != delta:
             raise ValueError(
                 f"MSM Section {DIAGRAMS_SECTION_ID} changed its line count when the "
                 "snapshot's positions were moved with it."
             )
 
-    script = "\n".join(item["full_content"] for item in sections.values())
     written = []
     if breakout is not None:
         path, text, old = breakout

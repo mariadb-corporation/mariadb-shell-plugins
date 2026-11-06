@@ -73,7 +73,8 @@ def is_position(value) -> bool:
     """Whether a value is a position ({line, character}) of the snapshot."""
     return (
         isinstance(value, dict) and len(value) == 2
-        and isinstance(value.get("line"), int) and isinstance(value.get("character"), int)
+        # type() rather than isinstance(): a bool is an int too
+        and type(value.get("line")) is int and type(value.get("character")) is int
     )
 
 

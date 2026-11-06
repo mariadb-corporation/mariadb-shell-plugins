@@ -65,8 +65,11 @@ REMOVALS_SECTION_ID = "290"
 _ROUTINES = ("procedure", "function")
 _NOT_KEPT_CREATES = ("view",) + _ROUTINES
 _DROPPED_IF_EXISTS = ("table", "view") + _ROUTINES
+# The comments before it are skipped, as statements.strip_statement does.
 _DROP_WITHOUT_IF_EXISTS = re.compile(
-    r"^(\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)", re.IGNORECASE
+    r"^((?:\s*(?:--[^\n]*\n|#[^\n]*\n|/\*(?!!).*?\*/))*"
+    r"\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
