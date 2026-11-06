@@ -69,6 +69,14 @@ _POSITION_NUMBER_WIDTH = 7
 # The documents' layout
 
 
+def is_position(value) -> bool:
+    """Whether a value is a position ({line, character}) of the snapshot."""
+    return (
+        isinstance(value, dict) and len(value) == 2
+        and isinstance(value.get("line"), int) and isinstance(value.get("character"), int)
+    )
+
+
 def dump_document(document) -> str:
     """Writes a document as JSON laid out for reading and for diffs.
 
@@ -94,9 +102,7 @@ def dump_document(document) -> str:
             return text, len(text)
         inner = indent + "  "
         if isinstance(value, dict):
-            position = len(value) == 2 and all(
-                isinstance(value.get(key), int) for key in ("line", "character")
-            )
+            position = is_position(value)
             parts = []
             for key, item in value.items():
                 text, width = dump(item, inner)
@@ -108,10 +114,10 @@ def dump_document(document) -> str:
         else:
             parts = [dump(item, inner) for item in value]
             opening, closing = "[", "]"
-        one_line = opening + ", ".join(text for text, _ in parts) + closing
+        # A child on lines of its own counts as wider than a line.
         width = 2 + sum(width for _, width in parts) + 2 * (len(parts) - 1)
-        if "\n" not in one_line and len(indent) + width <= _ONE_LINE_WIDTH:
-            return one_line, width
+        if len(indent) + width <= _ONE_LINE_WIDTH:
+            return opening + ", ".join(text for text, _ in parts) + closing, width
         return (
             f"{opening}\n{inner}" + f",\n{inner}".join(text for text, _ in parts)
             + f"\n{indent}{closing}",

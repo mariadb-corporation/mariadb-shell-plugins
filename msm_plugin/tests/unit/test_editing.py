@@ -158,7 +158,6 @@ def renaming_edit(calls=None):
 @pytest.fixture
 def fake_edit(monkeypatch):
     calls = []
-    monkeypatch.setattr(lsp, "supports_edit", lambda binary: True)
     # The ops the fake does, whatever binary the machine has, and its
     # statements are untagged, as from a binary before `edit --ops`
     monkeypatch.setattr(lsp, "edit_ops", lambda binary: lsp.RENAME_OPS)
@@ -212,7 +211,7 @@ def test_diagrams_follow_renamed_views_and_routines():
 def test_untagged_migrations_are_sorted_into_the_sections():
     """A binary before `edit --ops`: msm reads what a statement does from its SQL."""
     edits = [RENAME, {"op": "rename_routine", "routine": "p", "new_name": "q"}]
-    statements = editing.migration_statements(edits, [
+    statements, _ = editing.migration_statements(edits, [
         {"edit": 0, "sql": "RENAME TABLE `customer` TO `client`;"},
         # As the binary writes it; Section 150 may have dropped it already
         {"edit": 1, "sql": "DROP PROCEDURE `p`"},
@@ -233,7 +232,7 @@ def test_tagged_migrations_are_placed_by_their_tags():
     of an untagged statement."""
     edits = [{"op": "rename_routine", "routine": "p", "new_name": "q"},
              {"op": "drop_table", "table": "t"}, {"op": "drop_column", "table": "t", "column": "c"}]
-    statements = editing.migration_statements(edits, [
+    statements, _ = editing.migration_statements(edits, [
         {"edit": 0, "sql": "DROP PROCEDURE `p`", "action": "drop", "object": "procedure",
          "name": "p"},
         {"edit": 0, "sql": "/* q */ CREATE PROCEDURE `q`() SELECT 1", "action": "create",
@@ -534,7 +533,7 @@ def test_ops_the_binary_lacks_are_refused_before_it_runs(project, fake_edit):
 
 
 def test_untagged_update_script_gets_tables_and_drops_but_no_views_or_routines():
-    statements = editing.migration_statements(STRUCTURAL_EDITS, [
+    statements, _ = editing.migration_statements(STRUCTURAL_EDITS, [
         {"edit": 0, "sql": "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n)"},
         {"edit": 4, "sql": "DROP VIEW `customer_ids`"},
         {"edit": 5, "sql": "DROP PROCEDURE `count_customers`"},

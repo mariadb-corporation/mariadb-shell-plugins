@@ -45,7 +45,7 @@ _RUN_TIMEOUT = 120
 # The edit request's format (lsp-server docs/edit-format.md).
 EDIT_FORMAT = 1
 
-# A binary's answers to --help and `edit --ops`, by its path, modification
+# A binary's answers to --version, --help and `edit --ops`, by its path, modification
 # time and the arguments: asked once per build, so an updated binary is
 # asked again.
 _answers = {}
@@ -108,18 +108,8 @@ def find_lsp(lsp_path: Optional[str] = None) -> Optional[str]:
     for candidate in _candidates(lsp_path):
         if not (os.path.isfile(candidate) and os.access(candidate, os.X_OK)):
             continue
-        try:
-            answer = subprocess.run(
-                [candidate, "--version"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=_VERSION_TIMEOUT,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if answer.returncode == 0 and answer.stdout.startswith(LSP_BINARY_NAME + " "):
+        code, stdout, _ = _answer(candidate, ("--version",))
+        if code == 0 and stdout.startswith(LSP_BINARY_NAME + " "):
             return candidate
     return None
 

@@ -68,9 +68,6 @@ _DROPPED_IF_EXISTS = ("table", "view") + _ROUTINES
 _DROP_WITHOUT_IF_EXISTS = re.compile(
     r"^(\s*DROP\s+(?:TABLE|VIEW|PROCEDURE|FUNCTION)\s+)(?!IF\s+EXISTS\b)", re.IGNORECASE
 )
-# A binary that does not tag its statements (lsp-server #25 to #28): the
-# tags msm needs, read from the SQL.
-_DROP_OBJECT = re.compile(r"^\s*DROP\s+(TABLE|VIEW|PROCEDURE|FUNCTION)\b", re.IGNORECASE)
 
 
 class StaleSchemaError(ValueError):
@@ -339,11 +336,12 @@ def _tags(item: dict, sql: str, tagged: bool) -> tuple:
                 f"and `object`: {sql}"
             )
         return action, kind
+    # A binary that does not tag them (lsp-server #25 to #28)
     created = statements.statement_kind(sql)
     if created:
         return "create", created.lower()
-    dropped = _DROP_OBJECT.match(sql)
-    return ("drop", dropped.group(1).lower()) if dropped else (None, None)
+    dropped = statements.dropped_kind(sql)
+    return ("drop", dropped.lower()) if dropped else (None, None)
 
 
 def _placed_statement(item: dict, tagged: bool) -> Optional[tuple]:
@@ -363,7 +361,7 @@ def _placed_statement(item: dict, tagged: bool) -> Optional[tuple]:
     return CHANGES_SECTION_ID, sql
 
 
-def migration_statements(edits: list, migration: list, tagged: bool = True) -> dict:
+def migration_statements(edits: list, migration: list, tagged: bool = True) -> tuple:
     """The binary's migration statements as the sections of the pending
     update script: each edit's statements under a comment naming it, placed
     by what they do (see _ROUTINES).
@@ -373,7 +371,11 @@ def migration_statements(edits: list, migration: list, tagged: bool = True) -> d
         migration: The binary's statements, [{edit, sql, action, object, ...}].
         tagged: Whether the binary tags them (lsp.tags_migration); else
             msm reads what it needs from the SQL.
+
+    Returns:
+        ({section id: SQL}, [the statements kept, in order]).
     """
+    kept = []
     by_section = {CHANGES_SECTION_ID: [], REMOVALS_SECTION_ID: []}
     described = {CHANGES_SECTION_ID: set(), REMOVALS_SECTION_ID: set()}
     for item in migration:
@@ -381,13 +383,14 @@ def migration_statements(edits: list, migration: list, tagged: bool = True) -> d
         if placed is None:
             continue
         section_id, sql = placed
+        kept.append(sql)
         index = item.get("edit")
         if index not in described[section_id]:
             described[section_id].add(index)
             if isinstance(index, int) and 0 <= index < len(edits):
                 by_section[section_id].append(f"-- msm.editSchema: {_describe(edits[index])}")
         by_section[section_id].append(f"{sql};")
-    return {section_id: "\n".join(lines) for section_id, lines in by_section.items()}
+    return {section_id: "\n".join(lines) for section_id, lines in by_section.items()}, kept
 
 
 # -----------------------------------------------------------------------------
@@ -505,15 +508,12 @@ def edit_schema(
         texts[path] = (old, apply_spans(old, spans))
 
     migration = result.get("migration", [])
-    tagged = lsp.tags_migration(binary)
-    migration_file = None
+    migration_file, kept = None, []
     if migration and management.get_last_released_version(schema_project_path) is not None:
         migration_file = pending_update_path(schema_project_path, project.settings)
         old = sections_lib.read_if_exists(migration_file)
-        texts[migration_file] = (
-            old,
-            pending_update_text(old, project.settings, migration_statements(edits, migration, tagged)),
-        )
+        by_section, kept = migration_statements(edits, migration, lsp.tags_migration(binary))
+        texts[migration_file] = (old, pending_update_text(old, project.settings, by_section))
 
     # The files as they are on disk, to put back: the development script's
     # old text above is the completed one (sections msm adds), not the file.
@@ -558,10 +558,7 @@ def edit_schema(
     return {
         "rows": rows,
         "files": written,
-        "migration": [
-            placed[1] for placed in (_placed_statement(item, tagged) for item in migration)
-            if placed is not None
-        ] if migration_file else [],
+        "migration": kept,
         "migration_file": migration_file,
         "notes": result.get("notes", []),
     }
