@@ -38,11 +38,82 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   (`db_functions.connection_credentials`). It is tested by opening a session of
   its own with it, then the privileges `--setup` needs are checked from
   `SHOW GRANTS` (`restd_functions._missing_privileges`).
-- **Install.** `restd.find_restd`: PATH, `~/.local/bin`, then the newest
-  version folder under `~/.local/share/mariadb-restd` (Windows
-  `%LOCALAPPDATA%\Programs\mariadb-restd`), the shell's install layout. If
-  none: `restd_install.install` runs the rest-daemon repo's `install.sh` /
-  `install.ps1` (`MARIADB_RESTD_TAG`, `_PREFIX`, `_BINDIR`, as the shell's).
+- **Install.** `restd.find_restd` follows the extension's shell locator
+  (`src/shell/locator.ts`) step for step: the PATH, then the folders under
+  `~/.local/share/mariadb-restd` that name a version, newest first (Windows
+  `%LOCALAPPDATA%\Programs\mariadb-restd`, an empty `LOCALAPPDATA` taken as
+  set, as the extension does), the shell's install layout. No `~/.local/bin`:
+  the shell's locator does not look there. With `minimum_version`
+  (configure_restd's `restd_version`, else the default below) a folder named
+  older is skipped unrun, and each other is probed with `--version`, stdout and
+  stderr, read as the extension reads the shell's (`Ver x.y.z` first, else
+  any x.y.z; a non-zero exit is "could not be run"). Unlike the extension's
+  parser, no `x.y`: a mariadb-restd version is always year.month.patch;
+  one older, or silent, is passed over. Its `log` gets the locator's lines
+  (what was looked at, why it was not used), which configure_restd adds to its
+  not-found errors. If none:
+  `restd_install.install` runs the rest-daemon repo's `install.sh` /
+  `install.ps1` (`MARIADB_RESTD_TAG`, `_PREFIX`, `_BINDIR`, as the shell's),
+  from `restd_install.script_url`. The same two schemes as the shell's installs:
+  - **Pinned** (`restd_version`, which the extension always sends as its
+    `MINIMUM_RESTD_VERSION`): `MARIADB_RESTD_TAG=v<version>`, one run, with
+    the script at that tag (`raw/v<version>/`), as the extension takes the
+    shell's (`installScriptUrl`). v26.10.0 and v26.10.1 carry no scripts (they
+    reached `main` after v26.10.1), so a pin to either fails to download; the
+    pin has to name a release that has them.
+  - **Not pinned**: the script from `main`, as the launchers take the shell's.
+  - **Not pinned**, as the ai-plugins launchers: lowest version
+    `MARIADB_RESTD_VERSION` (the ai-plugins MCP configs set it beside
+    `MARIADB_SHELL_VERSION`), else `restd.DEFAULT_MINIMUM_VERSION` (26.11.0;
+    the launchers' `MARIADB_SHELL_VERSION` default). The default is raised by
+    `tools/update_version` to the newest rest-daemon release (stable
+    preferred, never lowered; `--restd-version` to set it), as the ai-plugins
+    `/release` raises the shell's floor. Older ones passed over;
+    the newest release installed; if that is still below, used anyway with
+    `install_warning` in the result (the launchers log a warning and start
+    it). Install: stable first, then a retry
+    with `--pre-release` (POSIX) or `MARIADB_RESTD_PRERELEASE=1` in the
+    environment (Windows, as the `.cmd` launcher) - `/releases/latest` skips
+    prereleases, and every release is one so far. `MARIADB_RESTD_PRERELEASE`
+    from the caller: truthy = prerelease straight away, 0/false/no/off =
+    stable only; it is popped from the script's env, since the scripts treat
+    any non-empty value as truthy.
+  `install.sh` runs as `/bin/sh <file>`, `install.ps1` as `powershell.exe
+  -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File <file>`,
+  both as the extension runs the shell's (`buildInstallCommand`). Not
+  `Bypass`: it does no more here (a file urllib writes has no
+  Zone.Identifier, so RemoteSigned runs it unsigned; Group Policy overrides
+  either) and is what malware asks for. Checked on the Windows VM on
+  2026-11-06: both v26.11.0 scripts install under RemoteSigned, and the same
+  script with ZoneId=3 added is refused as "not digitally signed".
+  Its log, as the extension's for the shell (installer.ts): `Installing <name>
+  with <url>.`, `Running the installer: MARIADB_RESTD_TAG=... <command>`,
+  `  installer: <line>` per line (stdout and stderr merged in order, split as
+  the extension's LineReader; `clean_line` = `cleanInstallerLine`, curl's
+  redraws and bars dropped), `The installer exited with code N after X.Xs.`.
+  `install()` returns it, and configure_restd answers it as `install_output`
+  (before, the return value was dropped and a successful install left no
+  record). A failure: `<name> could not be installed: <reason> (the installer
+  exited with code N).` + the log, the reason from `summarize_failure` =
+  `summarizeInstallerFailure`. A pinned download failure has no restd_path
+  advice (the extension's user passes none).
+  Agent path (no `restd_version`) = the ai-plugins launchers' step 4 and after,
+  `restd_functions._install_for_agent`: `restd_install.InstallTurn` (POSIX
+  only, as the launchers; `.mcp-plugin.lock` in the prefix holding the
+  server's and the installer's PIDs, waits for install.sh's `.install.lock`,
+  stale = no PID alive / no PID and over a minute old, renamed then removed,
+  `MARIADB_RESTD_LOCK_WAIT` 180), then looks again with the minimum, installs,
+  and the version decides: new enough (even after a failed install) → used;
+  else any → used with `install_warning`; none → the install's error. A lock
+  left to an installer that outlives the call keeps only the installer's PID:
+  unlike a launcher, the server goes on running. `MARIADB_RESTD_TAG` in the
+  environment pins the agent path (Hermes exports it, as `MARIADB_SHELL_TAG`):
+  script at that tag; the floor stays `MARIADB_RESTD_VERSION`.
+  `MARIADB_RESTD_SHA256SUMS` reaches the script only with its own tag. The
+  extension's `restd_version` path stays strict: no turn, no fallback.
+  Accepted differences from the shell's install (decided 2026-11-06, as they
+  would need large changes on both sides): no streamed progress, no cancel,
+  the 900s/60s limits stay (with no cancel they are what stops a hang).
   `--gui`: without asking. Agent mode: MCP elicitation first.
 - **Sandbox hooks live in the `sandbox.*` tools**, not only in the extension,
   so an agent deleting a sandbox never leaves a daemon serving from a deleted

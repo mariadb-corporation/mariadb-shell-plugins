@@ -644,11 +644,38 @@ cookies, a login session included, and it could pose as the site's login page.
 2. Picks the REST metadata schema: the one named, else the one the server has. A server
    with several needs one named; a server with none gets `mariadb_rest_service`, created
    with `CONFIGURE REST METADATA`.
-3. Finds `mariadb-restd` on the PATH, in `~/.local/bin`, or among the releases its install
+3. Finds `mariadb-restd` on the PATH or among the releases its install
    script unpacked into `~/.local/share/mariadb-restd/<version>`
-   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows). When there is none,
-   it runs the install script from the rest-daemon repository - without asking in GUI
-   mode, after asking through MCP elicitation otherwise.
+   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows), passing over one
+   older than the lowest version wanted: `restd_version` (the VS Code extension always
+   passes the version it needs), else `MARIADB_RESTD_VERSION`, else 26.11.0 (raised to the
+   newest rest-daemon release with each plugin release; the MariaDB AI plugins set
+   `MARIADB_RESTD_VERSION` for agents, beside `MARIADB_SHELL_VERSION`). When there
+   is none new enough, it runs the install script from the rest-daemon repository -
+   without asking in GUI mode, after asking through MCP elicitation otherwise. The
+   MariaDB Shell is installed the same two ways:
+   - with `restd_version`, exactly that release (`MARIADB_RESTD_TAG=v<version>`), with the
+     install script at that release's tag, as the extension installs the shell;
+   - without it, as the shell's launchers do: with the install script on `main`, the
+     newest stable release, and a
+     prerelease only when there is no stable one. `MARIADB_RESTD_PRERELEASE=1` goes
+     straight for a prerelease, and `MARIADB_RESTD_PRERELEASE=0` never takes one.
+     `MARIADB_RESTD_TAG` in the environment pins it instead, as the Hermes plugins' launchers
+     pin the shell: that release, with the install script at its tag, checked against
+     `MARIADB_RESTD_SHA256SUMS` when that names a copy of its checksums.
+
+     Installs take turns as the launchers' do: on macOS and Linux a lock folder in the
+     install folder, `.mcp-plugin.lock`, and the install script's own `.install.lock`
+     are waited for, up to `MARIADB_RESTD_LOCK_WAIT` seconds (180), and a mariadb-restd
+     another install put in place meanwhile is used without installing again. Afterwards
+     the version decides, not the install's outcome: one new enough is used, even when
+     the install failed (another one finished); failing that, an older one is used, and
+     the result's `install_warning` says why. Only when there is none at all does the
+     setup fail.
+   The result's `install_output` is the install's log, as the VS Code extension logs the
+   shell's: the script's URL, the command it ran with, every line it printed but curl's
+   progress bars, and its exit code and duration. A failed install's error starts with
+   the reason the script gave, and then carries the same log.
 4. Checks that the account can do the setup: `CREATE USER` with the `GRANT OPTION`,
    `SELECT`, `INSERT` and `UPDATE` on the metadata schema, and its roles
    `WITH ADMIN OPTION`.
