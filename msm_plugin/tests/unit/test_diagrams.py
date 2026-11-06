@@ -319,6 +319,34 @@ def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
     assert not diagrams.reconcile_diagram(document, schema)
 
 
+def test_reconcile_keeps_the_events_and_sequences_the_schema_has():
+    schema = {"tables": [], "events": [{"name": "nightly"}], "sequences": [{"name": "S"}]}
+    document = diagram("D", tables=())
+    document["figures"] = [
+        {"id": "e", "type": "EventGroupFigure", "name": "Events", "events": ["NIGHTLY", "gone"]},
+        {"id": "empty", "type": "EventGroupFigure", "name": "E", "events": ["gone"]},
+        {"id": "s", "type": "SequenceFigure", "sequence": "s"},
+        {"id": "gone", "type": "SequenceFigure", "sequence": "gone"},
+    ]
+    assert diagrams.reconcile_diagram(document, schema)
+    assert [f["id"] for f in document["figures"]] == ["e", "s"]
+    assert document["figures"][0]["events"] == ["NIGHTLY"]
+    assert not diagrams.reconcile_diagram(document, schema)
+
+
+def test_a_tables_card_counts_its_triggers():
+    schema = {"tables": [{"name": "orders", "columns": [{"name": "id"}]}, {"name": "other"}],
+              "triggers": [{"name": "a", "table": "ORDERS"}, {"name": "b", "table": "orders"},
+                           {"name": "c", "table": "gone"}]}
+    tables = diagrams.catalog(schema)["tables"]
+    assert [trigger["name"] for trigger in tables["orders"]["triggers"]] == ["a", "b"]
+    assert "triggers" not in schema["tables"][0]  # the snapshot stays as it is
+    sections = diagrams.FIGURE_KINDS["TableFigure"].sections
+    assert sections(tables["orders"], {}) == [1, 2]
+    assert sections(tables["orders"], {"triggersExpanded": False}) == [1]
+    assert sections(tables["other"], {}) == [0, 0]
+
+
 def test_a_picture_is_read_by_its_figure(project):
     picture = "data:image/svg+xml;base64,PHN2Zy8+"
     document = diagram()

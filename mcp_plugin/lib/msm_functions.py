@@ -677,8 +677,10 @@ def register_msm_tools(server, function_groups=()) -> None:
                 startFigure, endFigure, visible). A figure has id, type, name,
                 left, top, width, height, color and layer; a figure without
                 left and top is placed by msm.layout_schema_diagram. By type:
-                "TableFigure" has table, "ViewFigure" view,
-                "RoutineGroupFigure" routines (names), "NoteFigure" text,
+                "TableFigure" has table (and triggersExpanded, for the
+                card's section of the table's triggers), "ViewFigure" view,
+                "SequenceFigure" sequence, "RoutineGroupFigure" routines
+                (names), "EventGroupFigure" events (names), "NoteFigure" text,
                 "ImageFigure" image (a data URL; left out, the figure keeps
                 the picture stored under its id).
             schema_project_path: The path to the schema project. Defaults to
@@ -764,6 +766,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         schema_project_path: Optional[str] = None,
         views: Optional[list[str]] = None,
         routines: Optional[list[str]] = None,
+        events: Optional[list[str]] = None,
+        sequences: Optional[list[str]] = None,
     ) -> dict:
         """Adds a diagram of the schema's tables to a schema project, laid out.
 
@@ -771,8 +775,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         goes above the tables referring to it, with few crossing
         connections, and tables without foreign keys are packed in rows
         below. Every foreign key between two tables shown gets a connection.
-        Views get a figure each and routines are listed on one routine group
-        figure, placed below the tables, without connections. The schema
+        Views and sequences get a figure each, routines are listed on one
+        routine group figure and events on one event group figure, placed
+        below the tables, without connections. The schema
         snapshot is made again first where the development script changed
         since it was made.
 
@@ -784,6 +789,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             views: Views to show as well. Defaults to none.
             routines: Routines (procedures and functions) to list on a
                 routine group figure. Defaults to none.
+            events: Events to list on an event group figure. Defaults to
+                none.
+            sequences: Sequences to show. Defaults to none.
 
         Returns:
             name, figures and connections (counts), and the files written.
@@ -793,7 +801,10 @@ def register_msm_tools(server, function_groups=()) -> None:
             schema_project_path,
             msm_modeling.create_schema_diagram,
             name,
-            **_kwargs(tables=tables, views=views, routines=routines, lsp_path=_lsp_path()),
+            **_kwargs(
+                tables=tables, views=views, routines=routines, events=events,
+                sequences=sequences, lsp_path=_lsp_path(),
+            ),
         )
 
     @tool(name="msm.layout_schema_diagram")
@@ -805,14 +816,16 @@ def register_msm_tools(server, function_groups=()) -> None:
         schema_project_path: Optional[str] = None,
         views: Optional[list[str]] = None,
         routines: Optional[list[str]] = None,
+        events: Optional[list[str]] = None,
+        sequences: Optional[list[str]] = None,
     ) -> dict:
-        """Adds tables, views and routines to a diagram of a schema project
-        and lays its figures out.
+        """Adds tables, views, sequences, routines and events to a diagram
+        of a schema project and lays its figures out.
 
         With keep_placed (the default) only figures without a position are
         laid out - the objects added, or figures a document given to
         msm.set_schema_diagram leaves left and top out of - as a block below
-        the others; with keep_placed false every table, view and routine
+        the others; with keep_placed false every table, view, sequence and
         group figure is laid out again. Figures on a layer, notes and images
         keep their place. Foreign keys between tables on the diagram that
         are not drawn get a connection. The schema snapshot is made again
@@ -828,10 +841,13 @@ def register_msm_tools(server, function_groups=()) -> None:
             routines: Routines to list on the diagram's routine group
                 figure, which is added where the diagram has none. Defaults
                 to none.
+            events: Events to list on the diagram's event group figure,
+                likewise. Defaults to none.
+            sequences: Sequences to add. Defaults to none.
 
         Returns:
             name, added (the objects added), placed (the figures laid out, by
-            the tables, views and routine groups they show),
+            the tables, views, sequences and groups they show),
             connections_added and the files written.
         """
         return await _in_project(
@@ -843,6 +859,8 @@ def register_msm_tools(server, function_groups=()) -> None:
                 tables=tables,
                 views=views,
                 routines=routines,
+                events=events,
+                sequences=sequences,
                 keep_placed=keep_placed,
                 lsp_path=_lsp_path(),
             ),

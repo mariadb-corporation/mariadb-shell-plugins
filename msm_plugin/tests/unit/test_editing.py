@@ -254,6 +254,55 @@ def test_tagged_migrations_are_placed_by_their_tags():
         editing.migration_statements(edits, [{"edit": 1, "sql": "DROP TABLE `t`"}])
 
 
+def test_triggers_events_and_sequences_are_placed_by_their_tags():
+    edits = [{"op": "rename_trigger", "trigger": "t", "new_name": "u"},
+             {"op": "add_event", "event": {"name": "e"}}, {"op": "rename_event", "event": "e",
+                                                         "new_name": "f"},
+             {"op": "drop_event", "event": "f"}, {"op": "add_sequence", "sequence": {"name": "s"}},
+             {"op": "drop_sequence", "sequence": "s"}]
+    by_section, kept = editing.migration_statements(edits, [
+        {"edit": 0, "sql": "DROP TRIGGER `t`", "action": "drop", "object": "trigger", "name": "t"},
+        # MariaDB 1303 and 1576 inside the update procedure: Section 150 creates them
+        {"edit": 0, "sql": "CREATE TRIGGER `u` BEFORE INSERT ON `x` FOR EACH ROW SET @a = 1",
+         "action": "create", "object": "trigger", "name": "u"},
+        {"edit": 1, "sql": "CREATE EVENT `e` ON SCHEDULE EVERY 1 DAY DO SELECT 1",
+         "action": "create", "object": "event", "name": "e"},
+        {"edit": 2, "sql": "ALTER EVENT `e` RENAME TO `f`", "action": "rename", "object": "event",
+         "name": "e", "new_name": "f"},
+        {"edit": 3, "sql": "DROP EVENT `f`", "action": "drop", "object": "event", "name": "f"},
+        {"edit": 4, "sql": "CREATE SEQUENCE `s`", "action": "create", "object": "sequence",
+         "name": "s"},
+        {"edit": 5, "sql": "DROP SEQUENCE `s`", "action": "drop", "object": "sequence", "name": "s"},
+    ])
+    assert by_section == {
+        "240": "-- msm.editSchema: rename_trigger t -> u\nDROP TRIGGER IF EXISTS `t`;\n"
+               "-- msm.editSchema: rename_event e -> f\nALTER EVENT `e` RENAME TO `f`;\n"
+               "-- msm.editSchema: drop_event f\nDROP EVENT IF EXISTS `f`;\n"
+               "-- msm.editSchema: add_sequence s\nCREATE SEQUENCE `s`;\n"
+               "-- msm.editSchema: drop_sequence s\nDROP SEQUENCE IF EXISTS `s`;",
+        "290": "",
+    }
+    assert kept == ["DROP TRIGGER IF EXISTS `t`", "ALTER EVENT `e` RENAME TO `f`",
+                    "DROP EVENT IF EXISTS `f`", "CREATE SEQUENCE `s`",
+                    "DROP SEQUENCE IF EXISTS `s`"]
+
+
+def test_diagrams_follow_renamed_events_and_sequences():
+    diagram = {"figures": [
+        {"id": "e", "type": "EventGroupFigure", "name": "Events", "events": ["a", "NIGHTLY"]},
+        {"id": "s", "type": "SequenceFigure", "name": "numbers", "sequence": "numbers"},
+    ], "connections": []}
+    assert editing.rename_in_diagram(
+        diagram, {"op": "rename_event", "event": "nightly", "new_name": "daily"})
+    assert diagram["figures"][0]["events"] == ["a", "daily"]
+    assert editing.rename_in_diagram(
+        diagram, {"op": "rename_sequence", "sequence": "numbers", "new_name": "ids"})
+    assert (diagram["figures"][1]["sequence"], diagram["figures"][1]["name"]) == ("ids", "ids")
+    # The table card lists the snapshot's triggers: nothing to follow
+    assert not editing.rename_in_diagram(
+        diagram, {"op": "rename_trigger", "trigger": "t", "new_name": "u"})
+
+
 # -----------------------------------------------------------------------------
 # Editing a project
 

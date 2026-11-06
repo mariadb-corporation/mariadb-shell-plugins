@@ -252,8 +252,9 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
     The tables are laid out in layers: a table referred to by a foreign key goes above the
     tables referring to it, with as few crossing connections as the layout finds, and tables
     without foreign keys are packed in rows below. Every foreign key between two tables shown
-    gets a connection. Views get a figure each and routines are listed on one routine group
-    figure, placed below the tables; neither gets connections. The schema snapshot is made
+    gets a connection. Views and sequences get a figure each, routines are listed on one
+    routine group figure and events on one event group figure, placed below the tables; none
+    of them gets connections. The schema snapshot is made
     again first where the development script changed since it was made, which needs the
     mariadb-lsp binary.
 
@@ -268,6 +269,8 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
         views (list): Views to show as well. Defaults to none.
         routines (list): Routines (procedures and functions) to list on a routine group figure.
             Defaults to none.
+        events (list): Events to list on an event group figure. Defaults to none.
+        sequences (list): Sequences to show. Defaults to none.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
@@ -282,6 +285,8 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
         kwargs.get("lsp_path"),
         views=kwargs.get("views"),
         routines=kwargs.get("routines"),
+        events=kwargs.get("events"),
+        sequences=kwargs.get("sequences"),
     )
     if lib.core.get_interactive_default():
         print(
@@ -294,12 +299,12 @@ def create_schema_diagram(name: str, **kwargs) -> dict:
 
 @plugin_function("msm.layoutSchemaDiagram", shell=True, cli=True, web=True)
 def layout_schema_diagram(name: str, **kwargs) -> dict:
-    """Adds tables, views and routines to a diagram of a schema project and lays its figures out
+    """Adds tables, views, sequences, routines and events to a diagram of a schema project and lays its figures out
 
     By default only the figures without a position (the objects just added, or figures a
     document given to msm.setSchemaDiagram leaves left and top out of) are laid out, as a block
-    below the others; with keep_placed set to false every table, view and routine group figure
-    is laid out again. Figures on a layer, notes and images keep their place. Foreign keys
+    below the others; with keep_placed set to false every table, view, sequence and group
+    figure is laid out again. Figures on a layer, notes and images keep their place. Foreign keys
     between tables on the diagram that are not drawn get a connection. The schema snapshot is
     made again first where the development script changed since it was made, which needs the
     mariadb-lsp binary.
@@ -315,14 +320,17 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         views (list): Views to add. Defaults to none.
         routines (list): Routines to list on the diagram's routine group figure, which is added
             where the diagram has none. Defaults to none.
+        events (list): Events to list on the diagram's event group figure, likewise. Defaults
+            to none.
+        sequences (list): Sequences to add. Defaults to none.
         keep_placed (bool): Whether figures that have a position keep it. Defaults to true.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
 
     Returns:
-        The diagram's name, the objects added, the figures laid out (the tables, views and routine
-        groups they show), the number of connections added, and the files written.
+        The diagram's name, the objects added, the figures laid out (the tables, views, sequences
+        and groups they show), the number of connections added, and the files written.
     """
     keep_placed = kwargs.get("keep_placed")
     result = lib.modeling.layout_diagram(
@@ -333,6 +341,8 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         kwargs.get("lsp_path"),
         views=kwargs.get("views"),
         routines=kwargs.get("routines"),
+        events=kwargs.get("events"),
+        sequences=kwargs.get("sequences"),
     )
     if lib.core.get_interactive_default():
         print(
