@@ -57,6 +57,12 @@ SCHEMA_OBJECT_KINDS = ("tables", "views", "routines", "triggers", "events", "seq
 
 # A JSON value goes on one line of its own when it is at most this long.
 _ONE_LINE_WIDTH = 160
+# The width a number of a position ({line, character}) counts as when
+# dump_document decides whether a value fits on a line, whatever its digits:
+# the layout, and so the line count, of a snapshot then does not depend on
+# its positions, which msm moves after writing Section 160 (see
+# modeling._write).
+_POSITION_NUMBER_WIDTH = 7
 
 
 # -----------------------------------------------------------------------------
@@ -68,7 +74,9 @@ def dump_document(document) -> str:
 
     A value that fits on a line stays on one; otherwise its members go on
     lines of their own, so a table, column, figure or connection is one line
-    where it is short enough and a change touches the lines it changes.
+    where it is short enough and a change touches the lines it changes. The
+    numbers of a position count as _POSITION_NUMBER_WIDTH wide, so moving
+    positions never changes the layout.
 
     Args:
         document: The JSON value.
@@ -77,27 +85,40 @@ def dump_document(document) -> str:
         The JSON text, without a trailing line break.
     """
 
-    def dump(value, indent: str) -> str:
+    def dump(value, indent: str) -> tuple:
+        """The value's text, and the width it counts as on one line."""
         # Children first, so every value is written once: a container fits on
         # a line exactly when its children each do and the whole is short.
         if not isinstance(value, (dict, list)) or not value:
-            return json.dumps(value, ensure_ascii=False)
+            text = json.dumps(value, ensure_ascii=False)
+            return text, len(text)
         inner = indent + "  "
         if isinstance(value, dict):
-            parts = [
-                f"{json.dumps(key, ensure_ascii=False)}: {dump(item, inner)}"
-                for key, item in value.items()
-            ]
+            position = len(value) == 2 and all(
+                isinstance(value.get(key), int) for key in ("line", "character")
+            )
+            parts = []
+            for key, item in value.items():
+                text, width = dump(item, inner)
+                if position:
+                    width = _POSITION_NUMBER_WIDTH
+                key_text = f"{json.dumps(key, ensure_ascii=False)}: "
+                parts.append((key_text + text, len(key_text) + width))
             opening, closing = "{", "}"
         else:
             parts = [dump(item, inner) for item in value]
             opening, closing = "[", "]"
-        one_line = opening + ", ".join(parts) + closing
-        if "\n" not in one_line and len(indent) + len(one_line) <= _ONE_LINE_WIDTH:
-            return one_line
-        return f"{opening}\n{inner}" + f",\n{inner}".join(parts) + f"\n{indent}{closing}"
+        one_line = opening + ", ".join(text for text, _ in parts) + closing
+        width = 2 + sum(width for _, width in parts) + 2 * (len(parts) - 1)
+        if "\n" not in one_line and len(indent) + width <= _ONE_LINE_WIDTH:
+            return one_line, width
+        return (
+            f"{opening}\n{inner}" + f",\n{inner}".join(text for text, _ in parts)
+            + f"\n{indent}{closing}",
+            _ONE_LINE_WIDTH + 1,
+        )
 
-    return dump(document, "")
+    return dump(document, "")[0]
 
 
 # -----------------------------------------------------------------------------

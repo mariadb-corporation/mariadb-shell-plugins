@@ -132,11 +132,6 @@ def read_diagram_rows(schema_project_path: str) -> list:
     return _rows(_Project.load(schema_project_path))
 
 
-# How often _write moves the snapshot's positions before the line count of
-# Section 160 settles (a moved number can change how the VIEW's text wraps).
-_MAX_POSITION_SHIFTS = 5
-
-
 def _plan_write(project: _Project, rows: list, moves_out: bool = None) -> tuple:
     """Works out what _write writes, writing nothing.
 
@@ -251,24 +246,22 @@ def _write(project: _Project, rows: list) -> list:
         "\n", 0, project.sections[DIAGRAMS_SECTION_ID]["end_position"]
     )
     schema = _schema_row(rows)
-    shift = 0
-    # Decided once: positions moved by a section that moved out could bring
-    # the VIEW back under the limit, and back in again.
-    moves_out = None
-    for _ in range(_MAX_POSITION_SHIFTS):
-        breakout, sections, moves_out = _plan_write(project, rows, moves_out)
+    breakout, sections, moves_out = _plan_write(project, rows)
+    script = "\n".join(item["full_content"] for item in sections.values())
+    delta = script.count("\n") - old_lines
+    if delta and schema is not None:
+        # In place, so the caller's snapshot is the one written. Moving a
+        # position changes no line break (diagrams.dump_document), so the
+        # section keeps its line count; whether it moves into its breakout
+        # file stays as decided.
+        _shift_script_lines(schema["document"], first_line, delta)
+        breakout, sections, _ = _plan_write(project, rows, moves_out)
         script = "\n".join(item["full_content"] for item in sections.values())
-        delta = script.count("\n") - old_lines
-        if delta == shift or schema is None:
-            break
-        # In place, so the caller's snapshot is the one written
-        _shift_script_lines(schema["document"], first_line, delta - shift)
-        shift = delta
-    else:
-        raise ValueError(
-            f"The line count of MSM Section {DIAGRAMS_SECTION_ID} does not settle while "
-            "the snapshot's positions are moved with it."
-        )
+        if script.count("\n") - old_lines != delta:
+            raise ValueError(
+                f"MSM Section {DIAGRAMS_SECTION_ID} changed its line count when the "
+                "snapshot's positions were moved with it."
+            )
 
     written = []
     if breakout is not None:

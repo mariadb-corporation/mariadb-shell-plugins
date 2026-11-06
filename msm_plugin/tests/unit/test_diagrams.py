@@ -174,6 +174,20 @@ def test_documents_are_laid_out_one_short_value_per_line():
     assert diagrams.dump_document({"a": []}) == '{"a": []}'
 
 
+def test_moved_positions_do_not_change_the_layout():
+    # msm moves the snapshot's positions after writing Section 160 and relies
+    # on the line count staying: the numbers of a position count as fixed
+    # width, so no line wraps differently however many digits they have.
+    # Every name length up to the width meets the line-width limit somewhere.
+    def line_count(name_length, line):
+        position = {"line": line, "character": 0}
+        column = {"name": "a" * name_length, "range": {"start": position, "end": position}}
+        return diagrams.dump_document({"columns": [column]}).count("\n")
+
+    for name_length in range(1, 161):
+        assert line_count(name_length, 0) == line_count(name_length, 9999999), name_length
+
+
 def test_a_diagram_is_checked():
     diagrams.validate_diagram(diagram())
     for change, message in (
