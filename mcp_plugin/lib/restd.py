@@ -67,7 +67,7 @@ import time
 import urllib.parse
 from typing import Optional
 
-from mcp_plugin.lib import config, general
+from mcp_plugin.lib import config
 from mcp_plugin.lib.tool_registrar import tool_error
 
 # The executable, as the packages name it.
@@ -76,8 +76,11 @@ RESTD_NAME = "mariadb-restd"
 # The lowest mariadb-restd a setup accepts when the caller names none, as
 # the shell's ai-plugins launchers default MARIADB_SHELL_VERSION: an older
 # one is passed over and the newest release installed. MARIADB_RESTD_VERSION
-# overrides it, as MARIADB_SHELL_VERSION does the launchers'.
-DEFAULT_MINIMUM_VERSION = "26.10.1"
+# overrides it, as MARIADB_SHELL_VERSION does the launchers' (the ai-plugins
+# MCP configs set it beside MARIADB_SHELL_VERSION). Not set by hand:
+# tools/update_version raises it to the newest rest-daemon release with each
+# plugin release, as the ai-plugins /release raises the shell's floor.
+DEFAULT_MINIMUM_VERSION = "26.11.0"
 
 
 def minimum_version() -> str:
@@ -313,22 +316,24 @@ def install_prefix() -> str:
     """Returns the folder mariadb-restd's install script unpacks releases into.
 
     The same layout as the shell's install script: one folder per version,
-    ``~/.local/share/mariadb-restd/<version>`` with links in ``~/.local/bin``,
-    and ``%LOCALAPPDATA%\\Programs\\mariadb-restd\\<version>`` on Windows.
+    ``~/.local/share/mariadb-restd/<version>``, and
+    ``%LOCALAPPDATA%\\Programs\\mariadb-restd\\<version>`` on Windows.
     ``MARIADB_RESTD_PREFIX`` moves it, as ``MARIADB_SHELL_PREFIX`` does the
-    shell's.
+    shell's. Resolved as the extension resolves the shell's (its
+    ``installPrefix``): ``LOCALAPPDATA`` is taken as set, and only one that is
+    not set at all falls back to ``~/AppData/Local``.
 
     Returns:
-        The absolute path, whether or not it exists yet.
+        The path, whether or not it exists yet.
     """
     override = os.environ.get("MARIADB_RESTD_PREFIX", "")
     if override:
         return override
 
     if os.name == "nt":
-        local_app_data = os.environ.get("LOCALAPPDATA", "") or os.path.join(
-            os.path.expanduser("~"), "AppData", "Local"
-        )
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data is None:
+            local_app_data = os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(local_app_data, "Programs", RESTD_NAME)
 
     # Not general.get_data_home(): the install script ignores XDG_DATA_HOME,
@@ -340,44 +345,55 @@ def _binary_name() -> str:
     return f"{RESTD_NAME}.exe" if os.name == "nt" else RESTD_NAME
 
 
-def _version_key(name: str) -> tuple:
-    """Sorts version folder names numerically, anything else first."""
-    parts = re.findall(r"\d+", name)
-    return (1, tuple(int(part) for part in parts)) if parts else (0, ())
-
-
-def _managed_binaries() -> list:
-    """The executables of the installed releases, newest first."""
-    prefix = install_prefix()
-    try:
-        names = os.listdir(prefix)
-    except OSError:
-        return []
-
-    found = []
-    for name in sorted(names, key=_version_key, reverse=True):
-        candidate = os.path.join(prefix, name, "bin", _binary_name())
-        if os.path.isfile(candidate):
-            found.append(candidate)
-
-    return found
-
-
 # How long `mariadb-restd --version` may take.
 VERSION_PROBE_TIMEOUT = 10
 
+# mariadb-restd versions are always <year>.<month>.<patch>, such as 26.10.1.
+_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+_TAGGED_VERSION = re.compile(r"\bVer\s+v?(\d+\.\d+\.\d+)", re.IGNORECASE)
+
 
 def parse_version(text: str) -> Optional[tuple]:
-    """The first x.y.z in text, such as 'Ver 26.10.1' or 'v26.10.1', as ints."""
-    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
-    return tuple(int(part) for part in match.groups()) if match else None
+    """The first x.y.z version in text, such as '26.10.1' or 'v26.10.1'.
+
+    Returns:
+        (major, minor, patch) as ints, or None if the text holds no version.
+    """
+    match = _VERSION.search((text or "").strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
 
 
-def restd_version(executable: str) -> Optional[tuple]:
-    """What `mariadb-restd --version` reports, or None if it says nothing usable.
+def parse_version_output(output: str) -> Optional[tuple]:
+    """The version `mariadb-restd --version` printed.
 
     It prints ``MariaDB REST Daemon  Ver 26.10.1 for Darwin on arm64 (...)``.
+    As the extension reads the shell's (``parseShellVersionOutput``): the
+    ``Ver`` marker first, since the rest of the line carries other versions,
+    and else the first version anywhere in it.
     """
+    tagged = _TAGGED_VERSION.search(output or "")
+    return parse_version(tagged.group(1) if tagged else output)
+
+
+def format_version(version: tuple) -> str:
+    """A version tuple back in its major.minor.patch form."""
+    return ".".join(str(part) for part in version)
+
+
+def _ignore(_message: str) -> None:
+    """A log nobody wants."""
+
+
+def _version_output(executable: str, log) -> Optional[str]:
+    """Runs `<executable> --version`.
+
+    Returns:
+        What it printed, stdout and stderr together, or None if it could not
+        be run, failed or hung - and then log says which.
+    """
+    probe = f'"{executable} --version"'
     try:
         completed = subprocess.run(
             [executable, "--version"],
@@ -387,10 +403,86 @@ def restd_version(executable: str) -> Optional[tuple]:
             timeout=VERSION_PROBE_TIMEOUT,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except FileNotFoundError:
+        log(f"{probe}: not found.")
         return None
-    match = re.search(r"\bVer\s+(\S+)", completed.stdout or "")
-    return parse_version(match.group(1)) if match else None
+    except PermissionError:
+        log(f"{probe}: not executable (EACCES).")
+        return None
+    except subprocess.TimeoutExpired:
+        log(f"{probe}: gave no answer within {VERSION_PROBE_TIMEOUT}s and was stopped.")
+        return None
+    except OSError as error:
+        log(f"{probe} failed: {error}")
+        return None
+
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip().split("\n")[0]
+        log(
+            f"{probe} failed: exit code {completed.returncode}"
+            + (f" - {detail}" if detail else "")
+        )
+        return None
+
+    return (completed.stdout or "") + (completed.stderr or "")
+
+
+def restd_version(executable: str, log=_ignore) -> Optional[tuple]:
+    """What `mariadb-restd --version` reports, or None if it says nothing usable."""
+    output = _version_output(executable, log)
+    return None if output is None else parse_version_output(output)
+
+
+def _probe(executable: str, minimum: tuple, log) -> tuple:
+    """Probes an executable, as the extension's locator probes the shell.
+
+    Returns:
+        (version, None) if it is new enough, else (None, why it is not used).
+    """
+    output = _version_output(executable, log)
+    if output is None:
+        return None, "could not be run"
+
+    version = parse_version_output(output)
+    if version is None:
+        first = output.strip().split("\n")[0]
+        return None, f'printed no version that could be read ("{first}")'
+
+    if version < minimum:
+        return None, (
+            f"is {format_version(version)}, older than the "
+            f"{format_version(minimum)} required"
+        )
+
+    return version, None
+
+
+def _installations() -> tuple:
+    """The releases the install script unpacked, as the extension lists the
+    shell's (``listInstallations``): only the folders below the prefix that
+    name a version are its; anything else there is something it did not put
+    there.
+
+    Returns:
+        (prefix, every folder in it, [(name, version)] newest first).
+    """
+    prefix = install_prefix()
+    try:
+        entries = sorted(
+            name for name in os.listdir(prefix)
+            if os.path.isdir(os.path.join(prefix, name))
+        )
+    except OSError:
+        entries = []
+
+    installations = [
+        (name, version)
+        for name, version in ((name, parse_version(name)) for name in entries)
+        if version is not None
+    ]
+    installations.sort(key=lambda entry: entry[1], reverse=True)
+
+    return prefix, entries, installations
 
 
 def _is_executable(path: str) -> bool:
@@ -398,15 +490,17 @@ def _is_executable(path: str) -> bool:
 
 
 def find_restd(
-    restd_path: Optional[str] = None, minimum_version: Optional[str] = None
+    restd_path: Optional[str] = None,
+    minimum_version: Optional[str] = None,
+    log=_ignore,
 ) -> Optional[str]:
     """Finds the mariadb-restd executable.
 
-    Looked for on the PATH, then in ``~/.local/bin``, which is where the
-    install script links it but is not on every PATH, and then among the
-    releases the install script unpacked. On Windows the install script's
-    links are ``.cmd`` forwarders, which cannot be started detached the way
-    the daemon has to be, so the real ``.exe`` is looked for there.
+    As the extension finds the shell (its ``locateShell``): on the PATH, then
+    among the releases the install script unpacked, newest first. On Windows
+    the install script's links are ``.cmd`` forwarders, which cannot be
+    started detached the way the daemon has to be, so the real ``.exe`` is
+    looked for there.
 
     A link is fine: mariadb-restd resolves its own path to find its plugins
     and libraries, and a link leads it to the real one.
@@ -416,8 +510,12 @@ def find_restd(
             it. Not searched any further when given.
         minimum_version (str): The lowest version to accept, such as
             '26.10.1'. Every place is then tried in turn, and an executable
-            that reports an older version, or none, is passed over. Not
-            applied to restd_path.
+            that reports an older version, or none, is passed over; a release
+            whose folder names an older version is not even run. Not applied
+            to restd_path.
+        log (callable): Told, one line at a time, what was looked at and why
+            it was passed over, as the extension logs its search for the
+            shell.
 
     Returns:
         The absolute path of the executable, or None if there is none.
@@ -438,39 +536,56 @@ def find_restd(
             return candidate
         raise tool_error(f"There is no {RESTD_NAME} executable at '{restd_path}'.")
 
-    candidates = []
-    found = shutil.which(_binary_name())
-    if found:
-        candidates.append(os.path.abspath(found))
+    minimum = None if minimum_version is None else parse_version(minimum_version)
+    if minimum_version is not None and minimum is None:
+        raise tool_error(f"Invalid minimum {RESTD_NAME} version: {minimum_version}")
 
-    if os.name != "nt":
-        linked = os.path.join(general.get_bin_home(), RESTD_NAME)
-        if _is_executable(linked):
-            candidates.append(linked)
+    name = _binary_name()
+    log(f"Looking for {name} on the PATH: {os.environ.get('PATH', '')}")
+    found = shutil.which(name)
+    if found is None:
+        log(f"  {name} is not on the PATH.")
+    else:
+        found = os.path.abspath(found)
+        if minimum is None:
+            return found
+        version, problem = _probe(found, minimum, log)
+        if version is not None:
+            return found
+        log(f"  {name} on the PATH ({found}) {problem}; not used.")
 
-    candidates.extend(_managed_binaries())
+    prefix, entries, installations = _installations()
+    log(
+        f"Local installations in {prefix}: {', '.join(entries)}"
+        if entries else f"No local installations in {prefix}."
+    )
+    for folder, version in installations:
+        if minimum is not None and version < minimum:
+            log(f"  {folder} is older than {format_version(minimum)}; not used.")
+            continue
 
-    if minimum_version is None:
-        return candidates[0] if candidates else None
+        binary = os.path.join(prefix, folder, "bin", name)
+        if not os.path.isfile(binary):
+            log(f"  {folder} has no {binary}; not used.")
+            continue
 
-    # As the extension finds the shell: one that is too old, or says nothing
-    # of its version, is passed over rather than used.
-    wanted = parse_version(minimum_version)
-    for candidate in candidates:
-        version = restd_version(candidate)
-        if version is not None and version >= wanted:
-            return candidate
+        if minimum is None:
+            return binary
+
+        # The folder's name is only a hint: what the binary reports wins.
+        reported, problem = _probe(binary, minimum, log)
+        if reported is None:
+            log(f"  {binary} {problem}; not used.")
+            continue
+
+        return binary
 
     return None
 
 
 def searched_places() -> str:
     """Says where find_restd looks, for the error that it found nothing."""
-    places = ["the PATH"]
-    if os.name != "nt":
-        places.append(general.get_bin_home())
-    places.append(install_prefix())
-    return ", ".join(places)
+    return f"the PATH, {install_prefix()}"
 
 
 # --------------------------------------------------------------------------- #
