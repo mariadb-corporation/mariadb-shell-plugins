@@ -58,6 +58,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   `connection_id`; `msm.online_alter_table` type `msm`, kind
   `online_alter_table`, max 4 (`MAX_RUNNING_MSM_TASKS`, two sessions
   each), attributes `connection_id`, `schema`, `table`. The registry's own tests live in the shell.
+- **Stage statuses** (`task.get`'s `stages`): `running`, then `completed`
+  or `skipped` (`mysqlsh.task_manager.SKIPPED`, a stage status only, set
+  through `stage_finished(stage, seconds, status=...)`); stages still
+  running when a task fails or is cancelled take the task's status. The
+  online ALTER task ends refused and limit-skipped steps `skipped`. The
+  task manager is a Python package of the shell
+  (`python/packages/mysqlsh/task_manager.py` in mariadb-shell): a change
+  there reaches a shell build's `python-packages` copy without rebuilding
+  the binary.
 - **A task counts from its start:** the task manager lists it, finds it and
   counts it against the owner's `max_running` from `Task.start()` on, not
   from `create()`, which only refuses one too many early. A task created and
