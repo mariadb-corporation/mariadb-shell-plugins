@@ -154,6 +154,19 @@ FUNCTION_GROUP_REQUIREMENTS = {FUNCTION_GROUP_UTIL: FUNCTION_GROUP_DB}
 # served, the task tools that follow the tasks are too.
 TASK_FUNCTION_GROUPS = (FUNCTION_GROUP_UTIL, FUNCTION_GROUP_DBA)
 
+# Groups that start tasks only together: msm.online_alter_table needs a
+# connection, so it is served with the db group only.
+TASK_FUNCTION_GROUP_SETS = ({FUNCTION_GROUP_MSM, FUNCTION_GROUP_DB},)
+
+
+def serves_tasks(function_groups) -> bool:
+    """Whether a tool that starts a background task is served, and with it
+    the task tools that follow it."""
+    served = served_function_groups(function_groups)
+    return bool(served & set(TASK_FUNCTION_GROUPS)) or any(
+        groups <= served for groups in TASK_FUNCTION_GROUP_SETS
+    )
+
 
 def group_requirement_met(group, function_groups) -> bool:
     """Whether a group registers its tools next to the given groups.

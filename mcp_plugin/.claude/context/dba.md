@@ -44,8 +44,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   vendor/project, never keys (None without the plugin).
 - **Task tools** (`lib/task_functions.py`): `task.get(task_id, since, wait_ms)`,
   `task.list(task_type)`, `task.cancel(task_id)`, registered in
-  `build_mcp_server` once, when any of `general.TASK_FUNCTION_GROUPS` (util,
-  dba) is served - not a group of their own. There are no `util.*` task
+  `build_mcp_server` once, when `general.serves_tasks(groups)`: any of
+  `TASK_FUNCTION_GROUPS` (util, dba) is served, or all of a set in
+  `TASK_FUNCTION_GROUP_SETS` (msm + db, for `msm.online_alter_table`) -
+  not a group of their own. There are no `util.*` task
   tools and no aliases for them: the user's call, as the VS Code extension
   has not been released and moves to `task.*` itself.
 - **`lib/tasks.py`** is a thin layer over the shell's `mysqlsh.task_manager`
@@ -53,7 +55,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   max_running, attributes)`, `get`, `list_for(client, task_type)`,
   `start(task, work)` (a failed start -> `tool_error`), `owner(client)`; the
   util tasks use type `util`, max 4 running per client, attribute
-  `connection_id`. The registry's own tests live in the shell.
+  `connection_id`; `msm.online_alter_table` type `msm`, kind
+  `online_alter_table`, max 4 (`MAX_RUNNING_MSM_TASKS`, two sessions
+  each), attributes `connection_id`, `schema`, `table`. The registry's own tests live in the shell.
 - **A task counts from its start:** the task manager lists it, finds it and
   counts it against the owner's `max_running` from `Task.start()` on, not
   from `create()`, which only refuses one too many early. A task created and

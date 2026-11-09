@@ -177,8 +177,13 @@ def test_stdio_deploy_schema_requires_the_db_group():
     assert "msm.create_project" in msm_only
     assert "msm.get_deployment_script_versions" in msm_only
 
+    # msm.online_alter_table too, and with it the task tools that follow it
+    assert "msm.online_alter_table" not in msm_only and "task.get" not in msm_only
+    assert "msm.get_online_alter_settings" in msm_only
+
     with_db = helpers.list_tool_names(["msm", "db"])
     assert "msm.deploy_schema" in with_db
+    assert "msm.online_alter_table" in with_db and "task.get" in with_db
     assert "msm.get_deployment_script_versions" in with_db
     assert "db.connect" in with_db
 
@@ -379,6 +384,62 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                 assert "mcp_pytest_table" in [
                     entry["name"] for entry in tables or []
                 ]
+
+                # A table's online ALTER TABLE settings, written and read back
+                payload(
+                    await call(
+                        "msm.set_online_alter_table",
+                        {
+                            "schema_project_path": project_path,
+                            "table": "mcp_pytest_table",
+                            "settings": {"lockWait": 2},
+                        },
+                    )
+                )
+                settings = payload(
+                    await call(
+                        "msm.get_online_alter_settings",
+                        {"schema_project_path": project_path, "table": "mcp_pytest_table"},
+                    )
+                )
+                assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
+
+                # One ALTER TABLE run online, as a task followed with task.get
+                started = payload(
+                    await call(
+                        "msm.online_alter_table",
+                        {
+                            "connection_id": connection_id,
+                            "schema": SCHEMA_NAME,
+                            "table": "mcp_pytest_table",
+                            "spec": "ADD COLUMN `mcp_note` INT",
+                            "options": {"lockWait": 2},
+                        },
+                    )
+                )
+                state = {"status": started["status"]}
+                for _ in range(20):
+                    if state["status"] in ("completed", "failed", "cancelled"):
+                        break
+                    state = payload(
+                        await call(
+                            "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                        )
+                    )
+                assert state["status"] == "completed", state
+                assert state["result"]["method"] == "INSTANT"
+                assert state["result"]["applied"] is True
+
+                refused = await call(
+                    "msm.online_alter_table",
+                    {
+                        "connection_id": connection_id,
+                        "schema": SCHEMA_NAME,
+                        "table": "mcp_pytest_table",
+                        "spec": "ADD COLUMN `x` INT, ALGORITHM=COPY",
+                    },
+                )
+                assert refused.is_error is True
             finally:
                 payload(
                     await call(

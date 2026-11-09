@@ -290,7 +290,7 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     tool_registrar.use_tool_name_separator(server, tool_name_separator)
     for group in function_groups:
         _registrar(group)(server, function_groups)
-    if general.served_function_groups(function_groups) & set(general.TASK_FUNCTION_GROUPS):
+    if general.serves_tasks(function_groups):
         from mcp_plugin.lib import task_functions
 
         task_functions.register_task_tools(server)

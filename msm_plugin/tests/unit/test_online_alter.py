@@ -518,3 +518,206 @@ def test_a_bad_setting_stops_a_deployment_before_it_starts(tmp_path):
     helpers.set_project_setting(path, "onlineAlter", {"lockWait": "5"})
     with pytest.raises(ValueError, match="`lock_wait` must be .*msm.project.json"):
         management.deploy_schema(session=None, schema_project_path=path)
+
+
+# -----------------------------------------------------------------------------
+# As a background task
+
+
+class FakeTask:
+    """Records what the work reports, as mysqlsh.task_manager.Task takes it."""
+
+    def __init__(self):
+        self.events = []
+        self.canceller = None
+
+    def set_canceller(self, canceller):
+        self.canceller = canceller
+
+    def stage_started(self, stage):
+        self.events.append(("started", stage))
+
+    def stage_finished(self, stage, seconds=None):
+        self.events.append(("finished", stage))
+
+    def message(self, text, level="info"):
+        self.events.append(("message", level, text))
+
+    def progress(self, current, total, stage=None, **measures):
+        self.events.append(("progress", stage, current, total))
+
+
+def test_a_task_reports_each_step_as_a_stage():
+    session = FakeSession(alters={r"ALGORITHM=INSTANT": [REFUSED], r"ALGORITHM=NOCOPY": [[]]})
+    task = FakeTask()
+    result = online_alter.run_in_task(task, session, None, "shop", "orders", "ADD INDEX (`a`)")
+    assert result["method"] == NOCOPY and result["applied"] is True
+    assert task.events == [
+        ("started", INSTANT),
+        ("message", "info", f"INSTANT refused: {REFUSED}"),
+        ("finished", INSTANT),
+        ("started", NOCOPY),
+        ("finished", NOCOPY),
+        ("message", "info", "Applied with NOCOPY."),
+    ]
+    assert task.canceller is not None
+
+
+def test_a_task_that_needs_an_external_tool_completes_with_a_warning():
+    task = FakeTask()
+    result = online_alter.run_in_task(task, FakeSession(alters={r"ALTER TABLE": [REFUSED]}), None,
+                                      "shop", "orders", "MODIFY `a` TEXT")
+    assert result["method"] == NEEDS_EXTERNAL and result["applied"] is False
+    level, text = task.events[-1][1:]
+    assert level == "warning"
+    assert text.startswith("No online step applied the change, so nothing was changed")
+
+
+def test_a_cancel_of_the_task_cancels_the_alter():
+    task = FakeTask()
+    session = FakeSession(alters={r"ALTER TABLE": [[]]})
+    # The task manager calls the canceller on task.cancel
+    original = session.run_sql
+
+    def cancel_on_alter(sql, params=None):
+        if sql.startswith("ALTER TABLE"):
+            task.canceller()
+            raise FakeError(1317, "Query execution was interrupted")
+        return original(sql, params)
+
+    session.run_sql = cancel_on_alter
+    with pytest.raises(OnlineAlterCancelled):
+        online_alter.run_in_task(task, session, None, "shop", "orders", "ADD COLUMN `n` INT")
+
+
+def wait_for_end(task, seconds=30):
+    from mysqlsh.task_manager import FINISHED_STATES
+
+    ends = time.monotonic() + seconds
+    while task.status not in FINISHED_STATES:
+        assert time.monotonic() < ends, "the task did not end"
+        time.sleep(0.05)
+
+
+def start_task(work):
+    from mysqlsh import task_manager
+
+    task = task_manager.create("msm", "online_alter_table", "test", None, 4, {})
+    task.start(work)
+    return task
+
+
+def test_a_task_on_the_sandbox_reports_the_copys_progress(server):
+    session, open_session = server
+    session.run_sql(f"INSERT INTO `{SCHEMA}`.`t` SELECT seq, seq FROM `{SCHEMA}`.seq_50001_to_400000")
+    monitor = open_session()
+    task = start_task(lambda task: online_alter.run_in_task(
+        task, session, monitor, SCHEMA, "t", "MODIFY `v` VARCHAR(20)", poll_interval=0.01))
+    wait_for_end(task)
+    assert task.status == "completed", task.error
+    assert task.result["method"] == COPY
+    assert [stage["name"] for stage in task.stages] == [INSTANT, NOCOPY, COPY]
+    assert all(stage["status"] == "completed" for stage in task.stages)
+    assert any(message["text"].startswith("COPY: ") for message in task.messages)
+
+
+def test_a_cancelled_task_stops_a_blocked_alter(server):
+    session, open_session = server
+    holder = open_session()
+    holder.run_sql("BEGIN")
+    holder.run_sql(f"SELECT * FROM `{SCHEMA}`.`t` LIMIT 1")
+    monitor = open_session()
+    task = start_task(lambda task: online_alter.run_in_task(
+        task, session, monitor, SCHEMA, "t", "ADD COLUMN `n` INT", Options(lock_wait=30),
+        poll_interval=0.05))
+    time.sleep(0.5)
+    started = time.monotonic()
+    task.cancel()
+    wait_for_end(task)
+    assert task.status == "cancelled"
+    assert time.monotonic() - started < 10
+
+
+def test_the_shell_function_alters_online(server):
+    from msm_plugin.management import online_alter_table
+
+    session, _ = server
+    result = online_alter_table(SCHEMA, "t", "ADD COLUMN `n` INT", session=session,
+                                options={"lockWait": 2})
+    assert (result["method"], result["applied"]) == (INSTANT, True)
+    with pytest.raises(ValueError, match="Unknown online ALTER TABLE option"):
+        online_alter_table(SCHEMA, "t", "ADD COLUMN `m` INT", session=session,
+                           options={"lockwait": 2})
+
+
+# -----------------------------------------------------------------------------
+# A project's setting, as the Table Editor reads and writes it
+
+
+def test_a_tables_settings_are_written_and_read_back(tmp_path):
+    import json
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    settings_file = os.path.join(path, "msm.project.json")
+    read = management.get_online_alter_settings(path, "orders")
+    assert read["defaults"] == Options().to_dict()
+    assert read["setting"] == {"enabled": True, "tables": {}}
+    assert (read["enabled"], read["options"]) == (True, Options().to_dict())
+
+    assert management.set_online_alter_table(path, "orders", {"maxCopyBytes": 0, "lockWait": 2}) \
+        == [settings_file]
+    with open(settings_file) as f:
+        written = json.load(f)
+    assert written["onlineAlter"] == {"enabled": True,
+                                      "tables": {"orders": {"maxCopyBytes": 0, "lockWait": 2}}}
+    # Nothing else of the file changes
+    assert written["schemaName"] == "online_alter_setting" and "copyrights" in written
+    read = management.get_online_alter_settings(path, "orders")
+    assert read["options"]["maxCopyBytes"] == 0 and read["options"]["lockWait"] == 2
+    assert management.get_online_alter_settings(path, "items")["options"]["maxCopyBytes"] == 10 * GIB
+
+    # The same again writes nothing; off; removed
+    assert management.set_online_alter_table(path, "orders", {"maxCopyBytes": 0, "lockWait": 2}) == []
+    management.set_online_alter_table(path, "orders", {"enabled": False})
+    assert management.get_online_alter_settings(path, "orders")["enabled"] is False
+    assert management.set_online_alter_table(path, "orders", None) == [settings_file]
+    with open(settings_file) as f:
+        assert json.load(f)["onlineAlter"] == {"enabled": True}
+    assert management.set_online_alter_table(path, "orders", {}) == []
+
+
+@pytest.mark.parametrize("table, settings, message", [
+    ("", {}, "A table name is needed"),
+    ("orders", [], "must be an object"),
+    ("orders", {"maxCopy": 1}, "Unknown key `maxCopy`"),
+    ("orders", {"tables": {}}, "Unknown key `tables`"),
+    ("orders", {"lockWait": 0}, "`lock_wait` must be"),
+])
+def test_bad_table_settings_are_refused_and_nothing_is_written(tmp_path, table, settings, message):
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    with open(os.path.join(path, "msm.project.json")) as f:
+        before = f.read()
+    with pytest.raises(ValueError, match=message):
+        management.set_online_alter_table(path, table, settings)
+    with open(os.path.join(path, "msm.project.json")) as f:
+        assert f.read() == before
+
+
+def test_a_project_without_the_setting_gets_one_with_a_tables_entry(tmp_path):
+    import json
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    with open(os.path.join(path, "msm.project.json")) as f:
+        raw = json.load(f)
+    raw.pop("onlineAlter")
+    with open(os.path.join(path, "msm.project.json"), "w") as f:
+        json.dump(raw, f)
+    assert management.set_online_alter_table(path, "orders", None) == []
+    management.set_online_alter_table(path, "orders", {"enabled": False})
+    with open(os.path.join(path, "msm.project.json")) as f:
+        assert json.load(f)["onlineAlter"] == {"enabled": True,
+                                               "tables": {"orders": {"enabled": False}}}

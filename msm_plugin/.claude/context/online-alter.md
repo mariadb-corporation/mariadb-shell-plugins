@@ -5,7 +5,8 @@ Back to [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md).
 The design below is agreed with the user; the points marked **open** are
 not. Built: the escalation (`lib/online_alter.py`), the setting, and
 `deploySchema` running an update's steps itself (`lib/update_steps.py`),
-Next steps 2 to 4. Not built: `msm.onlineAlterTable` and the extension.
+Next steps 2 to 4, and the msm side of 5 (the live-table task and the
+settings tools). Not built: the extension's tab, step 6, step 7.
 
 ## Goal
 
@@ -160,10 +161,33 @@ disruptive method the server accepts, in two places:
   ALTER then fails with 1317 and `OnlineAlterCancelled` is raised. Without
   a monitor, a cancel waits for the running step. A failing poll ends the
   watch, never the step. The task (Next steps 5) reports these events.
-- **Live tables (Table Editor).** `msm.onlineAlterTable` (plugin function
-  and mcp tool) runs as a background task over `mysqlsh.task_manager`, so it
-  shows in the extension's Tasks view (`mariadb.tasks`, the `task.*`
-  tools). No temporary procedure, so no CREATE ROUTINE privilege is needed.
+- **Live tables (Table Editor).** mcp `msm.online_alter_table(connection_id,
+  schema, table, spec, options)` (served with msm + db) starts a task over
+  `mysqlsh.task_manager` (type `msm`, kind `online_alter_table`; the task
+  tools are served with it, `general.serves_tasks`), so it shows in the
+  extension's Tasks view (`mariadb.tasks`, the `task.*` tools). The spec and
+  options are checked before the task starts (a tool error). The task opens
+  two sessions of its own from `db_functions.connection_data` (the ALTER, and
+  the monitor for progress and KILL QUERY) and closes them;
+  `online_alter.run_in_task` makes each step a stage, the server's progress
+  the stage's (combined over the server's stages, never going back), and
+  refusals, skips, lock retries and the server's STATE messages; a
+  `task.cancel` reaches the ALTER through `set_canceller`. **NEEDS_EXTERNAL
+  completes the task** (Claude's choice: nothing failed, nothing changed)
+  with a warning message and `applied: false` in the result `{method,
+  applied, reason, table_size, galera, steps}`. The shell function
+  `msm.onlineAlterTable(schema, table, spec, options=, session=)` runs it
+  synchronously on the given (or global) session: no task, no monitor. No
+  temporary procedure, so no CREATE ROUTINE privilege is needed.
+- **The tab's settings for a project table**: mcp
+  `msm.get_online_alter_settings(table?, schema_project_path)` ({defaults,
+  setting, table, enabled, options}) and `msm.set_online_alter_table(table,
+  settings?, schema_project_path)` (writes `onlineAlter.tables.<table>`,
+  None/{} removes the entry; reads the raw file, so the derived
+  `copyrights` list is not written back; a project without the key gets
+  `{"enabled": true, "tables": ...}`; unchanged = nothing written); shell
+  `msm.getOnlineAlterSettings` / `msm.setOnlineAlterTable`; lib
+  `management.get_online_alter_settings` / `set_online_alter_table`.
   The extension today applies a live table's statements one by one through
   `db.execute_sql` on the UI backend session (vscode-extension
   `src/tableEditor/tableSources.ts`, `LiveTableSource`); the ALTERs of an
@@ -193,8 +217,14 @@ disruptive method the server accepts, in two places:
    locked steps, and the mcp tool `msm.deploy_schema(online_alter=)`. Not
    compared yet: roles and grants (the authorization part runs as before,
    from the same session variables).
-5. `msm.onlineAlterTable` as a task, the mcp tool, then the extension's
-   Online Alter Table tab and its Task.
+5. (msm side done) `msm.online_alter_table` as a task, the settings tools.
+   The extension's Online Alter Table tab and its Task are the
+   vscode-extension's (asked of its session): for a project table, the tab
+   reads `msm.get_online_alter_settings` and writes
+   `msm.set_online_alter_table` on Save, and the deployment does the rest;
+   for a live table, Apply starts `msm.online_alter_table` for each ALTER
+   TABLE (the language server's `spec` with `merge_alters`, step 6) and
+   follows the task.
 6. **Merge the ALTERs of one table per Save** in `msm.edit_schema`: the
    language server writes several (e.g. DROP FK, MODIFY, ADD FK), and each
    would be its own escalation and maybe its own table copy. The binary

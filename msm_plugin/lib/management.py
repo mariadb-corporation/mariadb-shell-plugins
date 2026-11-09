@@ -1692,6 +1692,99 @@ def substitute_source_statements_with_content(
     return expand_source_directives(script, source_absolute_file_path)[0]
 
 
+def get_online_alter_settings(schema_project_path: str, table: str = None) -> dict:
+    """The project's online ALTER TABLE setting, and what it gives a table.
+
+    Args:
+        schema_project_path: The project folder.
+        table: A table to resolve the options of; None for none.
+
+    Returns:
+        {defaults: the options msm uses where nothing is set (camelCase
+        keys), setting: msm.project.json's `onlineAlter`, normalized
+        ({enabled?, <options>?, tables: {...}}), table, enabled: whether it
+        is on for the table, options: what the table gets (None where it is
+        off or no table is given)}.
+    """
+    setting = online_alter_lib.read_setting(
+        get_project_settings(schema_project_path).get(online_alter_lib.SETTING),
+        "msm.project.json",
+    )
+    options = None
+    enabled = None
+    if table is not None:
+        resolved = online_alter_lib.DeploymentSettings(
+            setting, online_alter_lib.read_setting(None, "")
+        ).options_for(table)
+        enabled = resolved is not None
+        options = resolved.to_dict() if resolved is not None else None
+    return {
+        "defaults": online_alter_lib.Options().to_dict(),
+        "setting": setting,
+        "table": table,
+        "enabled": enabled,
+        "options": options,
+    }
+
+
+def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
+    """Sets a table's entry of the project's online ALTER TABLE setting
+    (msm.project.json, onlineAlter.tables), what the Table Editor's Online
+    Alter Table tab writes.
+
+    Args:
+        schema_project_path: The project folder.
+        table: The table, as named in the scripts.
+        settings: {enabled?, maxCopyBytes?, galeraMaxBytes?, nboLock?,
+            maxLockedBytes?, lockWait?, maxRetries?}; None or {} removes the
+            table's entry, so it follows the project's general values.
+
+    Returns:
+        The files written; none where nothing changed.
+
+    Raises:
+        ValueError: For a table name that is empty, or settings
+            online_alter.read_setting refuses.
+    """
+    if not isinstance(table, str) or not table.strip():
+        raise ValueError("A table name is needed.")
+    if settings is not None and not isinstance(settings, dict):
+        raise ValueError("The table's settings must be an object, or None to remove them.")
+    # Checked as they will be read back
+    online_alter_lib.read_setting({"tables": {table: settings or {}}}, "the table's settings")
+
+    path = os.path.join(schema_project_path, "msm.project.json")
+    get_project_settings(schema_project_path)  # a project, and readable
+    # Not get_project_settings' copy, which adds what it derives on reading
+    with open(path) as f:
+        raw = json.load(f)
+    setting = raw.get(online_alter_lib.SETTING)
+    existing = setting.get("tables") if isinstance(setting, dict) else None
+    if not settings and table not in (existing or {}):
+        return []
+    if setting is None:
+        setting = {"enabled": True}
+    elif isinstance(setting, bool):
+        setting = {"enabled": setting}
+    else:
+        setting = dict(setting)
+    tables = dict(setting.get("tables") or {})
+    if settings:
+        tables[table] = dict(settings)
+    else:
+        tables.pop(table, None)
+    if tables:
+        setting["tables"] = tables
+    else:
+        setting.pop("tables", None)
+    if raw.get(online_alter_lib.SETTING) == setting:
+        return []
+    raw[online_alter_lib.SETTING] = setting
+    with open(path, "w") as f:
+        f.write(json.dumps(raw, indent=4))
+    return [path]
+
+
 def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:
     """Returns the substitutions a project declares in msm.project.json
 

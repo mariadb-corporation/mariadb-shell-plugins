@@ -169,6 +169,10 @@ class Options:
         options.validate()
         return options
 
+    def to_dict(self) -> dict:
+        """The options with the camelCase keys of from_dict."""
+        return {key: getattr(self, name) for key, name in self.KEYS.items()}
+
     def validate(self) -> None:
         """Raises ValueError for a value out of range; makes nbo_lock upper case."""
         for name in ("max_copy_bytes", "galera_max_bytes", "max_locked_bytes"):
@@ -699,3 +703,81 @@ def _restore(session, lock_wait, osu, failed: bool) -> None:
     except Exception:
         if not failed:
             raise
+
+
+# -----------------------------------------------------------------------------
+# As a background task
+
+
+def result_dict(result: Result) -> dict:
+    """A Result as tools return it."""
+    return {
+        "method": result.method,
+        "applied": result.applied,
+        "reason": result.reason,
+        "table_size": result.table_size,
+        "galera": result.galera,
+        "steps": result.steps,
+    }
+
+
+def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
+                options: Options = None, poll_interval: float = 1.0) -> dict:
+    """alter_table as the work of a task (``mysqlsh.task_manager.Task``):
+    each step a stage, the server's progress the stage's progress, refusals,
+    skips and lock retries messages; a cancel of the task stops the running
+    statement (KILL QUERY through monitor).
+
+    NEEDS_EXTERNAL completes the task, with a warning: nothing failed and
+    nothing changed; the result says so (``applied`` False).
+
+    Returns:
+        result_dict of the Result.
+    """
+    cancel = threading.Event()
+    task.set_canceller(cancel.set)
+    current = {"stage": None, "state": None, "percent": 0.0}
+
+    def finish_stage():
+        if current["stage"] is not None:
+            task.stage_finished(current["stage"])
+            current["stage"] = None
+
+    def on_event(event):
+        kind, method = event["event"], event.get("method")
+        if kind == "step":
+            finish_stage()
+            current.update(stage=method, state=None, percent=0.0)
+            task.stage_started(method)
+        elif kind == "refused":
+            task.message(f"{method} refused: {event['message']}")
+        elif kind == "skipped":
+            task.message(f"{method} skipped: {event['message']}")
+        elif kind == "retry":
+            task.message(
+                f"{method}: the table's metadata lock was not granted (a transaction holds "
+                f"the table); attempt {event['attempt'] + 1} in {event['wait']} s.", "warning")
+        elif kind == "progress":
+            # PROGRESS goes back to 0 with each of the server's stages
+            if event["max_stage"] > 0:
+                percent = 100.0 * (max(event["stage"] - 1, 0) + event["progress"] / 100.0) \
+                    / event["max_stage"]
+            else:
+                percent = event["progress"]
+            current["percent"] = max(current["percent"], min(percent, 100.0))
+            task.progress(round(current["percent"], 1), 100, stage=method)
+            if event["state"] and event["state"] != current["state"]:
+                current["state"] = event["state"]
+                task.message(f"{method}: {event['state']}")
+
+    result = alter_table(session, schema, table, spec, options, monitor=monitor,
+                         on_event=on_event, cancel=cancel, poll_interval=poll_interval)
+    finish_stage()
+    if result.applied:
+        task.message(f"Applied with {result.method}"
+                     + (f": {result.reason}." if result.reason else "."))
+    else:
+        task.message(f"No online step applied the change, so nothing was changed: "
+                     f"{result.reason}. Run it with an external tool, or allow more "
+                     "(maxCopyBytes, maxLockedBytes).", "warning")
+    return result_dict(result)
