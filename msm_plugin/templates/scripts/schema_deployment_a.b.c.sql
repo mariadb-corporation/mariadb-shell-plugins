@@ -213,7 +213,6 @@ CALL `msm_create_or_update`();
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Update Non-Idempotent
 USE ${schema_identifier};
 DROP PROCEDURE `msm_update_${version_from}_to_${version_to}`;
-${section_260_removal_of_update_helpers}
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Update Non-Idempotent
 USE ${schema_identifier};
 DROP PROCEDURE `msm_create_${version_target}`;
@@ -329,7 +328,6 @@ CALL `msm_auth`();
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Update Non-Idempotent
 USE ${schema_identifier};
 DROP PROCEDURE `msm_auth_${version_from}_to_${version_to}`;
-${section_260_removal_of_update_helpers}
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Update Non-Idempotent
 USE ${schema_identifier};
 DROP PROCEDURE `msm_auth_${version_target}`;
