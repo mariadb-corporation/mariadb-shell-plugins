@@ -821,7 +821,12 @@ def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
     with pytest.raises(Exception, match="format"):
         _call(tools, "msm.set_schema_diagram", {**_diagram(), "format": "mwb-diagram/1"}, path)
 
-    _call(tools, "msm.remove_schema_diagram", "Main", path)
+    _call(tools, "msm.rename_schema_diagram", "Main", "Orders", path)
+    assert [row["name"] for row in _call(tools, "msm.get_schema_diagrams", path)] == ["Orders"]
+    with pytest.raises(Exception, match="no diagram `Main`"):
+        _call(tools, "msm.rename_schema_diagram", "Main", "Other", path)
+
+    _call(tools, "msm.remove_schema_diagram", "Orders", path)
     assert _call(tools, "msm.get_schema_diagrams", path) == []
 
 

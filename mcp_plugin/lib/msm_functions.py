@@ -952,6 +952,30 @@ def register_msm_tools(server, function_groups=()) -> None:
         """
         return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, name)
 
+    @tool(name="msm.rename_schema_diagram")
+    async def rename_schema_diagram(
+        ctx: Context, name: str, new_name: str, schema_project_path: Optional[str] = None
+    ) -> list:
+        """Renames a diagram of a schema project.
+
+        Only the name changes: the diagram's figures, pictures and place among
+        the diagrams stay as stored. Refused for a name another diagram of the
+        project has already, compared case-insensitively, and for
+        `schema_definition`, the schema row's name.
+
+        Args:
+            name: The name of the diagram.
+            new_name: Its new name (surrounding whitespace is dropped).
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The files written; none where the name stays as it is.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm_modeling.rename_schema_diagram, name, new_name
+        )
+
     @tool(name="msm.get_sql_content_from_section")
     async def get_sql_content_from_section(
         ctx: Context, file_path: str, section_id: str

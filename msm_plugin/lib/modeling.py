@@ -596,6 +596,42 @@ def remove_diagram(schema_project_path: str, name: str) -> list:
     return _write(project, kept)
 
 
+def rename_diagram(schema_project_path: str, name: str, new_name: str) -> list:
+    """Renames a diagram: its row's name and its document's. Everything else
+    stays as stored (pictures and the rows' order included).
+
+    Raises:
+        ValueError: For no diagram `name`, an empty new name, the schema
+            row's name, or a new name another diagram has already, whatever
+            its case (a change of case of the diagram itself is a rename).
+
+    Returns:
+        The files written; none where the name stays as it is.
+    """
+    new_name = (new_name or "").strip() if isinstance(new_name, str) else ""
+    if not new_name:
+        raise ValueError("A diagram needs a name.")
+    if new_name == diagrams.SCHEMA_ROW_NAME:
+        raise ValueError(f"`{diagrams.SCHEMA_ROW_NAME}` is the name of the schema row.")
+    project = _Project.load(schema_project_path)
+    rows = _rows(project)
+    row = next((row for row in rows if _is_diagram(row, name)), None)
+    if row is None:
+        raise ValueError(f"The project has no diagram `{name}`.")
+    taken = next(
+        (other["name"] for other in rows
+         if other is not row and _is_diagram(other) and other["name"].lower() == new_name.lower()),
+        None,
+    )
+    if taken is not None:
+        raise ValueError(f"The project has a diagram `{taken}` already.")
+    if new_name == name:
+        return []
+    row["name"] = new_name
+    row["document"]["name"] = new_name
+    return _write(project, rows)
+
+
 # -----------------------------------------------------------------------------
 # Laying diagrams out
 
