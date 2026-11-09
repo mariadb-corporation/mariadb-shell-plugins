@@ -206,9 +206,16 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   sign-in grant alive, the user's default role in multi-tenant mode), never
   with `shell.open_session` on the connection data; once the connection
   is closed (`db.close`, expiry) the opener refuses like an unknown id;
-  `online_alter.run_in_task` makes each step a stage, the server's progress
-  the stage's (combined over the server's stages, never going back), and
-  refusals, skips, lock retries and the server's STATE messages; a
+  `online_alter.run_in_task` makes each step a stage, in `METHODS` order
+  up to the step that applies the change (`alter_table` records the skips
+  where their steps would run, and none after the applied one): the
+  applied step's stage ends `completed` with its seconds, a refused one
+  `skipped` with its seconds, one skipped by a limit `skipped` without
+  (`task.stage_finished(stage, seconds, status=...)`, the `SKIPPED` stage
+  status of mariadb-shell's `mysqlsh.task_manager`; on a shell without it
+  the stage ends `completed`, TypeError fallback). The server's progress
+  is the stage's (combined over the server's stages, never going back),
+  and refusals, skips, lock retries and the server's STATE are messages; a
   `task.cancel` reaches the ALTER through `set_canceller`. **NEEDS_EXTERNAL
   completes the task** (Claude's choice: nothing failed, nothing changed)
   with a warning message and `applied: false` in the result `{method,

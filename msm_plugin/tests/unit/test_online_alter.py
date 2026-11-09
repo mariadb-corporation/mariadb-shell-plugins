@@ -131,7 +131,8 @@ def test_a_table_over_max_rebuild_bytes_gets_no_rebuild():
         f"{skip}; the server refused INSTANT, NOCOPY, SHARED_LOCK, EXCLUSIVE_LOCK "
         "(last: MySQL Error (1846): ALGORITHM=INSTANT is not supported)")
     assert not any(re.search("ALGORITHM=(COPY|INPLACE)", sql) for sql in session.alters())
-    assert result.steps[:2] == [
+    # In step order: the skips where their steps would have run
+    assert result.steps[2:4] == [
         {"method": method, "outcome": "skipped", "seconds": 0, "message": skip}
         for method in (INPLACE, COPY)]
 
@@ -415,8 +416,8 @@ def test_needs_external_leaves_the_table_unchanged(server):
     assert "; blocking writes skipped" in result.reason
     assert "the server refused INSTANT, NOCOPY (last: " in result.reason
     assert [(step["method"], step["outcome"]) for step in result.steps] == [
-        (INPLACE, "skipped"), (COPY, "skipped"), (SHARED_LOCK, "skipped"), (EXCLUSIVE_LOCK, "skipped"),
-        (INSTANT, "refused"), (NOCOPY, "refused")]
+        (INSTANT, "refused"), (NOCOPY, "refused"), (INPLACE, "skipped"), (COPY, "skipped"),
+        (SHARED_LOCK, "skipped"), (EXCLUSIVE_LOCK, "skipped")]
     assert column_type(session, "v") == "int(11)"
 
 
@@ -592,8 +593,8 @@ class FakeTask:
     def stage_started(self, stage):
         self.events.append(("started", stage))
 
-    def stage_finished(self, stage, seconds=None):
-        self.events.append(("finished", stage, seconds))
+    def stage_finished(self, stage, seconds=None, status="completed"):
+        self.events.append(("finished", stage, seconds, status))
 
     def message(self, text, level="info"):
         self.events.append(("message", level, text))
@@ -611,14 +612,41 @@ def test_a_task_reports_each_step_as_a_stage():
     seconds = [step["seconds"] for step in result["steps"]]
     assert task.events == [
         ("started", INSTANT),
-        ("finished", INSTANT, seconds[0]),
+        ("finished", INSTANT, seconds[0], "skipped"),
         ("message", "info", f"INSTANT refused: {REFUSED}"),
         ("started", NOCOPY),
-        ("finished", NOCOPY, seconds[1]),
+        ("finished", NOCOPY, seconds[1], "completed"),
         ("message", "info", "Applied with NOCOPY."),
     ]
     assert all(isinstance(value, float) for value in seconds)
     assert task.canceller is not None
+
+
+def test_a_task_lists_every_step_up_to_the_applied_one_skips_included():
+    session = FakeSession(size=20 * GIB, alters={r"INSTANT|NOCOPY": [REFUSED],
+                                                 r"LOCK=SHARED": [[]]})
+    task = FakeTask()
+    online_alter.run_in_task(task, session, None, "shop", "orders", "MODIFY `a` TEXT")
+    finished = [event[1:] for event in task.events if event[0] == "finished"]
+    assert [(stage, status) for stage, _, status in finished] == [
+        (INSTANT, "skipped"), (NOCOPY, "skipped"), (INPLACE, "skipped"), (COPY, "skipped"),
+        (SHARED_LOCK, "completed")]
+    # A step that never ran has no seconds; one that ran has them
+    assert [seconds is None for _, seconds, _ in finished] == [False, False, True, True, False]
+    # No stage for EXCLUSIVE_LOCK: the escalation stopped at SHARED_LOCK
+    assert ("started", EXCLUSIVE_LOCK) not in task.events
+
+
+def test_a_task_manager_without_stage_status_ends_skipped_stages_completed():
+    class OlderTask(FakeTask):
+        def stage_finished(self, stage, seconds=None):
+            self.events.append(("finished", stage, seconds))
+
+    task = OlderTask()
+    session = FakeSession(alters={r"ALGORITHM=INSTANT": [REFUSED], r"ALGORITHM=NOCOPY": [[]]})
+    assert online_alter.run_in_task(task, session, None, "shop", "orders",
+                                    "ADD INDEX (`a`)")["applied"] is True
+    assert [event[1] for event in task.events if event[0] == "finished"] == [INSTANT, NOCOPY]
 
 
 def test_a_task_that_needs_an_external_tool_completes_with_a_warning():
@@ -675,7 +703,11 @@ def test_a_task_on_the_sandbox_reports_the_copys_progress(server):
     assert task.status == "completed", task.error
     assert task.result["method"] == COPY
     assert [stage["name"] for stage in task.stages] == [INSTANT, NOCOPY, INPLACE, COPY]
-    assert all(stage["status"] == "completed" for stage in task.stages)
+    # The refused steps end as skipped where the task manager has that status
+    from mysqlsh import task_manager
+
+    refused = getattr(task_manager, "SKIPPED", "completed")
+    assert [stage["status"] for stage in task.stages] == [refused] * 3 + ["completed"]
     assert all(stage["seconds"] is not None for stage in task.stages)
     assert any(message["text"].startswith("COPY: ") for message in task.messages)
 

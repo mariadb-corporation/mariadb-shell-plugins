@@ -72,6 +72,8 @@ NBO = "NBO"
 SHARED_LOCK = "SHARED_LOCK"
 EXCLUSIVE_LOCK = "EXCLUSIVE_LOCK"
 NEEDS_EXTERNAL = "NEEDS_EXTERNAL"
+# The task stage status of a step refused or not run (mysqlsh.task_manager)
+STAGE_SKIPPED = "skipped"
 
 # The methods that apply the change, in the order they are tried
 METHODS = (INSTANT, NOCOPY, INPLACE, COPY, NBO, SHARED_LOCK, EXCLUSIVE_LOCK)
@@ -523,6 +525,7 @@ def alter_table(
     connection_id = _scalar(session, "SELECT CONNECTION_ID()") if monitor is not None else None
 
     allowed, skipped = plan(table_size, galera, options)
+    skipped = dict(skipped)
     result = Result(NEEDS_EXTERNAL, None, table_size, galera)
 
     def record(method, outcome, seconds=0, message=None):
@@ -530,9 +533,6 @@ def alter_table(
             {"method": method, "outcome": outcome, "seconds": seconds, "message": message}
         )
         emit({"event": outcome, "method": method, "seconds": seconds, "message": message})
-
-    for method, why in skipped:
-        record(method, "skipped", message=why)
 
     def check_cancel():
         if cancel is not None and cancel.is_set():
@@ -547,7 +547,14 @@ def alter_table(
 
     try:
         session.run_sql(f"SET SESSION lock_wait_timeout = {int(options.lock_wait)}")
-        for method in allowed:
+        # In METHODS order, a skip where its step would run; none after the
+        # step that applies the change
+        for method in METHODS:
+            if method in skipped:
+                record(method, "skipped", message=skipped[method])
+                continue
+            if method not in allowed:
+                continue
             check_cancel()
             if galera:
                 try:
@@ -767,10 +774,21 @@ def result_dict(result: Result) -> dict:
     }
 
 
+def _stage_skipped(task, stage: str, seconds) -> None:
+    """Ends a stage as skipped: a step refused or not run. A shell whose
+    task manager has no stage status ends it as completed."""
+    try:
+        task.stage_finished(stage, seconds, status=STAGE_SKIPPED)
+    except TypeError:
+        task.stage_finished(stage, seconds)
+
+
 def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
                 options: Options = None, poll_interval: float = 1.0) -> dict:
     """alter_table as the work of a task (``mysqlsh.task_manager.Task``):
-    each step a stage, the server's progress the stage's progress, refusals,
+    each step a stage in METHODS order up to the one that applies the
+    change (completed, with its seconds; refused or skipped steps end as
+    ``skipped``), the server's progress the stage's progress, refusals,
     skips and lock retries messages; a cancel of the task stops the running
     statement (KILL QUERY through monitor).
 
@@ -793,9 +811,12 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
         elif kind == "applied":
             task.stage_finished(method, event["seconds"])
         elif kind == "refused":
-            task.stage_finished(method, event["seconds"])
+            _stage_skipped(task, method, event["seconds"])
             task.message(f"{method} refused: {event['message']}")
         elif kind == "skipped":
+            # A step that never ran is a stage too, so every step shows in order
+            task.stage_started(method)
+            _stage_skipped(task, method, None)
             task.message(f"{method} skipped: {event['message']}")
         elif kind == "retry":
             task.message(
