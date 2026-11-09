@@ -494,9 +494,10 @@ def _installations(log) -> tuple:
     """
     prefix = install_prefix()
     try:
+        # Not the dot-folders: the install locks live there too.
         entries = sorted(
             name for name in os.listdir(prefix)
-            if os.path.isdir(os.path.join(prefix, name))
+            if not name.startswith(".") and os.path.isdir(os.path.join(prefix, name))
         )
     except OSError:
         entries = []

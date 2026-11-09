@@ -280,7 +280,7 @@ def register_restd_tools(server, function_groups=()) -> None:
             directory: The deployment's folder, as restd.get_restd_status lists
                 it.
             restd_path: The mariadb-restd executable to run, or its folder.
-                Found on the PATH, in ~/.local/bin or among the installed
+                Found on the PATH or among the installed
                 releases when empty.
 
         Returns:
@@ -499,17 +499,21 @@ def _install(tag: Optional[str], minimum: str, strict: bool, lines: list) -> tup
             search afterwards did.
 
     Returns:
-        (executable, a warning or None).
+        (executable, whether this install put it there, a warning or None).
+        Not this install's: one another install put in place, before or
+        meanwhile, or the older one that was there all along.
 
     Raises:
         ToolError: When there is nothing usable afterwards: the install's own
         error, if it failed.
     """
     failure = None
+    installed = False
     turn = None if strict else restd_install.InstallTurn(restd.install_prefix(), lines.append)
     try:
         if turn is None:
             lines.append(restd_install.install(tag))
+            installed = True
         elif not turn.take():
             failure = tool_error(
                 f"No {restd.RESTD_NAME} was installed: another install did not "
@@ -519,9 +523,10 @@ def _install(tag: Optional[str], minimum: str, strict: bool, lines: list) -> tup
             meanwhile = turn.waited and restd.find_restd(None, minimum, lines.append)
             if meanwhile:
                 lines.append(f"Using {meanwhile}, installed meanwhile.")
-                return meanwhile, None
+                return meanwhile, False, None
             try:
                 lines.append(restd_install.install(tag, on_start=turn.add_installer))
+                installed = True
             except Exception as error:  # noqa: BLE001 - the version decides below
                 failure = error
                 lines.append(str(error))
@@ -532,8 +537,8 @@ def _install(tag: Optional[str], minimum: str, strict: bool, lines: list) -> tup
     executable = restd.find_restd(None, minimum, lines.append)
     if executable is not None:
         if failure is None:
-            return executable, None
-        return executable, (
+            return executable, installed, None
+        return executable, False, (
             f"The {restd.RESTD_NAME} install failed "
             f"({restd.first_line(str(failure))}); using {executable}, which "
             "another install put in place."
@@ -555,7 +560,7 @@ def _install(tag: Optional[str], minimum: str, strict: bool, lines: list) -> tup
                     f"({restd.first_line(str(failure))}); using the {found} one at "
                     f"{executable} anyway."
                 )
-            return executable, warning
+            return executable, installed, warning
         if failure is not None:
             # Advice the agent's user can act on; the extension's passes no
             # restd_path, which is why a strict install's error carries none.
@@ -625,9 +630,9 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             The deployment's status, as restd.get_restd_status reports it, plus
             'installed' (whether mariadb-restd was installed for it) and
             'setup_output', what the setup printed; 'install_output', what the
-            search for mariadb-restd and its install logged, when it was
-            installed for it; and 'install_warning' when the newest release is
-            still older than the lowest version wanted, and was used anyway.
+            search for mariadb-restd and the install logged, when none was
+            found at first; and 'install_warning' when the one used is not the
+            one wanted: older than the lowest version, or not this install's.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         await general.require_allowed_path(ctx, restd_path)
@@ -698,6 +703,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             lines.append,
         )
         installed = False
+        install_output = None
         install_warning = None
         if executable is None:
             if not general.is_gui_mode() and not await _confirm_install(
@@ -708,10 +714,10 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                     "was not installed. Install it, or pass restd_path.\n"
                     + "\n".join(lines)
                 )
-            executable, install_warning = await anyio.to_thread.run_sync(
+            executable, installed, install_warning = await anyio.to_thread.run_sync(
                 _install, f"v{tag}" if tag else None, minimum, strict, lines
             )
-            installed = True
+            install_output = "\n".join(lines)
 
         def work():
             # One daemon per server and metadata schema, whatever account
@@ -778,8 +784,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             report = restd.start(executable, directory)
             report["installed"] = installed
             report["setup_output"] = output
-            if installed:
-                report["install_output"] = "\n".join(lines)
+            if install_output is not None:
+                report["install_output"] = install_output
             if install_warning:
                 report["install_warning"] = install_warning
             return report

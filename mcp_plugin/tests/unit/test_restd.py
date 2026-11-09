@@ -333,12 +333,15 @@ def test_the_search_says_what_it_passed_over_and_why(home, tmp_path, monkeypatch
     lying = executable(prefix / "26.12.0" / "bin" / "mariadb-restd", "26.9.0")
     (prefix / "26.11.0").mkdir(parents=True)
     (prefix / "notes").mkdir()
+    # The install locks are no installations.
+    (prefix / restd_install.TURN_LOCK).mkdir()
 
     log = []
     assert restd.find_restd(minimum_version="26.10.1", log=log.append) is None
     text = "\n".join(log)
     assert "on the PATH" in text and "is 26.9.0, older than the 26.10.1" in text
     assert f"Local installations in {prefix}: 26.11.0, 26.12.0, 26.9.0, notes" in text
+    assert restd_install.TURN_LOCK not in text
     assert "26.9.0 is older than 26.10.1; not used." in text
     assert f"26.11.0 has no {prefix / '26.11.0' / 'bin' / 'mariadb-restd'}" in text
     assert f"{lying} is 26.9.0, older than the 26.10.1 required; not used." in text
@@ -989,6 +992,7 @@ def test_a_newest_release_below_the_lowest_version_is_used_with_a_warning(
         schemas=["mariadb_rest_service"], port=helpers.find_free_port()
     )
     assert installs == [None]
+    assert result["installed"] is True
     assert result["install_warning"] == (
         "The installed mariadb-restd 26.10.1 is below the required 99.0.0; "
         "using it anyway."
@@ -1021,6 +1025,7 @@ def test_a_failed_agent_install_uses_what_another_install_put_in_place(
     result, _, _ = configure(schemas=["mariadb_rest_service"], port=helpers.find_free_port())
 
     assert installs == [None]
+    assert result["installed"] is False
     assert "install failed (mariadb-restd could not be installed: no network)" in result["install_warning"]
     assert "another install put in place" in result["install_warning"]
 
@@ -1036,6 +1041,7 @@ def test_a_failed_agent_install_starts_the_old_daemon_with_a_warning(
     result, _, _ = configure(schemas=["mariadb_rest_service"], port=helpers.find_free_port())
 
     assert installs == [None]
+    assert result["installed"] is False
     assert result["install_warning"].startswith(
         f"No mariadb-restd {restd.DEFAULT_MINIMUM_VERSION} or newer could be installed "
         "(mariadb-restd could not be installed: no network); using the 26.9.0 one at"
@@ -1091,6 +1097,7 @@ def test_an_agent_install_looks_again_once_it_has_its_turn(
     result, _, _ = configure(schemas=["mariadb_rest_service"], port=helpers.find_free_port())
 
     assert installs == []
+    assert result["installed"] is False
     assert "installed meanwhile" in result["install_output"]
     assert "install_warning" not in result
 
@@ -1317,7 +1324,9 @@ def test_the_install_falls_back_to_a_prerelease_as_the_shell_does(tmp_path, monk
         (tmp_path / ref / "install.sh").write_text(
             'echo "args:[$*] tag:[$MARIADB_RESTD_TAG] env:[$MARIADB_RESTD_PRERELEASE]"\n'
             'if [ -z "$*" ] && [ -z "$MARIADB_RESTD_TAG" ]; then\n'
-            '  echo "install.sh: could not download SHA256SUMS" >&2; exit 1\n'
+            '  echo "install.sh: could not download SHA256SUMS from the latest release" >&2\n'
+            '  [ -z "$STABLE_FAILS_FOR" ] && echo "  A prerelease is never \'latest\'." >&2\n'
+            "  exit 1\n"
             "fi\n"
         )
     monkeypatch.setattr(restd_install, "INSTALL_SCRIPT_BASE_URL", tmp_path.as_uri() + "/")
@@ -1338,12 +1347,20 @@ def test_the_install_falls_back_to_a_prerelease_as_the_shell_does(tmp_path, monk
     with pytest.raises(Exception, match="could not download SHA256SUMS"):
         restd_install.install()
 
+    # A stable install that failed for any other reason is not tried again
+    # as a prerelease: that would repeat the failure, and report the repeat.
+    monkeypatch.delenv("MARIADB_RESTD_PRERELEASE")
+    monkeypatch.setenv("STABLE_FAILS_FOR", "another reason")
+    with pytest.raises(Exception, match="could not download SHA256SUMS") as raised:
+        restd_install.install()
+    assert "args:[--pre-release]" not in str(raised.value)
+
 
 class _Completed:
     """What a stand-in for restd_install._run returns."""
 
-    def __init__(self, returncode=0):
-        self.returncode, self.stdout = returncode, ""
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode, self.stdout = returncode, stdout
 
 
 def _stub_installer(monkeypatch, run):
@@ -1358,7 +1375,9 @@ def test_on_windows_the_prerelease_is_asked_for_through_the_environment(monkeypa
 
     def run(command, env, on_start=None):
         runs.append((command, env.get("MARIADB_RESTD_PRERELEASE")))
-        return _Completed(1 if len(runs) == 1 else 0)
+        if len(runs) == 1:
+            return _Completed(1, "install.ps1: no release.\n  A prerelease is never 'latest'.")
+        return _Completed()
 
     _stub_installer(monkeypatch, run)
     monkeypatch.delenv("MARIADB_RESTD_PRERELEASE", raising=False)
@@ -1443,6 +1462,9 @@ def test_the_install_is_logged_as_the_shells_is(tmp_path, monkeypatch):
         'echo "==> Downloading"\n'
         "printf '###   10.0%%\\r######  60.0%%\\r' >&2\n"
         "printf '\\n' >&2\n"
+        # A line redrawn in place: only its last redraw is what a terminal
+        # would show.
+        "printf 'Downloading: 10%%\\rDownloading: 100%%\\n' >&2\n"
         'echo "==> Installed"\n'
     )
     monkeypatch.setattr(restd_install, "INSTALL_SCRIPT_BASE_URL", tmp_path.as_uri() + "/")
@@ -1452,9 +1474,13 @@ def test_the_install_is_logged_as_the_shells_is(tmp_path, monkeypatch):
     url = (tmp_path / "v1" / "install.sh").as_uri()
     assert log[0] == f"Installing mariadb-restd 1 with {url}."
     assert log[1].startswith("Running the installer: MARIADB_RESTD_TAG=v1 /bin/sh ")
-    assert log[2:4] == ["  installer: ==> Downloading", "  installer: ==> Installed"]
-    assert re.fullmatch(r"The installer exited with code 0 after \d+\.\ds\.", log[4])
-    assert len(log) == 5
+    assert log[2:5] == [
+        "  installer: ==> Downloading",
+        "  installer: Downloading: 100%",
+        "  installer: ==> Installed",
+    ]
+    assert re.fullmatch(r"The installer exited with code 0 after \d+\.\ds\.", log[5])
+    assert len(log) == 6
 
 
 def test_a_failed_install_gives_its_reason_as_the_shells_does(tmp_path, monkeypatch):
@@ -1482,6 +1508,27 @@ def test_a_failed_install_gives_its_reason_as_the_shells_does(tmp_path, monkeypa
     )
     assert "  installer: install.sh: could not download the package" in message
     assert "The installer exited with code 3 after" in message
+
+
+def test_a_stopped_installer_takes_what_it_started_with_it(tmp_path, monkeypatch):
+    """Killing the script alone leaves its curl holding the output pipe, and
+    the read of the rest of the output waiting for that."""
+    if os.name == "nt":
+        pytest.skip("install.sh")
+
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v1" / "install.sh").write_text('echo "==> Downloading"\nsleep 30\n')
+    monkeypatch.setattr(restd_install, "INSTALL_SCRIPT_BASE_URL", tmp_path.as_uri() + "/")
+    monkeypatch.setattr(restd_install, "INSTALL_TIMEOUT", 1)
+
+    started = time.monotonic()
+    with pytest.raises(Exception, match="did not finish within 1 seconds") as raised:
+        restd_install.install("v1")
+
+    assert time.monotonic() - started < 10
+    message = str(raised.value)
+    assert "  installer: ==> Downloading" in message
+    assert "The installer was stopped after 1s." in message
 
 
 @pytest.mark.parametrize(
@@ -1548,8 +1595,14 @@ def test_committed_checksums_go_only_with_their_own_tag(monkeypatch):
     restd_install.install("v26.11.0")
     restd_install.install("v27.1.0")
     restd_install.install()
+    # The environment's tag with or without its v, as configure_restd takes it.
+    monkeypatch.setenv("MARIADB_RESTD_TAG", "26.11.0")
+    restd_install.install("v26.11.0")
 
-    assert seen == ["/plugin/mariadb-restd-v26.11.0.SHA256SUMS", None, None]
+    assert seen == [
+        "/plugin/mariadb-restd-v26.11.0.SHA256SUMS", None, None,
+        "/plugin/mariadb-restd-v26.11.0.SHA256SUMS",
+    ]
 
 
 @pytest.fixture
@@ -1605,24 +1658,22 @@ def test_a_lock_whose_install_is_gone_is_cleared(turn_prefix):
     turn.release()
 
 
-def test_the_lock_is_left_to_an_installer_that_outlives_the_server(turn_prefix):
+def test_the_lock_holds_the_installers_pid_too(turn_prefix):
+    """So that it stays busy while the installer runs, should the server die
+    first; release gives it back, the installer having ended by then."""
     installer = _sleeper()
     try:
         turn = restd_install.InstallTurn(str(turn_prefix), lambda message: None)
         assert turn.take() is True
         turn.add_installer(installer.pid)
-        turn.release()
         lock = turn_prefix / restd_install.TURN_LOCK
-        assert lock.exists()
-        # The installer's alone: this server goes on running.
-        assert (lock / "pid").read_text().split() == [str(installer.pid)]
+        assert (lock / "pid").read_text().split() == [str(os.getpid()), str(installer.pid)]
+        assert restd_install._lock_busy(str(lock))
+        turn.release()
+        assert not lock.exists()
     finally:
         installer.kill()
         installer.wait()
-    # Its installer gone, the next install clears it.
-    turn = restd_install.InstallTurn(str(turn_prefix), lambda message: None)
-    assert turn.take() is True
-    turn.release()
 
 
 # --- for real ------------------------------------------------------------------

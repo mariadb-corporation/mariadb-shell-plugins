@@ -74,7 +74,10 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
     it). Install: stable first, then a retry
     with `--pre-release` (POSIX) or `MARIADB_RESTD_PRERELEASE=1` in the
     environment (Windows, as the `.cmd` launcher) - `/releases/latest` skips
-    prereleases, and every release is one so far. `MARIADB_RESTD_PRERELEASE`
+    prereleases, and every release is one so far - but only when the first
+    run said so (`_NO_STABLE_RELEASE`, the scripts' "A prerelease is never
+    'latest'" hint); any other failure is reported as it is, not repeated as
+    a prerelease. `MARIADB_RESTD_PRERELEASE`
     from the caller: truthy = prerelease straight away, 0/false/no/off =
     stable only; it is popped from the script's env, since the scripts treat
     any non-empty value as truthy.
@@ -90,7 +93,9 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   with <url>.`, `Running the installer: MARIADB_RESTD_TAG=... <command>`,
   `  installer: <line>` per line (stdout and stderr merged in order, split as
   the extension's LineReader; `clean_line` = `cleanInstallerLine`, curl's
-  redraws and bars dropped), `The installer exited with code N after X.Xs.`.
+  redraws and bars dropped - the pipe is read as bytes and decoded by
+  `_decode`, since text mode's universal newlines would turn each `\r` into
+  a newline first), `The installer exited with code N after X.Xs.`.
   `install()` returns it, and configure_restd answers it as `install_output`
   (before, the return value was dropped and a successful install left no
   record). A failure: `<name> could not be installed: <reason> (the installer
@@ -110,9 +115,12 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   having waited (`InstallTurn.waited`), the search before the turn being a
   moment old otherwise - installs,
   and the version decides: new enough (even after a failed install) → used;
-  else any → used with `install_warning`; none → the install's error. A lock
-  left to an installer that outlives the call keeps only the installer's PID:
-  unlike a launcher, the server goes on running. `MARIADB_RESTD_TAG` in the
+  else any → used with `install_warning`; none → the install's error. The
+  installer's PID goes into the lock too (`add_installer`), so a server that
+  dies mid-install leaves it busy while the installer runs; `release` removes
+  it, the installer having ended (`_run` waits for it, or stops its group).
+  `installed` in the result is true only when this call's install ran and
+  succeeded, not when another's binary was used. `MARIADB_RESTD_TAG` in the
   environment pins the agent path (Hermes exports it, as `MARIADB_SHELL_TAG`):
   script at that tag; the floor stays `MARIADB_RESTD_VERSION`.
   `MARIADB_RESTD_SHA256SUMS` reaches the script only with its own tag. The
@@ -123,7 +131,11 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   (`<source> has to be <major>.<minor>.<patch>`).
   Accepted differences from the shell's install (decided 2026-11-06, as they
   would need large changes on both sides): no streamed progress, no cancel,
-  the 900s/60s limits stay (with no cancel they are what stops a hang).
+  the 900s/60s limits stay (with no cancel they are what stops a hang). The
+  script runs in its own process group (`start_new_session`) and the timeout
+  kills the group (`_stop`; `taskkill /T` on Windows): killing `sh` alone
+  leaves its curl holding the output pipe, and the read of the rest of the
+  output waits for it - a hang in place of the timeout error.
   `--gui`: without asking. Agent mode: MCP elicitation first.
 - **Sandbox hooks live in the `sandbox.*` tools**, not only in the extension,
   so an agent deleting a sandbox never leaves a daemon serving from a deleted

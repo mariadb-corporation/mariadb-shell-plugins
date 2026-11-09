@@ -33,9 +33,11 @@ the MCP server's stdio, which is the protocol channel.
 # cSpell:ignore restd MariaDB
 
 import json
+import locale
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -62,6 +64,9 @@ _CURL_ERROR = re.compile(r"^\s*curl:\s*\(\d+\)")
 _GENERIC_ERROR = re.compile(
     r"\b(error|failed|could not|cannot|unable|denied|not found)\b", re.IGNORECASE
 )
+# What both scripts say, and only say, when /releases/latest had nothing for
+# them: every release is a prerelease, which 'latest' never is.
+_NO_STABLE_RELEASE = re.compile(r"A prerelease is never 'latest'")
 # A bare curl progress bar: nothing a log reader needs.
 _PROGRESS_BAR = re.compile(r"[#O=\-\s]*(\d+(\.\d+)?%)?")
 # What the log shows of the environment the script runs with.
@@ -184,8 +189,36 @@ def _read_output(output: str, log: list) -> list:
     return diagnostics
 
 
+def _stop(process: subprocess.Popen) -> None:
+    """Stops the script and what it started: its curl or tar hold the output
+    pipe too, and the read of the rest of the output waits for them."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            stdin=subprocess.DEVNULL, capture_output=True, check=False,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    process.kill()
+
+
+def _decode(output: Optional[bytes]) -> str:
+    """The script's output as text, decoded as text mode would - but read as
+    bytes, since text mode's universal newlines would have turned curl's
+    carriage returns into newlines before :func:`clean_line` saw them."""
+    if not output:
+        return ""
+    return output.decode(locale.getpreferredencoding(False), errors="replace")
+
+
 def _run(command: list, env: dict, on_start=None) -> subprocess.CompletedProcess:
     """Runs the script with stdout and stderr in one stream, in order.
+
+    On POSIX in a process group of its own, so that stopping it on timeout
+    stops what it started too (:func:`_stop`).
 
     Args:
         on_start (callable): Given the script's PID once it runs, for the
@@ -196,18 +229,18 @@ def _run(command: list, env: dict, on_start=None) -> subprocess.CompletedProcess
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
         env=env,
+        start_new_session=os.name != "nt",
     )
     if on_start is not None:
         on_start(process.pid)
     try:
         output, _ = process.communicate(timeout=INSTALL_TIMEOUT)
     except subprocess.TimeoutExpired:
-        process.kill()
+        _stop(process)
         output, _ = process.communicate()
-        raise subprocess.TimeoutExpired(command, INSTALL_TIMEOUT, output=output)
-    return subprocess.CompletedProcess(command, process.returncode, output, None)
+        raise subprocess.TimeoutExpired(command, INSTALL_TIMEOUT, output=_decode(output))
+    return subprocess.CompletedProcess(command, process.returncode, _decode(output), None)
 
 
 def _lock_wait(log) -> int:
@@ -257,9 +290,8 @@ class InstallTurn:
     (TURN_LOCK) holding the PIDs of this server and of the installer it runs,
     and wait for an install.sh already running there (its INSTALL_LOCK) - one
     the VS Code extension or another agent's server started. The lock is stale
-    once none of its PIDs runs. A server that stops waiting leaves the lock to
-    its installer, which carries on, so the next one waits for that install
-    instead of starting a second.
+    once none of its PIDs runs: the installer's is in it too, so a server that
+    dies mid-install leaves the lock busy for as long as its installer runs.
 
     POSIX only, as the launchers: on Windows install.ps1's own mutex
     serialises installs, and the .cmd launcher adds no lock either.
@@ -274,7 +306,6 @@ class InstallTurn:
         # Whether another install was waited for: one that has usually put a
         # good enough mariadb-restd in place by the time the turn comes.
         self.waited = False
-        self.installer_pid = None
 
     def take(self, sleep=time.sleep) -> bool:
         """Waits until no other install runs, then holds the lock.
@@ -342,8 +373,8 @@ class InstallTurn:
         return None
 
     def add_installer(self, pid: int) -> None:
-        """Puts the installer's PID into the lock, so it outlives this server."""
-        self.installer_pid = pid
+        """Puts the installer's PID into the lock, so that the lock stays busy
+        while the installer runs should this server die first."""
         if self.held:
             try:
                 with open(os.path.join(self.lock, "pid"), "a", encoding="utf-8") as file:
@@ -352,21 +383,11 @@ class InstallTurn:
                 pass
 
     def release(self) -> None:
-        """Gives the lock back, unless its installer still runs."""
-        if not self.held:
-            return
-        self.held = False
-        if self.installer_pid is None or not restd._is_alive(self.installer_pid):
+        """Gives the lock back. The installer has ended by then: _run waits
+        for it, or stops it and what it started."""
+        if self.held:
+            self.held = False
             shutil.rmtree(self.lock, ignore_errors=True)
-            return
-        # Left to the installer alone: unlike a launcher, which exec's the
-        # server, this server goes on running, and its PID would keep the
-        # lock busy for as long as it does.
-        try:
-            with open(os.path.join(self.lock, "pid"), "w", encoding="utf-8") as file:
-                file.write(f"{self.installer_pid}\n")
-        except OSError:
-            pass
 
 
 def install(tag: str = None, on_start=None) -> str:
@@ -374,8 +395,10 @@ def install(tag: str = None, on_start=None) -> str:
 
     Prereleases are taken as the MariaDB Shell's launchers take them: a stable
     release is preferred, and a prerelease installed only when there is no
-    stable one. ``MARIADB_RESTD_PRERELEASE`` decides it instead: truthy goes
-    straight for a prerelease, ``0``/``false``/``no``/``off`` refuses one.
+    stable one - when the script says so, that is; a stable install that
+    failed for any other reason is not tried again as a prerelease.
+    ``MARIADB_RESTD_PRERELEASE`` decides it instead: truthy goes straight for
+    a prerelease, ``0``/``false``/``no``/``off`` refuses one.
 
     Args:
         tag (str): The release to install, for example 'v26.10.1', with one
@@ -403,8 +426,10 @@ def install(tag: str = None, on_start=None) -> str:
     # A committed copy of a release's SHA256SUMS (the Hermes launchers export
     # one, as they do the shell's) belongs to the tag it was set with: kept
     # only for that tag, since the scripts refuse one without a tag and a
-    # different release's would fail every checksum.
-    if not tag or os.environ.get("MARIADB_RESTD_TAG", "").strip() != tag:
+    # different release's would fail every checksum. The environment's tag
+    # may lack the 'v' (configure_restd accepts either).
+    env_tag = (os.environ.get("MARIADB_RESTD_TAG") or "").strip().lstrip("vV")
+    if not tag or env_tag != tag.lstrip("vV"):
         env.pop("MARIADB_RESTD_SHA256SUMS", None)
     if tag:
         env["MARIADB_RESTD_TAG"] = tag
@@ -448,7 +473,8 @@ def install(tag: str = None, on_start=None) -> str:
             attempts = [prerelease]
         else:
             # Without it the scripts take /releases/latest, which skips
-            # prereleases, so while every release is one the first run fails.
+            # prereleases, so while every release is one the first run fails,
+            # saying so (_NO_STABLE_RELEASE); only then is the second made.
             attempts = [stable, prerelease]
 
         log = [f"Installing {name} with {url}."]
@@ -477,6 +503,8 @@ def install(tag: str = None, on_start=None) -> str:
             )
             if completed.returncode == 0:
                 return "\n".join(log)
+            if not _NO_STABLE_RELEASE.search(completed.stdout or ""):
+                break
 
     reason = summarize_failure(diagnostics)
     code = completed.returncode
