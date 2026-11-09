@@ -155,6 +155,13 @@ def _alter_clauses(text: str) -> list:
 _LOCKING_CLAUSE = re.compile(r"^(?:ALGORITHM|LOCK)\b\s*(?:=\s*)?\w*", re.IGNORECASE)
 
 
+def ends_in_line_comment(text: str) -> bool:
+    """Whether text ends in a -- or # comment, which would swallow what is
+    appended on the same line."""
+    tokens = [token for token in _ALTER_TOKEN.findall(text) if not token.isspace()]
+    return bool(tokens) and tokens[-1].startswith(("--", "#"))
+
+
 def locking_clause(spec: str) -> Optional[str]:
     """The first ALGORITHM or LOCK clause of an ALTER TABLE's clauses (the
     text after its table name), as written; None where it has none."""

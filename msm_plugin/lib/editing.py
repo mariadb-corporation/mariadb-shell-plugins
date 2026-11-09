@@ -427,11 +427,15 @@ def online_alter_settings_text(text: Optional[str], edits: list) -> Optional[str
 
     def change(tables):
         for edit in edits:
-            table = edit.get("table")
-            if edit.get("op") == "rename_table" and table in tables:
-                tables[edit.get("new_name")] = tables.pop(table)
+            # Case aside, as the diagrams follow the edits (diagrams.same_name)
+            key = next((name for name in tables if diagrams.same_name(name, edit.get("table"))),
+                       None)
+            if key is None:
+                continue
+            if edit.get("op") == "rename_table":
+                tables[edit.get("new_name")] = tables.pop(key)
             elif edit.get("op") == "drop_table":
-                tables.pop(table, None)
+                tables.pop(key)
 
     setting = online_alter.with_tables(setting, change)
     if setting is None:

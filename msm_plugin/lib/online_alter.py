@@ -362,7 +362,8 @@ class Result:
 
 def check_spec(spec: str) -> str:
     """The clauses of an ALTER TABLE (the text after its table name) fit for
-    the steps: stripped of a trailing ``;``.
+    the steps: stripped of a trailing ``;``, a line break after a trailing
+    line comment.
 
     Raises:
         ValueError: For no clauses, or an ALGORITHM or LOCK clause, which the
@@ -379,7 +380,8 @@ def check_spec(spec: str) -> str:
             f"The ALTER TABLE sets `{clause}` itself; an online ALTER TABLE sets "
             "ALGORITHM and LOCK for each step. Run it as written instead."
         )
-    return spec
+    # The clauses the steps append go on a line of their own
+    return spec + "\n" if statements.ends_in_line_comment(spec) else spec
 
 
 def plan(table_size: int, galera: bool, options: Options) -> tuple:
@@ -662,7 +664,8 @@ def _table_size(session, schema: str, table: str) -> int:
         session,
         "SELECT COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0) "
         "FROM information_schema.TABLES "
-        "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'",
+        "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? "
+        "AND TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED')",
         [schema, table],
     )
     if size is None:

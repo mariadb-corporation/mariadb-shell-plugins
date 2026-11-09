@@ -206,6 +206,14 @@ def test_algorithm_or_lock_in_names_strings_and_comments_is_no_clause(spec):
     assert online_alter.check_spec(spec) == spec
 
 
+@pytest.mark.parametrize("comment", ["-- note", "# note"])
+def test_a_trailing_line_comment_does_not_swallow_the_steps_clauses(comment):
+    spec = online_alter.check_spec(f"ADD COLUMN `n` INT {comment};")
+    sql = online_alter.step_sql("`s`.`t`", spec, online_alter.INSTANT)
+    assert sql.splitlines()[-1] == ", ALGORITHM=INSTANT"
+    assert online_alter.check_spec("COMMENT = '-- no comment'") == "COMMENT = '-- no comment'"
+
+
 def test_options_from_msm_project_json_keys():
     options = Options.from_dict({"maxCopyBytes": None, "nboLock": "shared", "lockWait": 2})
     assert (options.max_copy_bytes, options.nbo_lock, options.lock_wait) == (None, "SHARED", 2)
