@@ -240,19 +240,27 @@ def _help(binary: str) -> str:
     return stdout + stderr
 
 
-def _listed_ops(binary: str) -> Optional[frozenset]:
-    """The ops `edit --ops` lists; None for a binary that does not answer it
-    (exit 2 from #25 to #28, an unknown command before)."""
+def _ops_answer(binary: str) -> Optional[dict]:
+    """What `edit --ops` answers, with a valid ops list; None for a binary
+    that does not answer it (exit 2 from #25 to #28, an unknown command
+    before)."""
     code, stdout, _ = _answer(binary, ("edit", "--ops"))
     if code != 0:
         return None
     try:
-        ops = json.loads(stdout).get("ops")
-    except (json.JSONDecodeError, AttributeError):
+        answer = json.loads(stdout)
+    except json.JSONDecodeError:
         return None
+    ops = answer.get("ops") if isinstance(answer, dict) else None
     if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
         return None
-    return frozenset(ops)
+    return answer
+
+
+def _listed_ops(binary: str) -> Optional[frozenset]:
+    """The ops `edit --ops` lists; None for a binary that does not answer it."""
+    answer = _ops_answer(binary)
+    return frozenset(answer["ops"]) if answer is not None else None
 
 
 def supports_edit(binary: str) -> bool:
@@ -269,6 +277,15 @@ def tags_migration(binary: str) -> bool:
     (``action``, ``object``, ``name``, ``table``, ``new_name``): one that
     answers ``edit --ops``."""
     return _listed_ops(binary) is not None
+
+
+def merges_alters(binary: str) -> bool:
+    """Whether the binary merges a table's ALTER TABLE statements into one
+    where the request asks for it (``"merge_alters": true``; lsp-server
+    #33): its ``edit --ops`` says ``"merge_alters": true``. An older binary
+    ignores the member, so it is sent only where this holds."""
+    answer = _ops_answer(binary)
+    return answer is not None and answer.get("merge_alters") is True
 
 
 def edit_ops(binary: str) -> frozenset:

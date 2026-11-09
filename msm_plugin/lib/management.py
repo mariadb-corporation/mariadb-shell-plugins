@@ -35,6 +35,8 @@ from datetime import date
 from textwrap import indent
 import mysqlsh
 
+from msm_plugin.lib import online_alter as online_alter_lib
+from msm_plugin.lib import update_steps
 from msm_plugin.lib.source import expand_source_directives
 
 # Regex to match MSM sections, excluding the license and the last section
@@ -740,6 +742,8 @@ def create_schema_project_folder(
         "copyrightHolder": copyrights[0].get("holder"),
         "customLicense": "",
         "license": license,
+        # On by default; written so the setting can be found and changed
+        "onlineAlter": {"enabled": True},
         "schemaDependencies": [],
         "schemaName": schema_name,
         "schemaFileName": schema_file_name,
@@ -1688,6 +1692,90 @@ def substitute_source_statements_with_content(
     return expand_source_directives(script, source_absolute_file_path)[0]
 
 
+def get_online_alter_settings(schema_project_path: str, table: str = None) -> dict:
+    """The project's online ALTER TABLE setting, and what it gives a table.
+
+    Args:
+        schema_project_path: The project folder.
+        table: A table to resolve the options of; None for none.
+
+    Returns:
+        {defaults: the options msm uses where nothing is set (camelCase
+        keys), setting: msm.project.json's `onlineAlter`, normalized
+        ({enabled?, <options>?, tables: {...}}), table, enabled: whether it
+        is on for the table, options: what the table gets (None where it is
+        off or no table is given)}.
+    """
+    setting = online_alter_lib.read_setting(
+        get_project_settings(schema_project_path).get(online_alter_lib.SETTING),
+        "msm.project.json",
+    )
+    options = None
+    enabled = None
+    if table is not None:
+        resolved = online_alter_lib.DeploymentSettings(setting).options_for(table)
+        enabled = resolved is not None
+        options = resolved.to_dict() if resolved is not None else None
+    return {
+        "defaults": online_alter_lib.Options().to_dict(),
+        "setting": setting,
+        "table": table,
+        "enabled": enabled,
+        "options": options,
+    }
+
+
+def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
+    """Sets a table's entry of the project's online ALTER TABLE setting
+    (msm.project.json, onlineAlter.tables), what the Table Editor's Online
+    Alter Table tab writes.
+
+    Args:
+        schema_project_path: The project folder.
+        table: The table, as named in the scripts.
+        settings: {enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?,
+            maxLockedBytes?, lockWait?, maxRetries?}; None or {} removes the
+            table's entry, so it follows the project's general values.
+
+    Returns:
+        The files written; none where nothing changed.
+
+    Raises:
+        ValueError: For a table name that is empty, or settings
+            online_alter.read_setting refuses.
+    """
+    if not isinstance(table, str) or not table.strip():
+        raise ValueError("A table name is needed.")
+    if settings is not None and not isinstance(settings, dict):
+        raise ValueError("The table's settings must be an object, or None to remove them.")
+    # Checked as they will be read back
+    online_alter_lib.read_setting({"tables": {table: settings or {}}}, "the table's settings")
+
+    path = os.path.join(schema_project_path, "msm.project.json")
+    get_project_settings(schema_project_path)  # a project, and readable
+    # Not get_project_settings' copy, which adds what it derives on reading
+    with open(path) as f:
+        raw = json.load(f)
+    setting = raw.get(online_alter_lib.SETTING)
+    existing = setting.get("tables") if isinstance(setting, dict) else None
+    if not settings and table not in (existing or {}):
+        return []
+
+    def change(tables):
+        if settings:
+            tables[table] = dict(settings)
+        else:
+            tables.pop(table, None)
+
+    setting = online_alter_lib.with_tables(setting, change)
+    if setting is None:
+        return []
+    raw[online_alter_lib.SETTING] = setting
+    with open(path, "w") as f:
+        f.write(json.dumps(raw, indent=4))
+    return [path]
+
+
 def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:
     """Returns the substitutions a project declares in msm.project.json
 
@@ -1951,6 +2039,54 @@ def get_schema_version(
     return schema_version
 
 
+def _deployment_error(error: Exception, message: str) -> Exception:
+    """The error a failed deployment raises: the message given, and the
+    type of an update that needs an external tool kept, so a caller can
+    tell it from other failures."""
+    if isinstance(error, update_steps.NeedsExternalToolError):
+        return update_steps.NeedsExternalToolError(message)
+    return Exception(message)
+
+
+def _update_steps_handler(session, script, schema_name, schema_version, settings):
+    """The statement handler that runs an update's steps in msm instead of
+    `CALL msm_create_or_update()` (lib/update_steps.py; script is the
+    deployment script, its substitutions applied), so the ALTER TABLE
+    statements run online; None where the script runs as written: a new
+    schema, online ALTER TABLE off for every table, or a script generated
+    before the steps were marked."""
+    if schema_version is None or not settings.any_enabled():
+        return None
+    if not update_steps.read_steps(script):
+        lib.core.write_to_msm_schema_update_log(
+            "INFO",
+            "The deployment script marks no update steps (generated by an older "
+            "msm): its ALTER TABLE statements run as written.",
+        )
+        return None
+
+    def handle(statement: str) -> bool:
+        if not update_steps.is_create_or_update_call(statement):
+            return False
+        try:
+            update_steps.run_update(
+                session,
+                script,
+                schema_name,
+                schema_version,
+                settings,
+                lib.core.write_to_msm_schema_update_log,
+            )
+        except update_steps.NeedsExternalToolError:
+            raise
+        except online_alter_lib.OnlineAlterError as e:
+            lib.core.write_to_msm_schema_update_log("ERROR", str(e))
+            raise
+        return True
+
+    return handle
+
+
 def deploy_schema(
     session: object,
     schema_project_path: str,
@@ -1958,6 +2094,7 @@ def deploy_schema(
     backup_directory: str = None,
     backup: bool = False,
     substitutions: dict = None,
+    online_alter=None,
 ) -> str:
     """Deploys the database schema
 
@@ -1982,6 +2119,11 @@ def deploy_schema(
             declares, e.g. {"schema_prefix": "acme_"}. Every /*<msm:name>*/
             in the scripts and the schemaName is replaced with the value
             before the scripts run; names not given use their defaults.
+        online_alter (bool | dict): This deployment's online ALTER TABLE
+            setting, over the project's `onlineAlter` (same format: true,
+            false, or {enabled, maxRebuildBytes, galeraMaxBytes, nboLock,
+            maxLockedBytes, lockWait, maxRetries, tables: {<table>: {...}}}). For a table the
+            most specific value wins, and at the same level this one.
 
     Returns:
         None
@@ -1996,6 +2138,9 @@ def deploy_schema(
     try:
         substitution_values = resolve_substitutions(project_settings, substitutions)
         schema_name = get_effective_schema_name(project_settings, substitutions)
+        online_alter_settings = online_alter_lib.deployment_settings(
+            project_settings, online_alter
+        )
     except ValueError as e:
         lib.core.write_to_msm_schema_update_log("ERROR", str(e))
         raise
@@ -2199,17 +2344,28 @@ def deploy_schema(
             backup_available = True
 
         # Run deployment script
+        deployment_file_path = os.path.join(
+            schema_project_path,
+            "releases",
+            "deployment",
+            f"{schema_file_name}_deployment_{version}.sql",
+        )
         try:
+            # Read once: the handler runs the update's steps from the same text
+            with open(deployment_file_path) as f:
+                deployment_script = apply_substitutions(f.read(), substitution_values)
             lib.core.execute_msm_sql_script(
                 session=session,
-                sql_file_path=os.path.join(
-                    schema_project_path,
-                    "releases",
-                    "deployment",
-                    f"{schema_file_name}_deployment_{version}.sql",
-                ),
-                substitutions=substitution_values,
+                sql_script=deployment_script,
+                script_name=deployment_file_path,
                 take_lock=False,
+                statement_handler=_update_steps_handler(
+                    session,
+                    deployment_script,
+                    schema_name,
+                    schema_version,
+                    online_alter_settings,
+                ),
             )
 
             if not schema_exists:
@@ -2281,7 +2437,7 @@ def deploy_schema(
                     )
                     lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
-                    raise Exception(err_str)
+                    raise _deployment_error(e, err_str) from e
 
                 err_str = (
                     "An error occurred while updating the database schema "
@@ -2290,13 +2446,13 @@ def deploy_schema(
                 )
                 lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
-                raise Exception(err_str)
+                raise _deployment_error(e, err_str) from e
             else:
                 if not schema_exists:
                     err_str = f"Deploying the database schema `{schema_name}` failed. {e}"
                     lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
-                    raise Exception(err_str)
+                    raise _deployment_error(e, err_str) from e
                 else:
                     err_str = (
                         "An error occurred while updating the database schema "
@@ -2304,7 +2460,7 @@ def deploy_schema(
                     )
                     lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
-                    raise Exception(err_str)
+                    raise _deployment_error(e, err_str) from e
 
 
 def execute_msm_sql_script(

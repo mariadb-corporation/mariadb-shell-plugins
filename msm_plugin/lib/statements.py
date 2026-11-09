@@ -62,9 +62,11 @@ _CREATE_INDEX = re.compile(
     r"(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\b",
     re.IGNORECASE,
 )
+# A name, quoted or not
+_NAME = r"`(?:[^`]|``)*`|[\w$]+"
 _ALTER_TABLE = re.compile(
     r"^\s*ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?"
-    r"(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))?\s*",
+    rf"(?:{_NAME})(?:\s*\.\s*(?:{_NAME}))?\s*",
     re.IGNORECASE,
 )
 # What an ALTER TABLE of Section 140's additions may do: add a key, an index
@@ -85,6 +87,16 @@ _INSERT = re.compile(r"^\s*(?:INSERT|REPLACE)\b", re.IGNORECASE)
 # A comment after the new delimiter goes with the line: the client reads the
 # delimiter up to the first blank.
 _DELIMITER_LINE = re.compile(r"^[ \t]*DELIMITER[ \t]+\S+[^\n]*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
+
+
+def quote_identifier(name: str) -> str:
+    """A name in backticks."""
+    return "`" + name.replace("`", "``") + "`"
+
+
+def _is_comment(token: str) -> bool:
+    """Whether a token is a comment (an executable /*! ... */ is none)."""
+    return token.startswith(("--", "#")) or (token.startswith("/*") and not token.startswith("/*!"))
 
 
 def strip_statement(sql: str) -> str:
@@ -120,7 +132,7 @@ def _alter_clauses(text: str) -> list:
     commas outside quotes, comments and parentheses; comments left out."""
     clauses, current, depth = [], [], 0
     for token in _ALTER_TOKEN.findall(text):
-        if token.startswith(("--", "#")) or (token.startswith("/*") and not token.startswith("/*!")):
+        if _is_comment(token):
             current.append(" ")
             continue
         if token == "(":
@@ -134,6 +146,195 @@ def _alter_clauses(text: str) -> list:
         current.append(token)
     clauses.append("".join(current).strip())
     return clauses
+
+
+# A clause of an ALTER TABLE that decides how the server runs it, also
+# after a table option without a comma (ENGINE=InnoDB LOCK=NONE). LOCK is
+# reserved, so outside quotes it is the clause; algorithm may name a column,
+# so it counts only before = or one of its values.
+_LOCKING_CLAUSE = re.compile(
+    r"\bLOCK\b\s*(?:=\s*)?\w*"
+    r"|\bALGORITHM\b\s*(?:=\s*\w*|(?:DEFAULT|INSTANT|NOCOPY|INPLACE|COPY)\b)",
+    re.IGNORECASE,
+)
+
+
+# PARTITION is reserved, so outside quotes the word is the partitioning
+_PARTITION_WORD = re.compile(r"\bPARTITION(?:S|ING)?\b", re.IGNORECASE)
+
+
+def changes_partitioning(spec: str) -> bool:
+    """Whether an ALTER TABLE's clauses (the text after its table name)
+    touch its partitioning (PARTITION BY, ADD/DROP/... PARTITION, REMOVE
+    PARTITIONING): the server takes no ALGORITHM or LOCK clause after those.
+    Quotes and comments do not count."""
+    return any(
+        _PARTITION_WORD.search(token)
+        for token in _ALTER_TOKEN.findall(spec)
+        if not token.startswith(("`", "'", '"')) and not _is_comment(token)
+    )
+
+
+def ends_in_line_comment(text: str) -> bool:
+    """Whether text ends in a -- or # comment, which would swallow what is
+    appended on the same line."""
+    tokens = [token for token in _ALTER_TOKEN.findall(text) if not token.isspace()]
+    return bool(tokens) and tokens[-1].startswith(("--", "#"))
+
+
+def locking_clause(spec: str) -> Optional[str]:
+    """The first ALGORITHM or LOCK clause of an ALTER TABLE's clauses (the
+    text after its table name), as written; None where it has none. Quotes
+    and parentheses (a column's definition) do not count; a comment counts
+    as a blank, so ALGORITHM /* ... */ = COPY is still the clause."""
+    parts, depth = [], 0
+    for token in _ALTER_TOKEN.findall(spec):
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 0 and _is_comment(token):
+            parts.append(" ")
+            continue
+        elif depth == 0 and not token.startswith(("`", "'", '"')):
+            parts.append(token)
+            continue
+        # A separator no clause spans
+        parts.append("\0")
+    text = "".join(parts)
+    for match in _LOCKING_CLAUSE.finditer(text):
+        # CHANGE [COLUMN] [IF EXISTS] algorithm copy INT renames a column
+        before = text[:match.start()].split()
+        if (match.group(0)[:1].upper() == "A" and "=" not in match.group(0)
+                and before and before[-1].upper() in ("CHANGE", "COLUMN", "EXISTS")):
+            continue
+        return " ".join(match.group(0).split())
+    return None
+
+
+_ALTER_TABLE_PARTS = re.compile(
+    r"^\s*ALTER\s+(?P<online>ONLINE\s+)?(?P<ignore>IGNORE\s+)?TABLE\s+"
+    r"(?P<if_exists>IF\s+EXISTS\s+)?"
+    rf"(?P<first>{_NAME})(?:\s*\.\s*(?P<second>{_NAME}))?\s*(?P<spec>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _unquote(name: str) -> str:
+    if name.startswith("`"):
+        return name[1:-1].replace("``", "`")
+    return name
+
+
+@dataclass
+class AlterTable:
+    """An ALTER TABLE statement taken apart.
+
+    Attributes:
+        schema: The schema it names; None where it names none.
+        table: The table, unquoted.
+        spec: Everything after the table name.
+        modifiers: The words between ALTER and the name it has, upper case:
+            ONLINE, IGNORE, IF EXISTS.
+    """
+
+    schema: Optional[str]
+    table: str
+    spec: str
+    modifiers: list
+
+
+def alter_table_parts(sql: str) -> Optional[AlterTable]:
+    """An ALTER TABLE statement taken apart (comments before it and the
+    delimiter after it allowed); None for any other statement."""
+    match = _ALTER_TABLE_PARTS.match(strip_statement(sql))
+    if not match:
+        return None
+    modifiers = [
+        word for word, group in (("ONLINE", "online"), ("IGNORE", "ignore"),
+                                 ("IF EXISTS", "if_exists"))
+        if match.group(group)
+    ]
+    first, second = _unquote(match.group("first")), match.group("second")
+    if second is None:
+        return AlterTable(None, first, match.group("spec").strip(), modifiers)
+    return AlterTable(first, _unquote(second), match.group("spec").strip(), modifiers)
+
+
+# The tokens of a stored program's body, for top_level_statements: quoted
+# names and strings, comments, words, and single characters.
+_BODY_TOKEN = re.compile(
+    r"`(?:[^`]|``)*`|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\""
+    r"|--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?\*/|[A-Za-z_][\w$]*|\s+|.",
+    re.DOTALL,
+)
+# The words that open a compound statement where a statement starts, closed
+# by END [<word>]
+_OPENERS = ("BEGIN", "IF", "CASE", "LOOP", "WHILE", "REPEAT")
+# The words after which a statement starts (and a label's colon, and ;)
+_STATEMENT_BEFORE = ("BEGIN", "ATOMIC", "DO", "LOOP", "REPEAT")
+
+
+def top_level_statements(body: str) -> list:
+    """The statements of a stored program's body at its top level, each
+    without its `;`: an IF ... END IF, a BEGIN ... END, a loop or a CASE
+    statement stays one statement with everything in it.
+
+    A compound statement opens only where a statement starts: IF(, REPEAT(
+    and IF [NOT] EXISTS are no statements. A CASE anywhere else is an
+    expression, which its own END closes; a THEN or ELSE inside it starts no
+    statement.
+
+    Raises:
+        ValueError: Where the body's compound statements do not balance.
+    """
+    tokens = [
+        (match.start(), match.group())
+        for match in _BODY_TOKEN.finditer(body)
+        if _is_significant(match.group())
+    ]
+    # What is open: "block" (a compound statement) or "expression" (CASE)
+    statements_, stack, start, skip, previous = [], [], 0, False, None
+    for index, (position, token) in enumerate(tokens):
+        word = token.upper()
+        if skip:
+            skip, previous = False, word
+            continue
+        following = tokens[index + 1][1].upper() if index + 1 < len(tokens) else ""
+        at_start = (
+            previous in (None, ";", ":") + _STATEMENT_BEFORE
+            or (previous in ("THEN", "ELSE") and (not stack or stack[-1] == "block"))
+        )
+        if word == "END":
+            if not stack:
+                raise ValueError("An END closes no compound statement.")
+            # END IF, END LOOP, ... close one statement, as END does
+            skip = stack.pop() == "block" and following in _OPENERS and following != "BEGIN"
+        elif word in _OPENERS and at_start:
+            stack.append("block")
+        elif word == "CASE":
+            stack.append("expression")
+        elif token == ";" and not stack:
+            text = body[start:position].strip()
+            if _has_significant(text):
+                statements_.append(text)
+            start = position + 1
+        previous = word
+    if stack:
+        raise ValueError("A compound statement is not closed.")
+    text = body[start:].strip()
+    if _has_significant(text):
+        statements_.append(text)
+    return statements_
+
+
+def _is_significant(token: str) -> bool:
+    return not token.isspace() and not _is_comment(token)
+
+
+def _has_significant(text: str) -> bool:
+    """Whether text holds more than blanks and comments."""
+    return any(_is_significant(match.group()) for match in _BODY_TOKEN.finditer(text))
 
 
 def _is_table_addition(text: str) -> bool:

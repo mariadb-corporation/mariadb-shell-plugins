@@ -297,8 +297,7 @@ def read_model(path: str) -> Model:
 # SQL
 
 
-def quote_identifier(name: str) -> str:
-    return "`" + name.replace("`", "``") + "`"
+quote_identifier = statements_lib.quote_identifier
 
 
 def _simple_type_name(model: Model, link) -> str:

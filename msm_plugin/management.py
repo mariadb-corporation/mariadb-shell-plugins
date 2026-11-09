@@ -779,6 +779,11 @@ def deploy_schema(**kwargs) -> str:
             declares in msm.project.json, e.g. {"schema_prefix": "acme_"}.
             Every /*<msm:name>*/ comment in the scripts and in the schema
             name is replaced with its value before the scripts run.
+        online_alter (dict): This deployment's online ALTER TABLE setting,
+            over the project's `onlineAlter` in msm.project.json, e.g.
+            {"maxRebuildBytes": 1073741824} or {"enabled": false}. The keys
+            are enabled, maxRebuildBytes, galeraMaxBytes, nboLock,
+            maxLockedBytes, lockWait, maxRetries and tables (per table, the same keys but tables).
         session (object): The database session to use.
 
     Returns:
@@ -789,6 +794,7 @@ def deploy_schema(**kwargs) -> str:
     backup_directory = kwargs.get("backup_directory", None)
     backup = kwargs.get("backup", False)
     substitutions = kwargs.get("substitutions", None)
+    online_alter = kwargs.get("online_alter", None)
     session = lib.core.get_current_session(kwargs.get("session", None))
 
     return lib.management.deploy_schema(
@@ -798,4 +804,99 @@ def deploy_schema(**kwargs) -> str:
         backup_directory=backup_directory,
         backup=backup,
         substitutions=substitutions,
+        online_alter=online_alter,
     )
+
+
+def _returned(value):
+    """Prints the value in an interactive shell, returns it otherwise."""
+    if lib.core.get_interactive_default():
+        print(json.dumps(value, indent=4))
+        return None
+    return value
+
+
+@plugin_function("msm.onlineAlterTable", shell=True, cli=True, web=True)
+def online_alter_table(schema: str, table: str, spec: str, **kwargs) -> dict:
+    """Runs one ALTER TABLE online, the least disruptive way the server accepts
+
+    Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with LOCK=NONE, then a Galera NBO where
+    allowed, then LOCK=SHARED and LOCK=EXCLUSIVE, each with explicit clauses the server
+    either honours or refuses at once. The result says which applied the change, or
+    NEEDS_EXTERNAL where none did and nothing was changed.
+
+    Args:
+        schema (str): The table's schema.
+        table (str): The table.
+        spec (str): Everything after ALTER TABLE <table>, without ALGORITHM or LOCK.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        options (dict): The limits, with the keys of msm.project.json's onlineAlter
+            (maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
+            maxRetries); the defaults for those left out.
+        session (object): The database session to use. Defaults to the global one.
+
+    Returns:
+        A dict with method, applied, reason, table_size, galera and steps.
+    """
+    options = lib.online_alter.Options.from_dict(kwargs.get("options", None))
+    session = lib.core.get_current_session(kwargs.get("session", None))
+    result = lib.online_alter.alter_table(session, schema, table, spec, options)
+    return _returned(lib.online_alter.result_dict(result))
+
+
+@plugin_function("msm.getOnlineAlterDefaults", shell=True, cli=True, web=True)
+def get_online_alter_defaults() -> dict:
+    """Returns the online ALTER TABLE options msm uses where nothing is set
+
+    The same as the defaults of msm.getOnlineAlterSettings, without a project: for a live
+    table's settings.
+
+    Returns:
+        A dict with maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait and
+        maxRetries.
+    """
+    return _returned(lib.online_alter.Options().to_dict())
+
+
+@plugin_function("msm.getOnlineAlterSettings", shell=True, cli=True, web=True)
+def get_online_alter_settings(**kwargs) -> dict:
+    """Returns the project's online ALTER TABLE setting, and what it gives a table
+
+    Args:
+        **kwargs: Additional options.
+
+    Keyword Args:
+        table (str): A table to resolve the options of.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+
+    Returns:
+        A dict with defaults, setting, table, enabled and options.
+    """
+    return _returned(lib.management.get_online_alter_settings(
+        kwargs.get("schema_project_path", lib.core.get_working_dir()), kwargs.get("table", None)))
+
+
+@plugin_function("msm.setOnlineAlterTable", shell=True, cli=True, web=True)
+def set_online_alter_table(table: str, **kwargs) -> list:
+    """Sets a table's online ALTER TABLE settings in the project
+
+    Writes the table's entry of msm.project.json's onlineAlter setting. Without settings the
+    entry goes, and the table follows the project's general values.
+
+    Args:
+        table (str): The table, as named in the scripts.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        settings (dict): The table's settings: enabled, maxRebuildBytes, galeraMaxBytes,
+            nboLock, maxLockedBytes, lockWait, maxRetries.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+
+    Returns:
+        The files written.
+    """
+    return lib.management.set_online_alter_table(
+        kwargs.get("schema_project_path", lib.core.get_working_dir()), table,
+        kwargs.get("settings", None))

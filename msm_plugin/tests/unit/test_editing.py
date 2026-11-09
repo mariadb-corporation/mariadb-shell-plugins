@@ -562,6 +562,9 @@ def test_edit_ops_come_from_the_binary(monkeypatch):
         ("current", ("edit", "--ops")): (0, '{"format": 1, "ops": ["rename_table", "add_view"]}', ""),
         ("current", ("--help",)): (0, "  edit     apply schema edits\n"
                                       "           edit ops: rename_table add_view\n", ""),
+        # lsp-server #33 and later: merged ALTER TABLE statements on request
+        ("merging", ("edit", "--ops")): (
+            0, '{"format": 1, "ops": ["rename_table"], "merge_alters": true}', ""),
         # #26 to #28: the `edit ops:` line of --help
         ("listed", ("edit", "--ops")): (2, "", "unknown option --ops"),
         ("listed", ("--help",)): (0, "  edit     apply schema edits\n"
@@ -581,6 +584,93 @@ def test_edit_ops_come_from_the_binary(monkeypatch):
     assert lsp.edit_ops("none") == frozenset()
     assert [lsp.tags_migration(binary) for binary in ("current", "listed", "renames", "none")] == [
         True, False, False, False]
+    assert [lsp.merges_alters(binary) for binary in ("merging", "current", "listed", "none")] == [
+        True, False, False, False]
+
+
+def test_a_merged_alter_table_is_kept_once_under_each_of_its_edits():
+    edits = [
+        {"op": "add_column", "table": "orders", "column": {"name": "qty", "type": "INT"}},
+        {"op": "add_index", "table": "orders", "index": {"name": "ix_qty", "columns": ["qty"]}},
+        {"op": "drop_column", "table": "orders", "column": "old"},
+    ]
+    statements, kept = editing.migration_statements(edits, [
+        {"edit": 0, "edits": [0, 1], "sql": "ALTER TABLE `orders` ADD COLUMN `qty` INT, "
+         "ADD INDEX `ix_qty` (`qty`)", "action": "alter", "object": "table", "name": "orders",
+         "table": "orders", "spec": "ADD COLUMN `qty` INT, ADD INDEX `ix_qty` (`qty`)"},
+        {"edit": 2, "edits": [2], "sql": "ALTER TABLE `orders` DROP COLUMN `old`",
+         "action": "drop", "object": "column", "name": "old", "table": "orders"},
+    ])
+    assert statements["240"] == (
+        "-- msm.editSchema: add_column orders qty\n"
+        "-- msm.editSchema: add_index orders ix_qty\n"
+        "ALTER TABLE `orders` ADD COLUMN `qty` INT, ADD INDEX `ix_qty` (`qty`);\n"
+        "-- msm.editSchema: drop_column orders old\n"
+        "ALTER TABLE `orders` DROP COLUMN `old`;")
+    assert len(kept) == 2
+
+
+def test_a_tables_online_alter_settings_follow_renames_and_drops():
+    import json
+
+    text = json.dumps({"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
+        "customer": {"maxRebuildBytes": 0}, "orders": {"lockWait": 2}, "audit": {"enabled": False}}}},
+        indent=4)
+    moved = editing.online_alter_settings_text(text, [
+        {"op": "rename_table", "table": "customer", "new_name": "client"},
+        {"op": "rename_table", "table": "client", "new_name": "buyer"},
+        {"op": "drop_table", "table": "audit"},
+        {"op": "add_column", "table": "orders", "column": {"name": "n", "type": "INT"}},
+    ])
+    assert json.loads(moved) == {"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
+        "orders": {"lockWait": 2}, "buyer": {"maxRebuildBytes": 0}}}}
+    # The last entry dropped: no `tables` left
+    assert json.loads(editing.online_alter_settings_text(moved, [
+        {"op": "drop_table", "table": "orders"}, {"op": "drop_table", "table": "buyer"}]))[
+        "onlineAlter"] == {"enabled": True}
+    # Nothing to move
+    for unchanged in (None, "{not json", json.dumps({"onlineAlter": True}),
+                      json.dumps({"onlineAlter": {"tables": {"x": {}}}})):
+        assert editing.online_alter_settings_text(unchanged, [
+            {"op": "rename_table", "table": "customer", "new_name": "client"}]) is None
+
+
+@needs_edit_ops("add_column", "add_index", "set_table_options")
+def test_one_save_of_a_table_deploys_as_one_online_alter(deployed):
+    import os
+    from msm_plugin import lib
+
+    path, column = deployed
+    if not lsp.merges_alters(EDIT_LSP):
+        pytest.skip("the binary does not merge ALTER TABLE statements (lsp-server #33)")
+    management.set_online_alter_table(path, "customer", {"lockWait": 3})
+    result = editing.edit_schema(path, [
+        {"op": "add_column", "table": "customer",
+         "column": {"name": "email", "type": "VARCHAR(255)"}},
+        {"op": "add_index", "table": "customer",
+         "index": {"name": "customer_email", "kind": "unique", "columns": ["email"]}},
+        {"op": "set_table_options", "table": "customer", "options": {"comment": "Buyers"}},
+        {"op": "rename_table", "table": "customer", "new_name": "client"},
+    ], base_hash(path), lsp_path=EDIT_LSP)
+    kept = pending(path)["240"]
+    # One ALTER TABLE for the three edits of the table, under three comments
+    assert kept.count("ALTER TABLE `customer`") == 1
+    assert kept.count("-- msm.editSchema:") == 4
+    # The table's settings follow the rename, in the same write
+    settings_file = os.path.join(path, "msm.project.json")
+    assert settings_file in result["files"]
+    assert management.get_online_alter_settings(path, "client")["options"]["lockWait"] == 3
+    assert "customer" not in management.get_online_alter_settings(path)["setting"]["tables"]
+
+    log_path = lib.core.get_msm_schema_update_log_path()
+    start = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+    release(path, "1.0.1", "1.0.2")
+    with open(log_path) as f:
+        f.seek(start)
+        log = f.read()
+    assert log.count("ALTER TABLE `customer`:") == 1
+    assert column("SELECT TABLE_COMMENT FROM information_schema.TABLES "
+                  f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND TABLE_NAME = 'client'") == ["Buyers"]
 
 
 @needs_lsp

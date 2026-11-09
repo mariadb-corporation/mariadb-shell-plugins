@@ -666,14 +666,24 @@ class _Connection:
                 raise _ConnectionClosed()
 
             if self.session is None:
-                if self.grant_id is not None:
-                    self.session = _open_login_session(
-                        self.uri, self.mcp_user_id, self.grant_id
-                    )
-                else:
-                    self.session = _open_session(self.uri, self.kind, self.mcp_user_id)
+                self.session = self.open_new_session()
 
             return self.session
+
+    def open_new_session(self):
+        """Opens a new session on the connection, as its own is opened: the
+        URI still configured (or the sign-in's grant still alive) and the
+        user's default role applied. The caller owns it and closes it.
+
+        Raises:
+            _ConnectionClosed: If the connection has been closed (``db.close``
+                or an expiry drop): closing it ends every new session too.
+        """
+        if self.closed:
+            raise _ConnectionClosed()
+        if self.grant_id is not None:
+            return _open_login_session(self.uri, self.mcp_user_id, self.grant_id)
+        return _open_session(self.uri, self.kind, self.mcp_user_id)
 
     def close(self) -> None:
         """Ends the connection for good, closing its session.
@@ -1189,6 +1199,31 @@ def connection_credentials(connection_id: str, client) -> tuple:
     return connection.uri, _configured_password(
         connection.uri, connection.kind, connection.mcp_user_id
     )
+
+
+def session_opener(connection_id: str, client):
+    """:meth:`_Connection.open_new_session` of a connection opened with
+    ``db.connect``, for work that needs sessions of its own (a background
+    task). Resolved here, so a wrong or foreign connection fails the call.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+        client (ClientIdentity): The identity of the requesting client.
+
+    Returns:
+        A function without arguments that returns a new open shell session,
+        which its caller closes; once the connection is closed, it raises
+        the error an unknown connection id gets.
+    """
+    connection = _get_connection(connection_id, client)
+
+    def open_session():
+        try:
+            return connection.open_new_session()
+        except _ConnectionClosed:
+            raise _no_such_connection(connection_id) from None
+
+    return open_session
 
 
 def connection_data(connection_id: str, client) -> dict:

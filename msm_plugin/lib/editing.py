@@ -40,11 +40,12 @@ Everything is written, or nothing: a failure after the first file was
 written puts every file back.
 """
 
+import json
 import os
 import re
 from typing import Optional
 
-from msm_plugin.lib import diagrams, lsp, management, modeling, source, statements
+from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, source, statements
 from msm_plugin.lib import sections as sections_lib
 
 # The sections of the pending update script, as in the update script.
@@ -396,13 +397,51 @@ def migration_statements(edits: list, migration: list, tagged: bool = True) -> t
             continue
         section_id, sql = placed
         kept.append(sql)
-        index = item.get("edit")
-        if index not in described[section_id]:
-            described[section_id].add(index)
-            if isinstance(index, int) and 0 <= index < len(edits):
-                by_section[section_id].append(f"-- msm.editSchema: {_describe(edits[index])}")
+        # A merged ALTER TABLE (merge_alters) holds several edits' clauses
+        indexes = item.get("edits") if isinstance(item.get("edits"), list) else [item.get("edit")]
+        for index in indexes:
+            if index not in described[section_id]:
+                described[section_id].add(index)
+                if isinstance(index, int) and 0 <= index < len(edits):
+                    by_section[section_id].append(
+                        f"-- msm.editSchema: {_describe(edits[index])}")
         by_section[section_id].append(f"{sql};")
     return {section_id: "\n".join(lines) for section_id, lines in by_section.items()}, kept
+
+
+def online_alter_settings_text(text: Optional[str], edits: list) -> Optional[str]:
+    """msm.project.json's text with the `onlineAlter` entries of tables the
+    edits rename moved to the new names and those of dropped tables
+    removed, in the edits' order; None where nothing changes.
+    """
+    if text is None:
+        return None
+    try:
+        settings = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    setting = settings.get(online_alter.SETTING) if isinstance(settings, dict) else None
+    tables = setting.get("tables") if isinstance(setting, dict) else None
+    if not isinstance(tables, dict) or not tables:
+        return None
+
+    def change(tables):
+        for edit in edits:
+            # Case aside, as the diagrams follow the edits (diagrams.same_name)
+            key = next((name for name in tables if diagrams.same_name(name, edit.get("table"))),
+                       None)
+            if key is None:
+                continue
+            if edit.get("op") == "rename_table":
+                tables[edit.get("new_name")] = tables.pop(key)
+            elif edit.get("op") == "drop_table":
+                tables.pop(key)
+
+    setting = online_alter.with_tables(setting, change)
+    if setting is None:
+        return None
+    settings[online_alter.SETTING] = setting
+    return json.dumps(settings, indent=4)
 
 
 # -----------------------------------------------------------------------------
@@ -499,12 +538,12 @@ def edit_schema(
         )
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
-    result = lsp.edit(
-        binary,
-        script,
-        project.development,
-        {"format": lsp.EDIT_FORMAT, "schema": schema_name, "edits": edits},
-    )
+    request = {"format": lsp.EDIT_FORMAT, "schema": schema_name, "edits": edits}
+    # One ALTER TABLE per table where the binary can: each one is an online
+    # ALTER TABLE of its own in a deployment, maybe a table copy of its own
+    if lsp.merges_alters(binary):
+        request["merge_alters"] = True
+    result = lsp.edit(binary, script, project.development, request)
 
     # The new texts, worked out before anything is written.
     texts = {}
@@ -557,9 +596,17 @@ def edit_schema(
         by_section, kept = migration_statements(edits, migration, lsp.tags_migration(binary))
         texts[migration_file] = (old, pending_update_text(old, project.settings, by_section))
 
+    # A renamed table keeps its online ALTER TABLE settings, a dropped one's go
+    settings_path = os.path.join(schema_project_path, "msm.project.json")
+    old_settings = sections_lib.read_if_exists(settings_path)
+    new_settings = online_alter_settings_text(old_settings, edits)
+    if new_settings is not None:
+        texts[settings_path] = (old_settings, new_settings)
+
     # The files as they are on disk, to put back: the development script's
     # old text above is the completed one (sections msm adds), not the file.
-    originals = {path: sections_lib.read_if_exists(path) for path in texts}
+    originals = {path: old if path == settings_path else sections_lib.read_if_exists(path)
+                 for path, (old, _) in texts.items()}
     originals[project.dev_file] = sections_lib.read_if_exists(project.dev_file)
     originals[_diagrams_breakout_path(project)] = sections_lib.read_if_exists(
         _diagrams_breakout_path(project)

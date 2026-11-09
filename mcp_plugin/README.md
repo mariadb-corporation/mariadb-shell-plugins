@@ -298,6 +298,10 @@ Management (`msm`) plugin:
 | `msm.generate_deployment_script` | `generate_deployment_script` |
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
 | `msm.deploy_schema` | `deploy_schema` |
+| `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
+| `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
+| `msm.get_online_alter_settings` | `get_online_alter_settings` |
+| `msm.set_online_alter_table` | `set_online_alter_table` |
 | `msm.list_projects` | `list_projects` |
 | `msm.add_project` | `add_project` |
 | `msm.update_project` | `update_project` |
@@ -776,22 +780,24 @@ column in it, so `sql.check` reports an error in a section where it is.
 
 ### Background tasks (`task`)
 
-The tools that start a background task - the `util` tools, and `dba.create_vendor_object`,
-`dba.update_vendor_object` and `dba.delete_vendor_object` - return its `task_id` at once. Three tools follow the
+The tools that start a background task - the `util` tools, `dba.create_vendor_object`,
+`dba.update_vendor_object` and `dba.delete_vendor_object`, and `msm.online_alter_table` -
+return its `task_id` at once. Three tools follow the
 tasks, whichever group started them. They are served with the `util` or the `dba` group,
-not as a group of their own.
+or with `msm` and `db` together, not as a group of their own.
 
 | MCP tool | Description |
 | --- | --- |
 | `task.get(task_id, since, wait_ms)` | The state of one task. |
-| `task.list(task_type)` | The client's tasks, oldest first, without their messages; `task_type` narrows them to `util` or `dba`. |
+| `task.list(task_type)` | The client's tasks, oldest first, without their messages; `task_type` narrows them to `util`, `dba` or `msm`. |
 | `task.cancel(task_id)` | Stops a running task. |
 
 - **`task.get`** returns:
   - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
   - the `task_type` (`util`, `dba`), `kind` (such as `dump_schemas` or `create_object`)
     and `title`, plus what the type adds: a util task's `connection_id`, a dba task's
-    `vendor`, `project` and `object_type`;
+    `vendor`, `project` and `object_type`, an msm task's `connection_id`, `schema` and
+    `table`;
   - the stages with their state, and the current stage's `progress`: `current`,
     `total`, `percent`, and `throughput`, `eta_seconds` and `items` where the stage
     measures them;

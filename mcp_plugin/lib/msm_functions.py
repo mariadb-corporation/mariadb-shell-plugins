@@ -45,8 +45,13 @@ starts without access, one an agent adds with it.
 
 from typing import Optional
 
-from mcp_plugin.lib import db_functions, general
-from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_registrar
+from mcp_plugin.lib import db_functions, general, tasks
+from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_error, tool_registrar
+
+# The tasks msm starts (msm.online_alter_table), and how many one client may
+# have running at once: each holds two sessions.
+TASK_TYPE_MSM = "msm"
+MAX_RUNNING_MSM_TASKS = 4
 
 
 # The arguments only a --gui server offers, by tool, with the lines that
@@ -976,6 +981,78 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm_modeling.rename_schema_diagram, name, new_name
         )
 
+    @tool(name="msm.get_online_alter_defaults")
+    def get_online_alter_defaults() -> dict:
+        """Returns the online ALTER TABLE options msm uses where nothing is set.
+
+        The same as `defaults` of msm.get_online_alter_settings, without a
+        project: for a live table's settings.
+
+        Returns:
+            {maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
+            maxRetries}.
+        """
+        return msm.get_online_alter_defaults()
+
+    @tool(name="msm.get_online_alter_settings")
+    async def get_online_alter_settings(
+        ctx: Context, table: Optional[str] = None, schema_project_path: Optional[str] = None
+    ) -> dict:
+        """Returns a project's online ALTER TABLE setting, and what it gives a table.
+
+        Deployments run each ALTER TABLE of an update the least disruptive way
+        the server accepts, within these limits: msm.project.json's
+        `onlineAlter`, with general values and a `tables` entry per table.
+
+        Args:
+            table: A table to resolve the options of.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            {defaults: the options where nothing is set, setting: the
+            project's setting, normalized, table, enabled: whether it is on
+            for the table, options: what the table gets (None where it is off
+            or no table is given)}. The option keys: maxRebuildBytes,
+            galeraMaxBytes, nboLock, maxLockedBytes, lockWait, maxRetries.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm.get_online_alter_settings, **_kwargs(table=table)
+        )
+
+    @tool(name="msm.set_online_alter_table")
+    async def set_online_alter_table(
+        ctx: Context,
+        table: str,
+        settings: Optional[dict] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> list:
+        """Sets a table's online ALTER TABLE settings in a schema project.
+
+        Writes the table's entry of msm.project.json's `onlineAlter` setting,
+        which deployments use for the table's ALTER TABLE statements.
+
+        Args:
+            table: The table, as named in the scripts.
+            settings: The table's settings: enabled (false runs its ALTERs as
+                written), maxRebuildBytes (largest table size for an online
+                rebuild, INPLACE or COPY; 0 = never, null = no limit),
+                galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow a Galera
+                NBO), maxLockedBytes (largest table
+                size for a step that blocks writes), lockWait (seconds per
+                attempt), maxRetries. Left out or empty, the table's entry goes
+                and it follows the project's general values.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The files written.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm.set_online_alter_table, table,
+            **_kwargs(settings=settings),
+        )
+
     @tool(name="msm.get_sql_content_from_section")
     async def get_sql_content_from_section(
         ctx: Context, file_path: str, section_id: str
@@ -1071,6 +1148,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             schema_project_path: Optional[str] = None,
             backup_directory: Optional[str] = None,
             backup: bool = False,
+            online_alter: Optional[dict] = None,
         ) -> Optional[str]:
             """Deploys a version of a database schema onto an open connection.
 
@@ -1090,6 +1168,17 @@ def register_msm_tools(server, function_groups=()) -> None:
                 backup: Whether to dump an existing schema before updating it,
                     so it can be restored if the update fails. Defaults to
                     False.
+                online_alter: This deployment's online ALTER TABLE setting,
+                    over the project's `onlineAlter` in msm.project.json. An
+                    update runs each ALTER TABLE the least disruptive way the
+                    server accepts (INSTANT, then NOCOPY, INPLACE and COPY
+                    with LOCK=NONE, then with a lock); keys: enabled (false
+                    runs them as written), maxRebuildBytes (largest table for
+                    INPLACE or COPY; 0 = never, null = no limit),
+                    galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow
+                    Galera NBO), maxLockedBytes (largest table for
+                    a step that blocks writes), lockWait (seconds per
+                    attempt), maxRetries, tables ({<table>: {the same keys}}).
 
             Returns:
                 A message describing what was deployed.
@@ -1110,6 +1199,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                             schema_project_path=schema_project_path,
                             backup_directory=backup_directory,
                             backup=backup,
+                            online_alter=online_alter,
                         ),
                     )
 
@@ -1121,3 +1211,80 @@ def register_msm_tools(server, function_groups=()) -> None:
             # tools get this for free - the SDK already runs them on a worker
             # thread - and use_session now refuses to be entered anywhere else.
             return await anyio.to_thread.run_sync(_deploy)
+
+        @tool(name="msm.online_alter_table")
+        async def online_alter_table(
+            ctx: Context,
+            connection_id: str,
+            schema: str,
+            table: str,
+            spec: str,
+            options: Optional[dict] = None,
+        ) -> dict:
+            """Starts one ALTER TABLE, run online, as a background task.
+
+            Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with
+            LOCK=NONE, then a Galera NBO where allowed, then LOCK=SHARED and
+            LOCK=EXCLUSIVE: each step either runs the change that way or is
+            refused at once, without touching data. The task runs in sessions
+            of its own; each step is a stage, with the server's progress;
+            task.cancel stops the running statement. Its result: {method,
+            applied, reason, table_size, galera, steps}; method NEEDS_EXTERNAL (applied false) means no
+            allowed step could run it and nothing was changed.
+
+            Args:
+                connection_id: The UUID returned by db.connect.
+                schema: The table's schema.
+                table: The table.
+                spec: Everything after ALTER TABLE <table>, e.g. "ADD COLUMN
+                    `note` VARCHAR(100), ADD INDEX `ix_note` (`note`)", without
+                    ALGORITHM or LOCK.
+                options: The limits: maxRebuildBytes (largest table size for an
+                    online rebuild, INPLACE or COPY; 0 = never, null = no
+                    limit; default 10 GiB),
+                    galeraMaxBytes, nboLock, maxLockedBytes (largest table size
+                    for a step that blocks writes; default no limit), lockWait
+                    (seconds per attempt, default 5), maxRetries (default 10).
+
+            Returns:
+                A dict with the task_id to follow and the task's status.
+            """
+            from msm_plugin.lib import online_alter
+
+            try:
+                limits = online_alter.Options.from_dict(options)
+                spec = online_alter.check_spec(spec)
+            except ValueError as error:
+                raise tool_error(str(error)) from error
+            client = general.get_client_identity(ctx)
+
+            # Resolved before the task starts, so that a wrong connection
+            # fails the call itself. Its sessions are opened as db.connect's
+            # are: still configured, under the user's default role.
+            # (On a worker thread: dropping an expired connection waits for it.)
+            open_session = await anyio.to_thread.run_sync(
+                db_functions.session_opener, connection_id, client
+            )
+            task = tasks.create(
+                TASK_TYPE_MSM, "online_alter_table",
+                f"ALTER TABLE `{schema}`.`{table}` online", client, MAX_RUNNING_MSM_TASKS,
+                {"connection_id": connection_id, "schema": schema, "table": table},
+            )
+
+            def work(task):
+                session = open_session()
+                try:
+                    # The second session reads the progress and stops the
+                    # statement on a cancel
+                    monitor = open_session()
+                    try:
+                        return online_alter.run_in_task(
+                            task, session, monitor, schema, table, spec, limits
+                        )
+                    finally:
+                        monitor.close()
+                finally:
+                    session.close()
+
+            tasks.start(task, work)
+            return {"task_id": task.id, "status": task.status}
