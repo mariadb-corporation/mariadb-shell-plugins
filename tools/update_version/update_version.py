@@ -13,6 +13,12 @@
 #    bumped for the release.
 # 3. The sandbox server index (mcp_plugin/lib/sandbox_server_versions.json),
 #    pointing each package at the release it is, or will be, published in.
+# 4. The lowest mariadb-restd an agent's setup accepts when it names none
+#    (DEFAULT_MINIMUM_VERSION in mcp_plugin/lib/restd.py, and the README that
+#    quotes it): the newest rest-daemon release, as the ai-plugins /release
+#    raises the launchers' MARIADB_SHELL_VERSION to the newest shell release.
+#    A stable release is preferred, and a prerelease taken only when there is
+#    no stable one, as the install scripts take them. It is never lowered.
 #
 # Each series is decided by its tag, not by its bytes. A series whose newest
 # tag is the server version the index already has, from a release that is
@@ -79,6 +85,8 @@ VERSION_PATTERN = re.compile(r"^VERSION = (\S+)$", re.MULTILINE)
 
 SHELL_REPO = "mariadb-corporation/mariadb-shell"
 SHELL_VERSION_BRANCH = "main"
+RESTD_REPO = "mariadb-corporation/rest-daemon"
+RESTD_TAG_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 SERVER_SOURCE_REPO = "https://github.com/MariaDB/server"
 SANDBOX_SERVER_WORKFLOW = "sandbox-server.yml"
 
@@ -166,6 +174,22 @@ PLUGIN_TARGETS = [
 ]
 
 
+# The files that quote the lowest mariadb-restd an agent's setup accepts by
+# default, the floor ``latest_restd_release`` raises.
+RESTD_TARGETS = [
+    {
+        "file": "mcp_plugin/lib/restd.py",
+        "pattern": re.compile(r'^DEFAULT_MINIMUM_VERSION = "([^"]+)"$', re.MULTILINE),
+        "replacement": 'DEFAULT_MINIMUM_VERSION = "{v}"',
+    },
+    {
+        "file": "mcp_plugin/README.md",
+        "pattern": re.compile(r"else `MARIADB_RESTD_VERSION`, else \d+\.\d+\.\d+"),
+        "replacement": "else `MARIADB_RESTD_VERSION`, else {v}",
+    },
+]
+
+
 def read_current_version() -> str:
     content = VERSION_FILE.read_text(encoding="utf-8")
     match = VERSION_PATTERN.search(content)
@@ -229,6 +253,44 @@ def read_shell_version(branch: str) -> str:
     if not (fields["MAJOR"] and fields["MINOR"] and fields["PATCH"]):
         raise SystemExit(f"MYSQL_VERSION on {SHELL_REPO}@{branch} is missing MAJOR/MINOR/PATCH -- got:\n{raw}")
     return f"{fields['MAJOR']}.{fields['MINOR']}.{fields['PATCH']}{fields['EXTRA']}"
+
+
+def latest_restd_release() -> str:
+    """Returns the newest mariadb-restd release's version, such as '26.11.0'.
+
+    Published releases only, drafts never; a stable one preferred, and the
+    newest prerelease only when there is no stable release at all -- as the
+    install scripts and the ai-plugins launchers take them.
+    """
+    releases = gh_json(
+        "api", "--paginate", "--slurp", f"repos/{RESTD_REPO}/releases?per_page=100"
+    )
+    stable, prerelease = [], []
+    for page in releases:
+        for release in page:
+            match = RESTD_TAG_PATTERN.match(release.get("tag_name") or "")
+            if release.get("draft") or match is None:
+                continue
+            version = tuple(int(part) for part in match.groups())
+            (prerelease if release.get("prerelease") else stable).append(version)
+    newest = max(stable or prerelease, default=None)
+    if newest is None:
+        raise SystemExit(f"{RESTD_REPO} has no published vX.Y.Z release.")
+    return "{}.{}.{}".format(*newest)
+
+
+def read_restd_floor() -> str:
+    """Returns the current DEFAULT_MINIMUM_VERSION in mcp_plugin/lib/restd.py."""
+    target = RESTD_TARGETS[0]
+    content = (REPO_ROOT / target["file"]).read_text(encoding="utf-8")
+    match = target["pattern"].search(content)
+    if not match:
+        raise SystemExit(f'Could not find DEFAULT_MINIMUM_VERSION in {target["file"]}')
+    return match.group(1)
+
+
+def version_tuple(version: str) -> tuple:
+    return tuple(int(part) for part in version.split("."))
 
 
 def latest_server_tags() -> dict:
@@ -630,11 +692,15 @@ def plan_server_index(release_tag: str, refresh: set):
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Bump the plugin suite version, the MariaDB Shell version it is released with, "
-        "and the sandbox server index for that shell release."
+        "the sandbox server index for that shell release, and the default mariadb-restd floor."
     )
     parser.add_argument(
         "--shell-branch", default=SHELL_VERSION_BRANCH,
         help=f"Shell repo branch to read MYSQL_VERSION from (default: {SHELL_VERSION_BRANCH}).",
+    )
+    parser.add_argument(
+        "--restd-version", metavar="X.Y.Z",
+        help=f"The mariadb-restd floor to set instead of the newest {RESTD_REPO} release.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing files.")
     parser.add_argument(
@@ -659,7 +725,22 @@ def main() -> int:
         return 1
     print(f"New plugin version: {new_version}")
 
+    current_floor = read_restd_floor()
+    if args.restd_version:
+        restd_floor = args.restd_version.strip().lstrip("vV")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", restd_floor):
+            print(f'--restd-version "{args.restd_version}" is not X.Y.Z -- aborting.')
+            return 1
+    else:
+        print(f"Reading the newest mariadb-restd release from {RESTD_REPO}...")
+        restd_floor = latest_restd_release()
+    if version_tuple(restd_floor) < version_tuple(current_floor):
+        print(f"mariadb-restd {restd_floor} is below the current floor {current_floor}; keeping {current_floor}.")
+        restd_floor = current_floor
+    print(f"mariadb-restd floor: {current_floor} -> {restd_floor}")
+
     plans = [plan_update(target, new_version) for target in PLUGIN_TARGETS]
+    plans += [plan_update(target, restd_floor) for target in RESTD_TARGETS]
     failed = [p for p in plans if not p["ok"]]
     if failed:
         print("Refusing to write anything -- some files didn't match as expected:")
@@ -694,7 +775,7 @@ def main() -> int:
             written += 1
 
     print(f"\nUpdated {written} files: plugins {new_version}, shell {shell_version}, "
-          f"sandbox servers for {release_tag}.")
+          f"sandbox servers for {release_tag}, mariadb-restd floor {restd_floor}.")
     print(f"Review with \"git diff\", then commit as: Updating version to {new_version}")
     return 0
 
