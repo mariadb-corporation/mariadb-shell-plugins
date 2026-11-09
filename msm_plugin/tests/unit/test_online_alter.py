@@ -102,7 +102,8 @@ def test_the_first_step_the_server_accepts_applies_the_change():
         "ALTER TABLE `shop`.`orders` ADD INDEX `ix` (`a`), ALGORITHM=NOCOPY, LOCK=NONE",
     ]
     assert [step["outcome"] for step in result.steps] == ["refused", "applied"]
-    assert [event["event"] for event in events] == ["step", "refused", "step"]
+    assert [event["event"] for event in events] == ["step", "refused", "step", "applied"]
+    assert all(isinstance(event["seconds"], float) for event in events[1::2])
     # The session's lock_wait_timeout is put back
     assert session.statements[-1] == "SET SESSION lock_wait_timeout = 50"
 
@@ -592,7 +593,7 @@ class FakeTask:
         self.events.append(("started", stage))
 
     def stage_finished(self, stage, seconds=None):
-        self.events.append(("finished", stage))
+        self.events.append(("finished", stage, seconds))
 
     def message(self, text, level="info"):
         self.events.append(("message", level, text))
@@ -606,14 +607,17 @@ def test_a_task_reports_each_step_as_a_stage():
     task = FakeTask()
     result = online_alter.run_in_task(task, session, None, "shop", "orders", "ADD INDEX (`a`)")
     assert result["method"] == NOCOPY and result["applied"] is True
+    # Each stage ends with its step's seconds
+    seconds = [step["seconds"] for step in result["steps"]]
     assert task.events == [
         ("started", INSTANT),
+        ("finished", INSTANT, seconds[0]),
         ("message", "info", f"INSTANT refused: {REFUSED}"),
-        ("finished", INSTANT),
         ("started", NOCOPY),
-        ("finished", NOCOPY),
+        ("finished", NOCOPY, seconds[1]),
         ("message", "info", "Applied with NOCOPY."),
     ]
+    assert all(isinstance(value, float) for value in seconds)
     assert task.canceller is not None
 
 
@@ -672,6 +676,7 @@ def test_a_task_on_the_sandbox_reports_the_copys_progress(server):
     assert task.result["method"] == COPY
     assert [stage["name"] for stage in task.stages] == [INSTANT, NOCOPY, INPLACE, COPY]
     assert all(stage["status"] == "completed" for stage in task.stages)
+    assert all(stage["seconds"] is not None for stage in task.stages)
     assert any(message["text"].startswith("COPY: ") for message in task.messages)
 
 

@@ -486,8 +486,10 @@ def alter_table(
             progress is read from information_schema.PROCESSLIST while it
             runs, and a cancel stops the running statement (KILL QUERY);
             without it a cancel waits for the step to end.
-        on_event: Called with {event: step | refused | skipped | retry |
-            progress, method, ...} as the change goes; it must not raise.
+        on_event: Called with {event: step | applied | refused | skipped |
+            retry | progress, method, ...} as the change goes (applied,
+            refused and skipped with seconds and message); it must not
+            raise.
         cancel: Set to cancel; OnlineAlterCancelled is raised.
         poll_interval: Seconds between two reads of the progress.
         sleep: Waits between attempts where there is no cancel event.
@@ -527,8 +529,7 @@ def alter_table(
         result.steps.append(
             {"method": method, "outcome": outcome, "seconds": seconds, "message": message}
         )
-        if outcome != "applied":
-            emit({"event": outcome, "method": method, "message": message})
+        emit({"event": outcome, "method": method, "seconds": seconds, "message": message})
 
     for method, why in skipped:
         record(method, "skipped", message=why)
@@ -781,22 +782,18 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
     """
     cancel = threading.Event()
     task.set_canceller(cancel.set)
-    stage, state, percent_done = None, None, 0.0
-
-    def finish_stage():
-        nonlocal stage
-        if stage is not None:
-            task.stage_finished(stage)
-            stage = None
+    state, percent_done = None, 0.0
 
     def on_event(event):
-        nonlocal stage, state, percent_done
+        nonlocal state, percent_done
         kind, method = event["event"], event.get("method")
         if kind == "step":
-            finish_stage()
-            stage, state, percent_done = method, None, 0.0
+            state, percent_done = None, 0.0
             task.stage_started(method)
+        elif kind == "applied":
+            task.stage_finished(method, event["seconds"])
         elif kind == "refused":
+            task.stage_finished(method, event["seconds"])
             task.message(f"{method} refused: {event['message']}")
         elif kind == "skipped":
             task.message(f"{method} skipped: {event['message']}")
@@ -819,7 +816,6 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
 
     result = alter_table(session, schema, table, spec, options, monitor=monitor,
                          on_event=on_event, cancel=cancel, poll_interval=poll_interval)
-    finish_stage()
     if result.applied:
         task.message(f"Applied with {result.method}"
                      + (f": {result.reason}." if result.reason else "."))
