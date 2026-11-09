@@ -43,6 +43,7 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
+from mcp_plugin.lib import restd
 from mcp_plugin.lib.tool_registrar import tool_error
 
 # Followed by the git ref - a release's tag, or main - and the script's name.
@@ -88,21 +89,15 @@ def script_url(tag: str = None) -> str:
     return f"{INSTALL_SCRIPT_BASE_URL}{tag or 'main'}/{name}"
 
 
-def _download(url: str, pinned: bool) -> bytes:
+def _download(url: str) -> bytes:
     try:
         with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:
             return response.read()
     except (urllib.error.URLError, OSError) as error:
-        # A pinned install is the VS Code extension's, whose user passes no
-        # restd_path: the URL and the cause are what helps there, as in the
-        # extension's own error for the shell.
-        advice = (
-            "" if pinned
-            else " Install mariadb-restd and put it on the PATH, or pass restd_path."
-        )
+        # The URL and the cause, as in the extension's own error for the shell.
         raise tool_error(
             f"The mariadb-restd installer could not be downloaded from "
-            f"{url}: {error}.{advice}"
+            f"{url}: {error}."
         ) from error
 
 
@@ -165,14 +160,6 @@ def _format_command(command: list, env: dict) -> str:
         json.dumps(part) if re.search(r"\s", part) else part
         for part in shown + command
     )
-
-
-def _text(output) -> str:
-    if output is None:
-        return ""
-    if isinstance(output, bytes):
-        return output.decode("utf-8", errors="replace")
-    return output
 
 
 def _read_output(output: str, log: list) -> list:
@@ -240,8 +227,6 @@ def _lock_busy(path: str) -> bool:
     """Whether a lock folder belongs to a live install, as the launchers'
     lock_busy: one of the PIDs in its files runs, or it has none yet and is
     under a minute old (its owner is between creating it and writing one)."""
-    from mcp_plugin.lib import restd
-
     if not os.path.isdir(path):
         return False
     pids = []
@@ -286,6 +271,9 @@ class InstallTurn:
         self.install_lock = os.path.join(prefix, INSTALL_LOCK)
         self.log = log
         self.held = False
+        # Whether another install was waited for: one that has usually put a
+        # good enough mariadb-restd in place by the time the turn comes.
+        self.waited = False
         self.installer_pid = None
 
     def take(self, sleep=time.sleep) -> bool:
@@ -306,32 +294,9 @@ class InstallTurn:
         except OSError:
             pass
         while True:
-            if _lock_busy(self.install_lock):
-                who = f"an install already running ({self.install_lock})"
-            else:
-                try:
-                    os.mkdir(self.lock)
-                except FileExistsError:
-                    if _lock_busy(self.lock):
-                        who = f"another install of mariadb-restd (lock {self.lock})"
-                    else:
-                        # Renamed, not removed, so only one waiter clears it.
-                        self.log(f"clearing a lock left by an install that is gone: {self.lock}")
-                        stale = f"{self.lock}.stale.{os.getpid()}"
-                        try:
-                            os.rename(self.lock, stale)
-                            shutil.rmtree(stale, ignore_errors=True)
-                        except OSError:
-                            pass
-                        continue
-                except OSError:
-                    self.log(f"cannot create the lock {self.lock}; installing without it")
-                    return True
-                else:
-                    with open(os.path.join(self.lock, "pid"), "w", encoding="utf-8") as file:
-                        file.write(f"{os.getpid()}\n")
-                    self.held = True
-                    return True
+            who = self._claim()
+            if who is None:
+                return True
             waited = int(time.monotonic() - started)
             if waited >= wait:
                 self.log(f"gave up after {waited}s waiting for {who}")
@@ -342,7 +307,39 @@ class InstallTurn:
                     if next_note == 0 else f"still waiting for {who} ({waited}s)"
                 )
                 next_note = waited + 10
+            self.waited = True
             sleep(1)
+
+    def _claim(self) -> Optional[str]:
+        """Tries once to hold the lock.
+
+        Returns:
+            None once it is held, or where it cannot be made and the install
+            goes on without it; else who has to finish first.
+        """
+        if _lock_busy(self.install_lock):
+            return f"an install already running ({self.install_lock})"
+        try:
+            os.mkdir(self.lock)
+        except FileExistsError:
+            if _lock_busy(self.lock):
+                return f"another install of mariadb-restd (lock {self.lock})"
+            # Renamed, not removed, so only one waiter clears it.
+            self.log(f"clearing a lock left by an install that is gone: {self.lock}")
+            stale = f"{self.lock}.stale.{os.getpid()}"
+            try:
+                os.rename(self.lock, stale)
+            except OSError:
+                return f"a lock that could not be cleared ({self.lock})"
+            shutil.rmtree(stale, ignore_errors=True)
+            return self._claim()
+        except OSError:
+            self.log(f"cannot create the lock {self.lock}; installing without it")
+            return None
+        with open(os.path.join(self.lock, "pid"), "w", encoding="utf-8") as file:
+            file.write(f"{os.getpid()}\n")
+        self.held = True
+        return None
 
     def add_installer(self, pid: int) -> None:
         """Puts the installer's PID into the lock, so it outlives this server."""
@@ -356,8 +353,6 @@ class InstallTurn:
 
     def release(self) -> None:
         """Gives the lock back, unless its installer still runs."""
-        from mcp_plugin.lib import restd
-
         if not self.held:
             return
         self.held = False
@@ -399,7 +394,7 @@ def install(tag: str = None, on_start=None) -> str:
     """
     url = script_url(tag)
     name = f"mariadb-restd {tag.lstrip('vV')}" if tag else "the newest mariadb-restd release"
-    script = _download(url, bool(tag))
+    script = _download(url)
 
     env = dict(os.environ)
     # The scripts read any non-empty value as "take prereleases", so it is
@@ -463,7 +458,7 @@ def install(tag: str = None, on_start=None) -> str:
             try:
                 completed = _run(command, run_env, on_start)
             except subprocess.TimeoutExpired as error:
-                _read_output(_text(error.stdout), log)
+                _read_output(error.stdout or "", log)
                 log.append(f"The installer was stopped after {INSTALL_TIMEOUT}s.")
                 raise tool_error(
                     f"{name} could not be installed: the installer did not "
@@ -474,13 +469,7 @@ def install(tag: str = None, on_start=None) -> str:
                     f"The mariadb-restd installer could not be run "
                     f"({command[0]}): {error}"
                 ) from error
-            # stderr is merged into stdout; a test's stand-in may still set it.
-            output = "\n".join(
-                part for part in (
-                    _text(completed.stdout), _text(getattr(completed, "stderr", None))
-                ) if part
-            )
-            diagnostics = _read_output(output, log)
+            diagnostics = _read_output(completed.stdout or "", log)
             seconds = time.monotonic() - started
             log.append(
                 f"The installer exited with code {completed.returncode} "

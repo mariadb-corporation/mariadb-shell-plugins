@@ -382,6 +382,33 @@ def format_version(version: tuple) -> str:
     return ".".join(str(part) for part in version)
 
 
+def require_version(text: Optional[str], source: str) -> Optional[str]:
+    """A version given as text, such as '26.10.1' or 'v26.10.1', as x.y.z.
+
+    Args:
+        text (str): What was given; None or blank for nothing.
+        source (str): What gave it, for the error: 'restd_version',
+            'MARIADB_RESTD_TAG'.
+
+    Returns:
+        The version without its 'v', or None if nothing was given.
+
+    Raises:
+        ToolError: If it is not <major>.<minor>.<patch>.
+    """
+    version = (text or "").strip().lstrip("vV")
+    if not version:
+        return None
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise tool_error(f"{source} has to be <major>.<minor>.<patch>, not '{text}'.")
+    return version
+
+
+def first_line(text: str) -> str:
+    """The first line of a message: an error's headline, a command's answer."""
+    return (text or "").strip().split("\n")[0]
+
+
 def _ignore(_message: str) -> None:
     """A log nobody wants."""
 
@@ -417,7 +444,7 @@ def _version_output(executable: str, log) -> Optional[str]:
         return None
 
     if completed.returncode != 0:
-        detail = (completed.stderr or "").strip().split("\n")[0]
+        detail = first_line(completed.stderr)
         log(
             f"{probe} failed: exit code {completed.returncode}"
             + (f" - {detail}" if detail else "")
@@ -433,38 +460,37 @@ def restd_version(executable: str, log=_ignore) -> Optional[tuple]:
     return None if output is None else parse_version_output(output)
 
 
-def _probe(executable: str, minimum: tuple, log) -> tuple:
+def _probe(executable: str, minimum: tuple, log) -> Optional[str]:
     """Probes an executable, as the extension's locator probes the shell.
 
     Returns:
-        (version, None) if it is new enough, else (None, why it is not used).
+        Why it is not used, or None if it is new enough.
     """
     output = _version_output(executable, log)
     if output is None:
-        return None, "could not be run"
+        return "could not be run"
 
     version = parse_version_output(output)
     if version is None:
-        first = output.strip().split("\n")[0]
-        return None, f'printed no version that could be read ("{first}")'
+        return f'printed no version that could be read ("{first_line(output)}")'
 
     if version < minimum:
-        return None, (
+        return (
             f"is {format_version(version)}, older than the "
             f"{format_version(minimum)} required"
         )
 
-    return version, None
+    return None
 
 
-def _installations() -> tuple:
+def _installations(log) -> tuple:
     """The releases the install script unpacked, as the extension lists the
     shell's (``listInstallations``): only the folders below the prefix that
     name a version are its; anything else there is something it did not put
     there.
 
     Returns:
-        (prefix, every folder in it, [(name, version)] newest first).
+        (prefix, [(folder, version)] newest first).
     """
     prefix = install_prefix()
     try:
@@ -474,15 +500,19 @@ def _installations() -> tuple:
         )
     except OSError:
         entries = []
+    log(
+        f"Local installations in {prefix}: {', '.join(entries)}"
+        if entries else f"No local installations in {prefix}."
+    )
 
-    installations = [
-        (name, version)
-        for name, version in ((name, parse_version(name)) for name in entries)
-        if version is not None
-    ]
+    installations = []
+    for name in entries:
+        version = parse_version(name)
+        if version is not None:
+            installations.append((name, version))
     installations.sort(key=lambda entry: entry[1], reverse=True)
 
-    return prefix, entries, installations
+    return prefix, installations
 
 
 def _is_executable(path: str) -> bool:
@@ -536,9 +566,8 @@ def find_restd(
             return candidate
         raise tool_error(f"There is no {RESTD_NAME} executable at '{restd_path}'.")
 
+    minimum_version = require_version(minimum_version, "The minimum version")
     minimum = None if minimum_version is None else parse_version(minimum_version)
-    if minimum_version is not None and minimum is None:
-        raise tool_error(f"Invalid minimum {RESTD_NAME} version: {minimum_version}")
 
     name = _binary_name()
     log(f"Looking for {name} on the PATH: {os.environ.get('PATH', '')}")
@@ -547,18 +576,12 @@ def find_restd(
         log(f"  {name} is not on the PATH.")
     else:
         found = os.path.abspath(found)
-        if minimum is None:
-            return found
-        version, problem = _probe(found, minimum, log)
-        if version is not None:
+        problem = None if minimum is None else _probe(found, minimum, log)
+        if problem is None:
             return found
         log(f"  {name} on the PATH ({found}) {problem}; not used.")
 
-    prefix, entries, installations = _installations()
-    log(
-        f"Local installations in {prefix}: {', '.join(entries)}"
-        if entries else f"No local installations in {prefix}."
-    )
+    prefix, installations = _installations(log)
     for folder, version in installations:
         if minimum is not None and version < minimum:
             log(f"  {folder} is older than {format_version(minimum)}; not used.")
@@ -569,16 +592,11 @@ def find_restd(
             log(f"  {folder} has no {binary}; not used.")
             continue
 
-        if minimum is None:
-            return binary
-
         # The folder's name is only a hint: what the binary reports wins.
-        reported, problem = _probe(binary, minimum, log)
-        if reported is None:
-            log(f"  {binary} {problem}; not used.")
-            continue
-
-        return binary
+        problem = None if minimum is None else _probe(binary, minimum, log)
+        if problem is None:
+            return binary
+        log(f"  {binary} {problem}; not used.")
 
     return None
 

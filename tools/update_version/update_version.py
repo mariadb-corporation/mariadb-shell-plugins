@@ -179,7 +179,7 @@ PLUGIN_TARGETS = [
 RESTD_TARGETS = [
     {
         "file": "mcp_plugin/lib/restd.py",
-        "pattern": re.compile(r'^DEFAULT_MINIMUM_VERSION = "[^"]+"$', re.MULTILINE),
+        "pattern": re.compile(r'^DEFAULT_MINIMUM_VERSION = "([^"]+)"$', re.MULTILINE),
         "replacement": 'DEFAULT_MINIMUM_VERSION = "{v}"',
     },
     {
@@ -283,7 +283,7 @@ def read_restd_floor() -> str:
     """Returns the current DEFAULT_MINIMUM_VERSION in mcp_plugin/lib/restd.py."""
     target = RESTD_TARGETS[0]
     content = (REPO_ROOT / target["file"]).read_text(encoding="utf-8")
-    match = re.search(r'^DEFAULT_MINIMUM_VERSION = "([^"]+)"$', content, re.MULTILINE)
+    match = target["pattern"].search(content)
     if not match:
         raise SystemExit(f'Could not find DEFAULT_MINIMUM_VERSION in {target["file"]}')
     return match.group(1)
@@ -725,14 +725,6 @@ def main() -> int:
         return 1
     print(f"New plugin version: {new_version}")
 
-    plans = [plan_update(target, new_version) for target in PLUGIN_TARGETS]
-    failed = [p for p in plans if not p["ok"]]
-    if failed:
-        print("Refusing to write anything -- some files didn't match as expected:")
-        for p in failed:
-            print(f"  {p['file']}: {p['reason']}")
-        return 1
-
     current_floor = read_restd_floor()
     if args.restd_version:
         restd_floor = args.restd_version.strip().lstrip("vV")
@@ -746,14 +738,15 @@ def main() -> int:
         print(f"mariadb-restd {restd_floor} is below the current floor {current_floor}; keeping {current_floor}.")
         restd_floor = current_floor
     print(f"mariadb-restd floor: {current_floor} -> {restd_floor}")
-    restd_plans = [plan_update(target, restd_floor) for target in RESTD_TARGETS]
-    failed = [p for p in restd_plans if not p["ok"]]
+
+    plans = [plan_update(target, new_version) for target in PLUGIN_TARGETS]
+    plans += [plan_update(target, restd_floor) for target in RESTD_TARGETS]
+    failed = [p for p in plans if not p["ok"]]
     if failed:
         print("Refusing to write anything -- some files didn't match as expected:")
         for p in failed:
             print(f"  {p['file']}: {p['reason']}")
         return 1
-    plans.extend(restd_plans)
 
     index_plan, server_tags, expiry = plan_server_index(release_tag, set(args.refresh))
     plans.append(index_plan)

@@ -95,14 +95,20 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   (before, the return value was dropped and a successful install left no
   record). A failure: `<name> could not be installed: <reason> (the installer
   exited with code N).` + the log, the reason from `summarize_failure` =
-  `summarizeInstallerFailure`. A pinned download failure has no restd_path
-  advice (the extension's user passes none).
-  Agent path (no `restd_version`) = the ai-plugins launchers' step 4 and after,
-  `restd_functions._install_for_agent`: `restd_install.InstallTurn` (POSIX
+  `summarizeInstallerFailure`. The "install it and put it on the PATH, or
+  pass restd_path" advice is `restd_functions._install`'s, on the agent path
+  only: the extension's user passes no restd_path. `install_output` is the
+  whole of configure_restd's log: the search (what `find_restd` looked at
+  and passed over), the turn, the installer, the search afterwards.
+  Both paths are `restd_functions._install(tag, minimum, strict, lines)`.
+  Agent path (no `restd_version`, `strict=False`) = the ai-plugins launchers'
+  step 4 and after: `restd_install.InstallTurn` (POSIX
   only, as the launchers; `.mcp-plugin.lock` in the prefix holding the
   server's and the installer's PIDs, waits for install.sh's `.install.lock`,
   stale = no PID alive / no PID and over a minute old, renamed then removed,
-  `MARIADB_RESTD_LOCK_WAIT` 180), then looks again with the minimum, installs,
+  `MARIADB_RESTD_LOCK_WAIT` 180), then looks again with the minimum - only
+  having waited (`InstallTurn.waited`), the search before the turn being a
+  moment old otherwise - installs,
   and the version decides: new enough (even after a failed install) → used;
   else any → used with `install_warning`; none → the install's error. A lock
   left to an installer that outlives the call keeps only the installer's PID:
@@ -110,7 +116,11 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   environment pins the agent path (Hermes exports it, as `MARIADB_SHELL_TAG`):
   script at that tag; the floor stays `MARIADB_RESTD_VERSION`.
   `MARIADB_RESTD_SHA256SUMS` reaches the script only with its own tag. The
-  extension's `restd_version` path stays strict: no turn, no fallback.
+  extension's `restd_version` path (`strict=True`) stays strict: no turn, no
+  fallback. `restd.require_version(text, source)` is the one place a version
+  given as text (`restd_version`, `MARIADB_RESTD_VERSION`, `MARIADB_RESTD_TAG`,
+  `find_restd`'s minimum) is normalised (`v` dropped) and refused
+  (`<source> has to be <major>.<minor>.<patch>`).
   Accepted differences from the shell's install (decided 2026-11-06, as they
   would need large changes on both sides): no streamed progress, no cancel,
   the 900s/60s limits stay (with no cancel they are what stops a hang).

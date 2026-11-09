@@ -672,10 +672,11 @@ cookies, a login session included, and it could pose as the site's login page.
      the install failed (another one finished); failing that, an older one is used, and
      the result's `install_warning` says why. Only when there is none at all does the
      setup fail.
-   The result's `install_output` is the install's log, as the VS Code extension logs the
-   shell's: the script's URL, the command it ran with, every line it printed but curl's
-   progress bars, and its exit code and duration. A failed install's error starts with
-   the reason the script gave, and then carries the same log.
+   The result's `install_output` is the log of the search and the install, as the VS Code
+   extension logs the shell's: what was looked at and why it was passed over, then the
+   script's URL, the command it ran with, every line it printed but curl's progress
+   bars, and its exit code and duration. A failed install's error starts with the
+   reason the script gave, and then carries the same log.
 4. Checks that the account can do the setup: `CREATE USER` with the `GRANT OPTION`,
    `SELECT`, `INSERT` and `UPDATE` on the metadata schema, and its roles
    `WITH ADMIN OPTION`.

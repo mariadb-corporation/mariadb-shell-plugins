@@ -222,6 +222,17 @@ def test_the_deployment_folders(home):
     assert restd.connection_deployment_dir("::1", 3306).endswith("--1_3306")
 
 
+def executable(path, version=None, body=None) -> str:
+    """A stand-in mariadb-restd at path: a script that answers --version with
+    the version given, or runs body, or does nothing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if body is None:
+        body = f"echo 'MariaDB REST Daemon  Ver {version} for Linux'" if version else ""
+    path.write_text(f"#!/bin/sh\n{body}\n")
+    path.chmod(0o755)
+    return str(path)
+
+
 def test_mariadb_restd_is_looked_for_on_the_path_then_installed(
     home, tmp_path, monkeypatch
 ):
@@ -230,12 +241,6 @@ def test_mariadb_restd_is_looked_for_on_the_path_then_installed(
         pytest.skip("POSIX layout")
 
     assert restd.find_restd() is None
-
-    def executable(path):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("#!/bin/sh\n")
-        path.chmod(0o755)
-        return str(path)
 
     prefix = home / ".local" / "share" / "mariadb-restd"
     executable(prefix / "1.9.0" / "bin" / "mariadb-restd")
@@ -272,12 +277,6 @@ def test_with_a_minimum_version_an_older_mariadb_restd_is_passed_over(
     if os.name == "nt":
         pytest.skip("POSIX layout")
 
-    def executable(path, version):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!/bin/sh\necho 'MariaDB REST Daemon  Ver {version} for Linux'\n")
-        path.chmod(0o755)
-        return str(path)
-
     prefix = home / ".local" / "share" / "mariadb-restd"
     managed = executable(prefix / "26.10.1" / "bin" / "mariadb-restd", "26.10.1")
     on_path = executable(tmp_path / "path" / "mariadb-restd", "26.10.0")
@@ -309,18 +308,12 @@ def test_the_version_is_read_as_the_extension_reads_the_shells(
     assert restd.parse_version("26.10") is None
     assert restd.parse_version_output("Ver 26.10") is None
 
-    def executable(path, body):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!/bin/sh\n{body}\n")
-        path.chmod(0o755)
-        return str(path)
-
     on_stderr = executable(
-        tmp_path / "a" / "mariadb-restd", "echo 'MariaDB REST Daemon  Ver 26.10.1' >&2"
+        tmp_path / "a" / "mariadb-restd", body="echo 'MariaDB REST Daemon  Ver 26.10.1' >&2"
     )
     assert restd.restd_version(on_stderr) == (26, 10, 1)
     failing = executable(
-        tmp_path / "b" / "mariadb-restd", "echo 'Ver 26.10.1'; echo broken >&2; exit 3"
+        tmp_path / "b" / "mariadb-restd", body="echo 'Ver 26.10.1'; echo broken >&2; exit 3"
     )
     log = []
     assert restd.restd_version(failing, log.append) is None
@@ -331,12 +324,6 @@ def test_the_search_says_what_it_passed_over_and_why(home, tmp_path, monkeypatch
     """As the extension's locator logs its search for the shell."""
     if os.name == "nt":
         pytest.skip("POSIX layout")
-
-    def executable(path, version):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!/bin/sh\necho 'MariaDB REST Daemon  Ver {version}'\n")
-        path.chmod(0o755)
-        return str(path)
 
     prefix = home / ".local" / "share" / "mariadb-restd"
     executable(tmp_path / "path" / "mariadb-restd", "26.9.0")
@@ -929,7 +916,12 @@ def test_a_missing_daemon_is_installed_in_gui_mode(configure, home, monkeypatch,
 
     assert installs == [None]
     assert result["installed"] is True
-    assert result["install_output"] == "installed"
+    # The search, the install, and the search that found what it installed.
+    log = result["install_output"].split("\n")
+    assert log[0].startswith("Looking for mariadb-restd on the PATH: /usr/bin:/bin")
+    assert log[log.index("installed") + 1].startswith(
+        f"Looking for mariadb-restd on the PATH: {os.path.dirname(fake)}:"
+    )
 
 
 def test_a_pinned_version_installs_that_release_tag(
@@ -1052,13 +1044,18 @@ def test_a_failed_agent_install_starts_the_old_daemon_with_a_warning(
 
 
 def test_a_failed_agent_install_with_no_daemon_at_all_fails(configure, home, monkeypatch):
+    """The install's own error, with what the agent's user can do about it."""
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     installs = []
     monkeypatch.setattr(restd_functions.restd_install, "install", _failing_install(installs))
 
-    with pytest.raises(Exception, match="no network"):
+    with pytest.raises(Exception, match="no network") as raised:
         configure(schemas=["mariadb_rest_service"], port=helpers.find_free_port())
     assert installs == [None]
+    assert str(raised.value).startswith(
+        "mariadb-restd could not be installed: no network Install mariadb-restd "
+        "and put it on the PATH, or pass restd_path."
+    )
 
 
 def test_a_failed_pinned_install_does_not_fall_back(configure, home, monkeypatch):
@@ -1086,6 +1083,7 @@ def test_an_agent_install_looks_again_once_it_has_its_turn(
 
     def take_after_another_install(turn, *args, **kwargs):
         monkeypatch.setenv("FAKE_RESTD_VERSION", restd.DEFAULT_MINIMUM_VERSION)
+        turn.waited = True
         return take(turn, *args, **kwargs)
 
     monkeypatch.setattr(restd_install.InstallTurn, "take", take_after_another_install)
@@ -1341,20 +1339,28 @@ def test_the_install_falls_back_to_a_prerelease_as_the_shell_does(tmp_path, monk
         restd_install.install()
 
 
+class _Completed:
+    """What a stand-in for restd_install._run returns."""
+
+    def __init__(self, returncode=0):
+        self.returncode, self.stdout = returncode, ""
+
+
+def _stub_installer(monkeypatch, run):
+    """Has install() run its script through run(command, env, on_start)."""
+    monkeypatch.setattr(restd_install, "_download", lambda url: b"")
+    monkeypatch.setattr(restd_install, "_run", run)
+
+
 def test_on_windows_the_prerelease_is_asked_for_through_the_environment(monkeypatch):
     """As the shell's .cmd launcher does: MARIADB_RESTD_PRERELEASE=1."""
     runs = []
-
-    class _Completed:
-        def __init__(self, returncode):
-            self.returncode, self.stdout, self.stderr = returncode, "", ""
 
     def run(command, env, on_start=None):
         runs.append((command, env.get("MARIADB_RESTD_PRERELEASE")))
         return _Completed(1 if len(runs) == 1 else 0)
 
-    monkeypatch.setattr(restd_install, "_download", lambda url, pinned: b"")
-    monkeypatch.setattr(restd_install, "_run", run)
+    _stub_installer(monkeypatch, run)
     monkeypatch.delenv("MARIADB_RESTD_PRERELEASE", raising=False)
     monkeypatch.setattr(restd_install.os, "name", "nt")
     try:
@@ -1386,15 +1392,11 @@ def test_the_install_script_is_the_pinned_releases_own_as_the_shells_is(monkeypa
 def test_install_sh_is_run_with_posix_sh_as_the_shells_is(monkeypatch):
     runs = []
 
-    class _Completed:
-        returncode, stdout, stderr = 0, "", ""
-
     def run(command, env, on_start=None):
         runs.append(command)
         return _Completed()
 
-    monkeypatch.setattr(restd_install, "_download", lambda url, pinned: b"")
-    monkeypatch.setattr(restd_install, "_run", run)
+    _stub_installer(monkeypatch, run)
     monkeypatch.setattr(restd_install.os, "name", "posix")
     try:
         restd_install.install("v1")
@@ -1409,15 +1411,11 @@ def test_install_ps1_is_run_remote_signed_as_the_shells_is(monkeypatch):
     """The extension's buildInstallCommand: RemoteSigned, never Bypass."""
     runs = []
 
-    class _Completed:
-        returncode, stdout, stderr = 0, "", ""
-
     def run(command, env, on_start=None):
         runs.append(command)
         return _Completed()
 
-    monkeypatch.setattr(restd_install, "_download", lambda url, pinned: b"")
-    monkeypatch.setattr(restd_install, "_run", run)
+    _stub_installer(monkeypatch, run)
     monkeypatch.setattr(restd_install.os, "name", "nt")
     try:
         restd_install.install("v1")
@@ -1524,7 +1522,8 @@ def test_the_failure_reason_is_picked_as_the_shells_is(lines, reason):
 def test_a_pinned_install_script_that_cannot_be_downloaded_names_only_the_cause(
     tmp_path, monkeypatch
 ):
-    """The extension's user passes no restd_path: no advice to."""
+    """The extension's user passes no restd_path: the advice to is the
+    agent path's (configure_restd), not the installer's."""
     monkeypatch.setattr(
         restd_install, "INSTALL_SCRIPT_BASE_URL", (tmp_path / "missing").as_uri() + "/"
     )
@@ -1537,15 +1536,11 @@ def test_committed_checksums_go_only_with_their_own_tag(monkeypatch):
     """The Hermes launchers export MARIADB_RESTD_SHA256SUMS for MARIADB_RESTD_TAG."""
     seen = []
 
-    class _Completed:
-        returncode, stdout, stderr = 0, "", ""
-
     def run(command, env, on_start=None):
         seen.append(env.get("MARIADB_RESTD_SHA256SUMS"))
         return _Completed()
 
-    monkeypatch.setattr(restd_install, "_download", lambda url, pinned: b"")
-    monkeypatch.setattr(restd_install, "_run", run)
+    _stub_installer(monkeypatch, run)
     monkeypatch.setenv("MARIADB_RESTD_TAG", "v26.11.0")
     monkeypatch.setenv("MARIADB_RESTD_SHA256SUMS", "/plugin/mariadb-restd-v26.11.0.SHA256SUMS")
     monkeypatch.setenv("MARIADB_RESTD_PRERELEASE", "0")
@@ -1628,14 +1623,6 @@ def test_the_lock_is_left_to_an_installer_that_outlives_the_server(turn_prefix):
     turn = restd_install.InstallTurn(str(turn_prefix), lambda message: None)
     assert turn.take() is True
     turn.release()
-
-
-def test_an_install_script_that_cannot_be_downloaded_says_what_to_do(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        restd_install, "INSTALL_SCRIPT_BASE_URL", (tmp_path / "missing").as_uri() + "/"
-    )
-    with pytest.raises(Exception, match="put it on the PATH"):
-        restd_install.install()
 
 
 # --- for real ------------------------------------------------------------------
