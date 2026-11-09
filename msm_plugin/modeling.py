@@ -245,6 +245,27 @@ def remove_schema_diagram(name: str, **kwargs) -> list:
     return lib.modeling.remove_diagram(_project(kwargs), name)
 
 
+@plugin_function("msm.renameSchemaDiagram", shell=True, cli=True, web=True)
+def rename_schema_diagram(name: str, new_name: str, **kwargs) -> list:
+    """Renames a diagram of a schema project
+
+    Only the name changes; the diagram's figures, pictures and place among the diagrams stay.
+    The new name may not be one another diagram of the project has, in any case.
+
+    Args:
+        name (str): The name of the diagram.
+        new_name (str): Its new name.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+
+    Returns:
+        The files written.
+    """
+    return lib.modeling.rename_diagram(_project(kwargs), name, new_name)
+
+
 @plugin_function("msm.createSchemaDiagram", shell=True, cli=True, web=True)
 def create_schema_diagram(name: str, **kwargs) -> dict:
     """Adds a diagram of the schema's tables to a schema project, laid out
