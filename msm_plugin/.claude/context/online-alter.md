@@ -86,6 +86,16 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
     statements the splitter cannot balance) runs whole as one block, its
     ALTERs as written: split, a later part would lose the variable;
   - the rest of the script runs as written.
+  - `run_update` checks first that a step starts at the schema's version
+    and raises a ValueError otherwise (the procedure's SIGNAL 32102): the
+    guard in `deploy_schema` reads the project's update scripts, while a
+    deployment script of an older target holds fewer steps, and without
+    the check Section 910 would stamp the target version onto an unchanged
+    schema. A statement of a step that fails is logged with its SQL (the
+    caller sees only the CALL the steps stand in for). An ALTER TABLE of a
+    table `information_schema.TABLES` does not list for the session (a
+    temporary table the step made) runs as written
+    (`online_alter.TableNotFoundError`, raised before anything ran).
   - **Top-level statements** (`statements.top_level_statements`): a
     tokenizer (quoted names, strings, comments skipped) with a stack. An
     `IF`/`BEGIN`/`CASE`/`LOOP`/`WHILE`/`REPEAT` opens a block only where a

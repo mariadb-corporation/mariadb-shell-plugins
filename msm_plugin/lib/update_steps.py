@@ -157,9 +157,19 @@ def run_update(
         log: log(level, message), the update log.
 
     Raises:
+        ValueError: Where no step of the script starts at current_version,
+            as the procedure's SIGNAL 32102; nothing has run.
         NeedsExternalToolError: Where no online step applies an ALTER TABLE.
-        Any error of a statement, unchanged.
+        Any error of a statement, unchanged (logged with the statement).
     """
+    steps = read_steps(script)
+    # As msm_create_or_update() checks (32102): without it the script's
+    # last section would stamp its version onto an unchanged schema
+    if not any(step.version_from == current_version for step in steps):
+        raise ValueError(
+            f"The schema is on version {current_version}, which this deployment "
+            "script cannot update: no update step starts there."
+        )
     session.run_sql("SET @msm_schema_init = 0")
     session.run_sql("SET @msm_current_version = ?", [current_version])
     session.run_sql(
@@ -167,18 +177,26 @@ def run_update(
         "(`major`,`minor`,`patch`) AS SELECT 0, 0, 0"
     )
     version = current_version
-    for step in read_steps(script):
+    for step in steps:
         if step.version_from != version:
             continue
         log("INFO", f"Updating from {step.version_from} to {step.version_to} ...")
         for action in step_actions(step.body):
-            if action.kind == "block":
-                if action.note:
-                    log("INFO", f"The update to {step.version_to} runs as one block: {action.note}; "
-                                "its ALTER TABLE statements run as written.")
-                session.run_sql(action.sql)
-            else:
-                _alter(session, step, action.sql, action.alter, schema_name, settings, log)
+            try:
+                if action.kind == "block":
+                    if action.note:
+                        log("INFO", f"The update to {step.version_to} runs as one block: "
+                                    f"{action.note}; its ALTER TABLE statements run as written.")
+                    session.run_sql(action.sql)
+                else:
+                    _alter(session, step, action.sql, action.alter, schema_name, settings, log)
+            except online_alter.OnlineAlterError:
+                # Logged where it is raised, or by the caller
+                raise
+            except Exception as error:
+                # The caller sees only the CALL the steps stand in for
+                log("ERROR", f"The update to {step.version_to} failed at:\n{action.sql}\n{error}")
+                raise
         version = step.version_to
 
 
@@ -197,8 +215,16 @@ def _alter(session, step, sql, parts, schema_name, settings, log) -> None:
         log("INFO", f"ALTER TABLE `{parts.table}` runs as written ({why}).")
         session.run_sql(statements.strip_statement(sql))
         return
-    result = online_alter.alter_table(
-        session, parts.schema or schema_name, parts.table, parts.spec, options)
+    try:
+        result = online_alter.alter_table(
+            session, parts.schema or schema_name, parts.table, parts.spec, options)
+    except online_alter.TableNotFoundError:
+        # A temporary table the step made, or one the session cannot see:
+        # nothing ran, and the server's own answer is the better error
+        log("INFO", f"ALTER TABLE `{parts.table}` runs as written (the table is not in "
+                    "information_schema.TABLES, e.g. a temporary table).")
+        session.run_sql(statements.strip_statement(sql))
+        return
     if not result.applied:
         log("ERROR", f"ALTER TABLE `{parts.table}`: no online step applied it: {result.reason}")
         raise NeedsExternalToolError(

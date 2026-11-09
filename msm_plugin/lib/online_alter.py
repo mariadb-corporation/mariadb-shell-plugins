@@ -120,6 +120,12 @@ class OnlineAlterCancelled(OnlineAlterError):
     the server (an ALTER TABLE is atomic)."""
 
 
+class TableNotFoundError(OnlineAlterError):
+    """information_schema.TABLES has no base table of that name for the
+    session: it does not exist, is a view, a temporary table (not listed),
+    or the session may not see it. Raised before anything is changed."""
+
+
 @dataclass
 class Options:
     """How far an online ALTER TABLE may go.
@@ -491,8 +497,10 @@ def alter_table(
 
     Raises:
         ValueError: For a spec check_spec refuses, or bad options.
-        OnlineAlterError: For a missing table, a Galera session on RSU, or a
-            metadata lock not granted after max_retries.
+        TableNotFoundError: For a table information_schema does not list
+            for the session (a temporary table among them); nothing ran.
+        OnlineAlterError: For a Galera session on RSU, or a metadata lock
+            not granted after max_retries.
         OnlineAlterCancelled: When cancelled.
         Any other server error, unchanged (a syntax error, a duplicate key).
     """
@@ -699,9 +707,9 @@ def _table_size(session, schema: str, table: str) -> int:
         [schema, table],
     )
     if size is None:
-        raise OnlineAlterError(
-            f"The table `{schema}`.`{table}` does not exist, is not a base table, "
-            "or the session may not see it."
+        raise TableNotFoundError(
+            f"The table `{schema}`.`{table}` does not exist, is not a base table "
+            "(a temporary table is none), or the session may not see it."
         )
     return int(size)
 

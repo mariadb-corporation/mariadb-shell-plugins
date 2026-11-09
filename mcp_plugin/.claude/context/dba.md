@@ -44,10 +44,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   vendor/project, never keys (None without the plugin).
 - **Task tools** (`lib/task_functions.py`): `task.get(task_id, since, wait_ms)`,
   `task.list(task_type)`, `task.cancel(task_id)`, registered in
-  `build_mcp_server` once, when `general.serves_tasks(groups)`: any of
-  `TASK_FUNCTION_GROUPS` (util, dba) is served, or all of a set in
-  `TASK_FUNCTION_GROUP_SETS` (msm + db, for `msm.online_alter_table`) -
-  not a group of their own. There are no `util.*` task
+  `build_mcp_server` once, when `general.serves_tasks(groups)`: all of
+  one of the sets in `TASK_FUNCTION_GROUPS` is served (`{util}`, `{dba}`,
+  `{msm, db}` for `msm.online_alter_table`) - not a group of their own.
+  There are no `util.*` task
   tools and no aliases for them: the user's call, as the VS Code extension
   has not been released and moves to `task.*` itself.
 - **`lib/tasks.py`** is a thin layer over the shell's `mysqlsh.task_manager`

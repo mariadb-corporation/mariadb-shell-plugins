@@ -312,3 +312,57 @@ def test_another_schemas_table_gets_the_general_values_only(monkeypatch):
     # The project's t is off; shop.t and t are it, other.t is not
     assert used == [("other", 7)]
     assert as_written == ["ALTER TABLE `shop`.t ADD c INT", "ALTER TABLE t ADD c INT"]
+
+
+def test_a_table_information_schema_does_not_list_runs_as_written(monkeypatch):
+    """A temporary table the step made: the online steps cannot size it, so
+    the statement runs as the procedure would run it."""
+    settings = online_alter.DeploymentSettings(online_alter.read_setting(None, "test"))
+    logged, as_written = [], []
+
+    def no_such_table(session, schema, table, spec, options):
+        raise online_alter.TableNotFoundError("not listed")
+
+    monkeypatch.setattr(online_alter, "alter_table", no_such_table)
+    sql = "ALTER TABLE tmp ADD INDEX ix (a)"
+    update_steps._alter(SimpleNamespace(run_sql=as_written.append),
+                        update_steps.UpdateStep("1.0.0", "1.0.1", ""), sql,
+                        statements.alter_table_parts(sql), "shop", settings,
+                        lambda level, message: logged.append(message))
+    assert as_written == [sql]
+    assert "not in information_schema.TABLES" in logged[0]
+
+
+def test_an_update_no_step_starts_at_runs_nothing():
+    """As the procedure's SIGNAL 32102: a schema on a version the script has
+    no step for is left alone, before the version VIEW is touched."""
+    script = (
+        "    -- ### MSM-UPDATE-STEP-START 1.0.0 1.0.1\n    ALTER TABLE t ADD a INT;\n"
+        "    -- ### MSM-UPDATE-STEP-END 1.0.0 1.0.1\n"
+    )
+    ran = []
+    session = SimpleNamespace(run_sql=lambda sql, params=None: ran.append(sql))
+    settings = online_alter.DeploymentSettings(online_alter.read_setting(None, "test"))
+    with pytest.raises(ValueError, match="on version 1.0.2, which this deployment script"):
+        update_steps.run_update(session, script, "shop", "1.0.2", settings,
+                                lambda level, message: None)
+    assert ran == []
+
+
+def test_a_failing_statement_of_a_step_is_logged():
+    script = (
+        "    -- ### MSM-UPDATE-STEP-START 1.0.0 1.0.1\n    UPDATE t SET a = 1;\n"
+        "    -- ### MSM-UPDATE-STEP-END 1.0.0 1.0.1\n"
+    )
+    logged = []
+
+    def run_sql(sql, params=None):
+        if sql.startswith("BEGIN NOT ATOMIC"):
+            raise RuntimeError("Duplicate entry")
+
+    settings = online_alter.DeploymentSettings(online_alter.read_setting(None, "test"))
+    with pytest.raises(RuntimeError):
+        update_steps.run_update(SimpleNamespace(run_sql=run_sql), script, "shop", "1.0.0",
+                                settings, lambda level, message: logged.append((level, message)))
+    assert logged[-1][0] == "ERROR"
+    assert "UPDATE t SET a = 1" in logged[-1][1] and "Duplicate entry" in logged[-1][1]
