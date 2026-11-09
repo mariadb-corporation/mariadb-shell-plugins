@@ -116,8 +116,8 @@ session machinery the db tools sit on is in
 - **Cross-group dependency mechanism**: `build_mcp_server` passes the full enabled-group
   list to EVERY registrar, so `register_db_tools`/`register_msm_tools`/
   `register_sandbox_tools` all take `(server, function_groups=())`. db and sandbox ignore
-  it. msm uses it to register `msm.deploy_schema` ONLY when `db` is also served — that tool
-  needs a `connection_id` from `db.connect`, so with msm alone it is left UNADVERTISED
+  it. msm uses it to register `msm.deploy_schema` and `msm.online_alter_table` ONLY when `db` is also served — those tools
+  need a `connection_id` from `db.connect`, so with msm alone it is left UNADVERTISED
   rather than exposed as something that cannot succeed. It is therefore registered LAST in
   the registrar, inside an `if` (see Gotchas — an early `return` there silently drops the
   tools defined after it).
@@ -140,8 +140,9 @@ session machinery the db tools sit on is in
   the connection-safeguards bullet above.
 
 - **dba group and task tools:** `general.FUNCTION_GROUP_DBA`; the
-  `task.*` tools are registered once after the group loop when util or dba is
-  served (`general.TASK_FUNCTION_GROUPS`); a server-instructions rule against
+  `task.*` tools are registered once after the group loop when
+  `general.serves_tasks(groups)`: util or dba served, or msm and db together
+  (`msm.online_alter_table` starts tasks); a server-instructions rule against
   asking for vendor API keys. See [dba.md](dba.md).
 
 ## Files that matter

@@ -312,7 +312,7 @@ handling are in [connections.md](connections.md).
   updating both.**
 
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
-  msm_functions also holds the db-group-gated `msm.deploy_schema`.
+  msm_functions also holds the db-group-gated `msm.deploy_schema` and `msm.online_alter_table`.
 
 ## Gotchas / things not to repeat
 
