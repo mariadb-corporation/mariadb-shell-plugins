@@ -47,7 +47,7 @@ What no step applies is ``NEEDS_EXTERNAL``: nothing changed, and the change
 is for an external tool (gh-ost, pt-online-schema-change).
 
 The table's size and Galera decide in advance which steps may run: the
-rebuilds (INPLACE, COPY) not above ``max_copy_bytes``, the locked steps
+rebuilds (INPLACE, COPY) not above ``max_rebuild_bytes``, the locked steps
 not above ``max_locked_bytes`` (no limit by default, so nothing a plain
 ALTER TABLE runs is refused); on Galera, every step but INSTANT and NBO
 runs under Total Order Isolation, which pauses the whole cluster, so only
@@ -125,7 +125,7 @@ class Options:
     """How far an online ALTER TABLE may go.
 
     Attributes:
-        max_copy_bytes: The largest table (data + indexes) the steps that
+        max_rebuild_bytes: The largest table (data + indexes) the steps that
             rebuild it online (INPLACE, COPY) may run on; None = no limit,
             0 = never.
         galera_max_bytes: On Galera, the largest table NOCOPY, INPLACE, COPY
@@ -142,7 +142,7 @@ class Options:
             2, 4, 8 ... up to MAX_BACKOFF seconds in between.
     """
 
-    max_copy_bytes: Optional[int] = 10 * GIB
+    max_rebuild_bytes: Optional[int] = 10 * GIB
     galera_max_bytes: Optional[int] = 256 * MIB
     nbo_lock: Optional[str] = None
     max_locked_bytes: Optional[int] = None
@@ -151,7 +151,7 @@ class Options:
 
     # The keys of from_dict, as msm.project.json and the tools name them
     KEYS = {
-        "maxCopyBytes": "max_copy_bytes",
+        "maxRebuildBytes": "max_rebuild_bytes",
         "galeraMaxBytes": "galera_max_bytes",
         "nboLock": "nbo_lock",
         "maxLockedBytes": "max_locked_bytes",
@@ -184,7 +184,7 @@ class Options:
 
     def validate(self) -> None:
         """Raises ValueError for a value out of range; makes nbo_lock upper case."""
-        for name in ("max_copy_bytes", "galera_max_bytes", "max_locked_bytes"):
+        for name in ("max_rebuild_bytes", "galera_max_bytes", "max_locked_bytes"):
             value = getattr(self, name)
             if value is not None and (not _is_int(value) or value < 0):
                 raise ValueError(f"`{name}` must be a number of bytes (0 or more) or None.")
@@ -210,8 +210,8 @@ def _is_int(value) -> bool:
 #
 #   "onlineAlter": {
 #       "enabled": true,                        # optional, default true
-#       "maxCopyBytes": 1073741824, ...         # any Options.KEYS
-#       "tables": {"orders": {"maxCopyBytes": 0}, "audit": {"enabled": false}}
+#       "maxRebuildBytes": 1073741824, ...         # any Options.KEYS
+#       "tables": {"orders": {"maxRebuildBytes": 0}, "audit": {"enabled": false}}
 #   }
 #
 # `true` / `false` stand for {"enabled": ...}. A missing setting is enabled
@@ -419,9 +419,9 @@ def plan(table_size: int, galera: bool, options: Options) -> tuple:
         if galera and (not options.galera_max_bytes or table_size > options.galera_max_bytes):
             return ("Galera: non-instant DDL under TOI pauses the cluster; table size "
                     f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}")
-        if method in REBUILDS and over(options.max_copy_bytes):
+        if method in REBUILDS and over(options.max_rebuild_bytes):
             return (f"online rebuilds (INPLACE, COPY) skipped: table size {table_size} > "
-                    f"max_copy_bytes {options.max_copy_bytes}")
+                    f"max_rebuild_bytes {options.max_rebuild_bytes}")
         if method in LOCKED and over(options.max_locked_bytes):
             return (f"blocking writes skipped: table size {table_size} > max_locked_bytes "
                     f"{options.max_locked_bytes}")
@@ -818,5 +818,5 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
     else:
         task.message(f"No online step applied the change, so nothing was changed: "
                      f"{result.reason}. Run it with an external tool, or allow more "
-                     "(maxCopyBytes, maxLockedBytes).", "warning")
+                     "(maxRebuildBytes, maxLockedBytes).", "warning")
     return result_dict(result)

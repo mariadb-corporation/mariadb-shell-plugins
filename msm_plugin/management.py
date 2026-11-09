@@ -781,8 +781,8 @@ def deploy_schema(**kwargs) -> str:
             name is replaced with its value before the scripts run.
         online_alter (dict): This deployment's online ALTER TABLE setting,
             over the project's `onlineAlter` in msm.project.json, e.g.
-            {"maxCopyBytes": 1073741824} or {"enabled": false}. The keys
-            are enabled, maxCopyBytes, galeraMaxBytes, nboLock,
+            {"maxRebuildBytes": 1073741824} or {"enabled": false}. The keys
+            are enabled, maxRebuildBytes, galeraMaxBytes, nboLock,
             maxLockedBytes, lockWait, maxRetries and tables (per table, the same keys but tables).
         session (object): The database session to use.
 
@@ -833,7 +833,7 @@ def online_alter_table(schema: str, table: str, spec: str, **kwargs) -> dict:
 
     Keyword Args:
         options (dict): The limits, with the keys of msm.project.json's onlineAlter
-            (maxCopyBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
+            (maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
             maxRetries); the defaults for those left out.
         session (object): The database session to use. Defaults to the global one.
 
@@ -854,7 +854,7 @@ def get_online_alter_defaults() -> dict:
     table's settings.
 
     Returns:
-        A dict with maxCopyBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait and
+        A dict with maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait and
         maxRetries.
     """
     return _returned(lib.online_alter.Options().to_dict())
@@ -890,7 +890,7 @@ def set_online_alter_table(table: str, **kwargs) -> list:
         **kwargs: Additional options.
 
     Keyword Args:
-        settings (dict): The table's settings: enabled, maxCopyBytes, galeraMaxBytes,
+        settings (dict): The table's settings: enabled, maxRebuildBytes, galeraMaxBytes,
             nboLock, maxLockedBytes, lockWait, maxRetries.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
 

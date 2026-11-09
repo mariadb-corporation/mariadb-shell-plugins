@@ -1733,7 +1733,7 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
     Args:
         schema_project_path: The project folder.
         table: The table, as named in the scripts.
-        settings: {enabled?, maxCopyBytes?, galeraMaxBytes?, nboLock?,
+        settings: {enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?,
             maxLockedBytes?, lockWait?, maxRetries?}; None or {} removes the
             table's entry, so it follows the project's general values.
 
@@ -2121,7 +2121,7 @@ def deploy_schema(
             before the scripts run; names not given use their defaults.
         online_alter (bool | dict): This deployment's online ALTER TABLE
             setting, over the project's `onlineAlter` (same format: true,
-            false, or {enabled, maxCopyBytes, galeraMaxBytes, nboLock,
+            false, or {enabled, maxRebuildBytes, galeraMaxBytes, nboLock,
             maxLockedBytes, lockWait, maxRetries, tables: {<table>: {...}}}). For a table the
             most specific value wins, and at the same level this one.
 

@@ -119,12 +119,12 @@ def test_no_step_accepted_needs_an_external_tool():
         "ALGORITHM=COPY, LOCK=NONE", "LOCK=SHARED", "LOCK=EXCLUSIVE"]
 
 
-def test_a_table_over_max_copy_bytes_gets_no_rebuild():
+def test_a_table_over_max_rebuild_bytes_gets_no_rebuild():
     session = FakeSession(size=20 * GIB, alters={r"ALTER TABLE": [REFUSED]})
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT")
     assert result.method == NEEDS_EXTERNAL
     skip = ("online rebuilds (INPLACE, COPY) skipped: table size 21474836480 > "
-            "max_copy_bytes 10737418240")
+            "max_rebuild_bytes 10737418240")
     # Each reason once, then what the server refused anyway
     assert result.reason == (
         f"{skip}; the server refused INSTANT, NOCOPY, SHARED_LOCK, EXCLUSIVE_LOCK "
@@ -135,10 +135,10 @@ def test_a_table_over_max_copy_bytes_gets_no_rebuild():
         for method in (INPLACE, COPY)]
 
 
-@pytest.mark.parametrize("max_copy_bytes, copies", [(0, False), (None, True), (1000, True)])
-def test_max_copy_bytes_zero_never_copies_and_none_always_may(max_copy_bytes, copies):
-    allowed, _ = online_alter.plan(1000, False, Options(max_copy_bytes=max_copy_bytes))
-    assert (COPY in allowed) == copies
+@pytest.mark.parametrize("max_rebuild_bytes, rebuilds", [(0, False), (None, True), (1000, True)])
+def test_max_rebuild_bytes_zero_never_rebuilds_and_none_always_may(max_rebuild_bytes, rebuilds):
+    allowed, _ = online_alter.plan(1000, False, Options(max_rebuild_bytes=max_rebuild_bytes))
+    assert (INPLACE in allowed) == (COPY in allowed) == rebuilds
 
 
 def test_what_no_step_without_a_lock_runs_runs_with_one():
@@ -257,8 +257,8 @@ def test_a_trailing_line_comment_does_not_swallow_the_steps_clauses(comment):
 
 
 def test_options_from_msm_project_json_keys():
-    options = Options.from_dict({"maxCopyBytes": None, "nboLock": "shared", "lockWait": 2})
-    assert (options.max_copy_bytes, options.nbo_lock, options.lock_wait) == (None, "SHARED", 2)
+    options = Options.from_dict({"maxRebuildBytes": None, "nboLock": "shared", "lockWait": 2})
+    assert (options.max_rebuild_bytes, options.nbo_lock, options.lock_wait) == (None, "SHARED", 2)
     assert options.galera_max_bytes == 256 * MIB and options.max_retries == 10
     assert options.max_locked_bytes is None
     assert Options.from_dict({"maxLockedBytes": 0}).max_locked_bytes == 0
@@ -267,7 +267,7 @@ def test_options_from_msm_project_json_keys():
     with pytest.raises(ValueError, match="Unknown online ALTER TABLE option `maxCopy`"):
         Options.from_dict({"maxCopy": 1})
     for bad in ({"nboLock": "NONE"}, {"lockWait": 0}, {"maxRetries": -1},
-                {"maxCopyBytes": "1G"}, {"lockWait": True}):
+                {"maxRebuildBytes": "1G"}, {"lockWait": True}):
         with pytest.raises(ValueError):
             Options.from_dict(bad)
 
@@ -409,7 +409,7 @@ def test_the_server_picks_instant_nocopy_or_copy(server):
 def test_needs_external_leaves_the_table_unchanged(server):
     session, _ = server
     result = online_alter.alter_table(session, SCHEMA, "t", "MODIFY `v` BIGINT",
-                                      Options(max_copy_bytes=0, max_locked_bytes=0))
+                                      Options(max_rebuild_bytes=0, max_locked_bytes=0))
     assert result.method == NEEDS_EXTERNAL
     assert "; blocking writes skipped" in result.reason
     assert "the server refused INSTANT, NOCOPY (last: " in result.reason
@@ -497,22 +497,22 @@ def test_false_turns_it_off():
 
 
 def test_the_most_specific_value_wins_and_the_call_at_the_same_level():
-    project = {"maxCopyBytes": 1 * GIB, "lockWait": 2,
-               "tables": {"orders": {"maxCopyBytes": 0}, "audit": {"enabled": False}}}
-    call = {"maxCopyBytes": 2 * GIB, "nboLock": "shared", "tables": {"items": {"lockWait": 9}}}
+    project = {"maxRebuildBytes": 1 * GIB, "lockWait": 2,
+               "tables": {"orders": {"maxRebuildBytes": 0}, "audit": {"enabled": False}}}
+    call = {"maxRebuildBytes": 2 * GIB, "nboLock": "shared", "tables": {"items": {"lockWait": 9}}}
     resolved = settings(project, call)
     # The call's general value over the project's
-    assert resolved.options_for("customer") == Options(max_copy_bytes=2 * GIB, lock_wait=2,
+    assert resolved.options_for("customer") == Options(max_rebuild_bytes=2 * GIB, lock_wait=2,
                                                        nbo_lock="SHARED")
     # The project's table value over the call's general one
-    assert resolved.options_for("orders").max_copy_bytes == 0
+    assert resolved.options_for("orders").max_rebuild_bytes == 0
     assert resolved.options_for("items").lock_wait == 9
     assert resolved.options_for("audit") is None
     # Table names match exactly
-    assert resolved.options_for("Orders").max_copy_bytes == 2 * GIB
+    assert resolved.options_for("Orders").max_rebuild_bytes == 2 * GIB
     # The call's table value over the project's
-    call["tables"]["orders"] = {"maxCopyBytes": 5}
-    assert settings(project, call).options_for("orders").max_copy_bytes == 5
+    call["tables"]["orders"] = {"maxRebuildBytes": 5}
+    assert settings(project, call).options_for("orders").max_rebuild_bytes == 5
 
 
 def test_enabled_follows_the_same_order():
@@ -526,9 +526,9 @@ def test_enabled_follows_the_same_order():
 
 
 def test_none_is_a_value_of_its_own():
-    resolved = settings({"maxCopyBytes": 0, "tables": {"big": {"maxCopyBytes": None}}})
-    assert resolved.options_for("big").max_copy_bytes is None
-    assert resolved.options_for("small").max_copy_bytes == 0
+    resolved = settings({"maxRebuildBytes": 0, "tables": {"big": {"maxRebuildBytes": None}}})
+    assert resolved.options_for("big").max_rebuild_bytes is None
+    assert resolved.options_for("small").max_rebuild_bytes == 0
 
 
 @pytest.mark.parametrize("project, message", [
@@ -712,7 +712,7 @@ def test_the_defaults_without_a_project():
     from msm_plugin.management import get_online_alter_defaults
 
     assert get_online_alter_defaults() == {
-        "maxCopyBytes": 10 * GIB, "galeraMaxBytes": 256 * MIB, "nboLock": None,
+        "maxRebuildBytes": 10 * GIB, "galeraMaxBytes": 256 * MIB, "nboLock": None,
         "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
 
 
@@ -727,20 +727,20 @@ def test_a_tables_settings_are_written_and_read_back(tmp_path):
     assert read["setting"] == {"enabled": True, "tables": {}}
     assert (read["enabled"], read["options"]) == (True, Options().to_dict())
 
-    assert management.set_online_alter_table(path, "orders", {"maxCopyBytes": 0, "lockWait": 2}) \
+    assert management.set_online_alter_table(path, "orders", {"maxRebuildBytes": 0, "lockWait": 2}) \
         == [settings_file]
     with open(settings_file) as f:
         written = json.load(f)
     assert written["onlineAlter"] == {"enabled": True,
-                                      "tables": {"orders": {"maxCopyBytes": 0, "lockWait": 2}}}
+                                      "tables": {"orders": {"maxRebuildBytes": 0, "lockWait": 2}}}
     # Nothing else of the file changes
     assert written["schemaName"] == "online_alter_setting" and "copyrights" in written
     read = management.get_online_alter_settings(path, "orders")
-    assert read["options"]["maxCopyBytes"] == 0 and read["options"]["lockWait"] == 2
-    assert management.get_online_alter_settings(path, "items")["options"]["maxCopyBytes"] == 10 * GIB
+    assert read["options"]["maxRebuildBytes"] == 0 and read["options"]["lockWait"] == 2
+    assert management.get_online_alter_settings(path, "items")["options"]["maxRebuildBytes"] == 10 * GIB
 
     # The same again writes nothing; off; removed
-    assert management.set_online_alter_table(path, "orders", {"maxCopyBytes": 0, "lockWait": 2}) == []
+    assert management.set_online_alter_table(path, "orders", {"maxRebuildBytes": 0, "lockWait": 2}) == []
     management.set_online_alter_table(path, "orders", {"enabled": False})
     assert management.get_online_alter_settings(path, "orders")["enabled"] is False
     assert management.set_online_alter_table(path, "orders", None) == [settings_file]

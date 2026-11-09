@@ -30,7 +30,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   possibly blocking ALTERs. That is wanted: it shows what MSM adds.
 - **On by default.** `msm.project.json`'s `onlineAlter` (user's decision:
   default True, so a user never has to think about it):
-  `{enabled?, maxCopyBytes?, galeraMaxBytes?, nboLock?, maxLockedBytes?,
+  `{enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?, maxLockedBytes?,
   lockWait?, maxRetries?, tables?: {<table>: {enabled?, <the same option
   keys>}}}`; `true` / `false` stand for `{enabled: ...}`; missing = enabled
   with the defaults. New projects get `"onlineAlter": {"enabled": true}`
@@ -43,7 +43,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   Precedence, most specific wins and the call at the same level (Claude's
   choice): project general → call general → project's table entry → call's
   table entry; `enabled` follows the same order. So a table the project
-  marks `maxCopyBytes: 0` stays so unless the call names that table. Table
+  marks `maxRebuildBytes: 0` stays so unless the call names that table. Table
   names match exactly. The `tables` entries are the project's tables: an
   ALTER of a step that names another schema's table gets the general
   values only (`options_for(None)`; user's decision). `online_alter.deployment_settings` checks both
@@ -108,7 +108,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   number is read from `error.code`). `alter_table(session, schema, table,
   spec, options, *, monitor, on_event, cancel, poll_interval, sleep) ->
   Result(method, reason, table_size, galera, steps)`; `Options` (dataclass;
-  `from_dict` takes the camelCase keys `maxCopyBytes`, `galeraMaxBytes`,
+  `from_dict` takes the camelCase keys `maxRebuildBytes`, `galeraMaxBytes`,
   `nboLock`, `maxLockedBytes`, `lockWait`, `maxRetries`, the rest kept from
   `base`; `to_dict` gives them back); `plan(size, galera, options)` gives
   the allowed and skipped steps; `check_spec` refuses a spec with its own
@@ -133,7 +133,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
      A column type change is refused here too. Skipped like COPY.
   4. `<spec>, ALGORITHM=COPY, LOCK=NONE` (native online COPY, MariaDB 11.2+;
      older servers refuse with 1846). INPLACE and COPY are `REBUILDS`,
-     both skipped above `max_copy_bytes`, and on Galera above
+     both skipped above `max_rebuild_bytes` (`maxRebuildBytes`; renamed
+     from `maxCopyBytes` once INPLACE came, user's decision, before any
+     release, so no alias), and on Galera above
      `galera_max_bytes`.
   5. Galera only, when `nbo_lock` is set: `SET SESSION wsrep_OSU_method =
      'NBO'`, then `ALTER TABLE t LOCK=SHARED|EXCLUSIVE, <spec>` with no
@@ -166,7 +168,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   - Replicas must run the same MariaDB version: the binary log records the
     statement with its ALGORITHM clause.
 - **Defaults** (`Options()`, from the dropped procedure's examples):
-  `max_copy_bytes` 10 GiB, `galera_max_bytes` 256 MiB, `nbo_lock` off (it
+  `max_rebuild_bytes` 10 GiB, `galera_max_bytes` 256 MiB, `nbo_lock` off (it
   blocks writes: choose it deliberately), `max_locked_bytes` no limit,
   `lock_wait` 5 s, `max_retries` 10 (about 5 minutes worst case).
 - **Behaviour change on Galera** (stated in PR #95): with online ALTER on

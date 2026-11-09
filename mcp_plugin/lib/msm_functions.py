@@ -989,7 +989,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         project: for a live table's settings.
 
         Returns:
-            {maxCopyBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
+            {maxRebuildBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
             maxRetries}.
         """
         return msm.get_online_alter_defaults()
@@ -1013,7 +1013,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             {defaults: the options where nothing is set, setting: the
             project's setting, normalized, table, enabled: whether it is on
             for the table, options: what the table gets (None where it is off
-            or no table is given)}. The option keys: maxCopyBytes,
+            or no table is given)}. The option keys: maxRebuildBytes,
             galeraMaxBytes, nboLock, maxLockedBytes, lockWait, maxRetries.
         """
         return await _in_project(
@@ -1035,7 +1035,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         Args:
             table: The table, as named in the scripts.
             settings: The table's settings: enabled (false runs its ALTERs as
-                written), maxCopyBytes (largest table size for an online
+                written), maxRebuildBytes (largest table size for an online
                 rebuild, INPLACE or COPY; 0 = never, null = no limit),
                 galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow a Galera
                 NBO), maxLockedBytes (largest table
@@ -1173,7 +1173,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                     update runs each ALTER TABLE the least disruptive way the
                     server accepts (INSTANT, then NOCOPY, INPLACE and COPY
                     with LOCK=NONE, then with a lock); keys: enabled (false
-                    runs them as written), maxCopyBytes (largest table for
+                    runs them as written), maxRebuildBytes (largest table for
                     INPLACE or COPY; 0 = never, null = no limit),
                     galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow
                     Galera NBO), maxLockedBytes (largest table for
@@ -1239,7 +1239,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                 spec: Everything after ALTER TABLE <table>, e.g. "ADD COLUMN
                     `note` VARCHAR(100), ADD INDEX `ix_note` (`note`)", without
                     ALGORITHM or LOCK.
-                options: The limits: maxCopyBytes (largest table size for an
+                options: The limits: maxRebuildBytes (largest table size for an
                     online rebuild, INPLACE or COPY; 0 = never, null = no
                     limit; default 10 GiB),
                     galeraMaxBytes, nboLock, maxLockedBytes (largest table size

@@ -868,7 +868,7 @@ def _diagram(name="Main"):
 
 def test_the_online_alter_defaults_need_no_project():
     defaults = _msm_tools()["msm.get_online_alter_defaults"]()
-    assert defaults == {"maxCopyBytes": 10 * 1024 ** 3, "galeraMaxBytes": 256 * 1024 ** 2,
+    assert defaults == {"maxRebuildBytes": 10 * 1024 ** 3, "galeraMaxBytes": 256 * 1024 ** 2,
                         "nboLock": None, "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
 
 

@@ -266,7 +266,7 @@ def test_an_alter_no_online_step_applies_stops_the_deployment(sandbox_session, p
                              r"of `t`: online rebuilds \(INPLACE, COPY\) skipped: .*; "
                              r"blocking writes skipped"):
         deploy(sandbox_session, project, "1.0.1",
-               online_alter={"maxCopyBytes": 0, "maxLockedBytes": 0})
+               online_alter={"maxRebuildBytes": 0, "maxLockedBytes": 0})
     now = state(sandbox_session)
     # The statements before it ran; it did not; the update is marked as running
     assert "`n` int(11)" in now["t"][0][1] and "KEY `ix_n`" in now["t"][0][1]

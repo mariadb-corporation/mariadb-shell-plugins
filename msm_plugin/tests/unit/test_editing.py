@@ -614,7 +614,7 @@ def test_a_tables_online_alter_settings_follow_renames_and_drops():
     import json
 
     text = json.dumps({"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
-        "customer": {"maxCopyBytes": 0}, "orders": {"lockWait": 2}, "audit": {"enabled": False}}}},
+        "customer": {"maxRebuildBytes": 0}, "orders": {"lockWait": 2}, "audit": {"enabled": False}}}},
         indent=4)
     moved = editing.online_alter_settings_text(text, [
         {"op": "rename_table", "table": "customer", "new_name": "client"},
@@ -623,7 +623,7 @@ def test_a_tables_online_alter_settings_follow_renames_and_drops():
         {"op": "add_column", "table": "orders", "column": {"name": "n", "type": "INT"}},
     ])
     assert json.loads(moved) == {"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
-        "orders": {"lockWait": 2}, "buyer": {"maxCopyBytes": 0}}}}
+        "orders": {"lockWait": 2}, "buyer": {"maxRebuildBytes": 0}}}}
     # The last entry dropped: no `tables` left
     assert json.loads(editing.online_alter_settings_text(moved, [
         {"op": "drop_table", "table": "orders"}, {"op": "drop_table", "table": "buyer"}]))[
