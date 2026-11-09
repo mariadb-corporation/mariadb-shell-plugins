@@ -309,6 +309,7 @@ Management (`msm`) plugin:
 | `msm.edit_schema` | `edit_schema` (`msm_plugin/modeling.py`) |
 | `msm.set_schema_diagram` | `set_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.remove_schema_diagram` | `remove_schema_diagram` (`msm_plugin/modeling.py`) |
+| `msm.rename_schema_diagram` | `rename_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.create_schema_diagram` | `create_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.layout_schema_diagram` | `layout_schema_diagram` (`msm_plugin/modeling.py`) |
 | `msm.import_workbench_model` | `import_workbench_model` (`msm_plugin/modeling.py`) |

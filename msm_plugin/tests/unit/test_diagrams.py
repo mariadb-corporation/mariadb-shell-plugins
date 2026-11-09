@@ -25,6 +25,7 @@
 
 import json
 import os
+import re
 
 import pytest
 
@@ -429,6 +430,46 @@ def test_small_diagrams_stay_inline(project):
     assert [row["name"] for row in modeling.read_diagram_rows(project)] == ["Second"]
     with pytest.raises(ValueError, match="no diagram `Main`"):
         modeling.remove_diagram(project, "Main")
+
+
+def test_a_diagram_is_renamed_with_its_pictures_and_place(project):
+    picture = "data:image/png;base64,iVBORw0KGgo="
+    first = diagram("Main", tables=("customer",))
+    first["figures"].append({"id": "i", "type": "ImageFigure", "name": "Logo", "image": picture})
+    modeling.set_diagram(project, first)
+    modeling.set_diagram(project, diagram("Second"))
+    modeling.set_diagram(project, diagram("Third"))
+
+    assert modeling.rename_diagram(project, "Second", "  Orders  ") != []
+    rows = modeling.read_diagram_rows(project)
+    assert [row["name"] for row in rows] == ["Main", "Orders", "Third"]
+    assert rows[1]["document"] == {**diagram("Second"), "name": "Orders"}
+
+    # A change of case of the diagram itself; the picture stays
+    modeling.rename_diagram(project, "Main", "main")
+    rows = modeling.read_diagram_rows(project)
+    assert [row["name"] for row in rows] == ["main", "Orders", "Third"]
+    assert rows[0]["document"]["figures"][1]["image"] == picture
+    assert rows[0]["document"]["name"] == "main"
+
+    # The same name: nothing is written
+    assert modeling.rename_diagram(project, "Third", "Third") == []
+
+
+@pytest.mark.parametrize("name, new_name, message", [
+    ("Gone", "New", "The project has no diagram `Gone`."),
+    ("Main", "   ", "A diagram needs a name."),
+    ("Main", None, "A diagram needs a name."),
+    ("Main", "schema_definition", "`schema_definition` is the name of the schema row."),
+    ("Main", "SECOND", "The project has a diagram `Second` already."),
+    ("schema_definition", "New", "The project has no diagram `schema_definition`."),
+])
+def test_a_rename_is_refused(project, name, new_name, message):
+    modeling.set_diagram(project, diagram("Main"))
+    modeling.set_diagram(project, diagram("Second"))
+    with pytest.raises(ValueError, match=re.escape(message)):
+        modeling.rename_diagram(project, name, new_name)
+    assert [row["name"] for row in modeling.read_diagram_rows(project)] == ["Main", "Second"]
 
 
 @needs_lsp
