@@ -44,7 +44,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   choice): project general → call general → project's table entry → call's
   table entry; `enabled` follows the same order. So a table the project
   marks `maxCopyBytes: 0` stays so unless the call names that table. Table
-  names match exactly. `online_alter.deployment_settings` checks both
+  names match exactly. The `tables` entries are the project's tables: an
+  ALTER of a step that names another schema's table gets the general
+  values only (`options_for(None)`; user's decision). `online_alter.deployment_settings` checks both
   before anything else of the deployment (a bad key or value is a
   ValueError naming where it is written: `msm.project.json, onlineAlter of
   table ...` or `the deployment, ...`), and
@@ -110,8 +112,10 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   `nboLock`, `maxLockedBytes`, `lockWait`, `maxRetries`, the rest kept from
   `base`; `to_dict` gives them back); `plan(size, galera, options)` gives
   the allowed and skipped steps; `check_spec` refuses a spec with its own
-  `ALGORITHM`/`LOCK` clause (`statements.locking_clause`, clause starts
-  only, so names, strings and comments do not count). `on_event` gets
+  `ALGORITHM`/`LOCK` clause (`statements.locking_clause`: anywhere
+  outside quotes, comments and parentheses, also after a table option
+  without a comma; `LOCK` is reserved, `ALGORITHM` counts only before `=`
+  or one of its values, as a column may be named algorithm). `on_event` gets
   `step`, `refused`, `skipped`, `retry` and `progress` events. Each step
   sends the ALTER with explicit clauses, so the server either runs it
   exactly so or refuses at once (1845 / 1846) without touching data; a
@@ -119,24 +123,32 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   1. `ALTER TABLE t <spec>, ALGORITHM=INSTANT` (on Galera under TOI).
   2. `<spec>, ALGORITHM=NOCOPY, LOCK=NONE`; skipped on Galera when the
      table is larger than `galera_max_bytes`.
-  3. `<spec>, ALGORITHM=COPY, LOCK=NONE` (native online COPY, MariaDB 11.2+;
-     older servers refuse with 1846); skipped above `max_copy_bytes`, and
-     on Galera above `galera_max_bytes`.
-  4. Galera only, when `nbo_lock` is set: `SET SESSION wsrep_OSU_method =
+  3. `<spec>, ALGORITHM=INPLACE, LOCK=NONE`: InnoDB rebuilds the table in
+     place, reads and writes go on (primary key added/dropped, NULL to NOT
+     NULL, ROW_FORMAT, FORCE; added in PR #95's review, user's decision).
+     A column type change is refused here too. Skipped like COPY.
+  4. `<spec>, ALGORITHM=COPY, LOCK=NONE` (native online COPY, MariaDB 11.2+;
+     older servers refuse with 1846). INPLACE and COPY are `REBUILDS`,
+     both skipped above `max_copy_bytes`, and on Galera above
+     `galera_max_bytes`.
+  5. Galera only, when `nbo_lock` is set: `SET SESSION wsrep_OSU_method =
      'NBO'`, then `ALTER TABLE t LOCK=SHARED|EXCLUSIVE, <spec>` with no
      ALGORITHM clause. Community Server rejects NBO with 1231 (skip the
      step); 1235 = NBO refused this statement. NBO blocks writes to the
      table (`EXCLUSIVE` reads too).
-  5. `SHARED_LOCK`: `<spec>, LOCK=SHARED`, then 6. `EXCLUSIVE_LOCK`:
+  6. `SHARED_LOCK`: `<spec>, LOCK=SHARED`, then 7. `EXCLUSIVE_LOCK`:
      `<spec>, LOCK=EXCLUSIVE`, no ALGORITHM (the server takes the cheapest
      one it can run under that lock). For what no unlocked step can do: a
-     column `DEFAULT (NEXT VALUE FOR seq)` is refused by INSTANT, NOCOPY
-     and `COPY, LOCK=NONE` ("Try LOCK=SHARED"). Capped by
+     column `DEFAULT (NEXT VALUE FOR seq)` is refused by INSTANT, NOCOPY,
+     INPLACE and `COPY, LOCK=NONE` ("Try LOCK=SHARED"). Capped by
      `maxLockedBytes` (`max_locked_bytes`), **default no limit** (user's
      decision: nothing a plain ALTER TABLE runs may fail because online
      ALTER TABLE is on; production sets a cap); on Galera also by
      `galeraMaxBytes` (TOI). The reason says writes were blocked.
-  7. Otherwise `NEEDS_EXTERNAL`: nothing changed.
+  8. Otherwise `NEEDS_EXTERNAL`: nothing changed. Its reason
+     (`needs_external_reason(steps)`) lists each distinct skip reason, then
+     `the server refused <methods> (last: <its last refusal>)`, so it shows
+     which limit would allow more and what the server refused anyway.
   - Table size = `DATA_LENGTH + INDEX_LENGTH` of `information_schema.TABLES`
     (an estimate for InnoDB). Galera = session `wsrep_on` ON and
     `wsrep_provider` not `none`; a session on `RSU` is refused (it alters

@@ -30,7 +30,7 @@ import pytest
 
 from msm_plugin.lib import online_alter, statements
 from msm_plugin.lib.online_alter import (
-    COPY, EXCLUSIVE_LOCK, GIB, INSTANT, MIB, NBO, NEEDS_EXTERNAL, NOCOPY, SHARED_LOCK,
+    COPY, EXCLUSIVE_LOCK, GIB, INPLACE, INSTANT, MIB, NBO, NEEDS_EXTERNAL, NOCOPY, SHARED_LOCK,
     OnlineAlterCancelled, OnlineAlterError, Options,
 )
 
@@ -111,19 +111,28 @@ def test_no_step_accepted_needs_an_external_tool():
     session = FakeSession(alters={r"ALTER TABLE": [REFUSED]})
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT")
     assert result.method == NEEDS_EXTERNAL and not result.applied
-    assert result.reason == "the server refused every allowed step up to EXCLUSIVE_LOCK"
-    assert [sql.rsplit(", ", 1)[-1] for sql in session.alters()] == [
-        "ALGORITHM=INSTANT", "LOCK=NONE", "LOCK=NONE", "LOCK=SHARED", "LOCK=EXCLUSIVE"]
+    assert result.reason == (
+        "the server refused INSTANT, NOCOPY, INPLACE, COPY, SHARED_LOCK, EXCLUSIVE_LOCK "
+        "(last: MySQL Error (1846): ALGORITHM=INSTANT is not supported)")
+    assert [sql.split(", ", 1)[-1] for sql in session.alters()] == [
+        "ALGORITHM=INSTANT", "ALGORITHM=NOCOPY, LOCK=NONE", "ALGORITHM=INPLACE, LOCK=NONE",
+        "ALGORITHM=COPY, LOCK=NONE", "LOCK=SHARED", "LOCK=EXCLUSIVE"]
 
 
-def test_a_table_over_max_copy_bytes_gets_no_copy():
+def test_a_table_over_max_copy_bytes_gets_no_rebuild():
     session = FakeSession(size=20 * GIB, alters={r"ALTER TABLE": [REFUSED]})
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT")
     assert result.method == NEEDS_EXTERNAL
-    assert result.reason.startswith("native COPY skipped: table size 21474836480 > max_copy_bytes")
-    assert not any("ALGORITHM=COPY" in sql for sql in session.alters())
-    assert result.steps[0] == {"method": COPY, "outcome": "skipped", "seconds": 0,
-                               "message": result.reason}
+    skip = ("online rebuilds (INPLACE, COPY) skipped: table size 21474836480 > "
+            "max_copy_bytes 10737418240")
+    # Each reason once, then what the server refused anyway
+    assert result.reason == (
+        f"{skip}; the server refused INSTANT, NOCOPY, SHARED_LOCK, EXCLUSIVE_LOCK "
+        "(last: MySQL Error (1846): ALGORITHM=INSTANT is not supported)")
+    assert not any(re.search("ALGORITHM=(COPY|INPLACE)", sql) for sql in session.alters())
+    assert result.steps[:2] == [
+        {"method": method, "outcome": "skipped", "seconds": 0, "message": skip}
+        for method in (INPLACE, COPY)]
 
 
 @pytest.mark.parametrize("max_copy_bytes, copies", [(0, False), (None, True), (1000, True)])
@@ -189,6 +198,8 @@ def test_a_missing_table_is_an_error():
     "ADD COLUMN `n` INT, ALGORITHM=INPLACE",
     "ADD COLUMN `n` INT, LOCK = NONE",
     "algorithm=instant, ADD COLUMN `n` INT",
+    "ENGINE=InnoDB LOCK=NONE",
+    "ADD COLUMN `n` INT, ROW_FORMAT=DYNAMIC ALGORITHM INPLACE",
 ])
 def test_a_spec_with_its_own_algorithm_or_lock_is_refused(spec):
     with pytest.raises(ValueError, match="Run it as written"):
@@ -200,6 +211,9 @@ def test_a_spec_with_its_own_algorithm_or_lock_is_refused(spec):
     "ADD COLUMN algorithm INT",
     "COMMENT = 'LOCK=NONE, ALGORITHM=COPY'",
     "ADD COLUMN `lock` INT /* , LOCK=NONE */",
+    "ADD COLUMN algorithm INT DEFAULT 1, KEY_BLOCK_SIZE=8",
+    "ALTER COLUMN algorithm DROP DEFAULT",
+    "ADD CONSTRAINT `c` CHECK (`lock` > 0)",
 ])
 def test_algorithm_or_lock_in_names_strings_and_comments_is_no_clause(spec):
     assert statements.locking_clause(spec) is None
@@ -270,7 +284,7 @@ def test_galera_runs_instant_under_toi_and_big_tables_go_no_further():
 
 def test_galera_small_tables_may_use_nocopy_and_copy_under_toi():
     session = FakeSession(size=10 * MIB, **GALERA,
-                          alters={r"INSTANT|NOCOPY": [REFUSED], r"ALGORITHM=COPY": [[]]})
+                          alters={r"INSTANT|NOCOPY|INPLACE": [REFUSED], r"ALGORITHM=COPY": [[]]})
     assert online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT").method == COPY
 
 
@@ -292,7 +306,7 @@ def test_galera_without_nbo_skips_it():
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT",
                                       Options(nbo_lock="EXCLUSIVE"))
     assert result.method == NEEDS_EXTERNAL
-    assert result.reason == "NBO not available on this server (MariaDB Enterprise Server only)"
+    assert "; NBO not available on this server (MariaDB Enterprise Server only); " in result.reason
 
 
 def test_galera_nbo_refusing_the_statement():
@@ -300,7 +314,9 @@ def test_galera_nbo_refusing_the_statement():
         r"ALGORITHM=INSTANT": [REFUSED], r"LOCK=SHARED": [FakeError(1235, "not supported")]})
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT",
                                       Options(nbo_lock="SHARED"))
-    assert (result.method, result.reason) == (NEEDS_EXTERNAL, "NBO refused this statement")
+    assert result.method == NEEDS_EXTERNAL
+    assert result.reason.endswith(
+        "; the server refused INSTANT, NBO (last: MySQL Error (1235): not supported)")
 
 
 def test_galera_on_rsu_is_refused():
@@ -381,6 +397,7 @@ def test_the_server_picks_instant_nocopy_or_copy(server):
     result = run("ADD INDEX `ix_v` (`v`)")
     assert result.method == NOCOPY
     assert "Reason: ADD INDEX" in result.steps[0]["message"]
+    assert run("FORCE").method == INPLACE
     assert run("MODIFY `v` VARCHAR(20)").method == COPY
     assert column_type(session, "v") == "varchar(20)"
 
@@ -390,9 +407,10 @@ def test_needs_external_leaves_the_table_unchanged(server):
     result = online_alter.alter_table(session, SCHEMA, "t", "MODIFY `v` BIGINT",
                                       Options(max_copy_bytes=0, max_locked_bytes=0))
     assert result.method == NEEDS_EXTERNAL
-    assert result.reason.startswith("blocking writes skipped")
+    assert "; blocking writes skipped" in result.reason
+    assert "the server refused INSTANT, NOCOPY (last: " in result.reason
     assert [(step["method"], step["outcome"]) for step in result.steps] == [
-        (COPY, "skipped"), (SHARED_LOCK, "skipped"), (EXCLUSIVE_LOCK, "skipped"),
+        (INPLACE, "skipped"), (COPY, "skipped"), (SHARED_LOCK, "skipped"), (EXCLUSIVE_LOCK, "skipped"),
         (INSTANT, "refused"), (NOCOPY, "refused")]
     assert column_type(session, "v") == "int(11)"
 
@@ -648,7 +666,7 @@ def test_a_task_on_the_sandbox_reports_the_copys_progress(server):
     wait_for_end(task)
     assert task.status == "completed", task.error
     assert task.result["method"] == COPY
-    assert [stage["name"] for stage in task.stages] == [INSTANT, NOCOPY, COPY]
+    assert [stage["name"] for stage in task.stages] == [INSTANT, NOCOPY, INPLACE, COPY]
     assert all(stage["status"] == "completed" for stage in task.stages)
     assert any(message["text"].startswith("COPY: ") for message in task.messages)
 

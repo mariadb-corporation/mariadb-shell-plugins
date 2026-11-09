@@ -1035,8 +1035,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         Args:
             table: The table, as named in the scripts.
             settings: The table's settings: enabled (false runs its ALTERs as
-                written), maxCopyBytes (largest table size for an online COPY;
-                0 = never, null = no limit), galeraMaxBytes, nboLock (SHARED or
+                written), maxCopyBytes (largest table size for an online
+                rebuild, INPLACE or COPY; 0 = never, null = no limit), galeraMaxBytes, nboLock (SHARED or
                 EXCLUSIVE to allow a Galera NBO), maxLockedBytes (largest table
                 size for a step that blocks writes), lockWait (seconds per
                 attempt), maxRetries. Left out or empty, the table's entry goes
@@ -1170,10 +1170,10 @@ def register_msm_tools(server, function_groups=()) -> None:
                 online_alter: This deployment's online ALTER TABLE setting,
                     over the project's `onlineAlter` in msm.project.json. An
                     update runs each ALTER TABLE the least disruptive way the
-                    server accepts (INSTANT, then NOCOPY, then COPY with
-                    LOCK=NONE); keys: enabled (false runs them as written),
-                    maxCopyBytes (largest table for COPY; 0 = never, null =
-                    no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE
+                    server accepts (INSTANT, then NOCOPY, INPLACE and COPY
+                    with LOCK=NONE, then with a lock); keys: enabled (false
+                    runs them as written), maxCopyBytes (largest table for
+                    INPLACE or COPY; 0 = never, null = no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE
                     to allow Galera NBO), maxLockedBytes (largest table for
                     a step that blocks writes), lockWait (seconds per
                     attempt), maxRetries, tables ({<table>: {the same keys}}).
@@ -1221,7 +1221,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         ) -> dict:
             """Starts one ALTER TABLE, run online, as a background task.
 
-            Tries ALGORITHM=INSTANT, then NOCOPY and COPY with LOCK=NONE, then a
+            Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with LOCK=NONE, then a
             Galera NBO where allowed, then LOCK=SHARED and LOCK=EXCLUSIVE: each
             step either runs the change that way or is refused at once, without
             touching data. The task runs in sessions of its own; each step is a
@@ -1238,7 +1238,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                     `note` VARCHAR(100), ADD INDEX `ix_note` (`note`)", without
                     ALGORITHM or LOCK.
                 options: The limits: maxCopyBytes (largest table size for an
-                    online COPY; 0 = never, null = no limit; default 10 GiB),
+                    online rebuild, INPLACE or COPY; 0 = never, null = no limit; default 10 GiB),
                     galeraMaxBytes, nboLock, maxLockedBytes (largest table size
                     for a step that blocks writes; default no limit), lockWait
                     (seconds per attempt, default 5), maxRetries (default 10).

@@ -31,11 +31,14 @@ touched; a refusal moves on to the next, more expensive step:
 
 1. ``ALGORITHM=INSTANT``: metadata only;
 2. ``ALGORITHM=NOCOPY, LOCK=NONE``: in place, reads and writes go on;
-3. ``ALGORITHM=COPY, LOCK=NONE``: the server's online copy (MariaDB 11.2
+3. ``ALGORITHM=INPLACE, LOCK=NONE``: InnoDB rebuilds the table in place
+   while reads and writes go on (a primary key added or dropped, NULL to
+   NOT NULL, ROW_FORMAT, FORCE);
+4. ``ALGORITHM=COPY, LOCK=NONE``: the server's online copy (MariaDB 11.2
    and later; older servers refuse it with 1846);
-4. Galera only, where ``nbo_lock`` is set: a Non-Blocking Operation
+5. Galera only, where ``nbo_lock`` is set: a Non-Blocking Operation
    (MariaDB Enterprise Server), which blocks writes to the table;
-5. ``LOCK=SHARED``, then 6. ``LOCK=EXCLUSIVE``, no ALGORITHM, so the server
+6. ``LOCK=SHARED``, then 7. ``LOCK=EXCLUSIVE``, no ALGORITHM, so the server
    takes the cheapest one it can run under that lock: for what no step
    without a lock can do (a column default from a sequence). Writes wait,
    with EXCLUSIVE reads too; this is what a plain ALTER TABLE would do.
@@ -43,8 +46,8 @@ touched; a refusal moves on to the next, more expensive step:
 What no step applies is ``NEEDS_EXTERNAL``: nothing changed, and the change
 is for an external tool (gh-ost, pt-online-schema-change).
 
-The table's size and Galera decide in advance which steps may run: COPY not
-above ``max_copy_bytes``, the locked steps not above ``max_locked_bytes``
+The table's size and Galera decide in advance which steps may run: the
+rebuilds (INPLACE, COPY) not above ``max_copy_bytes``, the locked steps not above ``max_locked_bytes``
 (no limit by default, so nothing a plain ALTER TABLE runs is refused); on
 Galera, every step but INSTANT and NBO runs under Total Order Isolation,
 which pauses the whole cluster, so only up to ``galera_max_bytes``.
@@ -62,6 +65,7 @@ from msm_plugin.lib import statements
 
 INSTANT = "INSTANT"
 NOCOPY = "NOCOPY"
+INPLACE = "INPLACE"
 COPY = "COPY"
 NBO = "NBO"
 SHARED_LOCK = "SHARED_LOCK"
@@ -69,13 +73,16 @@ EXCLUSIVE_LOCK = "EXCLUSIVE_LOCK"
 NEEDS_EXTERNAL = "NEEDS_EXTERNAL"
 
 # The methods that apply the change, in the order they are tried
-METHODS = (INSTANT, NOCOPY, COPY, NBO, SHARED_LOCK, EXCLUSIVE_LOCK)
+METHODS = (INSTANT, NOCOPY, INPLACE, COPY, NBO, SHARED_LOCK, EXCLUSIVE_LOCK)
+# The steps that rebuild the table without blocking writes
+REBUILDS = (INPLACE, COPY)
 # The steps that block writes to the table
 LOCKED = (SHARED_LOCK, EXCLUSIVE_LOCK)
 
 _CLAUSES = {
     INSTANT: "ALGORITHM=INSTANT",
     NOCOPY: "ALGORITHM=NOCOPY, LOCK=NONE",
+    INPLACE: "ALGORITHM=INPLACE, LOCK=NONE",
     COPY: "ALGORITHM=COPY, LOCK=NONE",
     SHARED_LOCK: "LOCK=SHARED",
     EXCLUSIVE_LOCK: "LOCK=EXCLUSIVE",
@@ -117,9 +124,11 @@ class Options:
     """How far an online ALTER TABLE may go.
 
     Attributes:
-        max_copy_bytes: The largest table (data + indexes) the server's
-            online COPY may run on; None = no limit, 0 = never.
-        galera_max_bytes: On Galera, the largest table NOCOPY or COPY may run
+        max_copy_bytes: The largest table (data + indexes) the steps that
+            rebuild it online (INPLACE, COPY) may run on; None = no limit,
+            0 = never.
+        galera_max_bytes: On Galera, the largest table NOCOPY, INPLACE, COPY
+            or a locked step may run
             on under Total Order Isolation, which pauses the cluster; None
             or 0 = only INSTANT under TOI.
         nbo_lock: On Galera, SHARED (reads go on) or EXCLUSIVE to allow a
@@ -300,9 +309,10 @@ class DeploymentSettings:
         tables = list(self.project["tables"].values()) + list(self.call["tables"].values())
         return general or any(level.get("enabled") for level in tables)
 
-    def options_for(self, table: str) -> Optional[Options]:
+    def options_for(self, table: Optional[str]) -> Optional[Options]:
         """The Options for a table's ALTER TABLE; None where online ALTER
-        TABLE is off for it. Table names match exactly."""
+        TABLE is off for it. Table names match exactly; None for a table
+        that is none of the project's: the general values only."""
         enabled, values = True, {}
         for level in (
             self.project,
@@ -339,9 +349,11 @@ class Result:
     """What an online ALTER TABLE did.
 
     Attributes:
-        method: INSTANT, NOCOPY, COPY or NBO (the change is applied), or
+        method: The step that applied the change (METHODS), or
             NEEDS_EXTERNAL (nothing changed).
-        reason: Why NEEDS_EXTERNAL, or what NBO blocked; None otherwise.
+        reason: Why NEEDS_EXTERNAL (every step skipped and the steps the
+            server refused), or what a locked step or NBO blocked; None
+            otherwise.
         table_size: The table's data + index bytes before the change (an
             estimate for InnoDB).
         galera: Whether the session is a Galera node's.
@@ -403,9 +415,9 @@ def plan(table_size: int, galera: bool, options: Options) -> tuple:
         if galera and (not options.galera_max_bytes or table_size > options.galera_max_bytes):
             return ("Galera: non-instant DDL under TOI pauses the cluster; table size "
                     f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}")
-        if method == COPY and over(options.max_copy_bytes):
-            return (f"native COPY skipped: table size {table_size} > max_copy_bytes "
-                    f"{options.max_copy_bytes}")
+        if method in REBUILDS and over(options.max_copy_bytes):
+            return (f"online rebuilds (INPLACE, COPY) skipped: table size {table_size} > "
+                    f"max_copy_bytes {options.max_copy_bytes}")
         if method in LOCKED and over(options.max_locked_bytes):
             return (f"blocking writes skipped: table size {table_size} > max_locked_bytes "
                     f"{options.max_locked_bytes}")
@@ -508,7 +520,6 @@ def alter_table(
 
     for method, why in skipped:
         record(method, "skipped", message=why)
-    reason = skipped[-1][1] if skipped else None
 
     def check_cancel():
         if cancel is not None and cancel.is_set():
@@ -532,8 +543,8 @@ def alter_table(
                     )
                 except Exception as error:
                     if method == NBO and getattr(error, "code", None) == ER_WRONG_VALUE_FOR_VAR:
-                        reason = "NBO not available on this server (MariaDB Enterprise Server only)"
-                        record(method, "skipped", message=reason)
+                        record(method, "skipped", message="NBO not available on this server "
+                                                          "(MariaDB Enterprise Server only)")
                         continue
                     raise
             sql = step_sql(target, spec, method, options.nbo_lock)
@@ -555,17 +566,27 @@ def alter_table(
                 record(method, "applied", seconds)
                 break
             record(method, "refused", seconds, refusal)
-            if method == NBO:
-                reason = "NBO refused this statement"
         else:
-            result.reason = reason or (
-                f"the server refused every allowed step up to {allowed[-1]}"
-            )
+            result.reason = needs_external_reason(result.steps)
     except BaseException:
         _restore(session, old_lock_wait, old_osu if galera else None, failed=True)
         raise
     _restore(session, old_lock_wait, old_osu if galera else None, failed=False)
     return result
+
+
+def needs_external_reason(steps: list) -> str:
+    """Why no step applied the change: each distinct reason a step was
+    skipped for, then the steps the server refused with its last refusal,
+    so the reader sees which limit would allow more and what the server
+    would not do anyway."""
+    skips = [step["message"] for step in steps if step["outcome"] == "skipped"]
+    parts = list(dict.fromkeys(skips))
+    refused = [step for step in steps if step["outcome"] == "refused"]
+    if refused:
+        parts.append(f"the server refused {', '.join(step['method'] for step in refused)} "
+                     f"(last: {refused[-1]['message']})")
+    return "; ".join(parts) or "no step could run"
 
 
 def _attempt(session, sql, method, options, emit, pause, check_cancel, watch) -> Optional[str]:

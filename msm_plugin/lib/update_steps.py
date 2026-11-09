@@ -183,7 +183,10 @@ def run_update(
 
 
 def _alter(session, step, sql, parts, schema_name, settings, log) -> None:
-    options = settings.options_for(parts.table)
+    # The tables entries are the project's tables: another schema's table of
+    # the same name gets the general values only
+    own = parts.schema is None or parts.schema == schema_name
+    options = settings.options_for(parts.table if own else None)
     why = None
     if options is None:
         why = "online ALTER TABLE is off for the table"

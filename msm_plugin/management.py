@@ -820,7 +820,7 @@ def _returned(value):
 def online_alter_table(schema: str, table: str, spec: str, **kwargs) -> dict:
     """Runs one ALTER TABLE online, the least disruptive way the server accepts
 
-    Tries ALGORITHM=INSTANT, then NOCOPY and COPY with LOCK=NONE, then a Galera NBO where
+    Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with LOCK=NONE, then a Galera NBO where
     allowed, then LOCK=SHARED and LOCK=EXCLUSIVE, each with explicit clauses the server
     either honours or refuses at once. The result says which applied the change, or
     NEEDS_EXTERNAL where none did and nothing was changed.

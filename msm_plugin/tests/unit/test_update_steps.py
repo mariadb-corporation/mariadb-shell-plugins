@@ -25,7 +25,7 @@ import os
 
 import pytest
 
-from msm_plugin.lib import statements, update_steps
+from msm_plugin.lib import online_alter, statements, update_steps
 
 
 # -----------------------------------------------------------------------------
@@ -262,7 +262,8 @@ def test_an_alter_no_online_step_applies_stops_the_deployment(sandbox_session, p
     fresh_1_0_0(sandbox_session, project)
     with pytest.raises(update_steps.NeedsExternalToolError,
                        match=r"from 1.0.0 to 1.0.1 needs an external tool for an ALTER TABLE "
-                             r"of `t`: blocking writes skipped"):
+                             r"of `t`: online rebuilds \(INPLACE, COPY\) skipped: .*; "
+                             r"blocking writes skipped"):
         deploy(sandbox_session, project, "1.0.1",
                online_alter={"maxCopyBytes": 0, "maxLockedBytes": 0})
     now = state(sandbox_session)
@@ -289,3 +290,22 @@ def test_a_script_without_marked_steps_runs_as_written(sandbox_session, project,
     assert "marks no update steps" in log.text()
     assert "ALTER TABLE `t`:" not in log.text()
     assert state(sandbox_session)["version"] == [(1, 0, 1)]
+
+
+def test_another_schemas_table_gets_the_general_values_only(monkeypatch):
+    settings = online_alter.DeploymentSettings(
+        online_alter.read_setting({"lockWait": 7, "tables": {"t": {"enabled": False}}}, "test"))
+    used = []
+    monkeypatch.setattr(online_alter, "alter_table", lambda session, schema, table, spec,
+                        options: used.append((schema, options.lock_wait)) or online_alter.Result(
+                            online_alter.INSTANT, None, 0, False))
+    step = update_steps.UpdateStep("1.0.0", "1.0.1", "")
+    as_written = []
+    session = type("Session", (), {"run_sql": lambda self, sql: as_written.append(sql)})()
+    for sql in ("ALTER TABLE other.t ADD c INT", "ALTER TABLE `shop`.t ADD c INT",
+                "ALTER TABLE t ADD c INT"):
+        update_steps._alter(session, step, sql, statements.alter_table_parts(sql), "shop", settings,
+                            lambda level, message: None)
+    # The project's t is off; shop.t and t are it, other.t is not
+    assert used == [("other", 7)]
+    assert as_written == ["ALTER TABLE `shop`.t ADD c INT", "ALTER TABLE t ADD c INT"]
