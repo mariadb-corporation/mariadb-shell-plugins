@@ -139,13 +139,12 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
      table is larger than `galera_max_bytes`.
   3. `<spec>, ALGORITHM=INPLACE, LOCK=NONE`: InnoDB rebuilds the table in
      place, reads and writes go on (primary key added/dropped, NULL to NOT
-     NULL, ROW_FORMAT, FORCE; added in PR #95's review, user's decision).
+     NULL, ROW_FORMAT, FORCE; user's decision).
      A column type change is refused here too. Skipped like COPY.
   4. `<spec>, ALGORITHM=COPY, LOCK=NONE` (native online COPY, MariaDB 11.2+;
      older servers refuse with 1846). INPLACE and COPY are `REBUILDS`,
-     both skipped above `max_rebuild_bytes` (`maxRebuildBytes`; renamed
-     from `maxCopyBytes` once INPLACE came, user's decision, before any
-     release, so no alias), and on Galera above
+     both skipped above `max_rebuild_bytes` (`maxRebuildBytes`, no other
+     name accepted), and on Galera above
      `galera_max_bytes`.
   5. Galera only, when `nbo_lock` is set: `SET SESSION wsrep_OSU_method =
      'NBO'`, then `ALTER TABLE t LOCK=SHARED|EXCLUSIVE, <spec>` with no
@@ -181,12 +180,12 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   `max_rebuild_bytes` 10 GiB, `galera_max_bytes` 256 MiB, `nbo_lock` off (it
   blocks writes: choose it deliberately), `max_locked_bytes` no limit,
   `lock_wait` 5 s, `max_retries` 10 (about 5 minutes worst case).
-- **Behaviour change on Galera** (stated in PR #95): with online ALTER on
-  by default and `galera_max_bytes` 256 MiB, an update on Galera whose
-  ALTER of a table over 256 MiB is not INSTANT now stops with
-  `NeedsExternalToolError` unless `nboLock` is set (or `galeraMaxBytes`
-  raised, or the table / deployment turned off); before, it ran as
-  written under TOI, pausing the cluster. The one exception to "nothing a
+- **Galera differs from the procedure** (stated in the description of
+  #95): with online ALTER on by default and `galera_max_bytes` 256 MiB, an
+  update on Galera whose ALTER of a table over 256 MiB is not INSTANT
+  stops with `NeedsExternalToolError` unless `nboLock` is set (or
+  `galeraMaxBytes` raised, or the table / deployment turned off); the
+  procedure ran it as written under TOI, pausing the cluster. The one exception to "nothing a
   plain ALTER runs fails because online ALTER is on" (`maxLockedBytes`).
 - **Progress and cancelling.** With a `monitor` session (a second session
   on the same server), a thread polls `information_schema.PROCESSLIST`
@@ -292,6 +291,13 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
 4. The ai-plugins schema-management skills list the keys of
    `msm.project.json` and lack `onlineAlter`, and know nothing of online
    ALTER TABLE in deployments (re-run `sync-skills.sh` after editing).
+
+5. Open from the reviews of #95: `_Watch.__exit__` joins the monitor
+   thread without a timeout (a monitor session hanging in its PROCESSLIST
+   read keeps the task running after the ALTER returned); "is this the
+   project's schema" in `update_steps._alter` compares case-sensitively,
+   which is wrong under `lower_case_table_names` 1/2 (needs the server's
+   setting, not plain case folding).
 
 ## Gotchas / things not to repeat
 

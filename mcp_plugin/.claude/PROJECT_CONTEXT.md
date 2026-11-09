@@ -51,7 +51,7 @@ this table with it.
 | --- | --- |
 | [`context/environment.md`](context/environment.md) | The shell's bundled Python (the tree that actually runs), the MCP SDK version and its 2.x API, and the traps in both. |
 | [`context/server.md`](context/server.md) | `mcp.startServer`: GUI mode, function groups, the two transports, the plugin's own uvicorn server, Host/Origin validation, the path guard and elicitation. |
-| [`context/connections.md`](context/connections.md) | The two connection lists, URI resolution, `use_session`, and every session safeguard: client binding, idle timeout, hard TTL, caps, audit log, locking. |
+| [`context/connections.md`](context/connections.md) | The two connection lists, URI resolution, `use_session`, `session_opener` (extra in-process sessions of a connection), and every session safeguard: client binding, idle timeout, hard TTL, caps, audit log, locking. |
 | [`context/security-review.md`](context/security-review.md) | The numbered review behind most of that: S1..S8 and T1..T9, one entry each, with what was verified and which revert probe pinned it. |
 | [`context/db-tools.md`](context/db-tools.md) | `db.execute_sql` / `execute_sql_script` including the per-statement script results, the three introspection tools and their SQL. |
 | [`context/source-includes.md`](context/source-includes.md) | MSM SOURCE directives in `db.execute_sql_script` and the `sql` tools: msm's shared `lib/source.py`, path resolution and allowed-path checks, line-break normalization, how statements and positions are placed back in the script or the included file. |
