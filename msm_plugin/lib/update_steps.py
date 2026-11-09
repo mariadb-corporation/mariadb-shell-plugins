@@ -187,15 +187,12 @@ def _alter(session, step, sql, parts, schema_name, settings, log) -> None:
     # the same name gets the general values only
     own = parts.schema is None or parts.schema == schema_name
     options = settings.options_for(parts.table if own else None)
-    why = None
     if options is None:
         why = "online ALTER TABLE is off for the table"
     elif parts.modifiers:
         why = f"it uses {' '.join(parts.modifiers)}"
-    elif clause := statements.locking_clause(parts.spec):
-        why = f"it sets {clause} itself"
-    elif statements.changes_partitioning(parts.spec):
-        why = "it changes the partitioning"
+    else:
+        why = online_alter.as_written_reason(parts.spec)
     if why:
         log("INFO", f"ALTER TABLE `{parts.table}` runs as written ({why}).")
         session.run_sql(statements.strip_statement(sql))

@@ -387,19 +387,23 @@ def check_spec(spec: str) -> str:
         spec = spec[:-1].rstrip()
     if not spec:
         raise ValueError("The ALTER TABLE has no clauses.")
-    clause = statements.locking_clause(spec)
-    if clause:
-        raise ValueError(
-            f"The ALTER TABLE sets `{clause}` itself; an online ALTER TABLE sets "
-            "ALGORITHM and LOCK for each step. Run it as written instead."
-        )
-    if statements.changes_partitioning(spec):
-        raise ValueError(
-            "The ALTER TABLE changes the table's partitioning, which takes no "
-            "ALGORITHM or LOCK clause. Run it as written instead."
-        )
+    why = as_written_reason(spec)
+    if why:
+        raise ValueError(f"The ALTER TABLE cannot run online: {why}. Run it as written instead.")
     # The clauses the steps append go on a line of their own
     return spec + "\n" if statements.ends_in_line_comment(spec) else spec
+
+
+def as_written_reason(spec: str) -> Optional[str]:
+    """Why an ALTER TABLE's clauses (the text after its table name) cannot
+    go through the steps, which append ALGORITHM and LOCK; None where they
+    can."""
+    clause = statements.locking_clause(spec)
+    if clause:
+        return f"it sets `{clause}` itself, while the steps set ALGORITHM and LOCK"
+    if statements.changes_partitioning(spec):
+        return "it changes the partitioning, which takes no ALGORITHM or LOCK clause"
+    return None
 
 
 def plan(table_size: int, galera: bool, options: Options) -> tuple:
@@ -567,7 +571,7 @@ def alter_table(
                 break
             record(method, "refused", seconds, refusal)
         else:
-            result.reason = needs_external_reason(result.steps)
+            result.reason = _needs_external_reason(result.steps)
     except BaseException:
         _restore(session, old_lock_wait, old_osu if galera else None, failed=True)
         raise
@@ -575,18 +579,17 @@ def alter_table(
     return result
 
 
-def needs_external_reason(steps: list) -> str:
+def _needs_external_reason(steps: list) -> str:
     """Why no step applied the change: each distinct reason a step was
     skipped for, then the steps the server refused with its last refusal,
     so the reader sees which limit would allow more and what the server
-    would not do anyway."""
-    skips = [step["message"] for step in steps if step["outcome"] == "skipped"]
-    parts = list(dict.fromkeys(skips))
+    would not do anyway. INSTANT always runs, so some step was refused."""
+    parts = list(dict.fromkeys(
+        step["message"] for step in steps if step["outcome"] == "skipped"))
     refused = [step for step in steps if step["outcome"] == "refused"]
-    if refused:
-        parts.append(f"the server refused {', '.join(step['method'] for step in refused)} "
-                     f"(last: {refused[-1]['message']})")
-    return "; ".join(parts) or "no step could run"
+    parts.append(f"the server refused {', '.join(step['method'] for step in refused)} "
+                 f"(last: {refused[-1]['message']})")
+    return "; ".join(parts)
 
 
 def _attempt(session, sql, method, options, emit, pause, check_cancel, watch) -> Optional[str]:

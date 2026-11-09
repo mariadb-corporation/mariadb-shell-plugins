@@ -22,6 +22,7 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -295,13 +296,15 @@ def test_a_script_without_marked_steps_runs_as_written(sandbox_session, project,
 def test_another_schemas_table_gets_the_general_values_only(monkeypatch):
     settings = online_alter.DeploymentSettings(
         online_alter.read_setting({"lockWait": 7, "tables": {"t": {"enabled": False}}}, "test"))
-    used = []
-    monkeypatch.setattr(online_alter, "alter_table", lambda session, schema, table, spec,
-                        options: used.append((schema, options.lock_wait)) or online_alter.Result(
-                            online_alter.INSTANT, None, 0, False))
+    used, as_written = [], []
+
+    def fake_alter(session, schema, table, spec, options):
+        used.append((schema, options.lock_wait))
+        return online_alter.Result(online_alter.INSTANT, None, 0, False)
+
+    monkeypatch.setattr(online_alter, "alter_table", fake_alter)
     step = update_steps.UpdateStep("1.0.0", "1.0.1", "")
-    as_written = []
-    session = type("Session", (), {"run_sql": lambda self, sql: as_written.append(sql)})()
+    session = SimpleNamespace(run_sql=as_written.append)
     for sql in ("ALTER TABLE other.t ADD c INT", "ALTER TABLE `shop`.t ADD c INT",
                 "ALTER TABLE t ADD c INT"):
         update_steps._alter(session, step, sql, statements.alter_table_parts(sql), "shop", settings,

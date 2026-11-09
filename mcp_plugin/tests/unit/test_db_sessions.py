@@ -1816,10 +1816,15 @@ def test_session_opener_opens_sessions_as_the_connection_does(http_transport, mo
     _, connection = _register_connection(client)
     user = connection.mcp_user_id
     opened = []
-    monkeypatch.setattr(db_functions, "_open_session",
-                        lambda *args: opened.append(("configured",) + args) or object())
-    monkeypatch.setattr(db_functions, "_open_login_session",
-                        lambda *args: opened.append(("login",) + args) or object())
+
+    def recorder(kind):
+        def open_session(*args):
+            opened.append((kind,) + args)
+            return object()
+        return open_session
+
+    monkeypatch.setattr(db_functions, "_open_session", recorder("configured"))
+    monkeypatch.setattr(db_functions, "_open_login_session", recorder("login"))
 
     open_session = db_functions.session_opener(CONNECTION_ID, client)
     first, second = open_session(), open_session()

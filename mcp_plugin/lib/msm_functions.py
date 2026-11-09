@@ -1258,7 +1258,10 @@ def register_msm_tools(server, function_groups=()) -> None:
             # Resolved before the task starts, so that a wrong connection
             # fails the call itself. Its sessions are opened as db.connect's
             # are: still configured, under the user's default role.
-            open_session = db_functions.session_opener(connection_id, client)
+            # (On a worker thread: dropping an expired connection waits for it.)
+            open_session = await anyio.to_thread.run_sync(
+                db_functions.session_opener, connection_id, client
+            )
             task = tasks.create(
                 TASK_TYPE_MSM, "online_alter_table",
                 f"ALTER TABLE `{schema}`.`{table}` online", client, MAX_RUNNING_MSM_TASKS,

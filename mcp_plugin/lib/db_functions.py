@@ -1195,14 +1195,9 @@ def connection_credentials(connection_id: str, client) -> tuple:
 
 
 def session_opener(connection_id: str, client):
-    """A function that opens new sessions on a connection opened with
-    ``db.connect``, each one checked and set up as the connection's own
-    session is (see :meth:`_Connection.open_new_session`).
-
-    For work in this process that needs sessions of its own, such as a
-    background task. The connection is resolved here, so a wrong or foreign
-    connection fails the call; every session opened later checks again
-    that the URI is still configured, or the sign-in still alive.
+    """:meth:`_Connection.open_new_session` of a connection opened with
+    ``db.connect``, for work that needs sessions of its own (a background
+    task). Resolved here, so a wrong or foreign connection fails the call.
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.

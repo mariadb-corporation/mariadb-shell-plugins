@@ -112,7 +112,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   `nboLock`, `maxLockedBytes`, `lockWait`, `maxRetries`, the rest kept from
   `base`; `to_dict` gives them back); `plan(size, galera, options)` gives
   the allowed and skipped steps; `check_spec` refuses a spec with its own
-  `ALGORITHM`/`LOCK` clause (`statements.locking_clause`: anywhere
+  `ALGORITHM`/`LOCK` clause or a partitioning change
+  (`as_written_reason`, which `update_steps._alter` uses too, to run such
+  an ALTER as written; `statements.locking_clause`: anywhere
   outside quotes, comments and parentheses, also after a table option
   without a comma; `LOCK` is reserved, `ALGORITHM` counts only before `=`
   or one of its values, as a column may be named algorithm). `on_event` gets
@@ -146,7 +148,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
      ALTER TABLE is on; production sets a cap); on Galera also by
      `galeraMaxBytes` (TOI). The reason says writes were blocked.
   8. Otherwise `NEEDS_EXTERNAL`: nothing changed. Its reason
-     (`needs_external_reason(steps)`) lists each distinct skip reason, then
+     (`_needs_external_reason(steps)`) lists each distinct skip reason, then
      `the server refused <methods> (last: <its last refusal>)`, so it shows
      which limit would allow more and what the server refused anyway.
   - Table size = `DATA_LENGTH + INDEX_LENGTH` of `information_schema.TABLES`

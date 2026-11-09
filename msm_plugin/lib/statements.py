@@ -163,15 +163,24 @@ _LOCKING_CLAUSE = re.compile(
 _PARTITION_WORD = re.compile(r"\bPARTITION(?:S|ING)?\b", re.IGNORECASE)
 
 
+def _bare_tokens(spec: str):
+    """The tokens of an ALTER TABLE's clauses outside quotes and comments,
+    as (parenthesis depth, token)."""
+    depth = 0
+    for token in _ALTER_TOKEN.findall(spec):
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif not token.startswith(("`", "'", '"')) and not _is_comment(token):
+            yield depth, token
+
+
 def changes_partitioning(spec: str) -> bool:
     """Whether an ALTER TABLE's clauses (the text after its table name)
     touch its partitioning (PARTITION BY, ADD/DROP/... PARTITION, REMOVE
     PARTITIONING): the server takes no ALGORITHM or LOCK clause after those."""
-    return any(
-        _PARTITION_WORD.search(token)
-        for token in _ALTER_TOKEN.findall(spec)
-        if not token.startswith(("`", "'", '"')) and not _is_comment(token)
-    )
+    return any(_PARTITION_WORD.search(token) for _, token in _bare_tokens(spec))
 
 
 def ends_in_line_comment(text: str) -> bool:
@@ -185,16 +194,10 @@ def locking_clause(spec: str) -> Optional[str]:
     """The first ALGORITHM or LOCK clause of an ALTER TABLE's clauses (the
     text after its table name), as written; None where it has none. Quotes,
     comments and parentheses (a column's definition) do not count."""
-    depth = 0
-    for token in _ALTER_TOKEN.findall(spec):
-        if token == "(":
-            depth += 1
-        elif token == ")":
-            depth -= 1
-        elif depth == 0 and not token.startswith(("`", "'", '"')) and not _is_comment(token):
-            match = _LOCKING_CLAUSE.search(token)
-            if match:
-                return match.group(0).strip()
+    for depth, token in _bare_tokens(spec):
+        match = _LOCKING_CLAUSE.search(token) if depth == 0 else None
+        if match:
+            return match.group(0).strip()
     return None
 
 
