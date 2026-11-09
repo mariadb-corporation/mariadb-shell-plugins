@@ -117,7 +117,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   an ALTER as written; `statements.locking_clause`: anywhere
   outside quotes, comments and parentheses, also after a table option
   without a comma; `LOCK` is reserved, `ALGORITHM` counts only before `=`
-  or one of its values, as a column may be named algorithm). `on_event` gets
+  or one of its values, as a column may be named algorithm, and not as
+  the name in `CHANGE [COLUMN] algorithm copy ...`; a comment counts as a
+  blank, so `ALGORITHM /* x */ = COPY` is found). `on_event` gets
   `step`, `refused`, `skipped`, `retry` and `progress` events. Each step
   sends the ALTER with explicit clauses, so the server either runs it
   exactly so or refuses at once (1845 / 1846) without touching data; a
@@ -191,7 +193,8 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   and the monitor for progress and KILL QUERY) and closes them; that opens
   them as the connection's own session is opened (URI still configured or
   sign-in grant alive, the user's default role in multi-tenant mode), never
-  with `shell.open_session` on the connection data;
+  with `shell.open_session` on the connection data; once the connection
+  is closed (`db.close`, expiry) the opener refuses like an unknown id;
   `online_alter.run_in_task` makes each step a stage, the server's progress
   the stage's (combined over the server's stages, never going back), and
   refusals, skips, lock retries and the server's STATE messages; a
