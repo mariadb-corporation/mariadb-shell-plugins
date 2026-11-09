@@ -11,7 +11,7 @@ Most of the context is in this file. Areas with a file of their own in
 
 | File | What is in it |
 | --- | --- |
-| [`context/online-alter.md`](context/online-alter.md) | Online ALTER TABLE (planned): msm runs Section 240's ALTERs through an INSTANT → NOCOPY → COPY → NBO escalation in Python during `deploySchema`, and `msm.onlineAlterTable` does the same for the extension's Table Editor; the agreed decisions, the escalation rules, the open points and the later gh-ost step. |
+| [`context/online-alter.md`](context/online-alter.md) | Online ALTER TABLE (the escalation in `lib/online_alter.py` is built, its callers are not): msm runs Section 240's ALTERs through an INSTANT → NOCOPY → COPY → NBO escalation in Python during `deploySchema`, and `msm.onlineAlterTable` does the same for the extension's Table Editor; the agreed decisions, the escalation rules, the open points and the later gh-ost step. |
 
 ## Architecture / key decisions
 
@@ -78,6 +78,7 @@ Most of the context is in this file. Areas with a file of their own in
 - `lib/source.py` -> the ONE implementation of MSM SOURCE (regex, slices, `resolve_include_path`, `expand_source_directives` with segments, `locate`, `directives`, `directive_slices`, the include check `checked_includes` / `checked_include_path`); no shell imports, so mcp_plugin's `db.execute_sql_script` and `sql.*` tools import it too (PRs #60, #61, #63, 2026-10-19). Keep it in step with the language server's rules (lsp-server docs/plans/source-includes.md).
 - `lib/projects.py` -> the project list (see Architecture): normalizers, `list_projects` / `add_project` / `update_project` / `remove_project` / `remove_owner`, all taking `owner=`
 - `lib/diagrams.py`, `lib/layout.py`, `lib/lsp.py`, `lib/modeling.py`, `lib/sections.py`, `lib/statements.py`, `lib/workbench.py`, `modeling.py` -> the schema diagrams and the Workbench import (see Architecture); `tests/unit/test_workbench.py` (builds a .mwb in the test: GRT XML + SQLite data.db; one test releases and deploys an import on the sandbox, all sections in breakout files); `tests/unit/test_diagrams.py`, `tests/unit/test_layout.py` (imports the `project` fixture and helpers from test_diagrams; pure layout tests need nothing, the modeling ones run the real binary)
+- `lib/online_alter.py` -> one ALTER TABLE run online (INSTANT → NOCOPY → COPY → NBO, progress, cancel); see [`context/online-alter.md`](context/online-alter.md)
 - `lib/management.py` -> sections, project creation, copyrights/licenses, `prepare_release`, `generate_deployment_script`, `deploy_schema`
 - `lib/core.py` -> `ConfigFile`, working dir, interactive check, `MsmDbExec`, update log, `execute_msm_sql_script` (lock + split_script)
 - `templates/scripts/schema_next.sql`, `schema_a.b.c.sql`, `schema_x.y.z_to_a.b.c.sql`, `schema_deployment_a.b.c.sql` -> the section layouts; the deployment template's placeholders decide which sections ever reach a server

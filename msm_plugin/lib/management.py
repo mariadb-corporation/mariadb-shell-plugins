@@ -35,6 +35,7 @@ from datetime import date
 from textwrap import indent
 import mysqlsh
 
+from msm_plugin.lib import online_alter as online_alter_lib
 from msm_plugin.lib.source import expand_source_directives
 
 # Regex to match MSM sections, excluding the license and the last section
@@ -740,6 +741,8 @@ def create_schema_project_folder(
         "copyrightHolder": copyrights[0].get("holder"),
         "customLicense": "",
         "license": license,
+        # On by default; written so the setting can be found and changed
+        "onlineAlter": {"enabled": True},
         "schemaDependencies": [],
         "schemaName": schema_name,
         "schemaFileName": schema_file_name,
@@ -1958,6 +1961,7 @@ def deploy_schema(
     backup_directory: str = None,
     backup: bool = False,
     substitutions: dict = None,
+    online_alter=None,
 ) -> str:
     """Deploys the database schema
 
@@ -1982,6 +1986,11 @@ def deploy_schema(
             declares, e.g. {"schema_prefix": "acme_"}. Every /*<msm:name>*/
             in the scripts and the schemaName is replaced with the value
             before the scripts run; names not given use their defaults.
+        online_alter (bool | dict): This deployment's online ALTER TABLE
+            setting, over the project's `onlineAlter` (same format: true,
+            false, or {enabled, maxCopyBytes, galeraMaxBytes, nboLock,
+            lockWait, maxRetries, tables: {<table>: {...}}}). For a table the
+            most specific value wins, and at the same level this one.
 
     Returns:
         None
@@ -1996,6 +2005,9 @@ def deploy_schema(
     try:
         substitution_values = resolve_substitutions(project_settings, substitutions)
         schema_name = get_effective_schema_name(project_settings, substitutions)
+        online_alter_settings = online_alter_lib.deployment_settings(
+            project_settings, online_alter
+        )
     except ValueError as e:
         lib.core.write_to_msm_schema_update_log("ERROR", str(e))
         raise

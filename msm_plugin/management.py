@@ -779,6 +779,11 @@ def deploy_schema(**kwargs) -> str:
             declares in msm.project.json, e.g. {"schema_prefix": "acme_"}.
             Every /*<msm:name>*/ comment in the scripts and in the schema
             name is replaced with its value before the scripts run.
+        online_alter (dict): This deployment's online ALTER TABLE setting,
+            over the project's `onlineAlter` in msm.project.json, e.g.
+            {"maxCopyBytes": 1073741824} or {"enabled": false}. The keys
+            are enabled, maxCopyBytes, galeraMaxBytes, nboLock, lockWait,
+            maxRetries and tables (per table, the same keys but tables).
         session (object): The database session to use.
 
     Returns:
@@ -789,6 +794,7 @@ def deploy_schema(**kwargs) -> str:
     backup_directory = kwargs.get("backup_directory", None)
     backup = kwargs.get("backup", False)
     substitutions = kwargs.get("substitutions", None)
+    online_alter = kwargs.get("online_alter", None)
     session = lib.core.get_current_session(kwargs.get("session", None))
 
     return lib.management.deploy_schema(
@@ -798,4 +804,5 @@ def deploy_schema(**kwargs) -> str:
         backup_directory=backup_directory,
         backup=backup,
         substitutions=substitutions,
+        online_alter=online_alter,
     )

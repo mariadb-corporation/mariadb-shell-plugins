@@ -136,6 +136,23 @@ def _alter_clauses(text: str) -> list:
     return clauses
 
 
+# A clause of an ALTER TABLE that decides how the server runs it. Neither
+# word starts any other clause; LOCK is reserved, so a column named lock is
+# in backticks, and a column named algorithm only appears after ADD, CHANGE,
+# MODIFY, ...
+_LOCKING_CLAUSE = re.compile(r"^(?:ALGORITHM|LOCK)\b\s*(?:=\s*)?\w*", re.IGNORECASE)
+
+
+def locking_clause(spec: str) -> Optional[str]:
+    """The first ALGORITHM or LOCK clause of an ALTER TABLE's clauses (the
+    text after its table name), as written; None where it has none."""
+    for clause in _alter_clauses(spec):
+        match = _LOCKING_CLAUSE.match(clause)
+        if match:
+            return match.group(0)
+    return None
+
+
 def _is_table_addition(text: str) -> bool:
     """CREATE INDEX, or an ALTER TABLE whose every clause adds a key, an
     index or a constraint (_ADDITION_CLAUSE)."""

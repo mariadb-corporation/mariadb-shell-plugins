@@ -2,8 +2,9 @@
 
 Back to [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md).
 
-Planned, nothing built yet. The design below is agreed with the user; the
-points marked **open** are not.
+The design below is agreed with the user; the points marked **open** are
+not. Built: the escalation itself (`lib/online_alter.py`, Next steps 2).
+Not built: everything that calls it.
 
 ## Goal
 
@@ -28,13 +29,27 @@ disruptive method the server accepts, in two places:
   `prepareRelease` moves them into Section 240 unchanged. A deployment
   script run without msm (`mariadb` client, CI) runs them as plain,
   possibly blocking ALTERs. That is wanted: it shows what MSM adds.
-- **On by default.** A setting in `msm.project.json`, default True, so a
-  user never has to think about it. Per-table overrides of the parameters,
-  written by the Table Editor's tab for a project's table, go there too.
-  The limits that depend on the environment are also options of the
-  `deploySchema` call. Names of the keys: **open** (proposal:
-  `onlineAlter: {enabled, maxCopyBytes, galeraMaxBytes, nboLock, lockWait,
-  maxRetries, tables: {<table>: {...}}}`).
+- **On by default.** `msm.project.json`'s `onlineAlter` (user's decision:
+  default True, so a user never has to think about it):
+  `{enabled?, maxCopyBytes?, galeraMaxBytes?, nboLock?, lockWait?,
+  maxRetries?, tables?: {<table>: {enabled?, <the same option keys>}}}`;
+  `true` / `false` stand for `{enabled: ...}`; missing = enabled with the
+  defaults. New projects get `"onlineAlter": {"enabled": true}` written
+  (`create_schema_project_folder`), so it can be found. The per-table
+  entries are what the Table Editor's tab writes for a project's table.
+- **A deployment's own setting.** `deploy_schema(online_alter=)` (shell
+  `msm.deploySchema`, keyword `online_alter`) takes the same format, for
+  the limits that depend on the environment. Precedence, most specific
+  wins and the call at the same level (Claude's choice, not discussed with
+  the user): project general → call general → project's table entry →
+  call's table entry; `enabled` follows the same order. So a table the
+  project marks `maxCopyBytes: 0` stays so unless the call names that
+  table. Table names match exactly. `online_alter.deployment_settings`
+  checks both before anything else of the deployment (a bad key or value
+  is a ValueError naming where it is written: `msm.project.json,
+  onlineAlter of table ...` or `the deployment, ...`), and
+  `DeploymentSettings.options_for(table)` gives the Options, None = off.
+  The mcp tool `msm.deploy_schema` gets the option with Next steps 4.
 - **How deploySchema reaches the ALTERs.** In the generated deployment
   script they sit inside `CREATE PROCEDURE msm_update_<from>_to_<to>` and
   run only through `CALL msm_create_or_update()`. So:
@@ -55,8 +70,17 @@ disruptive method the server accepts, in two places:
     written, and the log says it did not run online;
   - an ALTER that names `ALGORITHM` or `LOCK` itself runs as written;
   - the rest of the script runs as written.
-- **The escalation** (`lib/online_alter.py`, planned), taken from the
-  dropped procedure. Each step sends the ALTER with explicit clauses, so
+- **The escalation** (`lib/online_alter.py`), taken from the dropped
+  procedure. `alter_table(session, schema, table, spec, options, *, monitor,
+  on_event, cancel, poll_interval, sleep) -> Result(method, reason,
+  table_size, galera, steps)`; `Options` (dataclass; `from_dict` takes the
+  camelCase keys `maxCopyBytes`, `galeraMaxBytes`, `nboLock`, `lockWait`,
+  `maxRetries`, the rest kept from `base`); `plan(size, galera, options)`
+  gives the allowed and skipped steps; `check_spec` refuses a spec with its
+  own `ALGORITHM`/`LOCK` clause (`statements.locking_clause`, clause starts
+  only, so names, strings and comments do not count). No shell imports: the
+  error number is read from `error.code`. `on_event` gets `step`, `refused`,
+  `skipped`, `retry` and `progress` events. Each step sends the ALTER with explicit clauses, so
   the server either runs it exactly so or refuses at once (1845 / 1846)
   without touching data; a refusal goes to the next step:
   1. `ALTER TABLE t <spec>, ALGORITHM=INSTANT` (on Galera under TOI).
@@ -87,10 +111,13 @@ disruptive method the server accepts, in two places:
   `galera_max_bytes` 256 MiB, `nbo_lock` off (it blocks writes: choose it
   deliberately), `lock_wait` 5 s, `max_retries` 10 (about 5 minutes worst
   case).
-- **Progress and cancelling.** The ALTER runs in its own session; a second
-  session polls `information_schema.PROCESSLIST` (`PROGRESS`, `STAGE`,
-  MariaDB's own columns) for its connection id. The task reports the step
-  being tried and a percentage; cancel = `KILL QUERY`.
+- **Progress and cancelling.** With a `monitor` session (a second session
+  on the same server), a thread polls `information_schema.PROCESSLIST`
+  (`STAGE`, `MAX_STAGE`, `PROGRESS`, `STATE`) for the ALTER's connection id
+  while each step runs, and once `cancel` is set it sends `KILL QUERY`; the
+  ALTER then fails with 1317 and `OnlineAlterCancelled` is raised. Without
+  a monitor, a cancel waits for the running step. A failing poll ends the
+  watch, never the step. The task (Next steps 5) reports these events.
 - **Live tables (Table Editor).** `msm.onlineAlterTable` (plugin function
   and mcp tool) runs as a background task over `mysqlsh.task_manager`, so it
   shows in the extension's Tasks view (`mariadb.tasks`, the `task.*`
@@ -106,11 +133,20 @@ disruptive method the server accepts, in two places:
 1. (Done) The deployment template's dead `${section_260_...}` placeholders
    (no script has a Section 260; Section 290 reaches the script through
    `${section_290_removal_of_helpers}` in Section 390) are removed.
-2. `lib/online_alter.py`: the escalation, the Galera handling, retries,
-   progress polling and `KILL QUERY`; tests on the sandbox for INSTANT,
-   NOCOPY, COPY, a refusal, a lock timeout with a blocking transaction.
-3. The `onlineAlter` setting in `msm.project.json` (default True) and the
-   `deploySchema` options.
+2. (Done) `lib/online_alter.py` and `tests/unit/test_online_alter.py`: the
+   decisions against a fake session (Galera paths included), and on the
+   sandbox INSTANT / NOCOPY / COPY, NEEDS_EXTERNAL leaving the table as it
+   was, a held metadata lock timing out, a cancel stopping a blocked ALTER
+   by KILL QUERY (fails without it: revert-probed), progress read during a
+   COPY. Galera itself is only faked: no Galera or Enterprise Server in the
+   suite.
+3. (Done) The `onlineAlter` setting and `deploy_schema(online_alter=)`,
+   checked up front; nothing uses the resolved settings until step 4.
+   Still to do with step 5 or 6: a function the Table Editor writes a
+   table's entry with, and `msm.edit_schema` carrying a table's entry over
+   a `rename_table` (and dropping it with `drop_table`). The ai-plugins
+   schema-management skills list the keys of `msm.project.json` and lack
+   `onlineAlter` (re-run `sync-skills.sh` after editing).
 4. Markers around each 240 body in `generate_deployment_script`, and
    `deploy_schema` running the upgrade steps itself. Test that an upgrade
    through msm ends in the same schema, roles and version as one through
@@ -119,8 +155,24 @@ disruptive method the server accepts, in two places:
    Online Alter Table tab and its Task.
 6. **Merge the ALTERs of one table per Save** in `msm.edit_schema`: the
    language server writes several (e.g. DROP FK, MODIFY, ADD FK), and each
-   would be its own escalation and maybe its own table copy. As far as
-   MariaDB takes them in one statement.
+   would be its own escalation and maybe its own table copy. The binary
+   does the merging (lsp-server #33): send `"merge_alters": true` at the top
+   of the edit request, only where `edit --ops` prints `"merge_alters":
+   true` (older binaries ignore the member). Every ALTER TABLE in the
+   migration then also has `edits` (indexes), `table`, `spec` (the text
+   after ``ALTER TABLE `t` ``) and `clauses: [{edit, spec, action, object,
+   name, table, new_name?}]`; a merged one (2+ clauses) is tagged `alter`
+   `table`, `edit` = its first clause's, and stands where that clause's
+   statement stood. RENAME TABLE, CREATE, DROP get none of these. Order
+   between tables holds (an ALTER moves past another table's only without a
+   foreign key between them), so a modify_column of a column another
+   table's FK references keeps that table's ADD CONSTRAINT between the
+   change and later ALTERs of the same table. Pairs MariaDB refuses or
+   reads differently in one statement stay separate (lsp-server
+   `docs/edit-format.md`, "Merged ALTER TABLE statements"). msm's part:
+   send the flag, keep the merged statement under one comment naming all
+   its edits (`_describe` takes one edit today), and use `spec` where the
+   Table Editor's live path hands an ALTER to `msm.onlineAlterTable`.
 7. **Later, a separate step:** `NEEDS_EXTERNAL` and resuming. Prepare for
    it now (stop before any statement of the failing version runs; record
    the steps done so a re-run continues instead of failing with 32101 on
@@ -130,6 +182,17 @@ disruptive method the server accepts, in two places:
    pt-online-schema-change is the tool.
 
 ## Gotchas / things not to repeat
+
+- **A shell session works from a second Python thread while `run_sql`
+  blocks in the first** (the shell releases the GIL): that is what the
+  progress poll and `KILL QUERY` rely on. Checked on MariaDB 12.3.2.
+- What 12.3.2 answers: a refused step is 1846 with the reason and a hint
+  (`ALGORITHM=INSTANT is not supported. Reason: ADD INDEX. Try
+  ALGORITHM=NOCOPY`); a column type change is refused by INSTANT, NOCOPY
+  and INPLACE alike and runs with `COPY, LOCK=NONE`; `wsrep_OSU_method =
+  'NBO'` without Galera is 1231; a killed ALTER is 1317. `PROGRESS` seems
+  to be per stage (back to 0 at the next stage), so report stage x of y
+  with it rather than one percentage.
 
 - A dry run on an empty `CREATE TABLE ... LIKE` copy usually, but not
   always, predicts the real table: whether InnoDB can change a table
