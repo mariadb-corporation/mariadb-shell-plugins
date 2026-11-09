@@ -1255,11 +1255,10 @@ def register_msm_tools(server, function_groups=()) -> None:
                 raise tool_error(str(error)) from error
             client = general.get_client_identity(ctx)
 
-            # Reading the secret store is no work for the loop. Done before the
-            # task starts, so that a wrong connection fails the call itself.
-            data = await anyio.to_thread.run_sync(
-                lambda: db_functions.connection_data(connection_id, client)
-            )
+            # Resolved before the task starts, so that a wrong connection
+            # fails the call itself. Its sessions are opened as db.connect's
+            # are: still configured, under the user's default role.
+            open_session = db_functions.session_opener(connection_id, client)
             task = tasks.create(
                 TASK_TYPE_MSM, "online_alter_table",
                 f"ALTER TABLE `{schema}`.`{table}` online", client, MAX_RUNNING_MSM_TASKS,
@@ -1267,13 +1266,11 @@ def register_msm_tools(server, function_groups=()) -> None:
             )
 
             def work(task):
-                import mysqlsh
-
-                session = mysqlsh.globals.shell.open_session(data)
+                session = open_session()
                 try:
                     # The second session reads the progress and stops the
                     # statement on a cancel
-                    monitor = mysqlsh.globals.shell.open_session(data)
+                    monitor = open_session()
                     try:
                         return online_alter.run_in_task(
                             task, session, monitor, schema, table, spec, limits

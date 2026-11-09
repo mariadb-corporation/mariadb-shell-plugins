@@ -206,6 +206,30 @@ def test_algorithm_or_lock_in_names_strings_and_comments_is_no_clause(spec):
     assert online_alter.check_spec(spec) == spec
 
 
+@pytest.mark.parametrize("spec", [
+    "PARTITION BY HASH (`id`) PARTITIONS 4",
+    "ENGINE=InnoDB partition by range (`id`) (PARTITION p0 VALUES LESS THAN (10))",
+    "REMOVE PARTITIONING",
+    "ADD PARTITION (PARTITION p9 VALUES LESS THAN MAXVALUE)",
+    "DROP PARTITION p0",
+    "REORGANIZE PARTITION p0 INTO (PARTITION p0a VALUES LESS THAN (5))",
+])
+def test_a_change_of_the_partitioning_is_refused(spec):
+    assert statements.changes_partitioning(spec)
+    with pytest.raises(ValueError, match="partitioning.*Run it as written"):
+        online_alter.check_spec(spec)
+
+
+@pytest.mark.parametrize("spec", [
+    "ADD COLUMN `partition` INT",
+    "COMMENT = 'PARTITION BY nothing'",
+    "ADD COLUMN `n` INT /* PARTITION BY HASH (n) */",
+    "ADD COLUMN partition_key INT",
+])
+def test_partition_in_names_strings_and_comments_is_no_partitioning(spec):
+    assert not statements.changes_partitioning(spec)
+
+
 @pytest.mark.parametrize("comment", ["-- note", "# note"])
 def test_a_trailing_line_comment_does_not_swallow_the_steps_clauses(comment):
     spec = online_alter.check_spec(f"ADD COLUMN `n` INT {comment};")

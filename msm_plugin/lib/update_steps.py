@@ -191,6 +191,8 @@ def _alter(session, step, sql, parts, schema_name, settings, log) -> None:
         why = f"it uses {' '.join(parts.modifiers)}"
     elif clause := statements.locking_clause(parts.spec):
         why = f"it sets {clause} itself"
+    elif statements.changes_partitioning(parts.spec):
+        why = "it changes the partitioning"
     if why:
         log("INFO", f"ALTER TABLE `{parts.table}` runs as written ({why}).")
         session.run_sql(statements.strip_statement(sql))

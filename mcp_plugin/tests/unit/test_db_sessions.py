@@ -1807,3 +1807,28 @@ def test_a_session_being_closed_is_not_replaced_underneath(
     assert attempted == ["refused"]
     assert session.closed is True
     assert connection.session is None
+
+
+def test_session_opener_opens_sessions_as_the_connection_does(http_transport, monkeypatch):
+    """A task's sessions (msm.online_alter_table) are checked and set up as
+    the connection's own: the configured URI, the login's grant, the user."""
+    client = _identity(CLIENT_ADDRESS)
+    _, connection = _register_connection(client)
+    user = connection.mcp_user_id
+    opened = []
+    monkeypatch.setattr(db_functions, "_open_session",
+                        lambda *args: opened.append(("configured",) + args) or object())
+    monkeypatch.setattr(db_functions, "_open_login_session",
+                        lambda *args: opened.append(("login",) + args) or object())
+
+    open_session = db_functions.session_opener(CONNECTION_ID, client)
+    first, second = open_session(), open_session()
+    assert first is not second and first is not connection.session
+    assert opened == [("configured", connection.uri, connection.kind, user)] * 2
+
+    connection.grant_id = "grant-1"
+    open_session()
+    assert opened[-1] == ("login", connection.uri, user, "grant-1")
+
+    with pytest.raises(Exception):
+        db_functions.session_opener(CONNECTION_ID, _identity("10.9.9.9"))

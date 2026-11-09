@@ -75,7 +75,11 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   - an ALTER that names `ALGORITHM` or `LOCK` itself runs as written, and
     so does one with `ONLINE`, `IGNORE` or `IF EXISTS`
     (`statements.alter_table_parts` gives schema, table, spec, modifiers),
-    and one of a table online ALTER TABLE is off for;
+    one that changes the partitioning (`statements.changes_partitioning`:
+    the word PARTITION/PARTITIONS/PARTITIONING outside quotes and comments;
+    the server takes no ALGORITHM/LOCK after partition options; the mcp
+    tool and `check_spec` refuse such a spec), and one of a table online
+    ALTER TABLE is off for;
   - a step body with a top-level `DECLARE` (or one whose compound
     statements the splitter cannot balance) runs whole as one block, its
     ALTERs as written: split, a later part would lose the variable;
@@ -138,7 +142,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
     `wsrep_provider` not `none`; a session on `RSU` is refused (it alters
     one node only); the session's `wsrep_OSU_method` and
     `lock_wait_timeout` are restored afterwards, also after an error.
-  - Each attempt sets `lock_wait_timeout = lock_wait`; a timeout (1205) is
+  - `lock_wait_timeout = lock_wait` is set once per ALTER; a timeout (1205) is
     retried with backoff 2, 4, 8 ... capped at 30 s, up to `max_retries`,
     then fails. `lock_wait` also covers the lock at the end of a long COPY:
     if that times out, the copy is lost and the step starts again.
@@ -149,6 +153,13 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   `max_copy_bytes` 10 GiB, `galera_max_bytes` 256 MiB, `nbo_lock` off (it
   blocks writes: choose it deliberately), `max_locked_bytes` no limit,
   `lock_wait` 5 s, `max_retries` 10 (about 5 minutes worst case).
+- **Behaviour change on Galera** (stated in PR #95): with online ALTER on
+  by default and `galera_max_bytes` 256 MiB, an update on Galera whose
+  ALTER of a table over 256 MiB is not INSTANT now stops with
+  `NeedsExternalToolError` unless `nboLock` is set (or `galeraMaxBytes`
+  raised, or the table / deployment turned off); before, it ran as
+  written under TOI, pausing the cluster. The one exception to "nothing a
+  plain ALTER runs fails because online ALTER is on" (`maxLockedBytes`).
 - **Progress and cancelling.** With a `monitor` session (a second session
   on the same server), a thread polls `information_schema.PROCESSLIST`
   (`STAGE`, `MAX_STAGE`, `PROGRESS`, `STATE`) for the ALTER's connection id
@@ -162,8 +173,11 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   tools are served with it, `general.serves_tasks`), so it shows in the
   extension's Tasks view (`mariadb.tasks`, the `task.*` tools). The spec and
   options are checked before the task starts (a tool error). The task opens
-  two sessions of its own from `db_functions.connection_data` (the ALTER, and
-  the monitor for progress and KILL QUERY) and closes them;
+  two sessions of its own through `db_functions.session_opener` (the ALTER,
+  and the monitor for progress and KILL QUERY) and closes them; that opens
+  them as the connection's own session is opened (URI still configured or
+  sign-in grant alive, the user's default role in multi-tenant mode), never
+  with `shell.open_session` on the connection data;
   `online_alter.run_in_task` makes each step a stage, the server's progress
   the stage's (combined over the server's stages, never going back), and
   refusals, skips, lock retries and the server's STATE messages; a
@@ -282,6 +296,10 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
 - Section 010 sets `FOREIGN_KEY_CHECKS=0`, which lets an added foreign key
   run without a table copy in a deployment; a live Table Editor session
   does not have it.
-- `copy.copy` of an exception whose `__init__` takes more than its message
-  fails (it rebuilds from `args`): `NeedsExternalToolError.with_message`
-  builds the copy with `__new__` instead.
+- `deploy_schema` re-raises a failed deployment with its own message;
+  `_deployment_error` keeps the `NeedsExternalToolError` type
+  (`NeedsExternalToolError(message)`, which takes the message only).
+- A spec that ends in a `--` / `#` comment gets a line break from
+  `check_spec`, or the steps' `, ALGORITHM=...` would be commented out.
+- Table size reads `TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED')`:
+  MariaDB lists a system-versioned table as the latter.

@@ -155,6 +155,21 @@ def _alter_clauses(text: str) -> list:
 _LOCKING_CLAUSE = re.compile(r"^(?:ALGORITHM|LOCK)\b\s*(?:=\s*)?\w*", re.IGNORECASE)
 
 
+# PARTITION is reserved, so outside quotes the word is the partitioning
+_PARTITION_WORD = re.compile(r"\bPARTITION(?:S|ING)?\b", re.IGNORECASE)
+
+
+def changes_partitioning(spec: str) -> bool:
+    """Whether an ALTER TABLE's clauses (the text after its table name)
+    touch its partitioning (PARTITION BY, ADD/DROP/... PARTITION, REMOVE
+    PARTITIONING): the server takes no ALGORITHM or LOCK clause after those."""
+    return any(
+        _PARTITION_WORD.search(token)
+        for token in _ALTER_TOKEN.findall(spec)
+        if not token.startswith(("`", "'", '"')) and not _is_comment(token)
+    )
+
+
 def ends_in_line_comment(text: str) -> bool:
     """Whether text ends in a -- or # comment, which would swallow what is
     appended on the same line."""

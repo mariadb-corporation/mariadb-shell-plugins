@@ -366,8 +366,9 @@ def check_spec(spec: str) -> str:
     line comment.
 
     Raises:
-        ValueError: For no clauses, or an ALGORITHM or LOCK clause, which the
-            steps set themselves.
+        ValueError: For no clauses, an ALGORITHM or LOCK clause, which the
+            steps set themselves, or a change of the partitioning, which
+            takes neither.
     """
     spec = (spec or "").strip()
     while spec.endswith(";"):
@@ -379,6 +380,11 @@ def check_spec(spec: str) -> str:
         raise ValueError(
             f"The ALTER TABLE sets `{clause}` itself; an online ALTER TABLE sets "
             "ALGORITHM and LOCK for each step. Run it as written instead."
+        )
+    if statements.changes_partitioning(spec):
+        raise ValueError(
+            "The ALTER TABLE changes the table's partitioning, which takes no "
+            "ALGORITHM or LOCK clause. Run it as written instead."
         )
     # The clauses the steps append go on a line of their own
     return spec + "\n" if statements.ends_in_line_comment(spec) else spec
