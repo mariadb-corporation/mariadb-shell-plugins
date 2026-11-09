@@ -30,7 +30,7 @@ import pytest
 
 from msm_plugin.lib import online_alter, statements
 from msm_plugin.lib.online_alter import (
-    COPY, GIB, INSTANT, MIB, NBO, NEEDS_EXTERNAL, NOCOPY,
+    COPY, EXCLUSIVE_LOCK, GIB, INSTANT, MIB, NBO, NEEDS_EXTERNAL, NOCOPY, SHARED_LOCK,
     OnlineAlterCancelled, OnlineAlterError, Options,
 )
 
@@ -111,8 +111,9 @@ def test_no_step_accepted_needs_an_external_tool():
     session = FakeSession(alters={r"ALTER TABLE": [REFUSED]})
     result = online_alter.alter_table(session, "shop", "orders", "MODIFY `a` TEXT")
     assert result.method == NEEDS_EXTERNAL and not result.applied
-    assert result.reason == "the server refused every allowed step up to COPY"
-    assert len(session.alters()) == 3
+    assert result.reason == "the server refused every allowed step up to EXCLUSIVE_LOCK"
+    assert [sql.rsplit(", ", 1)[-1] for sql in session.alters()] == [
+        "ALGORITHM=INSTANT", "LOCK=NONE", "LOCK=NONE", "LOCK=SHARED", "LOCK=EXCLUSIVE"]
 
 
 def test_a_table_over_max_copy_bytes_gets_no_copy():
@@ -129,6 +130,25 @@ def test_a_table_over_max_copy_bytes_gets_no_copy():
 def test_max_copy_bytes_zero_never_copies_and_none_always_may(max_copy_bytes, copies):
     allowed, _ = online_alter.plan(1000, False, Options(max_copy_bytes=max_copy_bytes))
     assert (COPY in allowed) == copies
+
+
+def test_what_no_step_without_a_lock_runs_runs_with_one():
+    session = FakeSession(alters={r"INSTANT|LOCK=NONE": [REFUSED], r"LOCK=SHARED": [[]]})
+    result = online_alter.alter_table(session, "shop", "orders", "ADD `n` INT DEFAULT (NEXT VALUE FOR s)")
+    assert result.method == SHARED_LOCK
+    assert result.reason.startswith("LOCK=SHARED: no step without a lock could run it")
+    assert session.alters()[-1] == ("ALTER TABLE `shop`.`orders` ADD `n` INT DEFAULT "
+                                    "(NEXT VALUE FOR s), LOCK=SHARED")
+
+
+@pytest.mark.parametrize("max_locked_bytes, locked", [(None, True), (0, False), (999, False),
+                                                       (1000, True)])
+def test_max_locked_bytes_caps_the_locked_steps(max_locked_bytes, locked):
+    allowed, skipped = online_alter.plan(1000, False, Options(max_locked_bytes=max_locked_bytes))
+    assert (SHARED_LOCK in allowed and EXCLUSIVE_LOCK in allowed) == locked
+    if not locked:
+        assert skipped[-1] == (EXCLUSIVE_LOCK, "blocking writes skipped: table size 1000 > "
+                                               f"max_locked_bytes {max_locked_bytes}")
 
 
 def test_a_lock_wait_timeout_is_retried_with_backoff():
@@ -190,6 +210,8 @@ def test_options_from_msm_project_json_keys():
     options = Options.from_dict({"maxCopyBytes": None, "nboLock": "shared", "lockWait": 2})
     assert (options.max_copy_bytes, options.nbo_lock, options.lock_wait) == (None, "SHARED", 2)
     assert options.galera_max_bytes == 256 * MIB and options.max_retries == 10
+    assert options.max_locked_bytes is None
+    assert Options.from_dict({"maxLockedBytes": 0}).max_locked_bytes == 0
     kept = Options.from_dict({"maxRetries": 0}, base=options)
     assert (kept.nbo_lock, kept.max_retries) == ("SHARED", 0)
     with pytest.raises(ValueError, match="Unknown online ALTER TABLE option `maxCopy`"):
@@ -334,11 +356,23 @@ def test_the_server_picks_instant_nocopy_or_copy(server):
 def test_needs_external_leaves_the_table_unchanged(server):
     session, _ = server
     result = online_alter.alter_table(session, SCHEMA, "t", "MODIFY `v` BIGINT",
-                                      Options(max_copy_bytes=0))
+                                      Options(max_copy_bytes=0, max_locked_bytes=0))
     assert result.method == NEEDS_EXTERNAL
-    assert result.reason.startswith("native COPY skipped")
-    assert [step["outcome"] for step in result.steps] == ["skipped", "refused", "refused"]
+    assert result.reason.startswith("blocking writes skipped")
+    assert [(step["method"], step["outcome"]) for step in result.steps] == [
+        (COPY, "skipped"), (SHARED_LOCK, "skipped"), (EXCLUSIVE_LOCK, "skipped"),
+        (INSTANT, "refused"), (NOCOPY, "refused")]
     assert column_type(session, "v") == "int(11)"
+
+
+def test_a_change_only_a_lock_allows_runs_with_a_shared_lock(server):
+    session, _ = server
+    session.run_sql(f"CREATE SEQUENCE `{SCHEMA}`.`s`")
+    result = online_alter.alter_table(session, SCHEMA, "t",
+                                      f"ADD COLUMN `n` INT DEFAULT (NEXT VALUE FOR `{SCHEMA}`.`s`)")
+    assert result.method == SHARED_LOCK
+    assert "Try LOCK=SHARED" in result.steps[-2]["message"]
+    assert column_type(session, "n") == "int(11)"
 
 
 def test_a_held_metadata_lock_times_out_and_gives_up(server):

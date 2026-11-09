@@ -153,6 +153,135 @@ def locking_clause(spec: str) -> Optional[str]:
     return None
 
 
+_NAME = r"`(?:[^`]|``)*`|[\w$]+"
+_ALTER_TABLE_PARTS = re.compile(
+    r"^\s*ALTER\s+(?P<online>ONLINE\s+)?(?P<ignore>IGNORE\s+)?TABLE\s+"
+    r"(?P<if_exists>IF\s+EXISTS\s+)?"
+    rf"(?P<first>{_NAME})(?:\s*\.\s*(?P<second>{_NAME}))?\s*(?P<spec>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _unquote(name: str) -> str:
+    if name.startswith("`"):
+        return name[1:-1].replace("``", "`")
+    return name
+
+
+@dataclass
+class AlterTable:
+    """An ALTER TABLE statement taken apart.
+
+    Attributes:
+        schema: The schema it names; None where it names none.
+        table: The table, unquoted.
+        spec: Everything after the table name.
+        modifiers: The words between ALTER and the name it has, upper case:
+            ONLINE, IGNORE, IF EXISTS.
+    """
+
+    schema: Optional[str]
+    table: str
+    spec: str
+    modifiers: list
+
+
+def alter_table_parts(sql: str) -> Optional[AlterTable]:
+    """An ALTER TABLE statement taken apart (comments before it and the
+    delimiter after it allowed); None for any other statement."""
+    match = _ALTER_TABLE_PARTS.match(strip_statement(sql))
+    if not match:
+        return None
+    modifiers = [
+        word for word, group in (("ONLINE", "online"), ("IGNORE", "ignore"),
+                                 ("IF EXISTS", "if_exists"))
+        if match.group(group)
+    ]
+    first, second = _unquote(match.group("first")), match.group("second")
+    if second is None:
+        return AlterTable(None, first, match.group("spec").strip(), modifiers)
+    return AlterTable(first, _unquote(second), match.group("spec").strip(), modifiers)
+
+
+# The tokens of a stored program's body, for top_level_statements: quoted
+# names and strings, comments, words, and single characters.
+_BODY_TOKEN = re.compile(
+    r"`(?:[^`]|``)*`|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\""
+    r"|--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?\*/|[A-Za-z_][\w$]*|\s+|.",
+    re.DOTALL,
+)
+# The words that open a compound statement where a statement starts, closed
+# by END [<word>]
+_OPENERS = ("BEGIN", "IF", "CASE", "LOOP", "WHILE", "REPEAT")
+# The words after which a statement starts (and a label's colon, and ;)
+_STATEMENT_BEFORE = ("BEGIN", "ATOMIC", "DO", "LOOP", "REPEAT")
+
+
+def top_level_statements(body: str) -> list:
+    """The statements of a stored program's body at its top level, each
+    without its `;`: an IF ... END IF, a BEGIN ... END, a loop or a CASE
+    statement stays one statement with everything in it.
+
+    A compound statement opens only where a statement starts: IF(, REPEAT(
+    and IF [NOT] EXISTS are no statements. A CASE anywhere else is an
+    expression, which its own END closes; a THEN or ELSE inside it starts no
+    statement.
+
+    Raises:
+        ValueError: Where the body's compound statements do not balance.
+    """
+    tokens = [
+        (match.start(), match.group())
+        for match in _BODY_TOKEN.finditer(body)
+        if not match.group().isspace()
+        and not match.group().startswith(("--", "#"))
+        and not (match.group().startswith("/*") and not match.group().startswith("/*!"))
+    ]
+    # What is open: "block" (a compound statement) or "expression" (CASE)
+    statements_, stack, start, skip, previous = [], [], 0, False, None
+    for index, (position, token) in enumerate(tokens):
+        word = token.upper()
+        if skip:
+            skip, previous = False, word
+            continue
+        following = tokens[index + 1][1].upper() if index + 1 < len(tokens) else ""
+        at_start = (
+            previous in (None, ";", ":") + _STATEMENT_BEFORE
+            or (previous in ("THEN", "ELSE") and (not stack or stack[-1] == "block"))
+        )
+        if word == "END":
+            if not stack:
+                raise ValueError("An END closes no compound statement.")
+            # END IF, END LOOP, ... close one statement, as END does
+            skip = stack.pop() == "block" and following in _OPENERS and following != "BEGIN"
+        elif word in _OPENERS and at_start:
+            stack.append("block")
+        elif word == "CASE":
+            stack.append("expression")
+        elif token == ";" and not stack:
+            text = body[start:position].strip()
+            if any(True for _ in _significant(text)):
+                statements_.append(text)
+            start = position + 1
+        previous = word
+    if stack:
+        raise ValueError("A compound statement is not closed.")
+    text = body[start:].strip()
+    if any(True for _ in _significant(text)):
+        statements_.append(text)
+    return statements_
+
+
+def _significant(text: str):
+    for match in _BODY_TOKEN.finditer(text):
+        token = match.group()
+        if token.isspace() or token.startswith(("--", "#")):
+            continue
+        if token.startswith("/*") and not token.startswith("/*!"):
+            continue
+        yield token
+
+
 def _is_table_addition(text: str) -> bool:
     """CREATE INDEX, or an ALTER TABLE whose every clause adds a key, an
     index or a constraint (_ADDITION_CLAUSE)."""

@@ -75,7 +75,9 @@ DROP PROCEDURE IF EXISTS `msm_update_${version_from}_to_${version_to}`%%
 CREATE PROCEDURE `msm_update_${version_from}_to_${version_to}`()
 SQL SECURITY INVOKER
 BEGIN
+    -- ### MSM-UPDATE-STEP-START ${version_from} ${version_to}
 ${section_240_non_idempotent_schema_object_changes_and_all_drops}
+    -- ### MSM-UPDATE-STEP-END ${version_from} ${version_to}
 END%%
 
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Update Non-Idempotent

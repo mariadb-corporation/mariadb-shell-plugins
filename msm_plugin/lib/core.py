@@ -719,9 +719,13 @@ def execute_msm_sql_script(
     substitutions: dict = None,
     lock_name_suffix: str = None,
     take_lock: bool = True,
+    statement_handler=None,
 ):
     """Runs an MSM SQL script, holding the MSM update lock of the schema
-    (lock_name_suffix) unless take_lock is False because the caller holds it."""
+    (lock_name_suffix) unless take_lock is False because the caller holds it.
+
+    statement_handler(statement) is called with each statement first; where
+    it returns True it has run the statement itself."""
     if sql_script is None and sql_file_path is None:
         raise ValueError("No script or sql_file_path specified.")
     if sql_script is not None and script_name is None:
@@ -750,6 +754,8 @@ def execute_msm_sql_script(
             for cmd in commands:
                 current_cmd = cmd.strip()
                 if current_cmd:
+                    if statement_handler is not None and statement_handler(current_cmd):
+                        continue
                     session.run_sql(current_cmd)
 
             write_to_msm_schema_update_log(

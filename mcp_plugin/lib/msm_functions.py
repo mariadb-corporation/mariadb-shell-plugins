@@ -1047,6 +1047,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             schema_project_path: Optional[str] = None,
             backup_directory: Optional[str] = None,
             backup: bool = False,
+            online_alter: Optional[dict] = None,
         ) -> Optional[str]:
             """Deploys a version of a database schema onto an open connection.
 
@@ -1066,6 +1067,15 @@ def register_msm_tools(server, function_groups=()) -> None:
                 backup: Whether to dump an existing schema before updating it,
                     so it can be restored if the update fails. Defaults to
                     False.
+                online_alter: This deployment's online ALTER TABLE setting,
+                    over the project's `onlineAlter` in msm.project.json. An
+                    update runs each ALTER TABLE the least disruptive way the
+                    server accepts (INSTANT, then NOCOPY, then COPY with
+                    LOCK=NONE); keys: enabled (false runs them as written),
+                    maxCopyBytes (largest table for COPY; 0 = never, null =
+                    no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE
+                    to allow Galera NBO), lockWait (seconds per attempt),
+                    maxRetries, tables ({<table>: {the same keys}}).
 
             Returns:
                 A message describing what was deployed.
@@ -1086,6 +1096,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                             schema_project_path=schema_project_path,
                             backup_directory=backup_directory,
                             backup=backup,
+                            online_alter=online_alter,
                         ),
                     )
 

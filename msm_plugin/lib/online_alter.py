@@ -34,15 +34,20 @@ touched; a refusal moves on to the next, more expensive step:
 3. ``ALGORITHM=COPY, LOCK=NONE``: the server's online copy (MariaDB 11.2
    and later; older servers refuse it with 1846);
 4. Galera only, where ``nbo_lock`` is set: a Non-Blocking Operation
-   (MariaDB Enterprise Server), which blocks writes to the table.
+   (MariaDB Enterprise Server), which blocks writes to the table;
+5. ``LOCK=SHARED``, then 6. ``LOCK=EXCLUSIVE``, no ALGORITHM, so the server
+   takes the cheapest one it can run under that lock: for what no step
+   without a lock can do (a column default from a sequence). Writes wait,
+   with EXCLUSIVE reads too; this is what a plain ALTER TABLE would do.
 
 What no step applies is ``NEEDS_EXTERNAL``: nothing changed, and the change
 is for an external tool (gh-ost, pt-online-schema-change).
 
 The table's size and Galera decide in advance which steps may run: COPY not
-above ``max_copy_bytes``; on Galera, NOCOPY and COPY run under Total Order
-Isolation, which pauses the whole cluster, so only up to
-``galera_max_bytes``.
+above ``max_copy_bytes``, the locked steps not above ``max_locked_bytes``
+(no limit by default, so nothing a plain ALTER TABLE runs is refused); on
+Galera, every step but INSTANT and NBO runs under Total Order Isolation,
+which pauses the whole cluster, so only up to ``galera_max_bytes``.
 
 No shell imports: the session is passed in, and an error's number is read
 from its ``code``, as ``mysqlsh.DBError`` has it.
@@ -59,15 +64,21 @@ INSTANT = "INSTANT"
 NOCOPY = "NOCOPY"
 COPY = "COPY"
 NBO = "NBO"
+SHARED_LOCK = "SHARED_LOCK"
+EXCLUSIVE_LOCK = "EXCLUSIVE_LOCK"
 NEEDS_EXTERNAL = "NEEDS_EXTERNAL"
 
 # The methods that apply the change, in the order they are tried
-METHODS = (INSTANT, NOCOPY, COPY, NBO)
+METHODS = (INSTANT, NOCOPY, COPY, NBO, SHARED_LOCK, EXCLUSIVE_LOCK)
+# The steps that block writes to the table
+LOCKED = (SHARED_LOCK, EXCLUSIVE_LOCK)
 
 _CLAUSES = {
     INSTANT: "ALGORITHM=INSTANT",
     NOCOPY: "ALGORITHM=NOCOPY, LOCK=NONE",
     COPY: "ALGORITHM=COPY, LOCK=NONE",
+    SHARED_LOCK: "LOCK=SHARED",
+    EXCLUSIVE_LOCK: "LOCK=EXCLUSIVE",
 }
 
 MIB = 1024 * 1024
@@ -113,6 +124,9 @@ class Options:
             or 0 = only INSTANT under TOI.
         nbo_lock: On Galera, SHARED (reads go on) or EXCLUSIVE to allow a
             Non-Blocking Operation; None = never.
+        max_locked_bytes: The largest table the steps that block writes
+            (LOCK=SHARED, then EXCLUSIVE) may run on; None = no limit, 0 =
+            never.
         lock_wait: Seconds to wait for the table's metadata lock per attempt
             (the session's lock_wait_timeout during it).
         max_retries: Attempts after a lock wait timeout, per step, waiting
@@ -122,6 +136,7 @@ class Options:
     max_copy_bytes: Optional[int] = 10 * GIB
     galera_max_bytes: Optional[int] = 256 * MIB
     nbo_lock: Optional[str] = None
+    max_locked_bytes: Optional[int] = None
     lock_wait: int = 5
     max_retries: int = 10
 
@@ -130,6 +145,7 @@ class Options:
         "maxCopyBytes": "max_copy_bytes",
         "galeraMaxBytes": "galera_max_bytes",
         "nboLock": "nbo_lock",
+        "maxLockedBytes": "max_locked_bytes",
         "lockWait": "lock_wait",
         "maxRetries": "max_retries",
     }
@@ -155,7 +171,7 @@ class Options:
 
     def validate(self) -> None:
         """Raises ValueError for a value out of range; makes nbo_lock upper case."""
-        for name in ("max_copy_bytes", "galera_max_bytes"):
+        for name in ("max_copy_bytes", "galera_max_bytes", "max_locked_bytes"):
             value = getattr(self, name)
             if value is not None and (not _is_int(value) or value < 0):
                 raise ValueError(f"`{name}` must be a number of bytes (0 or more) or None.")
@@ -255,6 +271,12 @@ class DeploymentSettings:
     def __init__(self, project: dict, call: dict):
         self.project = project
         self.call = call
+
+    def any_enabled(self) -> bool:
+        """Whether online ALTER TABLE is on for any table."""
+        general = self.call.get("enabled", self.project.get("enabled", True))
+        tables = list(self.project["tables"].values()) + list(self.call["tables"].values())
+        return general or any(level.get("enabled") for level in tables)
 
     def options_for(self, table: str) -> Optional[Options]:
         """The Options for a table's ALTER TABLE; None where online ALTER
@@ -372,6 +394,24 @@ def plan(table_size: int, galera: bool, options: Options) -> tuple:
             allowed.append(method)
     if galera and options.nbo_lock:
         allowed.append(NBO)
+    locked_capped = options.max_locked_bytes is not None and (
+        options.max_locked_bytes == 0 or table_size > options.max_locked_bytes
+    )
+    for method in LOCKED:
+        if toi_capped:
+            skipped.append((
+                method,
+                "Galera: non-instant DDL under TOI pauses the cluster; table size "
+                f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}",
+            ))
+        elif locked_capped:
+            skipped.append((
+                method,
+                f"blocking writes skipped: table size {table_size} > max_locked_bytes "
+                f"{options.max_locked_bytes}",
+            ))
+        else:
+            allowed.append(method)
     return allowed, skipped
 
 
@@ -491,10 +531,12 @@ def alter_table(
             seconds = round(time.monotonic() - started, 3)
             if refusal is None:
                 result.method = method
-                result.reason = (
-                    f"NBO with LOCK={options.nbo_lock}: writes to the table were blocked "
-                    "during the ALTER" if method == NBO else None
-                )
+                if method == NBO:
+                    result.reason = (f"NBO with LOCK={options.nbo_lock}: writes to the table "
+                                     "were blocked during the ALTER")
+                elif method in LOCKED:
+                    result.reason = (f"{_CLAUSES[method]}: no step without a lock could run "
+                                     "it; writes to the table were blocked during the ALTER")
                 result.steps.append({"method": method, "outcome": "applied", "seconds": seconds,
                                      "message": None})
                 failed = False

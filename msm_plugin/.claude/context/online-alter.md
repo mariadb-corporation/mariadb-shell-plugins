@@ -3,8 +3,9 @@
 Back to [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md).
 
 The design below is agreed with the user; the points marked **open** are
-not. Built: the escalation itself (`lib/online_alter.py`, Next steps 2).
-Not built: everything that calls it.
+not. Built: the escalation (`lib/online_alter.py`), the setting, and
+`deploySchema` running an update's steps itself (`lib/update_steps.py`),
+Next steps 2 to 4. Not built: `msm.onlineAlterTable` and the extension.
 
 ## Goal
 
@@ -49,10 +50,13 @@ disruptive method the server accepts, in two places:
   is a ValueError naming where it is written: `msm.project.json,
   onlineAlter of table ...` or `the deployment, ...`), and
   `DeploymentSettings.options_for(table)` gives the Options, None = off.
-  The mcp tool `msm.deploy_schema` gets the option with Next steps 4.
-- **How deploySchema reaches the ALTERs.** In the generated deployment
-  script they sit inside `CREATE PROCEDURE msm_update_<from>_to_<to>` and
-  run only through `CALL msm_create_or_update()`. So:
+  The mcp tool `msm.deploy_schema` takes it as `online_alter`.
+- **How deploySchema reaches the ALTERs** (built: `lib/update_steps.py`,
+  shell-free; `management._update_steps_handler` hooks it into
+  `execute_msm_sql_script(statement_handler=)`, which lets a handler run a
+  statement itself). In the generated deployment script they sit inside
+  `CREATE PROCEDURE msm_update_<from>_to_<to>` and run only through
+  `CALL msm_create_or_update()`. So:
   - the generator puts marker comments around each version's Section 240
     body (as it already uses `MSM-LOOP` markers), and msm reads the steps
     from the deployment script itself, so what deploys is the generated
@@ -68,8 +72,37 @@ disruptive method the server accepts, in two places:
     DECLAREs, IFs) runs as one `BEGIN NOT ATOMIC ... END`, so it behaves as
     inside the procedure; an ALTER nested in a compound statement runs as
     written, and the log says it did not run online;
-  - an ALTER that names `ALGORITHM` or `LOCK` itself runs as written;
+  - an ALTER that names `ALGORITHM` or `LOCK` itself runs as written, and
+    so does one with `ONLINE`, `IGNORE` or `IF EXISTS`
+    (`statements.alter_table_parts` gives schema, table, spec, modifiers),
+    and one of a table online ALTER TABLE is off for;
+  - a step body with a top-level `DECLARE` (or one whose compound
+    statements the splitter cannot balance) runs whole as one block, its
+    ALTERs as written: split, a later part would lose the variable;
   - the rest of the script runs as written.
+  - Markers, as generated: `    -- ### MSM-UPDATE-STEP-START <from> <to>`
+    / `-END <from> <to>` around `${section_240_...}` in the template. A
+    script without them (generated before) runs as written, and the log
+    says so. The handler is not used for a new schema or where
+    `DeploymentSettings.any_enabled()` is False.
+  - **Top-level statements** (`statements.top_level_statements`): a
+    tokenizer (quoted names, strings, comments skipped) with a stack. An
+    `IF`/`BEGIN`/`CASE`/`LOOP`/`WHILE`/`REPEAT` opens a block only where a
+    statement starts (start, after `;`, a label's `:`, `BEGIN`, `ATOMIC`,
+    `DO`, `LOOP`, `REPEAT`, or `THEN`/`ELSE` outside a CASE expression); a
+    CASE elsewhere is an expression closed by its own END; `END IF` /
+    `END LOOP` ... close one. So `IF (cond) THEN` is a statement and
+    `IF(a, b, c)` a function.
+  - `NeedsExternalToolError` (update_steps; step, table, sql, result)
+    stops the deployment: the statements before it ran, the version VIEW
+    stays 0, 0, 0. `deploy_schema` keeps the type through its own wrapping
+    (`_deployment_error`); every other failure is still a plain Exception.
+  - Each online ALTER is logged to the update log: `ALTER TABLE `t`:
+    COPY (0.21 s)`, or `runs as written (<why>)`.
+  - Checked equal: an upgrade 1.0.0 → 1.0.2 through msm and the same
+    through the procedure (`online_alter=False`) end with the same SHOW
+    CREATE TABLE, rows, version and no msm routines left
+    (`tests/unit/test_update_steps.py`).
 - **The escalation** (`lib/online_alter.py`), taken from the dropped
   procedure. `alter_table(session, schema, table, spec, options, *, monitor,
   on_event, cancel, poll_interval, sleep) -> Result(method, reason,
@@ -94,7 +127,16 @@ disruptive method the server accepts, in two places:
      ALGORITHM clause. Community Server rejects NBO with 1231 (skip the
      step); 1235 = NBO refused this statement. NBO blocks writes to the
      table (`EXCLUSIVE` reads too).
-  5. Otherwise `NEEDS_EXTERNAL`: nothing changed.
+  5. `SHARED_LOCK`: `<spec>, LOCK=SHARED`, then 6. `EXCLUSIVE_LOCK`:
+     `<spec>, LOCK=EXCLUSIVE`, no ALGORITHM (the server takes the cheapest
+     one it can run under that lock). For what no unlocked step can do: a
+     column `DEFAULT (NEXT VALUE FOR seq)` is refused by INSTANT, NOCOPY
+     and `COPY, LOCK=NONE` ("Try LOCK=SHARED"). Capped by
+     `maxLockedBytes` (`max_locked_bytes`), **default no limit** (user's
+     decision: nothing a plain ALTER TABLE runs may fail because online
+     ALTER TABLE is on; production sets a cap); on Galera also by
+     `galeraMaxBytes` (TOI). The reason says writes were blocked.
+  7. Otherwise `NEEDS_EXTERNAL`: nothing changed.
   - Table size = `DATA_LENGTH + INDEX_LENGTH` of `information_schema.TABLES`
     (an estimate for InnoDB). Galera = session `wsrep_on` ON and
     `wsrep_provider` not `none`; a session on `RSU` is refused (it alters
@@ -147,10 +189,10 @@ disruptive method the server accepts, in two places:
    a `rename_table` (and dropping it with `drop_table`). The ai-plugins
    schema-management skills list the keys of `msm.project.json` and lack
    `onlineAlter` (re-run `sync-skills.sh` after editing).
-4. Markers around each 240 body in `generate_deployment_script`, and
-   `deploy_schema` running the upgrade steps itself. Test that an upgrade
-   through msm ends in the same schema, roles and version as one through
-   `CALL msm_create_or_update()`.
+4. (Done) Markers, `deploy_schema` running the upgrade steps itself, the
+   locked steps, and the mcp tool `msm.deploy_schema(online_alter=)`. Not
+   compared yet: roles and grants (the authorization part runs as before,
+   from the same session variables).
 5. `msm.onlineAlterTable` as a task, the mcp tool, then the extension's
    Online Alter Table tab and its Task.
 6. **Merge the ALTERs of one table per Save** in `msm.edit_schema`: the
