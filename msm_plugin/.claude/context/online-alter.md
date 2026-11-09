@@ -255,10 +255,25 @@ disruptive method the server accepts, in two places:
    table's FK references keeps that table's ADD CONSTRAINT between the
    change and later ALTERs of the same table. Pairs MariaDB refuses or
    reads differently in one statement stay separate (lsp-server
-   `docs/edit-format.md`, "Merged ALTER TABLE statements"). msm's part:
-   send the flag, keep the merged statement under one comment naming all
-   its edits (`_describe` takes one edit today), and use `spec` where the
-   Table Editor's live path hands an ALTER to `msm.onlineAlterTable`.
+   `docs/edit-format.md`, "Merged ALTER TABLE statements").
+   msm's part (built): `lsp.merges_alters(binary)` reads `edit --ops`;
+   `edit_schema` sends the flag where it holds; `migration_statements`
+   writes a merged statement once, under a `-- msm.editSchema:` line for
+   each edit in its `edits`; `editing.online_alter_settings_text` moves a
+   table's `onlineAlter.tables` entry over a `rename_table` and drops it
+   with a `drop_table`, as one more text of edit_schema's all-or-nothing
+   write (msm.project.json is then in `files`). The extension's session
+   moves the entry itself until told this is merged.
+   The merge contract msm needs (agreed with the lsp session, lsp-server
+   #34): a merged statement gives the separate statements' result with
+   `foreign_key_checks` 1 (a live session) and 0 (every MSM deployment,
+   Section 010), and under each clause msm adds it either applies or is
+   refused with 1845/1846, never another error. `DROP FOREIGN KEY fk` and
+   a later `ADD CONSTRAINT fk` (same name) stay two statements: merged they
+   fail with 1826 under checks off for every algorithm but COPY. Some
+   merges are refused by a step the separate statements pass (1845 for
+   `ADD COLUMN` + its FK under NOCOPY, checks off): one more step, no
+   failure.
 7. **Later, a separate step:** `NEEDS_EXTERNAL` and resuming. Prepare for
    it now (stop before any statement of the failing version runs; record
    the steps done so a re-run continues instead of failing with 32101 on

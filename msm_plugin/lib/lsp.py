@@ -271,6 +271,20 @@ def tags_migration(binary: str) -> bool:
     return _listed_ops(binary) is not None
 
 
+def merges_alters(binary: str) -> bool:
+    """Whether the binary merges a table's ALTER TABLE statements into one
+    where the request asks for it (``"merge_alters": true``; lsp-server
+    #33): its ``edit --ops`` says ``"merge_alters": true``. An older binary
+    ignores the member, so it is sent only where this holds."""
+    if _listed_ops(binary) is None:
+        return False
+    _, stdout, _ = _answer(binary, ("edit", "--ops"))
+    try:
+        return json.loads(stdout).get("merge_alters") is True
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 def edit_ops(binary: str) -> frozenset:
     """The edit ops the binary does: what ``edit --ops`` lists; for an
     older binary its --help's ``edit ops:`` line, the renames for one with
