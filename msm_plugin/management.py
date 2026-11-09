@@ -846,6 +846,20 @@ def online_alter_table(schema: str, table: str, spec: str, **kwargs) -> dict:
     return _returned(lib.online_alter.result_dict(result))
 
 
+@plugin_function("msm.getOnlineAlterDefaults", shell=True, cli=True, web=True)
+def get_online_alter_defaults() -> dict:
+    """Returns the online ALTER TABLE options msm uses where nothing is set
+
+    The same as the defaults of msm.getOnlineAlterSettings, without a project: for a live
+    table's settings.
+
+    Returns:
+        A dict with maxCopyBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait and
+        maxRetries.
+    """
+    return _returned(lib.online_alter.Options().to_dict())
+
+
 @plugin_function("msm.getOnlineAlterSettings", shell=True, cli=True, web=True)
 def get_online_alter_settings(**kwargs) -> dict:
     """Returns the project's online ALTER TABLE setting, and what it gives a table

@@ -299,6 +299,7 @@ Management (`msm`) plugin:
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
 | `msm.deploy_schema` | `deploy_schema` |
 | `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
+| `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
 | `msm.get_online_alter_settings` | `get_online_alter_settings` |
 | `msm.set_online_alter_table` | `set_online_alter_table` |
 | `msm.list_projects` | `list_projects` |

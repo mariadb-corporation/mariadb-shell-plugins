@@ -654,6 +654,14 @@ def test_the_shell_function_alters_online(server):
 # A project's setting, as the Table Editor reads and writes it
 
 
+def test_the_defaults_without_a_project():
+    from msm_plugin.management import get_online_alter_defaults
+
+    assert get_online_alter_defaults() == {
+        "maxCopyBytes": 10 * GIB, "galeraMaxBytes": 256 * MIB, "nboLock": None,
+        "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
+
+
 def test_a_tables_settings_are_written_and_read_back(tmp_path):
     import json
     from msm_plugin.lib import management

@@ -957,6 +957,19 @@ def register_msm_tools(server, function_groups=()) -> None:
         """
         return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, name)
 
+    @tool(name="msm.get_online_alter_defaults")
+    def get_online_alter_defaults() -> dict:
+        """Returns the online ALTER TABLE options msm uses where nothing is set.
+
+        The same as `defaults` of msm.get_online_alter_settings, without a
+        project: for a live table's settings.
+
+        Returns:
+            {maxCopyBytes, galeraMaxBytes, nboLock, maxLockedBytes, lockWait,
+            maxRetries}.
+        """
+        return msm.get_online_alter_defaults()
+
     @tool(name="msm.get_online_alter_settings")
     async def get_online_alter_settings(
         ctx: Context, table: Optional[str] = None, schema_project_path: Optional[str] = None

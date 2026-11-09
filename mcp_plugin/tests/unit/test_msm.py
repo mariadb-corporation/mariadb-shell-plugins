@@ -180,6 +180,7 @@ def test_stdio_deploy_schema_requires_the_db_group():
     # msm.online_alter_table too, and with it the task tools that follow it
     assert "msm.online_alter_table" not in msm_only and "task.get" not in msm_only
     assert "msm.get_online_alter_settings" in msm_only
+    assert "msm.get_online_alter_defaults" in msm_only
 
     with_db = helpers.list_tool_names(["msm", "db"])
     assert "msm.deploy_schema" in with_db
@@ -863,6 +864,12 @@ def _diagram(name="Main"):
         ],
         "connections": [],
     }
+
+
+def test_the_online_alter_defaults_need_no_project():
+    defaults = _msm_tools()["msm.get_online_alter_defaults"]()
+    assert defaults == {"maxCopyBytes": 10 * 1024 ** 3, "galeraMaxBytes": 256 * 1024 ** 2,
+                        "nboLock": None, "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
 
 
 def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):

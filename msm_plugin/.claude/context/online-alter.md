@@ -188,11 +188,25 @@ disruptive method the server accepts, in two places:
   `{"enabled": true, "tables": ...}`; unchanged = nothing written); shell
   `msm.getOnlineAlterSettings` / `msm.setOnlineAlterTable`; lib
   `management.get_online_alter_settings` / `set_online_alter_table`.
+  `msm.get_online_alter_defaults()` (shell `msm.getOnlineAlterDefaults`,
+  served with msm, no project) gives the same `defaults`, for a live
+  table's tab, so the extension keeps no copy of them.
+- **The extension's side** (decided by the extension's session with the
+  user): a live table's settings live in VS Code's workspace state, per
+  connection, schema and table (a rename moves them); online ALTER TABLE is
+  on by default for live tables too. A project table's Save runs
+  msm.edit_schema, then `msm.set_online_alter_table` under the table's
+  (new) name; on a `rename_table` the extension moves the entry itself
+  (set new, set old to null) until msm.edit_schema carries it over (step
+  6: tell the extension's session then). Live Apply sends `merge_alters`
+  where the binary has it; each ALTER of the table with a `spec` goes to
+  `msm.online_alter_table` (the table's options without `enabled`), other
+  statements run in order as before; NEEDS_EXTERNAL stops the Save with
+  the reason, the statements before it stay run.
   The extension today applies a live table's statements one by one through
   `db.execute_sql` on the UI backend session (vscode-extension
   `src/tableEditor/tableSources.ts`, `LiveTableSource`); the ALTERs of an
-  online-alter table go to the task instead. Where the extension keeps a
-  live table's settings: **open**.
+  online-alter table go to the task instead.
 
 ## Next steps
 
