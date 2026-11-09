@@ -211,6 +211,24 @@ def _is_int(value) -> bool:
 SETTING = "onlineAlter"
 
 
+def with_tables(setting, change: Callable[[dict], None]):
+    """An `onlineAlter` setting as msm.project.json has it (None, a bool or
+    a dict) with its tables changed by change(tables), which edits the dict
+    in place; None where that changes nothing. An empty tables entry is
+    left out; a bool or missing setting becomes {enabled}."""
+    if isinstance(setting, dict):
+        new = dict(setting)
+    else:
+        new = {"enabled": True if setting is None else setting}
+    tables = dict(new.get("tables") or {})
+    change(tables)
+    if tables:
+        new["tables"] = tables
+    else:
+        new.pop("tables", None)
+    return None if new == setting else new
+
+
 def read_setting(value, where: str) -> dict:
     """An onlineAlter setting checked and normalized: {enabled?, <option
     keys>?, tables: {table: {enabled?, <option keys>?}}}.
@@ -272,9 +290,9 @@ class DeploymentSettings:
     level the call's: the project's general values, the call's, the
     project's for the table, the call's for the table."""
 
-    def __init__(self, project: dict, call: dict):
+    def __init__(self, project: dict, call: dict = None):
         self.project = project
-        self.call = call
+        self.call = call if call is not None else read_setting(None, "the deployment")
 
     def any_enabled(self) -> bool:
         """Whether online ALTER TABLE is on for any table."""
@@ -342,10 +360,6 @@ class Result:
         return self.method != NEEDS_EXTERNAL
 
 
-def quote_identifier(name: str) -> str:
-    return "`" + name.replace("`", "``") + "`"
-
-
 def check_spec(spec: str) -> str:
     """The clauses of an ALTER TABLE (the text after its table name) fit for
     the steps: stripped of a trailing ``;``.
@@ -374,46 +388,31 @@ def plan(table_size: int, galera: bool, options: Options) -> tuple:
     Returns:
         ([methods], [(method, why skipped)]), both in METHODS order.
     """
+    def over(limit):
+        return limit is not None and (limit == 0 or table_size > limit)
+
+    def why_skipped(method):
+        if galera and (not options.galera_max_bytes or table_size > options.galera_max_bytes):
+            return ("Galera: non-instant DDL under TOI pauses the cluster; table size "
+                    f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}")
+        if method == COPY and over(options.max_copy_bytes):
+            return (f"native COPY skipped: table size {table_size} > max_copy_bytes "
+                    f"{options.max_copy_bytes}")
+        if method in LOCKED and over(options.max_locked_bytes):
+            return (f"blocking writes skipped: table size {table_size} > max_locked_bytes "
+                    f"{options.max_locked_bytes}")
+        return None
+
     allowed, skipped = [INSTANT], []
-    copy_capped = options.max_copy_bytes is not None and (
-        options.max_copy_bytes == 0 or table_size > options.max_copy_bytes
-    )
-    toi_capped = galera and (
-        not options.galera_max_bytes or table_size > options.galera_max_bytes
-    )
-    for method in (NOCOPY, COPY):
-        if toi_capped:
-            skipped.append((
-                method,
-                "Galera: non-instant DDL under TOI pauses the cluster; table size "
-                f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}",
-            ))
-        elif method == COPY and copy_capped:
-            skipped.append((
-                method,
-                f"native COPY skipped: table size {table_size} > max_copy_bytes "
-                f"{options.max_copy_bytes}",
-            ))
-        else:
-            allowed.append(method)
-    if galera and options.nbo_lock:
-        allowed.append(NBO)
-    locked_capped = options.max_locked_bytes is not None and (
-        options.max_locked_bytes == 0 or table_size > options.max_locked_bytes
-    )
-    for method in LOCKED:
-        if toi_capped:
-            skipped.append((
-                method,
-                "Galera: non-instant DDL under TOI pauses the cluster; table size "
-                f"{table_size} > galera_max_bytes {options.galera_max_bytes or 0}",
-            ))
-        elif locked_capped:
-            skipped.append((
-                method,
-                f"blocking writes skipped: table size {table_size} > max_locked_bytes "
-                f"{options.max_locked_bytes}",
-            ))
+    for method in METHODS[1:]:
+        if method == NBO:
+            # Not capped: NBO is the way past TOI's pause
+            if galera and options.nbo_lock:
+                allowed.append(NBO)
+            continue
+        why = why_skipped(method)
+        if why:
+            skipped.append((method, why))
         else:
             allowed.append(method)
     return allowed, skipped
@@ -477,7 +476,7 @@ def alter_table(
     options.validate()
     spec = check_spec(spec)
     emit = on_event or (lambda event: None)
-    target = f"{quote_identifier(schema)}.{quote_identifier(table)}"
+    target = f"{statements.quote_identifier(schema)}.{statements.quote_identifier(table)}"
 
     table_size = _table_size(session, schema, table)
     galera, old_osu = _galera(session)
@@ -491,9 +490,16 @@ def alter_table(
 
     allowed, skipped = plan(table_size, galera, options)
     result = Result(NEEDS_EXTERNAL, None, table_size, galera)
+
+    def record(method, outcome, seconds=0, message=None):
+        result.steps.append(
+            {"method": method, "outcome": outcome, "seconds": seconds, "message": message}
+        )
+        if outcome != "applied":
+            emit({"event": outcome, "method": method, "message": message})
+
     for method, why in skipped:
-        result.steps.append({"method": method, "outcome": "skipped", "seconds": 0, "message": why})
-        emit({"event": "skipped", "method": method, "message": why})
+        record(method, "skipped", message=why)
     reason = skipped[-1][1] if skipped else None
 
     def check_cancel():
@@ -507,8 +513,8 @@ def alter_table(
         else:
             sleep(seconds)
 
-    failed = True
     try:
+        session.run_sql(f"SET SESSION lock_wait_timeout = {int(options.lock_wait)}")
         for method in allowed:
             check_cancel()
             if galera:
@@ -519,18 +525,15 @@ def alter_table(
                 except Exception as error:
                     if method == NBO and getattr(error, "code", None) == ER_WRONG_VALUE_FOR_VAR:
                         reason = "NBO not available on this server (MariaDB Enterprise Server only)"
-                        result.steps.append(
-                            {"method": method, "outcome": "skipped", "seconds": 0, "message": reason}
-                        )
-                        emit({"event": "skipped", "method": method, "message": reason})
+                        record(method, "skipped", message=reason)
                         continue
                     raise
             sql = step_sql(target, spec, method, options.nbo_lock)
             emit({"event": "step", "method": method, "sql": sql})
             started = time.monotonic()
             refusal = _attempt(
-                session, sql, method, options, monitor, connection_id, emit, cancel,
-                poll_interval, pause, check_cancel,
+                session, sql, method, options, emit, pause, check_cancel,
+                _Watch(monitor, connection_id, method, emit, cancel, poll_interval),
             )
             seconds = round(time.monotonic() - started, 3)
             if refusal is None:
@@ -541,39 +544,38 @@ def alter_table(
                 elif method in LOCKED:
                     result.reason = (f"{_CLAUSES[method]}: no step without a lock could run "
                                      "it; writes to the table were blocked during the ALTER")
-                result.steps.append({"method": method, "outcome": "applied", "seconds": seconds,
-                                     "message": None})
-                failed = False
-                return result
-            result.steps.append({"method": method, "outcome": "refused", "seconds": seconds,
-                                 "message": refusal})
-            emit({"event": "refused", "method": method, "message": refusal})
+                record(method, "applied", seconds)
+                break
+            record(method, "refused", seconds, refusal)
             if method == NBO:
                 reason = "NBO refused this statement"
-        result.reason = reason or (
-            f"the server refused every allowed step up to {allowed[-1]}"
-        )
-        failed = False
-        return result
-    finally:
-        _restore(session, old_lock_wait, old_osu if galera else None, failed)
+        else:
+            result.reason = reason or (
+                f"the server refused every allowed step up to {allowed[-1]}"
+            )
+    except BaseException:
+        _restore(session, old_lock_wait, old_osu if galera else None, failed=True)
+        raise
+    _restore(session, old_lock_wait, old_osu if galera else None, failed=False)
+    return result
 
 
-def _attempt(session, sql, method, options, monitor, connection_id, emit, cancel,
-             poll_interval, pause, check_cancel) -> Optional[str]:
+def _attempt(session, sql, method, options, emit, pause, check_cancel, watch) -> Optional[str]:
     """Runs one step until it applies or is refused, retrying after lock
-    wait timeouts. Returns None when applied, else the server's refusal."""
+    wait timeouts, watched by watch (a _Watch). Returns None when applied,
+    else the server's refusal."""
     tries = 0
     while True:
-        session.run_sql(f"SET SESSION lock_wait_timeout = {int(options.lock_wait)}")
         try:
-            with _Watch(monitor, connection_id, method, emit, cancel, poll_interval):
+            with watch:
                 session.run_sql(sql)
             return None
         except Exception as error:
             code = getattr(error, "code", None)
-            if cancel is not None and cancel.is_set():
-                raise OnlineAlterCancelled("The online ALTER TABLE was cancelled.") from error
+            try:
+                check_cancel()
+            except OnlineAlterCancelled as cancelled:
+                raise cancelled from error
             if code in _REFUSED:
                 return str(error)
             if code != ER_LOCK_WAIT_TIMEOUT:
@@ -609,6 +611,8 @@ class _Watch:
         self._thread = None
 
     def __enter__(self):
+        self._done.clear()
+        self._running = True
         if self._monitor is not None:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -736,18 +740,20 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
     """
     cancel = threading.Event()
     task.set_canceller(cancel.set)
-    current = {"stage": None, "state": None, "percent": 0.0}
+    stage, state, percent_done = None, None, 0.0
 
     def finish_stage():
-        if current["stage"] is not None:
-            task.stage_finished(current["stage"])
-            current["stage"] = None
+        nonlocal stage
+        if stage is not None:
+            task.stage_finished(stage)
+            stage = None
 
     def on_event(event):
+        nonlocal stage, state, percent_done
         kind, method = event["event"], event.get("method")
         if kind == "step":
             finish_stage()
-            current.update(stage=method, state=None, percent=0.0)
+            stage, state, percent_done = method, None, 0.0
             task.stage_started(method)
         elif kind == "refused":
             task.message(f"{method} refused: {event['message']}")
@@ -764,10 +770,10 @@ def run_in_task(task, session, monitor, schema: str, table: str, spec: str,
                     / event["max_stage"]
             else:
                 percent = event["progress"]
-            current["percent"] = max(current["percent"], min(percent, 100.0))
-            task.progress(round(current["percent"], 1), 100, stage=method)
-            if event["state"] and event["state"] != current["state"]:
-                current["state"] = event["state"]
+            percent_done = max(percent_done, min(percent, 100.0))
+            task.progress(round(percent_done, 1), 100, stage=method)
+            if event["state"] and event["state"] != state:
+                state = event["state"]
                 task.message(f"{method}: {event['state']}")
 
     result = alter_table(session, schema, table, spec, options, monitor=monitor,

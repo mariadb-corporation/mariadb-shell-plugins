@@ -424,20 +424,18 @@ def online_alter_settings_text(text: Optional[str], edits: list) -> Optional[str
     tables = setting.get("tables") if isinstance(setting, dict) else None
     if not isinstance(tables, dict) or not tables:
         return None
-    tables = dict(tables)
-    for edit in edits:
-        table = edit.get("table")
-        if edit.get("op") == "rename_table" and table in tables:
-            tables[edit.get("new_name")] = tables.pop(table)
-        elif edit.get("op") == "drop_table":
-            tables.pop(table, None)
-    if tables == setting["tables"]:
+
+    def change(tables):
+        for edit in edits:
+            table = edit.get("table")
+            if edit.get("op") == "rename_table" and table in tables:
+                tables[edit.get("new_name")] = tables.pop(table)
+            elif edit.get("op") == "drop_table":
+                tables.pop(table, None)
+
+    setting = online_alter.with_tables(setting, change)
+    if setting is None:
         return None
-    setting = dict(setting)
-    if tables:
-        setting["tables"] = tables
-    else:
-        setting.pop("tables")
     settings[online_alter.SETTING] = setting
     return json.dumps(settings, indent=4)
 
@@ -603,7 +601,8 @@ def edit_schema(
 
     # The files as they are on disk, to put back: the development script's
     # old text above is the completed one (sections msm adds), not the file.
-    originals = {path: sections_lib.read_if_exists(path) for path in texts}
+    originals = {path: old if path == settings_path else sections_lib.read_if_exists(path)
+                 for path, (old, _) in texts.items()}
     originals[project.dev_file] = sections_lib.read_if_exists(project.dev_file)
     originals[_diagrams_breakout_path(project)] = sections_lib.read_if_exists(
         _diagrams_breakout_path(project)

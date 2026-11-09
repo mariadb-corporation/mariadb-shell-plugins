@@ -62,9 +62,11 @@ _CREATE_INDEX = re.compile(
     r"(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\b",
     re.IGNORECASE,
 )
+# A name, quoted or not
+_NAME = r"`(?:[^`]|``)*`|[\w$]+"
 _ALTER_TABLE = re.compile(
     r"^\s*ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?"
-    r"(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))?\s*",
+    rf"(?:{_NAME})(?:\s*\.\s*(?:{_NAME}))?\s*",
     re.IGNORECASE,
 )
 # What an ALTER TABLE of Section 140's additions may do: add a key, an index
@@ -85,6 +87,16 @@ _INSERT = re.compile(r"^\s*(?:INSERT|REPLACE)\b", re.IGNORECASE)
 # A comment after the new delimiter goes with the line: the client reads the
 # delimiter up to the first blank.
 _DELIMITER_LINE = re.compile(r"^[ \t]*DELIMITER[ \t]+\S+[^\n]*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
+
+
+def quote_identifier(name: str) -> str:
+    """A name in backticks."""
+    return "`" + name.replace("`", "``") + "`"
+
+
+def _is_comment(token: str) -> bool:
+    """Whether a token is a comment (an executable /*! ... */ is none)."""
+    return token.startswith(("--", "#")) or (token.startswith("/*") and not token.startswith("/*!"))
 
 
 def strip_statement(sql: str) -> str:
@@ -120,7 +132,7 @@ def _alter_clauses(text: str) -> list:
     commas outside quotes, comments and parentheses; comments left out."""
     clauses, current, depth = [], [], 0
     for token in _ALTER_TOKEN.findall(text):
-        if token.startswith(("--", "#")) or (token.startswith("/*") and not token.startswith("/*!")):
+        if _is_comment(token):
             current.append(" ")
             continue
         if token == "(":
@@ -153,7 +165,6 @@ def locking_clause(spec: str) -> Optional[str]:
     return None
 
 
-_NAME = r"`(?:[^`]|``)*`|[\w$]+"
 _ALTER_TABLE_PARTS = re.compile(
     r"^\s*ALTER\s+(?P<online>ONLINE\s+)?(?P<ignore>IGNORE\s+)?TABLE\s+"
     r"(?P<if_exists>IF\s+EXISTS\s+)?"
@@ -233,9 +244,7 @@ def top_level_statements(body: str) -> list:
     tokens = [
         (match.start(), match.group())
         for match in _BODY_TOKEN.finditer(body)
-        if not match.group().isspace()
-        and not match.group().startswith(("--", "#"))
-        and not (match.group().startswith("/*") and not match.group().startswith("/*!"))
+        if _is_significant(match.group())
     ]
     # What is open: "block" (a compound statement) or "expression" (CASE)
     statements_, stack, start, skip, previous = [], [], 0, False, None
@@ -260,26 +269,25 @@ def top_level_statements(body: str) -> list:
             stack.append("expression")
         elif token == ";" and not stack:
             text = body[start:position].strip()
-            if any(True for _ in _significant(text)):
+            if _has_significant(text):
                 statements_.append(text)
             start = position + 1
         previous = word
     if stack:
         raise ValueError("A compound statement is not closed.")
     text = body[start:].strip()
-    if any(True for _ in _significant(text)):
+    if _has_significant(text):
         statements_.append(text)
     return statements_
 
 
-def _significant(text: str):
-    for match in _BODY_TOKEN.finditer(text):
-        token = match.group()
-        if token.isspace() or token.startswith(("--", "#")):
-            continue
-        if token.startswith("/*") and not token.startswith("/*!"):
-            continue
-        yield token
+def _is_significant(token: str) -> bool:
+    return not token.isspace() and not _is_comment(token)
+
+
+def _has_significant(text: str) -> bool:
+    """Whether text holds more than blanks and comments."""
+    return any(_is_significant(match.group()) for match in _BODY_TOKEN.finditer(text))
 
 
 def _is_table_addition(text: str) -> bool:

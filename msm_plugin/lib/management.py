@@ -1713,9 +1713,7 @@ def get_online_alter_settings(schema_project_path: str, table: str = None) -> di
     options = None
     enabled = None
     if table is not None:
-        resolved = online_alter_lib.DeploymentSettings(
-            setting, online_alter_lib.read_setting(None, "")
-        ).options_for(table)
+        resolved = online_alter_lib.DeploymentSettings(setting).options_for(table)
         enabled = resolved is not None
         options = resolved.to_dict() if resolved is not None else None
     return {
@@ -1762,22 +1760,15 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
     existing = setting.get("tables") if isinstance(setting, dict) else None
     if not settings and table not in (existing or {}):
         return []
+
+    def change(tables):
+        if settings:
+            tables[table] = dict(settings)
+        else:
+            tables.pop(table, None)
+
+    setting = online_alter_lib.with_tables(setting, change)
     if setting is None:
-        setting = {"enabled": True}
-    elif isinstance(setting, bool):
-        setting = {"enabled": setting}
-    else:
-        setting = dict(setting)
-    tables = dict(setting.get("tables") or {})
-    if settings:
-        tables[table] = dict(settings)
-    else:
-        tables.pop(table, None)
-    if tables:
-        setting["tables"] = tables
-    else:
-        setting.pop("tables", None)
-    if raw.get(online_alter_lib.SETTING) == setting:
         return []
     raw[online_alter_lib.SETTING] = setting
     with open(path, "w") as f:
@@ -2053,22 +2044,19 @@ def _deployment_error(error: Exception, message: str) -> Exception:
     type of an update that needs an external tool kept, so a caller can
     tell it from other failures."""
     if isinstance(error, update_steps.NeedsExternalToolError):
-        return error.with_message(message)
+        return update_steps.NeedsExternalToolError(message)
     return Exception(message)
 
 
-def _update_steps_handler(
-    session, deployment_file_path, substitution_values, schema_name, schema_version, settings
-):
+def _update_steps_handler(session, script, schema_name, schema_version, settings):
     """The statement handler that runs an update's steps in msm instead of
-    `CALL msm_create_or_update()` (lib/update_steps.py), so the ALTER TABLE
+    `CALL msm_create_or_update()` (lib/update_steps.py; script is the
+    deployment script, its substitutions applied), so the ALTER TABLE
     statements run online; None where the script runs as written: a new
     schema, online ALTER TABLE off for every table, or a script generated
     before the steps were marked."""
     if schema_version is None or not settings.any_enabled():
         return None
-    with open(deployment_file_path) as f:
-        script = apply_substitutions(f.read(), substitution_values)
     if not update_steps.read_steps(script):
         lib.core.write_to_msm_schema_update_log(
             "INFO",
@@ -2134,7 +2122,7 @@ def deploy_schema(
         online_alter (bool | dict): This deployment's online ALTER TABLE
             setting, over the project's `onlineAlter` (same format: true,
             false, or {enabled, maxCopyBytes, galeraMaxBytes, nboLock,
-            lockWait, maxRetries, tables: {<table>: {...}}}). For a table the
+            maxLockedBytes, lockWait, maxRetries, tables: {<table>: {...}}}). For a table the
             most specific value wins, and at the same level this one.
 
     Returns:
@@ -2363,15 +2351,17 @@ def deploy_schema(
             f"{schema_file_name}_deployment_{version}.sql",
         )
         try:
+            # Read once: the handler runs the update's steps from the same text
+            with open(deployment_file_path) as f:
+                deployment_script = apply_substitutions(f.read(), substitution_values)
             lib.core.execute_msm_sql_script(
                 session=session,
-                sql_file_path=deployment_file_path,
-                substitutions=substitution_values,
+                sql_script=deployment_script,
+                script_name=deployment_file_path,
                 take_lock=False,
                 statement_handler=_update_steps_handler(
                     session,
-                    deployment_file_path,
-                    substitution_values,
+                    deployment_script,
                     schema_name,
                     schema_version,
                     online_alter_settings,

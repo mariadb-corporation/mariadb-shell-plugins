@@ -782,8 +782,8 @@ def deploy_schema(**kwargs) -> str:
         online_alter (dict): This deployment's online ALTER TABLE setting,
             over the project's `onlineAlter` in msm.project.json, e.g.
             {"maxCopyBytes": 1073741824} or {"enabled": false}. The keys
-            are enabled, maxCopyBytes, galeraMaxBytes, nboLock, lockWait,
-            maxRetries and tables (per table, the same keys but tables).
+            are enabled, maxCopyBytes, galeraMaxBytes, nboLock,
+            maxLockedBytes, lockWait, maxRetries and tables (per table, the same keys but tables).
         session (object): The database session to use.
 
     Returns:

@@ -158,7 +158,7 @@ def test_a_lock_wait_timeout_is_retried_with_backoff():
                                       Options(lock_wait=3), sleep=waits.append)
     assert result.method == INSTANT
     assert waits == [2, 4]
-    assert session.statements.count("SET SESSION lock_wait_timeout = 3") == 3
+    assert session.statements.count("SET SESSION lock_wait_timeout = 3") == 1
 
 
 def test_the_backoff_stops_at_max_backoff_and_gives_up_after_max_retries():

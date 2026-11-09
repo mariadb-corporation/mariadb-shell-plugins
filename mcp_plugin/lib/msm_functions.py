@@ -1174,8 +1174,9 @@ def register_msm_tools(server, function_groups=()) -> None:
                     LOCK=NONE); keys: enabled (false runs them as written),
                     maxCopyBytes (largest table for COPY; 0 = never, null =
                     no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE
-                    to allow Galera NBO), lockWait (seconds per attempt),
-                    maxRetries, tables ({<table>: {the same keys}}).
+                    to allow Galera NBO), maxLockedBytes (largest table for
+                    a step that blocks writes), lockWait (seconds per
+                    attempt), maxRetries, tables ({<table>: {the same keys}}).
 
             Returns:
                 A message describing what was deployed.

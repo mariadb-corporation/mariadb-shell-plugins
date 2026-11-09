@@ -68,26 +68,6 @@ class NeedsExternalToolError(online_alter.OnlineAlterError):
     """No online step applied an ALTER TABLE of an update: nothing of that
     statement changed, and the deployment stops."""
 
-    def __init__(self, step: UpdateStep, table: str, sql: str, result: online_alter.Result):
-        super().__init__(
-            f"The update from {step.version_from} to {step.version_to} needs an external "
-            f"tool for an ALTER TABLE of `{table}`: {result.reason}. Nothing of that "
-            "statement was changed; the statements before it ran. Statement: "
-            f"{statements.first_line(sql)}"
-        )
-        self.step = step
-        self.table = table
-        self.sql = sql
-        self.result = result
-
-    def with_message(self, message: str) -> "NeedsExternalToolError":
-        """The same error with another message."""
-        # Not copy.copy: it rebuilds an exception from its args alone
-        error = NeedsExternalToolError.__new__(NeedsExternalToolError)
-        error.__dict__.update(self.__dict__)
-        Exception.__init__(error, message)
-        return error
-
 
 def read_steps(script: str) -> list:
     """The marked update steps of a deployment script, in its order."""
@@ -96,18 +76,22 @@ def read_steps(script: str) -> list:
 
 
 def is_create_or_update_call(sql: str) -> bool:
-    return bool(_CALL_CREATE_OR_UPDATE.match(statements.strip_statement(sql)))
+    # The cheap test first: every statement of the script comes here
+    return "msm_create_or_update" in sql.lower() and bool(
+        _CALL_CREATE_OR_UPDATE.match(statements.strip_statement(sql)))
 
 
 @dataclass
 class Action:
     """What runs for a part of a step: kind "alter" (one top-level ALTER
-    TABLE, sql), or "block" (statements run as one BEGIN NOT ATOMIC block,
-    sql = the block; note says why a whole step is one block)."""
+    TABLE, sql, taken apart in alter), or "block" (statements run as one
+    BEGIN NOT ATOMIC block, sql = the block; note says why a whole step is
+    one block)."""
 
     kind: str
     sql: str
     note: Optional[str] = None
+    alter: Optional[statements.AlterTable] = None
 
 
 def step_actions(body: str) -> list:
@@ -129,11 +113,12 @@ def step_actions(body: str) -> list:
         return [_block(parts, "it declares variables or handlers")]
     actions, run = [], []
     for part in parts:
-        if statements.alter_table_parts(part) is not None:
+        alter = statements.alter_table_parts(part)
+        if alter is not None:
             if run:
                 actions.append(_block(run))
                 run = []
-            actions.append(Action("alter", part))
+            actions.append(Action("alter", part, alter=alter))
         else:
             run.append(part)
     if run:
@@ -193,20 +178,19 @@ def run_update(
                                 "its ALTER TABLE statements run as written.")
                 session.run_sql(action.sql)
             else:
-                _alter(session, step, action.sql, schema_name, settings, log)
+                _alter(session, step, action.sql, action.alter, schema_name, settings, log)
         version = step.version_to
 
 
-def _alter(session, step, sql, schema_name, settings, log) -> None:
-    parts = statements.alter_table_parts(sql)
+def _alter(session, step, sql, parts, schema_name, settings, log) -> None:
     options = settings.options_for(parts.table)
     why = None
     if options is None:
         why = "online ALTER TABLE is off for the table"
     elif parts.modifiers:
         why = f"it uses {' '.join(parts.modifiers)}"
-    elif statements.locking_clause(parts.spec):
-        why = f"it sets {statements.locking_clause(parts.spec)} itself"
+    elif clause := statements.locking_clause(parts.spec):
+        why = f"it sets {clause} itself"
     if why:
         log("INFO", f"ALTER TABLE `{parts.table}` runs as written ({why}).")
         session.run_sql(statements.strip_statement(sql))
@@ -215,7 +199,12 @@ def _alter(session, step, sql, schema_name, settings, log) -> None:
         session, parts.schema or schema_name, parts.table, parts.spec, options)
     if not result.applied:
         log("ERROR", f"ALTER TABLE `{parts.table}`: no online step applied it: {result.reason}")
-        raise NeedsExternalToolError(step, parts.table, sql, result)
+        raise NeedsExternalToolError(
+            f"The update from {step.version_from} to {step.version_to} needs an external "
+            f"tool for an ALTER TABLE of `{parts.table}`: {result.reason}. Nothing of that "
+            "statement was changed; the statements before it ran. Statement: "
+            f"{statements.first_line(sql)}"
+        )
     seconds = sum(item["seconds"] for item in result.steps)
     log("INFO", f"ALTER TABLE `{parts.table}`: {result.method} ({seconds:.2f} s"
                 + (f"; {result.reason}" if result.reason else "") + ").")
