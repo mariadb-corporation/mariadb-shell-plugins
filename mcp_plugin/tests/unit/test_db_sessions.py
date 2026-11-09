@@ -1837,3 +1837,9 @@ def test_session_opener_opens_sessions_as_the_connection_does(http_transport, mo
 
     with pytest.raises(Exception):
         db_functions.session_opener(CONNECTION_ID, _identity("10.9.9.9"))
+
+    # Closing the connection ends the sessions a task would still open
+    connection.close()
+    with pytest.raises(Exception, match=CONNECTION_ID):
+        open_session()
+    assert opened[-1] == ("login", connection.uri, user, "grant-1")

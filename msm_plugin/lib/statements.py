@@ -163,24 +163,16 @@ _LOCKING_CLAUSE = re.compile(
 _PARTITION_WORD = re.compile(r"\bPARTITION(?:S|ING)?\b", re.IGNORECASE)
 
 
-def _bare_tokens(spec: str):
-    """The tokens of an ALTER TABLE's clauses outside quotes and comments,
-    as (parenthesis depth, token)."""
-    depth = 0
-    for token in _ALTER_TOKEN.findall(spec):
-        if token == "(":
-            depth += 1
-        elif token == ")":
-            depth -= 1
-        elif not token.startswith(("`", "'", '"')) and not _is_comment(token):
-            yield depth, token
-
-
 def changes_partitioning(spec: str) -> bool:
     """Whether an ALTER TABLE's clauses (the text after its table name)
     touch its partitioning (PARTITION BY, ADD/DROP/... PARTITION, REMOVE
-    PARTITIONING): the server takes no ALGORITHM or LOCK clause after those."""
-    return any(_PARTITION_WORD.search(token) for _, token in _bare_tokens(spec))
+    PARTITIONING): the server takes no ALGORITHM or LOCK clause after those.
+    Quotes and comments do not count."""
+    return any(
+        _PARTITION_WORD.search(token)
+        for token in _ALTER_TOKEN.findall(spec)
+        if not token.startswith(("`", "'", '"')) and not _is_comment(token)
+    )
 
 
 def ends_in_line_comment(text: str) -> bool:
@@ -192,12 +184,31 @@ def ends_in_line_comment(text: str) -> bool:
 
 def locking_clause(spec: str) -> Optional[str]:
     """The first ALGORITHM or LOCK clause of an ALTER TABLE's clauses (the
-    text after its table name), as written; None where it has none. Quotes,
-    comments and parentheses (a column's definition) do not count."""
-    for depth, token in _bare_tokens(spec):
-        match = _LOCKING_CLAUSE.search(token) if depth == 0 else None
-        if match:
-            return match.group(0).strip()
+    text after its table name), as written; None where it has none. Quotes
+    and parentheses (a column's definition) do not count; a comment counts
+    as a blank, so ALGORITHM /* ... */ = COPY is still the clause."""
+    parts, depth = [], 0
+    for token in _ALTER_TOKEN.findall(spec):
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 0 and _is_comment(token):
+            parts.append(" ")
+            continue
+        elif depth == 0 and not token.startswith(("`", "'", '"')):
+            parts.append(token)
+            continue
+        # A separator no clause spans
+        parts.append("\0")
+    text = "".join(parts)
+    for match in _LOCKING_CLAUSE.finditer(text):
+        # CHANGE [COLUMN] [IF EXISTS] algorithm copy INT renames a column
+        before = text[:match.start()].split()
+        if (match.group(0)[:1].upper() == "A" and "=" not in match.group(0)
+                and before and before[-1].upper() in ("CHANGE", "COLUMN", "EXISTS")):
+            continue
+        return " ".join(match.group(0).split())
     return None
 
 

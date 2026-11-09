@@ -47,10 +47,11 @@ What no step applies is ``NEEDS_EXTERNAL``: nothing changed, and the change
 is for an external tool (gh-ost, pt-online-schema-change).
 
 The table's size and Galera decide in advance which steps may run: the
-rebuilds (INPLACE, COPY) not above ``max_copy_bytes``, the locked steps not above ``max_locked_bytes``
-(no limit by default, so nothing a plain ALTER TABLE runs is refused); on
-Galera, every step but INSTANT and NBO runs under Total Order Isolation,
-which pauses the whole cluster, so only up to ``galera_max_bytes``.
+rebuilds (INPLACE, COPY) not above ``max_copy_bytes``, the locked steps
+not above ``max_locked_bytes`` (no limit by default, so nothing a plain
+ALTER TABLE runs is refused); on Galera, every step but INSTANT and NBO
+runs under Total Order Isolation, which pauses the whole cluster, so only
+up to ``galera_max_bytes``.
 
 No shell imports: the session is passed in, and an error's number is read
 from its ``code``, as ``mysqlsh.DBError`` has it.
@@ -128,9 +129,8 @@ class Options:
             rebuild it online (INPLACE, COPY) may run on; None = no limit,
             0 = never.
         galera_max_bytes: On Galera, the largest table NOCOPY, INPLACE, COPY
-            or a locked step may run
-            on under Total Order Isolation, which pauses the cluster; None
-            or 0 = only INSTANT under TOI.
+            or a locked step may run on under Total Order Isolation, which
+            pauses the cluster; None or 0 = only INSTANT under TOI.
         nbo_lock: On Galera, SHARED (reads go on) or EXCLUSIVE to allow a
             Non-Blocking Operation; None = never.
         max_locked_bytes: The largest table the steps that block writes

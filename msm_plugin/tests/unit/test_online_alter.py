@@ -200,6 +200,8 @@ def test_a_missing_table_is_an_error():
     "algorithm=instant, ADD COLUMN `n` INT",
     "ENGINE=InnoDB LOCK=NONE",
     "ADD COLUMN `n` INT, ROW_FORMAT=DYNAMIC ALGORITHM INPLACE",
+    "ADD COLUMN `n` INT, ALGORITHM /* the server's */ = INPLACE",
+    "ADD COLUMN `n` INT, LOCK -- none\n= NONE",
 ])
 def test_a_spec_with_its_own_algorithm_or_lock_is_refused(spec):
     with pytest.raises(ValueError, match="Run it as written"):
@@ -214,6 +216,8 @@ def test_a_spec_with_its_own_algorithm_or_lock_is_refused(spec):
     "ADD COLUMN algorithm INT DEFAULT 1, KEY_BLOCK_SIZE=8",
     "ALTER COLUMN algorithm DROP DEFAULT",
     "ADD CONSTRAINT `c` CHECK (`lock` > 0)",
+    "CHANGE COLUMN algorithm copy INT",
+    "CHANGE algorithm instant VARCHAR(10)",
 ])
 def test_algorithm_or_lock_in_names_strings_and_comments_is_no_clause(spec):
     assert statements.locking_clause(spec) is None

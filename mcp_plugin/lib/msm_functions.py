@@ -1036,8 +1036,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             table: The table, as named in the scripts.
             settings: The table's settings: enabled (false runs its ALTERs as
                 written), maxCopyBytes (largest table size for an online
-                rebuild, INPLACE or COPY; 0 = never, null = no limit), galeraMaxBytes, nboLock (SHARED or
-                EXCLUSIVE to allow a Galera NBO), maxLockedBytes (largest table
+                rebuild, INPLACE or COPY; 0 = never, null = no limit),
+                galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow a Galera
+                NBO), maxLockedBytes (largest table
                 size for a step that blocks writes), lockWait (seconds per
                 attempt), maxRetries. Left out or empty, the table's entry goes
                 and it follows the project's general values.
@@ -1173,8 +1174,9 @@ def register_msm_tools(server, function_groups=()) -> None:
                     server accepts (INSTANT, then NOCOPY, INPLACE and COPY
                     with LOCK=NONE, then with a lock); keys: enabled (false
                     runs them as written), maxCopyBytes (largest table for
-                    INPLACE or COPY; 0 = never, null = no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE
-                    to allow Galera NBO), maxLockedBytes (largest table for
+                    INPLACE or COPY; 0 = never, null = no limit),
+                    galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow
+                    Galera NBO), maxLockedBytes (largest table for
                     a step that blocks writes), lockWait (seconds per
                     attempt), maxRetries, tables ({<table>: {the same keys}}).
 
@@ -1221,13 +1223,13 @@ def register_msm_tools(server, function_groups=()) -> None:
         ) -> dict:
             """Starts one ALTER TABLE, run online, as a background task.
 
-            Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with LOCK=NONE, then a
-            Galera NBO where allowed, then LOCK=SHARED and LOCK=EXCLUSIVE: each
-            step either runs the change that way or is refused at once, without
-            touching data. The task runs in sessions of its own; each step is a
-            stage, with the server's progress; task.cancel stops the running
-            statement. Its result: {method, applied, reason, table_size,
-            galera, steps}; method NEEDS_EXTERNAL (applied false) means no
+            Tries ALGORITHM=INSTANT, then NOCOPY, INPLACE and COPY with
+            LOCK=NONE, then a Galera NBO where allowed, then LOCK=SHARED and
+            LOCK=EXCLUSIVE: each step either runs the change that way or is
+            refused at once, without touching data. The task runs in sessions
+            of its own; each step is a stage, with the server's progress;
+            task.cancel stops the running statement. Its result: {method,
+            applied, reason, table_size, galera, steps}; method NEEDS_EXTERNAL (applied false) means no
             allowed step could run it and nothing was changed.
 
             Args:
@@ -1238,7 +1240,8 @@ def register_msm_tools(server, function_groups=()) -> None:
                     `note` VARCHAR(100), ADD INDEX `ix_note` (`note`)", without
                     ALGORITHM or LOCK.
                 options: The limits: maxCopyBytes (largest table size for an
-                    online rebuild, INPLACE or COPY; 0 = never, null = no limit; default 10 GiB),
+                    online rebuild, INPLACE or COPY; 0 = never, null = no
+                    limit; default 10 GiB),
                     galeraMaxBytes, nboLock, maxLockedBytes (largest table size
                     for a step that blocks writes; default no limit), lockWait
                     (seconds per attempt, default 5), maxRetries (default 10).

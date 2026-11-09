@@ -673,7 +673,14 @@ class _Connection:
     def open_new_session(self):
         """Opens a new session on the connection, as its own is opened: the
         URI still configured (or the sign-in's grant still alive) and the
-        user's default role applied. The caller owns it and closes it."""
+        user's default role applied. The caller owns it and closes it.
+
+        Raises:
+            _ConnectionClosed: If the connection has been closed (``db.close``
+                or an expiry drop): closing it ends every new session too.
+        """
+        if self.closed:
+            raise _ConnectionClosed()
         if self.grant_id is not None:
             return _open_login_session(self.uri, self.mcp_user_id, self.grant_id)
         return _open_session(self.uri, self.kind, self.mcp_user_id)
@@ -1205,9 +1212,18 @@ def session_opener(connection_id: str, client):
 
     Returns:
         A function without arguments that returns a new open shell session,
-        which its caller closes.
+        which its caller closes; once the connection is closed, it raises
+        the error an unknown connection id gets.
     """
-    return _get_connection(connection_id, client).open_new_session
+    connection = _get_connection(connection_id, client)
+
+    def open_session():
+        try:
+            return connection.open_new_session()
+        except _ConnectionClosed:
+            raise _no_such_connection(connection_id) from None
+
+    return open_session
 
 
 def connection_data(connection_id: str, client) -> dict:
