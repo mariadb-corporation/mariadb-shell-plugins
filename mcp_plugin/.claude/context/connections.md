@@ -258,6 +258,16 @@ produced most of this is in [security-review.md](security-review.md).
     `_no_such_connection(connection_id)`. The TERMINAL paths (`db.close`, `_drop_connection`)
     call `close()`; the IDLE path still calls `close_session()` and must NOT raise the flag,
     or an idle connection could never be reopened.
+  - **Extra sessions of a connection** (`db_functions.session_opener(connection_id,
+    client)` -> a function opening a new session each call, via
+    `_Connection.open_new_session`): for in-process work that needs sessions of its own
+    (`msm.online_alter_table`'s task: the ALTER + the monitor). Opened as the connection's
+    own (URI still configured / sign-in grant alive, the user's default role); refuses
+    like `_no_such_connection` once the connection is closed. Never
+    `shell.open_session(connection_data)` for in-process work: that skips the role and the
+    checks (`connection_data`/`connection_credentials` are for utility subprocesses).
+    Resolve it on a worker thread from async tools (`_get_connection` may drop an expired
+    connection, which waits for its lock).
   - **Connection caps** (S7): `general.MAX_CONNECTIONS_PER_CLIENT = 16`,
     `MAX_CONNECTIONS_TOTAL = 64`. `_claim_connection_slot(id, connection)` counts AND
     inserts under ONE hold of `_sessions_lock`, and is called BEFORE
