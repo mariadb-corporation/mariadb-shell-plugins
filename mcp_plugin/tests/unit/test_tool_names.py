@@ -82,6 +82,10 @@ def test_the_published_schemas_are_trimmed(tenant_config):
         assert connect["properties"]["uri"] == {"type": "string"}
         execute = schemas[f"db{separator}execute_sql"]["properties"]
         assert execute["limit"] == {"type": "integer"}
+        # A union with null keeps its other types as alternatives
+        assert schemas[f"msm{separator}create_project"]["properties"]["year_of_creation"] == {
+            "anyOf": [{"type": "string"}, {"type": "integer"}]
+        }
         assert execute["params"] == {"items": {}, "type": "array"}
         assert execute["column_metadata"] == {"default": False, "type": "boolean"}
         assert execute["output_format"] == {
