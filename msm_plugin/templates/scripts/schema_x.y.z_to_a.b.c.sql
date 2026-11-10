@@ -56,7 +56,7 @@ DELIMITER ;
 
 
 -- #############################################################################
--- MSM Section 240: Non-idempotent Schema Object Changes and All DROPs
+-- MSM Section 240: Non-idempotent Schema Object Changes and DROPs
 -- -----------------------------------------------------------------------------
 -- This section contains changes performed on schema TABLEs. It is important to
 -- note that these changes need to be carefully processed during a schema

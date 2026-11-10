@@ -514,6 +514,28 @@ def test_a_release_takes_the_pending_migration(project, fake_edit):
     assert editing.read_pending_update(pending) == {"240": "", "260": ""}
 
 
+@needs_lsp
+def test_a_release_moves_the_routine_drops_of_an_old_pending_script_into_260(project):
+    from msm_plugin.management import prepare_release
+
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.0.1")
+    settings = management.get_project_settings(project)
+    pending = editing.pending_update_path(project, settings)
+    with open(pending, "w") as f:
+        f.write(editing.pending_update_text(None, settings, {}).replace(
+            "MSM Section 260: Removal of PROCEDUREs and FUNCTIONs",
+            "MSM Section 290: Removal of Update Helpers",
+        ) + "DROP PROCEDURE IF EXISTS `p`;\n")
+
+    files = prepare_release(schema_project_path=project, version="1.0.1", next_version="1.0.2")
+    update = os.path.join(project, "releases", "updates", "shop_1.0.0_to_1.0.1.sql")
+    assert update in files and pending in files
+    sections = management.get_file_sections(update)
+    assert sections["260"]["sql_content"].strip("\n") == "DROP PROCEDURE IF EXISTS `p`;"
+    assert "DROP PROCEDURE" not in sections["290"]["sql_content"]
+    assert editing.read_pending_update(pending) == {"240": "", "260": ""}
+
+
 # -----------------------------------------------------------------------------
 # Against the real binary
 

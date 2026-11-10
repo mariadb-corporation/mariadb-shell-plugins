@@ -65,9 +65,9 @@ _LEGACY_REMOVALS_SECTION_ID = "290"
 # - the DROP of a routine goes in Section 260: a stored routine is not
 #   dropped from within another (MariaDB 1357);
 # - the DROP of a table, sequence, view, routine, trigger or event is kept
-#   with IF EXISTS, as the binary writes it without: every deployment runs
-#   every update script's Section 260, a fresh install too, where the
-#   routine does not exist (MariaDB 1305);
+#   with IF EXISTS, as the binary writes it without: for a routine, every
+#   deployment runs every update script's Section 260, a fresh install too,
+#   where the routine does not exist (MariaDB 1305);
 # - everything else goes in Section 240: a trigger's or event's DROP and an
 #   event's ALTER EVENT ... RENAME TO run inside a procedure, and sequences
 #   go with the tables.
@@ -228,7 +228,7 @@ def _pending_update_template(project_settings: dict) -> str:
     return (
         f"{notices}\n"
         "-- #############################################################################\n"
-        f"-- MSM Section {CHANGES_SECTION_ID}: Non-idempotent Schema Object Changes and All DROPs\n"
+        f"-- MSM Section {CHANGES_SECTION_ID}: Non-idempotent Schema Object Changes and DROPs\n"
         "-- -----------------------------------------------------------------------------\n"
         "-- The changes made to the TABLEs of the development script since the last\n"
         "-- release, written by msm.editSchema in the order they were made.\n"
