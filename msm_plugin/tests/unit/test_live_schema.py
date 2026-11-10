@@ -33,6 +33,17 @@ from msm_plugin.lib import live_schema, lsp, modeling
 LIVE_SCHEMA = "msm_live_import_test"
 needs_lsp = pytest.mark.skipif(lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 
+
+def _parser_reads_views() -> bool:
+    """Whether the mariadb-lsp found outlines a view's reads."""
+    binary = lsp.find_lsp()
+    return binary is not None and lsp.outlines_view_reads(binary)
+
+
+needs_view_reads = pytest.mark.skipif(
+    not _parser_reads_views(), reason="no mariadb-lsp binary that outlines a view's reads"
+)
+
 _SCHEMA_SQL = [
     "CREATE SEQUENCE `order_numbers` START WITH 1000",
     "CREATE TABLE `orders` (`id` INT AUTO_INCREMENT PRIMARY KEY, `customer_id` INT,"
@@ -74,6 +85,7 @@ def names(items):
     return [item["name"] for item in items]
 
 
+@needs_view_reads
 def test_the_objects_of_a_live_schema_are_listed(live):
     listed = live_schema.list_schema_objects(live, LIVE_SCHEMA)
 
@@ -116,7 +128,7 @@ def test_a_bad_selection_is_refused_before_anything_is_written(live, tmp_path, o
     assert list(tmp_path.iterdir()) == []
 
 
-@needs_lsp
+@needs_view_reads
 def test_a_live_schema_becomes_a_project(live, tmp_path):
     result = modeling.create_project_from_live_schema(
         live, LIVE_SCHEMA, str(tmp_path), copyright_holder="ACME Corp."
@@ -205,7 +217,7 @@ def test_a_foreign_key_left_out_keeps_the_statement_valid():
     assert live_schema.table_sql(other, "shop", {"orders"})[1] == []
 
 
-@needs_lsp
+@needs_view_reads
 def test_the_imported_project_deploys_the_schema_again(live, tmp_path):
     from msm_plugin import lib as msm_lib
 
@@ -262,7 +274,7 @@ class _Task:
         self.events.append(("progress", stage, current, total))
 
 
-@needs_lsp
+@needs_view_reads
 def test_the_import_reports_its_stages_to_a_task(live, tmp_path):
     task = _Task()
     modeling.create_project_from_live_schema(
@@ -279,7 +291,7 @@ def test_the_import_reports_its_stages_to_a_task(live, tmp_path):
     assert steps[-1] == ("progress", "Reading the objects", 13, 13)
 
 
-@needs_lsp
+@needs_view_reads
 def test_a_cancelled_import_leaves_no_project(live, tmp_path):
     with pytest.raises(RuntimeError, match="cancelled"):
         modeling.create_project_from_live_schema(
@@ -320,7 +332,7 @@ def test_the_schemas_own_name_goes_only_where_it_qualifies_a_name():
 
 
 
-@needs_lsp
+@needs_view_reads
 def test_a_view_without_what_it_reads_is_imported_with_a_warning(live, tmp_path):
     result = modeling.create_project_from_live_schema(
         live, LIVE_SCHEMA, str(tmp_path), copyright_holder="ACME Corp.",
@@ -336,50 +348,31 @@ def test_a_view_without_what_it_reads_is_imported_with_a_warning(live, tmp_path)
     ]
 
 
-def test_a_view_whose_definition_cannot_be_read_reads_none():
-    listed = {kind: [] for kind in live_schema.OBJECT_KINDS}
-    assert live_schema.view_reads(None, "v", listed) is None
-    assert live_schema.view_reads("", "v", listed) is None
 
 
-def test_a_view_reads_only_names_of_its_own_schema():
-    listed = {kind: [] for kind in live_schema.OBJECT_KINDS}
-    listed["tables"] = [{"name": "note"}, {"name": "d"}, {"name": "shop"}]
-    listed["functions"] = [{"name": "f"}]
-    definition = (
-        "select `shop`.`f`(`n`.`id`) AS `a`,`crm`.`f`(1) AS `b`,"
-        "extract(year from `n`.`d`) AS `y`,`shop`.`note`.`id` AS `i` "
-        "from `crm`.`note` `n` join `shop`.`note`"
-    )
-    assert live_schema.view_reads(definition, "v", listed, "shop") == [
-        {"kind": "functions", "name": "f"}, {"kind": "tables", "name": "note"},
-    ]
-    # The other schema's `note` alone is not read
-    assert live_schema.view_reads(
-        "select `n`.`id` AS `id` from `crm`.`note` `n`", "v", listed, "shop"
-    ) == []
-
-
-def _parser_reads_views() -> bool:
-    """Whether the mariadb-lsp found outlines a view's reads."""
-    names = {kind: set() for kind in ("functions", "sequences", "tables", "views")}
-    return live_schema._parsed_view_reads({"v": "select 1"}, names, "s", None) is not None
-
-
+@needs_view_reads
 def test_the_parser_knows_a_cte_named_like_a_table(live, monkeypatch):
     live.run_sql(
         f"CREATE VIEW `{LIVE_SCHEMA}`.`cte_view` AS WITH `note` AS (SELECT 1 AS `id`) "
         "SELECT `note`.`id` AS `id` FROM `note` JOIN `customer` `c` ON 1"
     )
-    if _parser_reads_views():
-        reads = {v["name"]: v["reads"] for v in live_schema.list_schema_objects(live, LIVE_SCHEMA)["views"]}
-        # The CTE is no read of the table `note`, the alias `c` none of a table `c`
-        assert reads["cte_view"] == [{"kind": "tables", "name": "customer"}]
-        assert reads["doubled"] == [
-            {"kind": "functions", "name": "twice"}, {"kind": "tables", "name": "note"}
-        ]
-    # Without a binary that outlines them, the text is read: the CTE's name
-    # is taken for the table
-    monkeypatch.setattr(lsp, "find_lsp", lambda lsp_path=None: None)
     reads = {v["name"]: v["reads"] for v in live_schema.list_schema_objects(live, LIVE_SCHEMA)["views"]}
-    assert reads["cte_view"] == [{"kind": "tables", "name": "customer"}, {"kind": "tables", "name": "note"}]
+    # The CTE is no read of the table `note`, the alias `c` none of a table `c`
+    assert reads["cte_view"] == [{"kind": "tables", "name": "customer"}]
+    assert reads["doubled"] == [
+        {"kind": "functions", "name": "twice"}, {"kind": "tables", "name": "note"}
+    ]
+    # Without a binary whose parser tells them, no view's reads are known
+    monkeypatch.setattr(lsp, "find_lsp", lambda lsp_path=None: None)
+    listed = live_schema.list_schema_objects(live, LIVE_SCHEMA)
+    assert all(view["reads"] is None for view in listed["views"])
+
+
+def test_views_are_not_imported_without_a_binary_that_tells_their_reads(live, tmp_path, monkeypatch):
+    monkeypatch.setattr(lsp, "outlines_view_reads", lambda binary: False)
+    with pytest.raises(ValueError, match="does not tell what a view reads"):
+        modeling.create_project_from_live_schema(
+            live, LIVE_SCHEMA, str(tmp_path), copyright_holder="ACME Corp.",
+            objects={"views": ["customer_names"]},
+        )
+    assert list(tmp_path.iterdir()) == []

@@ -111,66 +111,13 @@ def _schema_version(session, schema: str, left_out: list) -> Optional[str]:
         return None
 
 
-_NAME = r"`(?:[^`]|``)+`"
-# How a view's definition names what it reads: a stored function's call `f`(,
-# a table after FROM or JOIN, a column's qualifier `t`.`c`; each optionally
-# with the schema in front (`s`.`f`(, `s`.`t`, `s`.`t`.`c`), so a name of
-# another schema is told apart. The call comes first, so `s`.`f`( is not
-# taken for the qualifier `s`.
-_VIEW_READ = re.compile(
-    rf"(?:(?P<call_schema>{_NAME})\s*\.\s*)?(?P<call>{_NAME})\s*\("
-    rf"|\b(?:FROM|JOIN)\s+\(*\s*(?:(?P<source_schema>{_NAME})\s*\.\s*)?(?P<source>{_NAME})"
-    rf"|(?:(?P<qualifier_schema>{_NAME})\s*\.\s*)?(?P<qualifier>{_NAME})\s*\.\s*(?={_NAME})",
-    re.IGNORECASE,
-)
-# The kinds a view reads, by how they are named
+# The kinds a view reads, as the listing names them
 _READ_KINDS = ("functions", "sequences", "tables", "views")
-
-
-def _unquoted(name: str) -> str:
-    return name[1:-1].replace("``", "`")
-
-
-def view_reads(
-    definition: Optional[str], view: str, listed: dict, schema: Optional[str] = None
-) -> Optional[list]:
-    """What a view's definition (its SELECT, as the server stores it) reads
-    of the listed objects: [{kind, name}] of the listing's tables, views,
-    sequences and functions, the view itself and names of another schema
-    than schema (the listing's own, where not given) left out, unique and
-    sorted by kind then name; None where the definition cannot be read.
-
-    The server writes every column of a view qualified (`t`.`c`) and every
-    name quoted, so each table or view it reads is a column's qualifier or
-    follows FROM or JOIN, and a stored function is a quoted name called."""
-    return _view_reads(definition, view, _read_names(listed), schema or listed.get("schema"))
 
 
 def _read_names(listed: dict) -> dict:
     """The names of the listing's objects a view can read, by kind."""
     return {kind: {item["name"] for item in listed[kind]} for kind in _READ_KINDS}
-
-
-def _view_reads(
-    definition: Optional[str], view: str, names: dict, schema: Optional[str]
-) -> Optional[list]:
-    if not definition:
-        return None
-    reads = set()
-    for match in _VIEW_READ.finditer(statements_lib.without_strings_and_comments(definition)):
-        if match.group("call"):
-            group, kinds = "call", ("functions",)
-        else:
-            group = "source" if match.group("source") else "qualifier"
-            kinds = ("tables", "views", "sequences")
-        in_schema = match.group(f"{group}_schema")
-        if in_schema is not None and schema is not None and _unquoted(in_schema) != schema:
-            continue
-        name = _unquoted(match.group(group))
-        for kind in kinds:
-            if name in names[kind] and not (kind == "views" and name == view):
-                reads.add((kind, name))
-    return [{"kind": kind, "name": name} for kind, name in sorted(reads)]
 
 
 # The kinds of mariadb-lsp outline's reads, as the listing's kinds take them
@@ -181,20 +128,24 @@ _LSP_READ_KINDS = {
 }
 
 
-def _parsed_view_reads(
+def _view_reads(
     definitions: dict, names: dict, schema: str, lsp_path: Optional[str]
-) -> Optional[dict]:
-    """The views' reads as mariadb-lsp's parser finds them (outline's
-    views[].reads, which knows CTE names and aliases for what they are), by
-    view; None where no binary has them, so the caller reads the text."""
+) -> dict:
+    """What each view reads (its definition by name in definitions), as
+    mariadb-lsp's parser finds it (outline's views[].reads, which knows CTE
+    names and aliases for what they are): [{kind, name}] of the listed
+    objects (names) of the schema, the view itself left out, sorted by kind
+    then name; None for a view whose reads cannot be worked out (no
+    definition, one that does not parse, no binary that outlines reads)."""
     import tempfile
 
     from msm_plugin.lib import lsp
 
+    unknown = {view: None for view in definitions}
     binary = lsp.find_lsp(lsp_path)
     readable = {view: sql for view, sql in definitions.items() if sql}
-    if binary is None or not readable:
-        return None
+    if binary is None or not readable or not lsp.outlines_view_reads(binary):
+        return unknown
     script = "".join(
         f"CREATE VIEW {quote_identifier(view)} AS {sql};\n" for view, sql in readable.items()
     )
@@ -202,10 +153,8 @@ def _parsed_view_reads(
         with tempfile.TemporaryDirectory() as source_dir:
             outlined = lsp.outline(binary, script, source_dir)
     except (ValueError, OSError):
-        return None
+        return unknown
     views = [view for each in outlined.get("schemas", []) for view in each.get("views", [])]
-    if not views or any("reads" not in view for view in views):
-        return None  # a binary from before views had their reads
     by_view = {}
     for view in views:
         reads = set()
@@ -235,9 +184,9 @@ def list_schema_objects(session, schema: str, lsp_path: str = None) -> dict:
         a schema msm does not manage has none, unless it names its own so)},
         each list sorted by name.
 
-    A view's reads come from mariadb-lsp's parser where a binary (lsp_path,
-    or one find_lsp finds) outlines them, so CTE names and aliases are not
-    taken for tables; else from the definition's text (view_reads).
+    A view's reads come from mariadb-lsp's parser (lsp_path, or the binary
+    find_lsp finds), so CTE names and aliases are not taken for tables;
+    without a binary that outlines them, every view's reads are None.
 
     Raises:
         ValueError: For a schema the server does not have (or the account
@@ -273,13 +222,12 @@ def list_schema_objects(session, schema: str, lsp_path: str = None) -> dict:
     result["events"] = [{"name": row["name"]} for row in _rows(session, _EVENTS_SQL, [schema])]
     definitions = {row["name"]: row["definition"] for row in _rows(session, _VIEWS_SQL, [schema])}
     names = _read_names(result)
-    views = {view["name"]: definitions.get(view["name"]) for view in result["views"]}
-    parsed = _parsed_view_reads(views, names, schema, lsp_path)
+    reads = _view_reads(
+        {view["name"]: definitions.get(view["name"]) for view in result["views"]},
+        names, schema, lsp_path,
+    )
     for view in result["views"]:
-        view["reads"] = (
-            parsed[view["name"]] if parsed is not None
-            else _view_reads(views[view["name"]], view["name"], names, schema)
-        )
+        view["reads"] = reads[view["name"]]
     result["schema"] = schema
     result["project_folder_name"] = management.project_folder_name(schema)
     result["schema_version"] = _schema_version(session, schema, left_out)

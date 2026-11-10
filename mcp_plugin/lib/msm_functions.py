@@ -1416,9 +1416,9 @@ def register_msm_tools(server, function_groups=()) -> None:
                 reads: [{kind, name}] of the listed tables, views, sequences
                 and functions it reads (itself, other schemas and msm's own
                 objects left out), sorted by kind then name, [] for none; null
-                where its definition cannot be read or parsed. Found by the
-                mariadb-lsp parser where the binary has it (CTE names and
-                aliases are no reads), else from the definition's text.
+                where its definition cannot be read or parsed, and for every
+                view without a mariadb-lsp whose parser tells what views read
+                (CTE names and aliases are no reads).
                 msm.import_live_schema
                 warns about a view that reads an object it does not import,
                 from these same reads.

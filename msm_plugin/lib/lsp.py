@@ -288,6 +288,27 @@ def merges_alters(binary: str) -> bool:
     return answer is not None and answer.get("merge_alters") is True
 
 
+def outlines_view_reads(binary: str) -> bool:
+    """Whether the binary's outline tells what each view reads (its
+    ``views[].reads``; lsp-server #36): asked once per build, by outlining a
+    view and looking for the member, which an older binary leaves out."""
+    import tempfile
+
+    try:
+        key = (binary, os.stat(binary).st_mtime_ns, ("outline-view-reads",))
+    except OSError:
+        key = (binary, None, ("outline-view-reads",))
+    if key not in _answers:
+        try:
+            with tempfile.TemporaryDirectory() as source_dir:
+                outlined = outline(binary, "CREATE VIEW v AS SELECT 1;\n", source_dir)
+        except (ValueError, OSError):
+            return False  # not kept: tried again next time
+        views = [view for schema in outlined.get("schemas", []) for view in schema.get("views", [])]
+        _answers[key] = bool(views) and all("reads" in view for view in views)
+    return _answers[key]
+
+
 def edit_ops(binary: str) -> frozenset:
     """The edit ops the binary does: what ``edit --ops`` lists; for an
     older binary its --help's ``edit ops:`` line, the renames for one with

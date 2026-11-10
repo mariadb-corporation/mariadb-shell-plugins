@@ -655,14 +655,3 @@ def unqualified(sql: str, schema: str) -> str:
         lambda m: m.group("name") if m.group("name") is not None else m.group("keep"), sql
     )
 
-
-def without_strings_and_comments(sql: str) -> str:
-    """The statement with its string literals and comments blanked out, so
-    a name in them is not taken for one the statement uses; quoted names
-    stay as they are."""
-    pattern = re.compile(
-        r"(?P<name>`(?:[^`]|``)*`)|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\""
-        r"|--[^\n]*|#[^\n]*|/\*.*?\*/",
-        re.DOTALL,
-    )
-    return pattern.sub(lambda m: m.group("name") or " ", sql)

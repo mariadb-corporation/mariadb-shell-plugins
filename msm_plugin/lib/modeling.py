@@ -1286,8 +1286,9 @@ def prepare_live_import(
 ) -> tuple:
     """What refuses an import of a live schema, checked before an object is
     read (the arguments are create_project_from_live_schema's): the new
-    project (management.check_new_project), the binary the snapshot needs,
-    the schema and the selection.
+    project (management.check_new_project), the binary the snapshot needs
+    (one that tells what views read, where views are imported), the schema
+    and the selection.
 
     Returns:
         (listed, selected): live_schema.list_schema_objects' listing and
@@ -1304,9 +1305,17 @@ def prepare_live_import(
         schema, target_path, copyright_holder, license, overwrite_existing,
         True, enforce_target_path, copyrights, year_of_creation,
     )
-    lsp.require_lsp(lsp_path)
+    binary = lsp.require_lsp(lsp_path)
     listed = live_schema.list_schema_objects(session, schema, lsp_path)
-    return listed, live_schema.selected_objects(listed, objects)
+    selected = live_schema.selected_objects(listed, objects)
+    # The views are written in the order of what they read, which only the
+    # binary's parser tells
+    if selected["views"] and not lsp.outlines_view_reads(binary):
+        raise ValueError(
+            f"The mariadb-lsp binary `{binary}` does not tell what a view reads, which the "
+            "import orders the views by: a newer MariaDB Shell brings one that does."
+        )
+    return listed, selected
 
 
 def create_project_from_live_schema(
