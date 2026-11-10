@@ -85,7 +85,6 @@ def names(items):
     return [item["name"] for item in items]
 
 
-@needs_view_reads
 def test_the_objects_of_a_live_schema_are_listed(live):
     listed = live_schema.list_schema_objects(live, LIVE_SCHEMA)
 
@@ -95,13 +94,16 @@ def test_the_objects_of_a_live_schema_are_listed(live):
         "a_first_names", "customer_names", "doubled", "labels", "note_count"
     ]
     reads = {view["name"]: view["reads"] for view in listed["views"]}
-    assert reads == {
-        "a_first_names": [{"kind": "views", "name": "customer_names"}],
-        "customer_names": [{"kind": "tables", "name": "customer"}],
-        "doubled": [{"kind": "functions", "name": "twice"}, {"kind": "tables", "name": "note"}],
-        "labels": [],
-        "note_count": [{"kind": "tables", "name": "note"}],
-    }
+    if not _parser_reads_views():
+        assert all(read is None for read in reads.values())
+    else:
+        assert reads == {
+            "a_first_names": [{"kind": "views", "name": "customer_names"}],
+            "customer_names": [{"kind": "tables", "name": "customer"}],
+            "doubled": [{"kind": "functions", "name": "twice"}, {"kind": "tables", "name": "note"}],
+            "labels": [],
+            "note_count": [{"kind": "tables", "name": "note"}],
+        }
     assert names(listed["procedures"]) == ["add_customer"]
     assert names(listed["functions"]) == ["twice"]
     assert listed["triggers"] == [{"name": "orders_bi", "table": "orders"}]
@@ -375,3 +377,98 @@ def test_views_are_not_imported_without_a_binary_that_tells_their_reads(live, tm
             objects={"views": ["customer_names"]},
         )
     assert list(tmp_path.iterdir()) == []
+
+
+def _listing(**kinds):
+    """A listing as list_schema_objects gives it, of the names of each kind."""
+    listed = {kind: [{"name": name} for name in kinds.get(kind, [])]
+              for kind in live_schema.OBJECT_KINDS}
+    for table in listed["tables"]:
+        table["triggers"] = []
+    listed["schema"] = "s"
+    return listed
+
+
+@pytest.mark.parametrize("kinds, message", [
+    ({"views": ["V", "v"]}, "view `V` and the view `v` differ only in case"),
+    ({"tables": ["T"], "views": ["t"]}, "table `T` and the view `t` differ only in case"),
+    ({"tables": ["Seq"], "sequences": ["SEQ"]}, "table `Seq` and the sequence `SEQ`"),
+    ({"events": ["E", "e"]}, "event `E` and the event `e`"),
+])
+def test_names_differing_only_in_case_are_refused(kinds, message):
+    with pytest.raises(ValueError, match=message):
+        live_schema.selected_objects(_listing(**kinds), None)
+    # Selecting one of them is fine; so are the same names in other namespaces
+    kind, names = next(iter(kinds.items()))
+    assert live_schema.selected_objects(_listing(**kinds), {kind: names[:1]})[kind] == names[:1]
+    assert live_schema.selected_objects(
+        _listing(tables=["t"], functions=["T"], procedures=["t"]), None
+    )["functions"] == ["T"]
+
+
+def _outlining(monkeypatch, views):
+    """A binary whose outline gives views (its reads, by view name)."""
+    monkeypatch.setattr(lsp, "find_lsp", lambda lsp_path=None: "mariadb-lsp")
+    monkeypatch.setattr(lsp, "outlines_view_reads", lambda binary: True)
+    outlined = {"schemas": [{"views": [
+        {"name": name, "reads": reads} for name, reads in views.items()
+    ]}]}
+    monkeypatch.setattr(lsp, "outline", lambda binary, script: outlined)
+
+
+def _read(name, kind="table_or_view"):
+    return {"kind": kind, "schema": None, "name": name}
+
+
+def test_a_view_named_like_another_but_for_case_reads_nothing_known(monkeypatch):
+    # The outline compares names without case: two such views are one, which
+    # reads what the last of them reads
+    _outlining(monkeypatch, {"v": [_read("t2")], "w": [_read("t1")]})
+    names = {"tables": {"t1", "t2"}, "views": {"V", "v", "w"}, "functions": set(),
+             "sequences": set()}
+    reads = live_schema._view_reads({"V": "SELECT 1", "v": "SELECT 2", "w": "SELECT 3"},
+                                    names, "s", None)
+    assert reads == {"V": None, "v": None, "w": [{"kind": "tables", "name": "t1"}]}
+
+
+def test_a_read_of_a_name_shared_up_to_case_is_unknown(monkeypatch):
+    _outlining(monkeypatch, {
+        "a": [_read("T")], "b": [_read("t", "function")], "c": [_read("x")],
+        "d": None, "e": [{"kind": "table_or_view", "schema": None, "name": None}],
+    })
+    names = {"tables": {"T", "x"}, "views": {"t", "a", "b", "c", "d", "e"},
+             "functions": {"t"}, "sequences": set()}
+    reads = live_schema._view_reads({view: "SELECT 1" for view in "abcde"}, names, "s", None)
+    assert reads == {
+        # Table `T` or view `t`: not known
+        "a": None,
+        # The function `t` has a namespace of its own
+        "b": [{"kind": "functions", "name": "t"}],
+        "c": [{"kind": "tables", "name": "x"}],
+        # reads: null is unknown, not none; a read without a name is passed over
+        "d": None,
+        "e": [],
+    }
+
+
+@needs_view_reads
+def test_a_live_schema_with_names_differing_only_in_case_is_not_imported(live, tmp_path):
+    if live.run_sql("SELECT @@lower_case_table_names").fetch_one()[0] != 0:
+        pytest.skip("the server ignores the case of names")
+    live.run_sql(f"CREATE VIEW `{LIVE_SCHEMA}`.`Customer_Names` AS SELECT 1 AS `one`")
+    listed = live_schema.list_schema_objects(live, LIVE_SCHEMA)
+    reads = {view["name"]: view["reads"] for view in listed["views"]}
+    assert reads["Customer_Names"] is None and reads["customer_names"] is None
+    with pytest.raises(ValueError, match="differ only in case"):
+        modeling.create_project_from_live_schema(live, LIVE_SCHEMA, str(tmp_path))
+    assert list(tmp_path.iterdir()) == []
+    # One of them is imported
+    result = modeling.create_project_from_live_schema(
+        live, LIVE_SCHEMA, str(tmp_path), copyright_holder="ACME Corp.",
+        objects={"views": ["Customer_Names"]},
+    )
+    assert result["views"] == 1
+    assert result["warnings"] == [
+        "What the view `Customer_Names` reads could not be worked out; it may be written "
+        "before a view it reads, and is not checked for what is not imported."
+    ]

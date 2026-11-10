@@ -37,6 +37,7 @@ roles and grants are not read.
 
 import re
 import time
+from collections import Counter
 from contextlib import contextmanager
 from typing import Optional
 
@@ -133,7 +134,9 @@ def _view_reads(
     objects (names) of the schema, named as the listing names them (names
     compare as diagrams.same_name does), the view itself left out, sorted by
     kind then name; None for a view whose reads cannot be worked out (no
-    definition, one that does not parse, no binary that outlines reads)."""
+    definition, one that does not parse, no binary that outlines reads, a
+    view named like another but for case, or a read of a name that objects
+    of one namespace share up to case)."""
     from msm_plugin.lib import lsp
 
     unknown = {view: None for view in definitions}
@@ -148,35 +151,63 @@ def _view_reads(
         outlined = lsp.outline(binary, script)
     except (ValueError, OSError):
         return unknown
-    # The listing's own spelling of each name, lower-cased, as diagrams.same_name compares them
-    listed = {kind: {each.lower(): each for each in names[kind]} for kind in names}
+    # The listing's own spelling of each name, lower-cased, as diagrams.same_name compares
+    # them; a name objects of one namespace share up to case tells none of them apart
+    clashing = {}
+    for kinds in _NAMESPACES:
+        lowered = Counter(each.lower() for kind in kinds for each in names.get(kind, ()))
+        for kind in kinds:
+            clashing[kind] = {lower for lower, count in lowered.items() if count > 1}
+    listed = {
+        kind: {each.lower(): each for each in names[kind] if each.lower() not in clashing[kind]}
+        for kind in names
+    }
     views = [view for each in outlined.get("schemas", []) for view in each.get("views", [])]
     by_view = {}
     for view in views:
+        # Views differing only in case are one view of the outline, so they are not listed
+        name = listed["views"].get(view["name"].lower())
+        if name is None:
+            # Not a listed view, or two the outline merged into one: unknown
+            continue
+        if not isinstance(view.get("reads"), list):
+            # Reads the binary could not work out are unknown, not none
+            by_view[name] = None
+            continue
         reads = set()
-        for read in view["reads"] or []:
+        for read in view["reads"]:
+            if not isinstance(read.get("name"), str):
+                continue
             if read.get("schema") is not None and not diagrams.same_name(read["schema"], schema):
                 continue
-            for kind in _LSP_READ_KINDS.get(read.get("kind"), ()):
-                name = listed[kind].get(read["name"].lower())
-                if name is not None:
-                    reads.add((kind, name))
-        name = listed["views"].get(view["name"].lower(), view["name"])
+            kinds = _LSP_READ_KINDS.get(read.get("kind"), ())
+            if any(read["name"].lower() in clashing[kind] for kind in kinds):
+                # Which of the objects differing only in case it reads is not known
+                reads = None
+                break
+            for kind in kinds:
+                listed_name = listed[kind].get(read["name"].lower())
+                if listed_name is not None:
+                    reads.add((kind, listed_name))
+        if reads is None:
+            by_view[name] = None
+            continue
         reads.discard(("views", name))
         by_view[name] = [{"kind": kind, "name": each} for kind, each in sorted(reads)]
     # A view the binary could not parse makes no view of the outline: None
     return {view: by_view.get(view) for view in definitions}
 
 
-def list_schema_objects(session, schema: str, lsp_path: str = None) -> dict:
+def list_schema_objects(session, schema: str, lsp_path: Optional[str] = None) -> dict:
     """The objects of a live schema an import can take, by kind.
 
     Returns:
         {schema, tables: [{name, comment, triggers}], views: [{name,
         comment, reads: what it reads, [{kind, name}] of the listed tables,
         views, sequences and functions (None where its definition cannot be
-        read or parsed)}], procedures: [{name}], functions: [{name}], triggers:
-        [{name, table}], events: [{name}], sequences: [{name}],
+        read or parsed, or names differing only in case leave it open)}],
+        procedures: [{name}], functions: [{name}], triggers: [{name,
+        table}], events: [{name}], sequences: [{name}],
         project_folder_name: the folder a project of the schema gets,
         schema_version: the version msm deployed or None, left_out: msm's own
         objects, which are never imported (views and routines named msm_*;
@@ -240,8 +271,10 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
     list the selected tables bring their triggers.
 
     Raises:
-        ValueError: For an unknown kind, a name the schema does not have, or
-            a trigger whose table is not selected.
+        ValueError: For an unknown kind, a name the schema does not have, a
+            trigger whose table is not selected, or two objects of one
+            namespace (tables, views and sequences share one) whose names
+            differ only in case.
     """
     available = {kind: [item["name"] for item in listed[kind]] for kind in OBJECT_KINDS}
     # Triggers in their firing order (each table's list keeps ACTION_ORDER),
@@ -250,6 +283,7 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
         trigger for table in listed["tables"] for trigger in table["triggers"]
     ]
     if objects is None:
+        _refuse_names_differing_in_case(available)
         return available
     if not isinstance(objects, dict):
         raise ValueError("`objects` must be an object of lists of names, or null for all.")
@@ -281,7 +315,35 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
             raise ValueError(
                 f"The trigger `{trigger}` needs its table `{table_of[trigger]}` in the selection."
             )
+    _refuse_names_differing_in_case(selected)
     return selected
+
+
+# The kinds whose names share one namespace of a schema
+_NAMESPACES = (
+    ("tables", "views", "sequences"), ("procedures",), ("functions",), ("triggers",), ("events",),
+)
+
+
+def _refuse_names_differing_in_case(selected: dict) -> None:
+    """Refuses two selected objects of one namespace whose names differ
+    only in case (a server with lower_case_table_names=0 has them): a
+    project compares names as diagrams.same_name does, so its scripts would
+    keep one, and a server that ignores case would not create the other.
+
+    Raises:
+        ValueError: Naming the first two such objects.
+    """
+    for kinds in _NAMESPACES:
+        seen = {}
+        for kind in kinds:
+            for name in selected[kind]:
+                other = seen.setdefault(name.lower(), (kind, name))
+                if other[1] != name:
+                    raise ValueError(
+                        f"The {other[0][:-1]} `{other[1]}` and the {kind[:-1]} `{name}` differ "
+                        "only in case, which a project cannot keep apart: select only one of them."
+                    )
 
 
 @contextmanager
@@ -458,8 +520,9 @@ def schema_sql(
         for name in selected["views"]:
             reads = reads_of.get(name)
             if reads is None:
-                # Its definition could not be read or parsed: neither its
-                # place among the views nor what it misses is known
+                # Its definition could not be read or parsed, or names differing
+                # only in case leave it open: neither its place among the views
+                # nor what it misses is known
                 result.warnings.append(
                     f"What the view `{name}` reads could not be worked out; it may be "
                     "written before a view it reads, and is not checked for what is not imported."
