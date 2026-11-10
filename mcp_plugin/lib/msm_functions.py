@@ -1404,7 +1404,7 @@ def register_msm_tools(server, function_groups=()) -> None:
 
             Returns:
                 {schema, tables: [{name, comment, triggers: [names]}], views:
-                [{name, comment}], procedures: [{name}], functions: [{name}],
+                [{name, comment, reads}], procedures: [{name}], functions: [{name}],
                 triggers: [{name, table}], events: [{name}], sequences:
                 [{name}], project_folder_name: the folder a project of the
                 schema gets (<schema>.msm.project), schema_version: the
@@ -1412,7 +1412,15 @@ def register_msm_tools(server, function_groups=()) -> None:
                 left_out: msm's own objects (views and routines named msm_*:
                 msm_schema_version, msm_schema_diagrams, helpers), which are
                 never imported; empty for a schema msm does not manage unless
-                it names objects so}. Each list is sorted by name.
+                it names objects so}. Each list is sorted by name. A view's
+                reads: [{kind, name}] of the listed tables, views, sequences
+                and functions it reads (itself, other schemas and msm's own
+                objects left out), sorted by kind then name, [] for none; null
+                where its definition cannot be read or parsed, and for every
+                view without a mariadb-lsp whose parser tells what views read
+                (CTE names and aliases are no reads). msm.import_live_schema
+                warns about a view that reads an object it does not import,
+                from these same reads.
             """
             from msm_plugin.lib import live_schema as msm_live_schema
 
@@ -1421,7 +1429,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             def _list():
                 with db_functions.use_session(connection_id, client) as session:
                     try:
-                        return msm_live_schema.list_schema_objects(session, schema)
+                        return msm_live_schema.list_schema_objects(session, schema, _lsp_path())
                     except ValueError as error:
                         raise tool_error(str(error)) from error
 

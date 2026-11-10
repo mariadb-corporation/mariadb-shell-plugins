@@ -233,9 +233,8 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   PROJECT_CONTEXT "Project settings"): `{"onlineAlter": <the whole
   setting>}` replaces general values and tables at once, null removes it
   (msm's defaults, on); checked with `read_setting` before anything is
-  written. The per-table and general-level tools (`set_online_alter_table`,
-  `set_online_alter_defaults`, #101) were removed for it on 2026-11-10 (the
-  user wants one tool for msm.project.json, not one per setting).
+  written. There is no per-table or general-level setter: the user wants one
+  tool for msm.project.json, not one per setting.
   `msm.get_online_alter_defaults()` (shell `msm.getOnlineAlterDefaults`,
   served with msm, no project) gives the same `defaults`, for a live
   table's tab, so the extension keeps no copy of them.

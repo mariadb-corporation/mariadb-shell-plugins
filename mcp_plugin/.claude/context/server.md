@@ -116,7 +116,7 @@ session machinery the db tools sit on is in
 - **Cross-group dependency mechanism**: `build_mcp_server` passes the full enabled-group
   list to EVERY registrar, so `register_db_tools`/`register_msm_tools`/
   `register_sandbox_tools` all take `(server, function_groups=())`. db and sandbox ignore
-  it. msm uses it to register `msm.deploy_schema` and `msm.online_alter_table` ONLY when `db` is also served — those tools
+  it. msm uses it to register `msm.deploy_schema`, `msm.online_alter_table`, `msm.list_live_schema_objects` and `msm.import_live_schema` ONLY when `db` is also served — those tools
   need a `connection_id` from `db.connect`, so with msm alone it is left UNADVERTISED
   rather than exposed as something that cannot succeed. It is therefore registered LAST in
   the registrar, inside an `if` (see Gotchas — an early `return` there silently drops the
@@ -175,9 +175,11 @@ session machinery the db tools sit on is in
   `anyOf [string, null], default null`; now `type: string`, no default). SAFE because
   the SDK validates a call with the pydantic `arg_model` built from the signature
   (`func_metadata.py` `model_validate`), never with `tool.parameters`, which it builds
-  once at registration and only publishes: an explicit null is still accepted. Only a
-  two-member `anyOf` with a `{"type": "null"}` member is collapsed, so `urls:
-  Union[str, list]` keeps its `anyOf`, and an enum or `items` survives. The keys of
+  once at registration and only publishes: an explicit null is still accepted. The
+  `{"type": "null"}` member is dropped from any `anyOf`; one type left stands for
+  itself, several stay an `anyOf` (`Union[str, int, None]` -> `anyOf [string,
+  integer]`), so `urls: Union[str, list]` keeps its `anyOf`, and an enum or `items`
+  survives. The keys of
   `properties`, `$defs` and the like are names, never trimmed: a parameter called
   `title` stays (`test_a_parameter_called_title_is_kept`). Real defaults (`false`,
   `"json"`) stay.

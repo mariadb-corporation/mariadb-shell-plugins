@@ -37,10 +37,11 @@ roles and grants are not read.
 
 import re
 import time
+from collections import Counter
 from contextlib import contextmanager
 from typing import Optional
 
-from msm_plugin.lib import core, management
+from msm_plugin.lib import core, diagrams, management
 from msm_plugin.lib import statements as statements_lib
 from msm_plugin.lib.statements import quote_identifier
 
@@ -71,6 +72,11 @@ _TRIGGERS_SQL = """
     FROM INFORMATION_SCHEMA.TRIGGERS
     WHERE TRIGGER_SCHEMA = ?
     ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_ORDER
+"""
+_VIEWS_SQL = """
+    SELECT TABLE_NAME AS name, VIEW_DEFINITION AS definition
+    FROM INFORMATION_SCHEMA.VIEWS
+    WHERE TABLE_SCHEMA = ?
 """
 _EVENTS_SQL = """
     SELECT EVENT_NAME AS name
@@ -106,18 +112,111 @@ def _schema_version(session, schema: str, left_out: list) -> Optional[str]:
         return None
 
 
-def list_schema_objects(session, schema: str) -> dict:
+# The kinds a view reads, as the listing names them
+_READ_KINDS = ("functions", "sequences", "tables", "views")
+
+
+# The kinds of mariadb-lsp outline's reads, as the listing's kinds take them
+_LSP_READ_KINDS = {
+    # A sequence read as a table (SELECT ... FROM s) is a table_or_view read
+    "table_or_view": ("tables", "views", "sequences"),
+    "function": ("functions",),
+    "sequence": ("sequences",),
+}
+
+
+def _view_reads(
+    definitions: dict, names: dict, schema: str, lsp_path: Optional[str]
+) -> dict:
+    """What each view reads (its definition by name in definitions), as
+    mariadb-lsp's parser finds it (outline's views[].reads, which knows CTE
+    names and aliases for what they are): [{kind, name}] of the listed
+    objects (names) of the schema, named as the listing names them (names
+    compare as diagrams.same_name does), the view itself left out, sorted by
+    kind then name; None for a view whose reads cannot be worked out (no
+    definition, one that does not parse, no binary that outlines reads, a
+    view named like another but for case, or a read of a name that objects
+    of one namespace share up to case)."""
+    from msm_plugin.lib import lsp
+
+    unknown = {view: None for view in definitions}
+    binary = lsp.find_lsp(lsp_path)
+    readable = {view: sql for view, sql in definitions.items() if sql}
+    if binary is None or not readable or not lsp.outlines_view_reads(binary):
+        return unknown
+    script = "".join(
+        f"CREATE VIEW {quote_identifier(view)} AS {sql};\n" for view, sql in readable.items()
+    )
+    try:
+        outlined = lsp.outline(binary, script)
+    except (ValueError, OSError):
+        return unknown
+    # The listing's own spelling of each name, lower-cased, as diagrams.same_name compares
+    # them; a name objects of one namespace share up to case tells none of them apart
+    clashing = {}
+    for kinds in _NAMESPACES:
+        lowered = Counter(each.lower() for kind in kinds for each in names.get(kind, ()))
+        for kind in kinds:
+            clashing[kind] = {lower for lower, count in lowered.items() if count > 1}
+    listed = {
+        kind: {each.lower(): each for each in names[kind] if each.lower() not in clashing[kind]}
+        for kind in names
+    }
+    views = [view for each in outlined.get("schemas", []) for view in each.get("views", [])]
+    by_view = {}
+    for view in views:
+        # Views differing only in case are one view of the outline, so they are not listed
+        name = listed["views"].get(view["name"].lower())
+        if name is None:
+            # Not a listed view, or two the outline merged into one: unknown
+            continue
+        if not isinstance(view.get("reads"), list):
+            # Reads the binary could not work out are unknown, not none
+            by_view[name] = None
+            continue
+        reads = set()
+        for read in view["reads"]:
+            if not isinstance(read.get("name"), str):
+                continue
+            if read.get("schema") is not None and not diagrams.same_name(read["schema"], schema):
+                continue
+            kinds = _LSP_READ_KINDS.get(read.get("kind"), ())
+            if any(read["name"].lower() in clashing[kind] for kind in kinds):
+                # Which of the objects differing only in case it reads is not known
+                reads = None
+                break
+            for kind in kinds:
+                listed_name = listed[kind].get(read["name"].lower())
+                if listed_name is not None:
+                    reads.add((kind, listed_name))
+        if reads is None:
+            by_view[name] = None
+            continue
+        reads.discard(("views", name))
+        by_view[name] = [{"kind": kind, "name": each} for kind, each in sorted(reads)]
+    # A view the binary could not parse makes no view of the outline: None
+    return {view: by_view.get(view) for view in definitions}
+
+
+def list_schema_objects(session, schema: str, lsp_path: Optional[str] = None) -> dict:
     """The objects of a live schema an import can take, by kind.
 
     Returns:
         {schema, tables: [{name, comment, triggers}], views: [{name,
-        comment}], procedures: [{name}], functions: [{name}], triggers:
-        [{name, table}], events: [{name}], sequences: [{name}],
+        comment, reads: what it reads, [{kind, name}] of the listed tables,
+        views, sequences and functions (None where its definition cannot be
+        read or parsed, or names differing only in case leave it open)}],
+        procedures: [{name}], functions: [{name}], triggers: [{name,
+        table}], events: [{name}], sequences: [{name}],
         project_folder_name: the folder a project of the schema gets,
         schema_version: the version msm deployed or None, left_out: msm's own
         objects, which are never imported (views and routines named msm_*;
         a schema msm does not manage has none, unless it names its own so)},
         each list sorted by name.
+
+    A view's reads come from mariadb-lsp's parser (lsp_path, or the binary
+    find_lsp finds), so CTE names and aliases are not taken for tables;
+    without a binary that outlines them, every view's reads are None.
 
     Raises:
         ValueError: For a schema the server does not have (or the account
@@ -151,6 +250,14 @@ def list_schema_objects(session, schema: str) -> dict:
             tables[row["table"]]["triggers"].append(row["name"])
     result["triggers"].sort(key=lambda trigger: trigger["name"])
     result["events"] = [{"name": row["name"]} for row in _rows(session, _EVENTS_SQL, [schema])]
+    stored = {row["name"]: row["definition"] for row in _rows(session, _VIEWS_SQL, [schema])}
+    reads = _view_reads(
+        {view["name"]: stored.get(view["name"]) for view in result["views"]},
+        {kind: {item["name"] for item in result[kind]} for kind in _READ_KINDS},
+        schema, lsp_path,
+    )
+    for view in result["views"]:
+        view["reads"] = reads[view["name"]]
     result["schema"] = schema
     result["project_folder_name"] = management.project_folder_name(schema)
     result["schema_version"] = _schema_version(session, schema, left_out)
@@ -164,8 +271,10 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
     list the selected tables bring their triggers.
 
     Raises:
-        ValueError: For an unknown kind, a name the schema does not have, or
-            a trigger whose table is not selected.
+        ValueError: For an unknown kind, a name the schema does not have, a
+            trigger whose table is not selected, or two objects of one
+            namespace (tables, views and sequences share one) whose names
+            differ only in case.
     """
     available = {kind: [item["name"] for item in listed[kind]] for kind in OBJECT_KINDS}
     # Triggers in their firing order (each table's list keeps ACTION_ORDER),
@@ -174,6 +283,7 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
         trigger for table in listed["tables"] for trigger in table["triggers"]
     ]
     if objects is None:
+        _refuse_names_differing_in_case(available)
         return available
     if not isinstance(objects, dict):
         raise ValueError("`objects` must be an object of lists of names, or null for all.")
@@ -205,7 +315,35 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
             raise ValueError(
                 f"The trigger `{trigger}` needs its table `{table_of[trigger]}` in the selection."
             )
+    _refuse_names_differing_in_case(selected)
     return selected
+
+
+# The kinds whose names share one namespace of a schema
+_NAMESPACES = (
+    ("tables", "views", "sequences"), ("procedures",), ("functions",), ("triggers",), ("events",),
+)
+
+
+def _refuse_names_differing_in_case(selected: dict) -> None:
+    """Refuses two selected objects of one namespace whose names differ
+    only in case (a server with lower_case_table_names=0 has them): a
+    project compares names as diagrams.same_name does, so its scripts would
+    keep one, and a server that ignores case would not create the other.
+
+    Raises:
+        ValueError: Naming the first two such objects.
+    """
+    for kinds in _NAMESPACES:
+        seen = {}
+        for kind in kinds:
+            for name in selected[kind]:
+                other = seen.setdefault(name.lower(), (kind, name))
+                if other[1] != name:
+                    raise ValueError(
+                        f"The {other[0][:-1]} `{other[1]}` and the {kind[:-1]} `{name}` differ "
+                        "only in case, which a project cannot keep apart: select only one of them."
+                    )
 
 
 @contextmanager
@@ -311,20 +449,8 @@ _SECTION_150 = (
 )
 
 
-# A quoted name used as a qualifier: `t`.`c` (or `schema`.`t`)
-_QUALIFIER = re.compile(r"(`(?:[^`]|``)+`)\s*\.\s*(?=`)")
-
-
-def _read_by_view(sql: Optional[str], schema: str) -> set:
-    """The names a view's columns are qualified with: the tables and views
-    it reads, as SHOW CREATE VIEW writes every column `t`.`c` (and a table
-    `schema`.`t`, which names the schema too: callers match the names
-    against the schema's objects)."""
-    return {name[1:-1].replace("``", "`") for name in _QUALIFIER.findall(sql or "")}
-
-
 def schema_sql(
-    session, schema: str, selected: dict, task=None, not_selected: set = frozenset()
+    session, schema: str, selected: dict, listed: dict, task=None
 ) -> statements_lib.Imported:
     """The CREATE statements of the selected objects of a live schema,
     grouped as an MSM development script keeps them (statements.Imported).
@@ -336,9 +462,10 @@ def schema_sql(
     written to be run again, in DELIMITER %% blocks as Section 150 has them,
     without their DEFINER and the schema's own name in qualified names.
 
-    A view that reads a table or view of the schema among not_selected
-    (the listed ones the import leaves out) gets a warning: it will not
-    deploy without it.
+    Each view comes after the views it reads, and one that reads an object
+    the import leaves out gets a warning: it will not deploy without it. Its
+    reads are those of listed (list_schema_objects' listing), so the warning
+    says what a client showed from the listing beforehand.
 
     A task given (the shell task manager's) gets the stage READING_STAGE
     with a step per object; a cancel of it raises TaskCancelled.
@@ -387,16 +514,30 @@ def schema_sql(
         result.tables = "\n\n".join(create) or None
 
         view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
-        selected_views = set(selected["views"])
+        chosen = {kind: set(selected[kind]) for kind in _READ_KINDS}
+        reads_of = {view["name"]: view["reads"] for view in listed["views"]}
         view_uses = {}
-        for name, sql in view_sql.items():
-            reads = _read_by_view(sql, schema)
-            view_uses[name] = reads & selected_views
-            for missing in sorted(reads & not_selected):
+        for name in selected["views"]:
+            reads = reads_of.get(name)
+            if reads is None:
+                # Its definition could not be read or parsed, or names differing
+                # only in case leave it open: neither its place among the views
+                # nor what it misses is known
                 result.warnings.append(
-                    f"The view `{name}` reads `{missing}`, which is not imported; the "
-                    "project will not deploy the view without it."
+                    f"What the view `{name}` reads could not be worked out; it may be "
+                    "written before a view it reads, and is not checked for what is not imported."
                 )
+                reads = []
+            view_uses[name] = {
+                read["name"] for read in reads
+                if read["kind"] == "views" and read["name"] in chosen["views"]
+            }
+            for read in reads:
+                if read["name"] not in chosen[read["kind"]]:
+                    result.warnings.append(
+                        f"The view `{name}` reads `{read['name']}`, which is not imported; "
+                        "the project will not deploy the view without it."
+                    )
         views = [idempotent("VIEW", name, view_sql[name])
                  for name in _ordered(selected["views"], view_uses)]
         result.views = statements_lib.delimiter_block([sql for sql in views if sql], "VIEWs")

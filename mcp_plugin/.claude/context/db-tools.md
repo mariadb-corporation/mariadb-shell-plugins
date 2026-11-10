@@ -288,7 +288,8 @@ handling are in [connections.md](connections.md).
   with `stop_on_error`, `limit` and per-statement `statement_index`/`execution_time`/
   `error`, `result_sets` (each with `has_more_pages` when limited) and
   opt-in `column_metadata` — `close`),
-  msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
+  msm.* (path-guarded, async; those that need a connection are gated on the db group,
+  see server.md "Cross-group dependency mechanism"),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 
 - The three introspection tools (`db.list_schemas`, `db.list_objects`,
@@ -312,7 +313,9 @@ handling are in [connections.md](connections.md).
   updating both.**
 
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
-  msm_functions also holds the db-group-gated `msm.deploy_schema` and `msm.online_alter_table`.
+  msm_functions also holds the db-group-gated `msm.deploy_schema`, `msm.online_alter_table`
+  and the live schema import (`msm.list_live_schema_objects`, `msm.import_live_schema` as a
+  task; see msm_plugin's PROJECT_CONTEXT "Live schema import").
 
 ## Gotchas / things not to repeat
 

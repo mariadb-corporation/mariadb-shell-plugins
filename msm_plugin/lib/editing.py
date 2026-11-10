@@ -773,14 +773,11 @@ def _template_object(
     ops take; refused unless it is one CREATE of that kind and name, named
     unqualified (an MSM script names its schema in its USE only), and for a
     trigger on table."""
-    import tempfile
-
     binary = lsp.require_lsp(lsp_path)
     # In a DELIMITER block of its own, so a body with ; parses; the delimiter
     # on a line of its own, so a comment ending the template does not hide it
     script = f"DELIMITER $$\n{sql}\n$$\nDELIMITER ;\n"
-    with tempfile.TemporaryDirectory() as source_dir:
-        outlined = lsp.outline(binary, script, source_dir)
+    outlined = lsp.outline(binary, script)
     errors = [note for note in outlined.get("notes", []) if note.get("kind") == "syntax-error"]
     member = _object_type(kind) + "s"
     found = [
