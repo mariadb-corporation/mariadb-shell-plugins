@@ -15,19 +15,14 @@ No installation is necessary for this plugin, beside the setup of Visual Studio 
 
 ## Testing
 
-Since this is a MariaDB Shell plugin, the tests should run as part of a MariaDB Shell session. The test script should be executed within the `rest_plugin` directory and the required testing dependencies should be installed as follows:
+Since this is a MariaDB Shell plugin, the tests run as part of a MariaDB Shell session. Execute the test script within the `rest_plugin` directory:
 
 ```sh
 $ cd rest_plugin
-$ mariadb-shell --pym pip install --user -r requirements.txt
-$ mariadb-shell --pym pip install --user -r sdk/python/requirements.txt
-```
-
-After the dependencies are installed, the test script can execute as follows:
-
-```sh
 $ mariadb-shell --py -f run_tests.py
 ```
+
+The script installs the test dependencies of `requirements.txt` itself, into a temporary folder it puts on `PYTHONPATH` for the run. Do not install them into the shell (`mariadb-shell --pym pip install ...`): pip may replace a package the shell bundles with a version that breaks it.
 
 The suite deploys its own MariaDB sandbox on a free port and removes it again
 at the end, so no database server needs to be set up; a `mariadbd` binary has

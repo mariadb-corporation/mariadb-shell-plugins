@@ -12,11 +12,7 @@ To be able to run the tests, MariaDB Shell must be installed and in the path.
 
 ### Installing the Python Requirements
 
-When inside the `shell_plugins` folder run the following command on the terminal.
-
-```bash
-mariadb-shell --pym pip install -r msm_plugin/requirements.txt
-```
+Nothing to install: `run_tests.py` installs the test dependencies of `requirements.txt` itself, into a temporary folder it puts on `PYTHONPATH` for the run. Do not install them into the shell (`mariadb-shell --pym pip install ...`): pip may replace a package the shell bundles with a version that breaks it.
 
 ### Running the Test
 
