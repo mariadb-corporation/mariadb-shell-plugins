@@ -130,7 +130,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   or one of its values, as a column may be named algorithm, and not as
   the name in `CHANGE [COLUMN] algorithm copy ...`; a comment counts as a
   blank, so `ALGORITHM /* x */ = COPY` is found). `on_event` gets
-  `step`, `refused`, `skipped`, `retry` and `progress` events. Each step
+  `step`, `applied`, `refused`, `skipped` (these three with `seconds` and
+  `message`), `retry` and `progress` events, in `METHODS` order, none
+  after the applied step. Each step
   sends the ALTER with explicit clauses, so the server either runs it
   exactly so or refuses at once (1845 / 1846) without touching data; a
   refusal goes to the next step:
