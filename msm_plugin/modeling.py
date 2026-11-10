@@ -519,14 +519,16 @@ def list_live_schema_objects(schema: str, **kwargs) -> dict:
 
     Keyword Args:
         session (object): The database session to use. Defaults to the global session.
+        lsp_path (str): The mariadb-lsp binary or its folder, which finds what each view reads.
+            By default it is looked for next to the shell, on the PATH and in ~/.local/bin.
 
     Returns:
-        The tables (with their comments and triggers), views, procedures, functions, triggers
+        The tables (with their comments and triggers), views (with what they read), procedures, functions, triggers
         (with their tables), events and sequences of the schema, the version msm deployed of it
         where it has one, and msm's own objects, which are never imported.
     """
     session = lib.core.get_current_session(kwargs.get("session", None))
-    result = lib.live_schema.list_schema_objects(session, schema)
+    result = lib.live_schema.list_schema_objects(session, schema, kwargs.get("lsp_path"))
     if lib.core.get_interactive_default():
         print(json.dumps(result, indent=4))
         return None
