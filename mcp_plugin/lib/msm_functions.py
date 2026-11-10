@@ -43,7 +43,7 @@ starts without access, one an agent adds with it.
 
 # cSpell:ignore mysqlsh MariaDB mcpserver
 
-from typing import Optional
+from typing import Optional, Union
 
 from mcp_plugin.lib import db_functions, general, tasks
 from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_error, tool_registrar
@@ -195,7 +195,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
-        year_of_creation: Optional[str] = None,
+        year_of_creation: Union[str, int, None] = None,
         folder: Optional[str] = None,
         caption: Optional[str] = None,
         color: Optional[str] = None,
@@ -428,9 +428,10 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             None
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm.set_development_version(
-            **_kwargs(version=version, schema_project_path=schema_project_path)
+        # In a later year it moves the copyright years along, which reads
+        # the project's includes for the snapshot's hash
+        return await _in_project(
+            ctx, schema_project_path, msm.set_development_version, **_kwargs(version=version)
         )
 
     @tool(name="msm.get_released_versions")
@@ -888,7 +889,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         overwrite_existing: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
-        year_of_creation: Optional[str] = None,
+        year_of_creation: Union[str, int, None] = None,
         mcp_access: bool = False,
     ) -> dict:
         """Creates a database schema project from a MySQL Workbench model (.mwb).
@@ -1127,8 +1128,14 @@ def register_msm_tools(server, function_groups=()) -> None:
             None
         """
         await general.require_allowed_path(ctx, file_path)
-        return msm.set_section_sql_content(
-            file_path=file_path, section_id=section_id, sql_content=sql_content
+        # In a later year it moves the copyright years of the file's project
+        # along, which reads the project's includes for the snapshot's hash
+        return await _with_checked_includes(
+            general.get_client_identity(ctx).user,
+            msm.set_section_sql_content,
+            file_path=file_path,
+            section_id=section_id,
+            sql_content=sql_content,
         )
 
     @tool(name="msm.generate_deployment_script")
@@ -1149,13 +1156,13 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The file name of the deployment script.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm.generate_deployment_script(
-            **_kwargs(
-                version=version,
-                schema_project_path=schema_project_path,
-                overwrite_existing=overwrite_existing,
-            )
+        # In a later year it moves the copyright years along, which reads
+        # the project's includes for the snapshot's hash
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm.generate_deployment_script,
+            **_kwargs(version=version, overwrite_existing=overwrite_existing),
         )
 
     @tool(name="msm.get_deployment_script_versions")

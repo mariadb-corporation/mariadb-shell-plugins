@@ -402,6 +402,16 @@ def test_refresh_notice_years():
     # Nothing to find, nothing changed
     assert lib.management.refresh_notice_years("SELECT 1;\n", copyrights) == "SELECT 1;\n"
 
+    # A holder starting with four digits is not taken for a last-update year
+    labs = [{"holder": "2048 Labs", "yearOfCreation": "2026", "yearOfLastUpdate": "2027",
+             "tracksUpdates": True}]
+    assert lib.management.refresh_notice_years(
+        "-- Copyright (c) 2026, 2048 Labs\n", labs
+    ) == "-- Copyright (c) 2026, 2027, 2048 Labs\n"
+    assert lib.management.refresh_notice_years(
+        "-- Copyright (c) 2026, 2027, 2048 Labs\n", labs
+    ) == "-- Copyright (c) 2026, 2027, 2048 Labs\n"
+
 
 def test_check_copyright_year():
     assert lib.management.check_copyright_year(2024) == "2024"

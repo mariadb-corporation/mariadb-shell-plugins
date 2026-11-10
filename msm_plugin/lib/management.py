@@ -594,9 +594,15 @@ def refresh_notice_years(text: str, copyrights: list) -> str:
         in_run = True
         holder = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", notice.group(3))
         copyright = tracking.get(_holder_key(holder))
+        # end() is -1 for a notice without a last-update year
+        end = max(notice.end(1), notice.end(2))
+        if copyright is None and notice.group(2):
+            # A holder starting with four digits ("2048 Labs") reads as the
+            # last-update year where the notice has the year of creation only
+            whole = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", line[notice.start(2):].rstrip("\r\n"))
+            copyright = tracking.get(_holder_key(whole))
+            end = notice.end(1)
         if copyright is not None:
-            # end() is -1 for a notice without a last-update year
-            end = max(notice.end(1), notice.end(2))
             lines[pos] = line[: notice.start(1)] + get_copyright_years(copyright) + line[end:]
     return "".join(lines)
 
@@ -1436,7 +1442,6 @@ def prepare_release(
         A list of filenames that have been created or changed for the release
     """
 
-    update_copyright_years(schema_project_path)
     project_settings = get_project_settings(schema_project_path)
     schema_name = project_settings.get("schemaName")
     schema_file_name = project_settings.get("schemaFileName")
@@ -1479,6 +1484,11 @@ def prepare_release(
         raise ValueError(
             f"The file {schema_version_file_path} already exists. Please explicitly allow to replace existing files."
         )
+
+    # The release is a change applied to the project, after the refusals
+    # above: they leave the development files as they are.
+    if update_copyright_years(schema_project_path):
+        project_settings = get_project_settings(schema_project_path)
 
     # The release carries the snapshot of its CREATE statements. Like section
     # 910 it changes the development files, which are not listed. (Imported
@@ -1617,7 +1627,6 @@ def generate_deployment_script(
     Returns:
         The file name path of the generated script
     """
-    update_copyright_years(schema_project_path)
     project_settings = get_project_settings(schema_project_path)
     schema_name = project_settings.get("schemaName")
     schema_file_name = project_settings.get("schemaFileName")
@@ -1644,6 +1653,10 @@ def generate_deployment_script(
             f"The file {version_file_path} does not exist exists. Please make "
             f"sure to prepare the release {version} first."
         )
+
+    # After the refusals above, which leave the development files as they are
+    if update_copyright_years(schema_project_path):
+        project_settings = get_project_settings(schema_project_path)
 
     # Get the version script file section
     target_version_sections = get_file_sections(version_file_path)
