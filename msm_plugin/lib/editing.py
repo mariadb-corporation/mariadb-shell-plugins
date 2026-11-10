@@ -47,6 +47,7 @@ from typing import Optional
 
 from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, source, statements
 from msm_plugin.lib import sections as sections_lib
+from msm_plugin.lib.project_changes import changes_project
 
 # The sections of the pending update script, as in the update script.
 CHANGES_SECTION_ID = "240"
@@ -475,6 +476,7 @@ def _check_request(edits) -> None:
             raise ValueError(f"Edit {index + 1} has to be an object with its `op`.")
 
 
+@changes_project
 def edit_schema(
     schema_project_path: str, edits: list, base_hash: str, lsp_path: str = None
 ) -> dict:
@@ -490,8 +492,8 @@ def edit_schema(
 
     Returns:
         {rows, files, migration, migration_file, notes}: the rows of the
-        diagrams VIEW afterwards (the new snapshot first), the files
-        written, the statements kept for the next release's update script
+        diagrams VIEW afterwards (the new snapshot first), the files the
+        edits wrote (not those the copyright years were moved in), the statements kept for the next release's update script
         (none before the first release, which creates the schema from the
         script) and the file they went into, and the binary's notes on what
         it could not change itself.
@@ -536,6 +538,11 @@ def edit_schema(
             + ", ".join(f"`{op}`" for op in unsupported)
             + f" yet; it does {', '.join(sorted(supported))}. A newer MariaDB Shell may."
         )
+    # After base_hash was checked: moving the years along gives the snapshot
+    # the hash of the script with the new notices. Not undone where the edit
+    # fails, as it is a change of its own.
+    if management.update_copyright_years(schema_project_path):
+        project = modeling._Project.load(schema_project_path)
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
     request = {"format": lsp.EDIT_FORMAT, "schema": schema_name, "edits": edits}

@@ -43,7 +43,7 @@ starts without access, one an agent adds with it.
 
 # cSpell:ignore mysqlsh MariaDB mcpserver
 
-from typing import Optional
+from typing import Optional, Union
 
 from mcp_plugin.lib import db_functions, general, tasks
 from mcp_plugin.lib.tool_registrar import register_with_gui_argument, tool_error, tool_registrar
@@ -195,6 +195,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        year_of_creation: Union[str, int, None] = None,
         folder: Optional[str] = None,
         caption: Optional[str] = None,
         color: Optional[str] = None,
@@ -211,10 +212,15 @@ def register_msm_tools(server, function_groups=()) -> None:
             allow_special_chars: Allow all characters in the schema name.
             enforce_target_path: Create the target_path if it does not exist.
             copyrights: The copyright notices of the project, for a project held
-                by more than one copyright holder. Each entry takes a holder, a
-                yearOfCreation, an optional yearOfLastUpdate and a tracksUpdates
-                flag marking the holders whose year follows the current one.
-                When given, it takes the place of copyright_holder.
+                by more than one copyright holder. Each entry takes a holder
+                (written into the notice as given, a final period included),
+                a yearOfCreation, an optional yearOfLastUpdate and a
+                tracksUpdates flag marking the holders whose yearOfLastUpdate
+                is moved to the current year when a change is applied in a
+                later year. When given, it takes the place of copyright_holder.
+            year_of_creation: The year of creation of the copyright, such as
+                "2024" for a schema that existed before. Defaults to the
+                current year; an entry of copyrights without one gets it.
             folder: The folder of the project list to file it in, such as
                 "/Shop". Defaults to the top level.
             caption: The caption to show it with in the project list.
@@ -244,6 +250,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                 allow_special_chars=allow_special_chars,
                 enforce_target_path=enforce_target_path,
                 copyrights=copyrights,
+                year_of_creation=year_of_creation,
             ),
         )
         await _add_new_project(project_path, owner, mcp_access, folder, caption, color)
@@ -421,9 +428,10 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             None
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm.set_development_version(
-            **_kwargs(version=version, schema_project_path=schema_project_path)
+        # In a later year it moves the copyright years along, which reads
+        # the project's includes for the snapshot's hash
+        return await _in_project(
+            ctx, schema_project_path, msm.set_development_version, **_kwargs(version=version)
         )
 
     @tool(name="msm.get_released_versions")
@@ -881,6 +889,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         overwrite_existing: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        year_of_creation: Union[str, int, None] = None,
         mcp_access: bool = False,
     ) -> dict:
         """Creates a database schema project from a MySQL Workbench model (.mwb).
@@ -905,6 +914,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             enforce_target_path: Create the target_path if it does not exist.
             copyrights: The copyright notices of the project, instead of
                 copyright_holder (see msm.create_project).
+            year_of_creation: The year of creation of the copyright (see
+                msm.create_project).
 {gui_argument_doc}
 
         Returns:
@@ -935,6 +946,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             copyrights=copyrights,
             lsp_path=_lsp_path(),
             model=model,
+            year_of_creation=year_of_creation,
         )
         await _add_new_project(result["project_path"], owner, mcp_access)
         return result
@@ -1116,8 +1128,14 @@ def register_msm_tools(server, function_groups=()) -> None:
             None
         """
         await general.require_allowed_path(ctx, file_path)
-        return msm.set_section_sql_content(
-            file_path=file_path, section_id=section_id, sql_content=sql_content
+        # In a later year it moves the copyright years of the file's project
+        # along, which reads the project's includes for the snapshot's hash
+        return await _with_checked_includes(
+            general.get_client_identity(ctx).user,
+            msm.set_section_sql_content,
+            file_path=file_path,
+            section_id=section_id,
+            sql_content=sql_content,
         )
 
     @tool(name="msm.generate_deployment_script")
@@ -1138,13 +1156,13 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The file name of the deployment script.
         """
-        await _authorize_project(ctx, schema_project_path)
-        return msm.generate_deployment_script(
-            **_kwargs(
-                version=version,
-                schema_project_path=schema_project_path,
-                overwrite_existing=overwrite_existing,
-            )
+        # In a later year it moves the copyright years along, which reads
+        # the project's includes for the snapshot's hash
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm.generate_deployment_script,
+            **_kwargs(version=version, overwrite_existing=overwrite_existing),
         )
 
     @tool(name="msm.get_deployment_script_versions")

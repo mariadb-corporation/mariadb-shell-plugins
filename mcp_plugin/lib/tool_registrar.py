@@ -212,7 +212,8 @@ def _trim_schema(schema):
     - the titles: every parameter gets its own name in words ("Connection
       Id") and every schema its function's name, which a model never uses;
     - the null alternative of an optional parameter: ``Optional[str] =
-      None`` is published as ``anyOf [string, null], default null``, which
+      None`` is published as ``anyOf [string, null], default null`` (and
+      ``Union[str, int, None]`` as ``anyOf [string, integer, null]``), which
       a model reads as "leave it out" just as it reads a plain type that is
       not required - and an explicit null is still accepted, the model
       allows it. The ``default: null`` goes with it, as a null default of
@@ -225,16 +226,15 @@ def _trim_schema(schema):
     kept.
     """
     if isinstance(schema, dict):
-        if "anyOf" in schema:
-            alternatives = schema["anyOf"]
-            if len(alternatives) == 2 and any(map(_is_null, alternatives)):
-                [kept] = [choice for choice in alternatives if not _is_null(choice)]
-                rest = {
-                    key: value
-                    for key, value in schema.items()
-                    if key != "anyOf" and not (key == "default" and value is None)
-                }
-                return _trim_schema({**kept, **rest})
+        if "anyOf" in schema and any(map(_is_null, schema["anyOf"])):
+            kept = [choice for choice in schema["anyOf"] if not _is_null(choice)]
+            rest = {
+                key: value
+                for key, value in schema.items()
+                if key != "anyOf" and not (key == "default" and value is None)
+            }
+            # One type left stands for itself; several stay alternatives
+            return _trim_schema({**kept[0], **rest} if len(kept) == 1 else {"anyOf": kept, **rest})
         return {
             key: (
                 {name: _trim_schema(value) for name, value in value.items()}

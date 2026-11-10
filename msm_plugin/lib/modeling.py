@@ -33,11 +33,12 @@ import os
 import shutil
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from msm_plugin.lib import diagrams, layout, lsp, management, source
 from msm_plugin.lib import sections as sections_lib
 from msm_plugin.lib import workbench
+from msm_plugin.lib.project_changes import changes_project
 
 DIAGRAMS_SECTION_ID = "160"
 BREAKOUT_FILE_NAME = "160_schema_diagrams.sql"
@@ -281,6 +282,7 @@ def _write(project: _Project, rows: list) -> list:
     return written
 
 
+@changes_project
 def write_diagram_rows(schema_project_path: str, rows: list) -> list:
     """Writes the rows of the project's diagrams VIEW into Section 160, see _write().
 
@@ -389,6 +391,37 @@ def current_source_hash(schema_project_path: str) -> str:
     return _current_hash(_Project.load(schema_project_path))
 
 
+def keeping_snapshot_current(schema_project_path: str, change: Callable[[], list]) -> list:
+    """Runs change, which rewrites only comments of the development script,
+    and gives a snapshot that matched the script before the hash of the
+    script after: nothing it describes changed.
+
+    Args:
+        schema_project_path: The project folder.
+        change: Writes the files and returns the ones it wrote.
+
+    Returns:
+        The files written, by change and for the snapshot.
+    """
+    try:
+        project = _Project.load(schema_project_path)
+        current = _snapshot_is_current(project, _schema_row(_rows(project)))
+    except (ValueError, OSError):
+        # A script that cannot be read has no snapshot to keep current.
+        current = False
+
+    written = change()
+    if current:
+        project = _Project.load(schema_project_path)
+        rows = _rows(project)
+        snapshot = _schema_row(rows)
+        new_hash = _current_hash(project)
+        if snapshot["document"].get("source_hash") != new_hash:
+            snapshot["document"]["source_hash"] = new_hash
+            written += [path for path in _write(project, rows) if path not in written]
+    return written
+
+
 def _is_diagram(row: dict, name: str = None) -> bool:
     return row["format"] == diagrams.DIAGRAM_FORMAT and (name is None or row["name"] == name)
 
@@ -424,6 +457,7 @@ def _replace_snapshot(
     return document, rows, changed
 
 
+@changes_project
 def update_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:
     """Makes the snapshot again and writes it into the diagrams VIEW.
 
@@ -452,6 +486,7 @@ def _snapshot_is_current(project: _Project, schema: Optional[dict]) -> bool:
     return schema is not None and schema["document"].get("source_hash") == _current_hash(project)
 
 
+@changes_project
 def split_sections(schema_project_path: str, section_ids: list = None, lsp_path: str = None) -> dict:
     """Splits sections into breakout files by object kind (sections.split_sections).
 
@@ -556,6 +591,7 @@ def get_diagram_image(schema_project_path: str, name: str, figure_id: str) -> st
     return picture
 
 
+@changes_project
 def set_diagram(schema_project_path: str, document: dict) -> list:
     """Adds a diagram to the VIEW, or replaces the one of the same name.
 
@@ -582,6 +618,7 @@ def set_diagram(schema_project_path: str, document: dict) -> list:
     return _write(project, rows)
 
 
+@changes_project
 def remove_diagram(schema_project_path: str, name: str) -> list:
     """Removes a diagram from the VIEW.
 
@@ -596,6 +633,7 @@ def remove_diagram(schema_project_path: str, name: str) -> list:
     return _write(project, kept)
 
 
+@changes_project
 def rename_diagram(schema_project_path: str, name: str, new_name: str) -> list:
     """Renames a diagram: its row's name and its document's. Everything else
     stays as stored (pictures and the rows' order included).
@@ -943,6 +981,7 @@ def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool, **othe
     return added, connections_added, placed
 
 
+@changes_project
 def create_diagram(
     schema_project_path: str,
     name: str,
@@ -1004,6 +1043,7 @@ def create_diagram(
     }
 
 
+@changes_project
 def layout_diagram(
     schema_project_path: str,
     name: str,
@@ -1119,6 +1159,7 @@ def create_project_from_workbench_model(
     copyrights: list = None,
     lsp_path: str = None,
     model: workbench.Model = None,
+    year_of_creation: str = None,
 ) -> dict:
     """Creates a schema project from a schema of a MySQL Workbench model.
 
@@ -1142,6 +1183,8 @@ def create_project_from_workbench_model(
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
         model: The model read from model_path already (read_model), which
             is then not read again.
+        year_of_creation: The year of creation of the copyright, defaulting
+            to the current one.
 
     Returns:
         {project_path, schema, tables, views, routines, triggers, events,
@@ -1164,6 +1207,7 @@ def create_project_from_workbench_model(
         allow_special_chars=True,
         enforce_target_path=enforce_target_path,
         copyrights=copyrights,
+        year_of_creation=year_of_creation,
     )
     try:
         result = _import_into(project_path, model, model_schema, lsp_path)

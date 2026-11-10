@@ -40,6 +40,7 @@ from typing import Optional
 
 from msm_plugin.lib import lsp, management, source
 from msm_plugin.lib import statements as statements_lib
+from msm_plugin.lib.project_changes import changes_project
 
 # A section body larger than this is kept in breakout files, unless the
 # project's msm.project.json sets maxInlineSectionSize.
@@ -218,6 +219,7 @@ def section_body(
     return "\n\n".join(text.strip("\n") for text in texts if text.strip()), written
 
 
+@changes_project
 def write_sections_parts(schema_project_path: str, parts_by_section: dict) -> list:
     """Sets the bodies of sections of the project's development script (section_body).
 

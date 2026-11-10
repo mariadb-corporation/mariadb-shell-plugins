@@ -55,6 +55,11 @@ def create_new_project_folder(
         copyrights (list): The copyright notices of the project, for a project held
             by more than one copyright holder. When given, it takes the place of
             copyright_holder.
+        year_of_creation (str): The year of creation of the copyright, for a
+            project that existed before. Defaults to the current year. It is
+            stored in msm.project.json, where it can be changed later; the
+            year of the last update follows by itself when a change is
+            applied in a later year.
         add_to_project_list (bool): Whether to add the new project to the
             project list (see msm.listProjects). Defaults to True.
 
@@ -67,6 +72,7 @@ def create_new_project_folder(
     license = kwargs.get("license", None)
     enforce_target_path = kwargs.get("enforce_target_path", False)
     copyrights = kwargs.get("copyrights", None)
+    year_of_creation = kwargs.get("year_of_creation", None)
     add_to_project_list = kwargs.get("add_to_project_list", True)
 
     if schema_name is None and lib.core.get_interactive_default():
@@ -87,6 +93,12 @@ def create_new_project_folder(
         and lib.core.get_interactive_default()
     ):
         copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+        if year_of_creation is None:
+            # An empty answer is the current year
+            year_of_creation = lib.core.prompt(
+                "Enter the year of creation of the copyright "
+                f"({lib.management.current_year()}): "
+            )
 
     # The schema name was checked above, a missing one raised there
     if not target_path:
@@ -105,6 +117,7 @@ def create_new_project_folder(
             allow_special_chars=allow_special_chars,
             enforce_target_path=enforce_target_path,
             copyrights=copyrights,
+            year_of_creation=year_of_creation,
         )
 
         if add_to_project_list:
@@ -525,7 +538,6 @@ def set_section_sql_content(file_path: str, section_id: str, sql_content: str) -
     Returns:
         None
     """
-
     lib.management.set_section_sql_content(
         file_path=file_path, section_id=section_id, sql_content=sql_content
     )
