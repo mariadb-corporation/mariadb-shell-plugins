@@ -1032,69 +1032,55 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm.get_online_alter_settings, **_kwargs(table=table)
         )
 
-    @tool(name="msm.set_online_alter_defaults")
-    async def set_online_alter_defaults(
+    @tool(name="msm.set_project_settings")
+    async def set_project_settings(
         ctx: Context,
-        settings: Optional[dict] = None,
+        settings: dict,
         schema_project_path: Optional[str] = None,
     ) -> list:
-        """Sets a schema project's general online ALTER TABLE settings.
+        """Changes settings of a schema project's msm.project.json.
 
-        Writes the general values of msm.project.json's `onlineAlter`
-        setting, which deployments use for every table without values of its
-        own. The tables' entries (msm.set_online_alter_table) stay as they are.
+        Only the keys given change; null removes an optional one (onlineAlter,
+        substitutions, maxInlineSectionSize, schemaDependencies), so it takes
+        msm's default again. Each value replaces the stored one as a whole:
+        read the settings with msm.get_project_information, change them, send
+        the keys back. Everything is checked first; nothing is written when
+        anything is refused. Changed copyright years, holders or a changed
+        license are brought into the notices and license blocks of the
+        development files (released files stay as released), and a schema
+        snapshot that was current is kept current.
 
         Args:
-            settings: The general settings, replacing the ones there: enabled
-                (false runs ALTERs as written), maxRebuildBytes (largest table
-                size for an online rebuild, INPLACE or COPY; 0 = never, null =
-                no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to
-                allow a Galera NBO), maxLockedBytes (largest table size for a
-                step that blocks writes), lockWait (seconds per attempt),
-                maxRetries. A key left out takes msm's default again; left out
-                or empty, all of them do. `tables` is refused.
+            settings: The keys to change:
+                copyrights: [{holder, yearOfCreation (YYYY), yearOfLastUpdate
+                    (YYYY, optional), tracksUpdates (whether a change in a
+                    later year moves yearOfLastUpdate along)}]; the
+                    copyrightHolder and yearOfCreation mirrors follow it.
+                license: BSD, GPL-2.0, MIT, None or CUSTOM.
+                customLicense: The text of a CUSTOM license; it may use
+                    ${copyright_notices}, ${copyright_holder} and ${year}.
+                onlineAlter: The whole online ALTER TABLE setting: enabled,
+                    maxRebuildBytes (largest table size for an online
+                    rebuild, INPLACE or COPY; 0 = never, null = no limit),
+                    galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow a
+                    Galera NBO), maxLockedBytes (largest table size for a
+                    step that blocks writes), lockWait (seconds per attempt),
+                    maxRetries, and tables: {table: the same keys but
+                    tables}. msm.get_online_alter_settings gives the defaults.
+                substitutions: {name: {default, pattern}} for /*<msm:name>*/.
+                maxInlineSectionSize: The largest section body, in
+                    characters, kept inline in the development script.
+                schemaDependencies: Names of schemas this one depends on.
+                schemaName and schemaFileName cannot be changed.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
-            The files written.
+            The files written; none where nothing changed.
         """
         return await _in_project(
-            ctx, schema_project_path, msm.set_online_alter_defaults,
-            **_kwargs(settings=settings),
-        )
-
-    @tool(name="msm.set_online_alter_table")
-    async def set_online_alter_table(
-        ctx: Context,
-        table: str,
-        settings: Optional[dict] = None,
-        schema_project_path: Optional[str] = None,
-    ) -> list:
-        """Sets a table's online ALTER TABLE settings in a schema project.
-
-        Writes the table's entry of msm.project.json's `onlineAlter` setting,
-        which deployments use for the table's ALTER TABLE statements.
-
-        Args:
-            table: The table, as named in the scripts.
-            settings: The table's settings: enabled (false runs its ALTERs as
-                written), maxRebuildBytes (largest table size for an online
-                rebuild, INPLACE or COPY; 0 = never, null = no limit),
-                galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to allow a Galera
-                NBO), maxLockedBytes (largest table
-                size for a step that blocks writes), lockWait (seconds per
-                attempt), maxRetries. Left out or empty, the table's entry goes
-                and it follows the project's general values.
-            schema_project_path: The path to the schema project. Defaults to
-                the current working directory.
-
-        Returns:
-            The files written.
-        """
-        return await _in_project(
-            ctx, schema_project_path, msm.set_online_alter_table, table,
-            **_kwargs(settings=settings),
+            ctx, schema_project_path, msm.set_project_settings, settings,
+            **_kwargs(lsp_path=_lsp_path()),
         )
 
     @tool(name="msm.get_sql_content_from_section")

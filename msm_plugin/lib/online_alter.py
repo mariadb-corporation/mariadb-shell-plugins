@@ -243,14 +243,6 @@ def with_tables(setting, change: Callable[[dict], None]):
     return _changed(setting, new, tables)
 
 
-def with_general(setting, general: Optional[dict]):
-    """An `onlineAlter` setting as msm.project.json has it (None, a bool or
-    a dict) with its general values replaced by general (None for none) and
-    its tables kept; None where that changes nothing."""
-    tables = setting.get("tables") if isinstance(setting, dict) else None
-    return _changed(setting, dict(general or {}), tables)
-
-
 def _changed(setting, general: dict, tables: Optional[dict]):
     """The setting of general values and tables, None where it equals
     setting. One with neither is written {enabled: true}, as the project

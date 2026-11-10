@@ -391,6 +391,16 @@ def current_source_hash(schema_project_path: str) -> str:
     return _current_hash(_Project.load(schema_project_path))
 
 
+def snapshot_is_current(schema_project_path: str) -> bool:
+    """Whether the project's schema snapshot was made from its development
+    script as it is; False where the script cannot be read."""
+    try:
+        project = _Project.load(schema_project_path)
+        return _snapshot_is_current(project, _schema_row(_rows(project)))
+    except (ValueError, OSError):
+        return False
+
+
 def keeping_snapshot_current(schema_project_path: str, change: Callable[[], list]) -> list:
     """Runs change, which rewrites only comments of the development script,
     and gives a snapshot that matched the script before the hash of the
@@ -403,13 +413,7 @@ def keeping_snapshot_current(schema_project_path: str, change: Callable[[], list
     Returns:
         The files written, by change and for the snapshot.
     """
-    try:
-        project = _Project.load(schema_project_path)
-        current = _snapshot_is_current(project, _schema_row(_rows(project)))
-    except (ValueError, OSError):
-        # A script that cannot be read has no snapshot to keep current.
-        current = False
-
+    current = snapshot_is_current(schema_project_path)
     written = change()
     if current:
         project = _Project.load(schema_project_path)

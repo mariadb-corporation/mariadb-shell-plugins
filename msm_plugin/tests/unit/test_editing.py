@@ -373,6 +373,24 @@ def test_moving_the_copyright_years_keeps_a_current_snapshot_current(project, mo
 
 
 @needs_lsp
+def test_new_holders_keep_a_current_snapshot_current(project):
+    assert base_hash(project) == modeling.current_source_hash(project)
+    year = management.current_year()
+    lines_before = dev_script(project).count("\n")
+
+    management.set_project_settings(project, {"copyrights": [
+        {"holder": "Example Ltd.", "yearOfCreation": year, "tracksUpdates": True},
+        {"holder": "Second Holder", "yearOfCreation": year},
+    ]}, lsp_path=EDIT_LSP)
+
+    # The license block grew by a line; the snapshot was made again
+    assert dev_script(project).count("\n") == lines_before + 1
+    assert base_hash(project) == modeling.current_source_hash(project)
+    assert [table["name"] for table in modeling.read_diagram_rows(project)[0]["document"]["tables"]] \
+        == ["customer", "orders"]
+
+
+@needs_lsp
 def test_edits_against_an_old_snapshot_are_refused(project, fake_edit):
     before = dev_script(project)
     with pytest.raises(editing.StaleSchemaError, match="changed since"):
@@ -681,7 +699,7 @@ def test_one_save_of_a_table_deploys_as_one_online_alter(deployed):
     path, column = deployed
     if not lsp.merges_alters(EDIT_LSP):
         pytest.skip("the binary does not merge ALTER TABLE statements (lsp-server #33)")
-    management.set_online_alter_table(path, "customer", {"lockWait": 3})
+    management.set_project_settings(path, {"onlineAlter": {"tables": {"customer": {"lockWait": 3}}}})
     result = editing.edit_schema(path, [
         {"op": "add_column", "table": "customer",
          "column": {"name": "email", "type": "VARCHAR(255)"}},

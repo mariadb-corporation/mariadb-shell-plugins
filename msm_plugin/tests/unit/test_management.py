@@ -549,8 +549,10 @@ def test_every_write_to_a_project_moves_the_copyright_years_along(tmp_path, monk
 
     writes = [
         lambda: set_development_version(schema_project_path=project_path, version="0.0.3"),
-        lambda: lib.management.set_online_alter_table(project_path, "t", {"lockWait": 2}),
-        lambda: lib.management.set_online_alter_defaults(project_path, {"maxRetries": 3}),
+        lambda: lib.management.set_project_settings(
+            project_path, {"onlineAlter": {"tables": {"t": {"lockWait": 2}}}}
+        ),
+        lambda: lib.management.set_project_settings(project_path, {"maxInlineSectionSize": 900}),
         lambda: sections.write_section_parts(
             project_path, "140", [sections.Part("140-10_tables.sql", "Tables", "\nSELECT 2;\n")]
         ),
@@ -570,9 +572,9 @@ def test_a_refused_write_leaves_the_copyright_years(tmp_path, monkeypatch):
     )
     in_year(monkeypatch, int(lib.management.current_year()) + 1)
     with pytest.raises(ValueError):
-        lib.management.set_online_alter_table(project_path, "t", {"lockWait": 0})
+        lib.management.set_project_settings(project_path, {"onlineAlter": {"lockWait": 0}})
     # ... and so does one that writes nothing
-    assert lib.management.set_online_alter_table(project_path, "t", None) == []
+    assert lib.management.set_project_settings(project_path, {"onlineAlter": {"enabled": True}}) == []
     assert get_project_settings(schema_project_path=project_path)["copyrights"][0].get(
         "yearOfLastUpdate"
     ) is None
@@ -1594,3 +1596,145 @@ def test_markdown_files_of_the_users_own_keep_their_years(tmp_path, monkeypatch)
     assert os.path.join(project_path, "README.md") in written
     assert str(notes) not in written
     assert notes.read_text() == "Copyright (c) 2026, ACME Corp.\n"
+
+
+# -----------------------------------------------------------------------------
+# set_project_settings
+
+
+def _settings_project(tmp_path, license="MIT"):
+    return create_new_project_folder(
+        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp.",
+        license=license,
+    )
+
+
+@pytest.mark.parametrize("settings, message", [
+    ({"schemaName": "other"}, "the project's identity"),
+    ({"schemaFileName": "other"}, "the project's identity"),
+    ({"copyrightHolder": "Other"}, "follows `copyrights`"),
+    ({"yearOfCreation": "2020"}, "follows `copyrights`"),
+    ({"colour": "red"}, "Unknown project setting `colour`"),
+    ({"copyrights": []}, "one copyright holder or more"),
+    ({"copyrights": [{"yearOfCreation": "2020"}]}, "needs a holder"),
+    ({"copyrights": [{"holder": "ACME Corp."}]}, "needs a yearOfCreation"),
+    ({"copyrights": [{"holder": "A", "yearOfCreation": "20x0"}]}, "yearOfCreation"),
+    ({"copyrights": [{"holder": "A", "yearOfCreation": "2020", "tracksUpdates": "yes"}]},
+     "`tracksUpdates` must be"),
+    ({"license": "WTFPL"}, "No license stored under the given license name"),
+    ({"license": "CUSTOM"}, "No custom license text"),
+    ({"license": "CUSTOM", "customLicense": "${owner}"}, "placeholder other than"),
+    ({"license": None}, "`license` must be a string"),
+    ({"maxInlineSectionSize": -1}, "maxInlineSectionSize"),
+    ({"substitutions": {"1x": {}}}, "Invalid substitution name"),
+    ({"schemaDependencies": "sakila"}, "a list of schema names"),
+    ({"onlineAlter": {"lockWait": 2}, "license": "WTFPL"}, "No license stored"),
+    ("MIT", "must be an object"),
+])
+def test_bad_project_settings_are_refused_and_nothing_is_written(tmp_path, settings, message):
+    project_path = _settings_project(tmp_path)
+    files = sorted(Path(project_path).rglob("*"))
+    before = {path: path.read_bytes() for path in files if path.is_file()}
+    with pytest.raises(ValueError, match=message):
+        lib.management.set_project_settings(project_path, settings)
+    assert {path: path.read_bytes() for path in files if path.is_file()} == before
+
+
+def test_settings_given_change_and_the_others_stay(tmp_path):
+    project_path = _settings_project(tmp_path)
+    settings_file = os.path.join(project_path, "msm.project.json")
+    with open(settings_file) as f:
+        before = json.load(f)
+
+    written = lib.management.set_project_settings(project_path, {
+        "schemaDependencies": ["sakila"],
+        "substitutions": {"schema_prefix": {"default": "acme_"}},
+        "maxInlineSectionSize": 2000,
+    })
+    assert written == [settings_file]
+    with open(settings_file) as f:
+        after = json.load(f)
+    assert after == {**before, "schemaDependencies": ["sakila"],
+                     "substitutions": {"schema_prefix": {"default": "acme_"}},
+                     "maxInlineSectionSize": 2000}
+
+    # None removes an optional one; the same again writes nothing
+    lib.management.set_project_settings(project_path, {"maxInlineSectionSize": None})
+    with open(settings_file) as f:
+        assert "maxInlineSectionSize" not in json.load(f)
+    assert lib.management.set_project_settings(project_path, {"schemaDependencies": ["sakila"]}) == []
+    assert lib.management.set_project_settings(project_path, {}) == []
+
+
+def test_set_years_are_brought_into_the_notices(tmp_path):
+    this_year = lib.management.current_year()
+    project_path = _settings_project(tmp_path)
+    dev_file = lib.management.get_schema_development_file_path(project_path)
+    lines_before = Path(dev_file).read_text().count("\n")
+
+    written = lib.management.set_project_settings(project_path, {"copyrights": [
+        {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": False},
+    ]})
+    assert dev_file in written and os.path.join(project_path, "README.md") in written
+    settings = get_project_settings(schema_project_path=project_path)
+    assert (settings["yearOfCreation"], settings["copyrightHolder"]) == ("2020", "ACME Corp.")
+    text = Path(dev_file).read_text()
+    assert " * Copyright (c) 2020, ACME Corp.\n" in text
+    assert text.count("\n") == lines_before
+    assert "Copyright (c) 2020, ACME Corp.\n" in Path(project_path, "README.md").read_text()
+
+    # A holder that tracks updates gets this year as its last update: a change
+    lib.management.set_project_settings(project_path, {"copyrights": [
+        {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": True},
+    ]})
+    assert f" * Copyright (c) 2020, {this_year}, ACME Corp.\n" in Path(dev_file).read_text()
+
+
+def test_new_holders_make_the_license_blocks_again(tmp_path):
+    from msm_plugin.lib import sections
+
+    this_year = lib.management.current_year()
+    project_path = _settings_project(tmp_path)
+    dev_file = lib.management.get_schema_development_file_path(project_path)
+    # Into a breakout file, however small
+    lib.management.set_project_settings(project_path, {"maxInlineSectionSize": 0})
+    sections.write_section_parts(
+        project_path, "140", [sections.Part("140-10_tables.sql", "Tables", "\nSELECT 2;\n")]
+    )
+    breakout = Path(project_path, "development", sections.BREAKOUT_FOLDER, "140-10_tables.sql")
+    assert "140-10_tables.sql'[ln4:]" in Path(dev_file).read_text()
+
+    lib.management.set_project_settings(project_path, {"copyrights": [
+        {"holder": "ACME Corp.", "yearOfCreation": this_year, "tracksUpdates": True},
+        {"holder": "Beta GmbH.", "yearOfCreation": this_year, "tracksUpdates": False},
+    ]})
+    text = Path(dev_file).read_text()
+    assert f" * Copyright (c) {this_year}, ACME Corp.\n * Copyright (c) {this_year}, Beta GmbH.\n" \
+        in text
+    # The breakout file's header grew by a line, its SQL is included from where it starts now
+    assert breakout.read_text().startswith(
+        f"-- Copyright (c) {this_year}, ACME Corp.\n-- Copyright (c) {this_year}, Beta GmbH.\n"
+    )
+    assert "140-10_tables.sql'[ln5:]" in text
+    assert breakout.read_text().splitlines()[4:] == ["SELECT 2;"]
+    readme = Path(project_path, "README.md").read_text()
+    assert f"Copyright (c) {this_year}, Beta GmbH.\n" in readme
+
+
+def test_a_custom_license_text_is_written_into_the_development_script(tmp_path):
+    this_year = lib.management.current_year()
+    project_path = _settings_project(tmp_path)
+    dev_file = lib.management.get_schema_development_file_path(project_path)
+    custom = "/*\n${copyright_notices}\n *\n * Licensed to ${copyright_holder} customers only.\n */\n"
+
+    lib.management.set_project_settings(project_path, {"license": "CUSTOM", "customLicense": custom})
+    text = Path(dev_file).read_text()
+    assert text.startswith(
+        f"/*\n * Copyright (c) {this_year}, ACME Corp.\n *\n"
+        " * Licensed to ACME Corp customers only.\n */\n"
+    )
+    assert "Permission is hereby granted" not in text  # MIT's text is gone
+    # The sections follow unchanged
+    assert "-- MSM Section 000: Database Schema Development Script" in text
+    settings = get_project_settings(schema_project_path=project_path)
+    assert (settings["license"], settings["customLicense"]) == ("CUSTOM", custom)

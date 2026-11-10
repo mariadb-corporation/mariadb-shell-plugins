@@ -226,24 +226,19 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   synchronously on the given (or global) session: no task, no monitor. No
   temporary procedure, so no CREATE ROUTINE privilege is needed.
 - **The tab's settings tools**: mcp `msm.get_online_alter_settings(table?,
-  schema_project_path)` ({defaults, setting, table, enabled, options}) and
-  `msm.set_online_alter_table(table, settings?, schema_project_path)`
-  (writes `onlineAlter.tables.<table>`, None/{} removes the entry; reads the
-  raw file, so the derived `copyrights` list is not written back; a project
-  without the key gets `{"enabled": true, "tables": ...}`; unchanged =
-  nothing written); `msm.set_online_alter_defaults(settings?,
-  schema_project_path)` (the Edit MSM Project dialog's Online Schema Change
-  tab) replaces the general level, keeps `tables`, refuses `tables` in
-  settings; None/{} removes every general key; an empty setting is written
-  `{"enabled": true}`, as the template has it; shell
-  `msm.getOnlineAlterSettings` / `msm.setOnlineAlterTable` /
-  `msm.setOnlineAlterDefaults`; lib `management.get_online_alter_settings` /
-  `set_online_alter_table` / `set_online_alter_defaults`. Read with
-  `get_online_alter_settings` and no table (`setting` holds the general
-  level; `enabled`/`options` are None). `msm.get_online_alter_defaults()` (shell
-  `msm.getOnlineAlterDefaults`, served with msm, no project) gives the same
-  `defaults`, for a live table's tab, so the extension keeps no copy of
-  them.
+  schema_project_path)` ({defaults, setting, table, enabled, options}; with
+  no table `setting` holds the general level and `tables`,
+  `enabled`/`options` are None) reads. Writing goes through
+  `msm.set_project_settings(settings, schema_project_path)` (see
+  PROJECT_CONTEXT "Project settings"): `{"onlineAlter": <the whole
+  setting>}` replaces general values and tables at once, null removes it
+  (msm's defaults, on); checked with `read_setting` before anything is
+  written. The per-table and general-level tools (`set_online_alter_table`,
+  `set_online_alter_defaults`, #101) were removed for it on 2026-11-10 (the
+  user wants one tool for msm.project.json, not one per setting).
+  `msm.get_online_alter_defaults()` (shell `msm.getOnlineAlterDefaults`,
+  served with msm, no project) gives the same `defaults`, for a live
+  table's tab, so the extension keeps no copy of them.
 - **One ALTER TABLE per table and Save** (`msm.edit_schema`): each ALTER is
   its own escalation and maybe its own table copy, so the language server
   merges a table's ALTERs where asked: `lsp.merges_alters(binary)` (its
@@ -279,9 +274,9 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   user): a live table's settings live in VS Code's workspace state, per
   connection, schema and table (a rename moves them); online ALTER TABLE is
   on by default for live tables too. A project table's Save runs
-  msm.edit_schema, then writes only the entry the tab changed with
-  `msm.set_online_alter_table`, under the table's post-Save name (msm has
-  moved the entry over a rename already). Its SQL preview asks mariadb-lsp
+  msm.edit_schema, then writes the setting with the tab's entry changed
+  through `msm.set_project_settings`, under the table's post-Save name (msm
+  has moved the entry over a rename already). Its SQL preview asks mariadb-lsp
   for merged ALTERs too, to match what edit_schema keeps. Live Apply sends
   `merge_alters` where the binary has it; each ALTER of the table with a
   `spec` goes to `msm.online_alter_table` (the table's options without

@@ -386,14 +386,16 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                     entry["name"] for entry in tables or []
                 ]
 
-                # A table's online ALTER TABLE settings, written and read back
+                # The online ALTER TABLE setting, written and read back
                 payload(
                     await call(
-                        "msm.set_online_alter_table",
+                        "msm.set_project_settings",
                         {
                             "schema_project_path": project_path,
-                            "table": "mcp_pytest_table",
-                            "settings": {"lockWait": 2},
+                            "settings": {"onlineAlter": {
+                                "maxRetries": 3,
+                                "tables": {"mcp_pytest_table": {"lockWait": 2}},
+                            }},
                         },
                     )
                 )
@@ -404,25 +406,7 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                     )
                 )
                 assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
-
-                # The general values, written without touching the table's
-                payload(
-                    await call(
-                        "msm.set_online_alter_defaults",
-                        {
-                            "schema_project_path": project_path,
-                            "settings": {"maxRetries": 3},
-                        },
-                    )
-                )
-                settings = payload(
-                    await call(
-                        "msm.get_online_alter_settings",
-                        {"schema_project_path": project_path},
-                    )
-                )
-                assert settings["setting"]["maxRetries"] == 3
-                assert settings["setting"]["tables"]["mcp_pytest_table"] == {"lockWait": 2}
+                assert settings["options"]["maxRetries"] == 3
 
                 # One ALTER TABLE run online, as a task followed with task.get
                 started = payload(
@@ -889,6 +873,31 @@ def test_the_online_alter_defaults_need_no_project():
     defaults = _msm_tools()["msm.get_online_alter_defaults"]()
     assert defaults == {"maxRebuildBytes": 10 * 1024 ** 3, "galeraMaxBytes": 256 * 1024 ** 2,
                         "nboLock": None, "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
+
+
+def test_project_settings_are_changed_through_the_tool(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    year = _call(tools, "msm.get_project_information", path)["copyrights"][0]["yearOfCreation"]
+    custom = "/*\n${copyright_notices}\n * Internal use only.\n */\n"
+
+    written = _call(tools, "msm.set_project_settings", {
+        "copyrights": [{"holder": "Example Ltd.", "yearOfCreation": year, "tracksUpdates": True},
+                       {"holder": "Partner Inc.", "yearOfCreation": year}],
+        "license": "CUSTOM",
+        "customLicense": custom,
+        "onlineAlter": {"tables": {"customer": {"lockWait": 2}}},
+    }, path)
+    assert os.path.join(path, "msm.project.json") in written
+    info = _call(tools, "msm.get_project_information", path)
+    assert [c["holder"] for c in info["copyrights"]] == ["Example Ltd.", "Partner Inc."]
+    assert (info["license"], info["customLicense"]) == ("CUSTOM", custom)
+    assert info["onlineAlter"] == {"tables": {"customer": {"lockWait": 2}}}
+    with open(info["schemaDevelopmentFilePath"]) as f:
+        assert " * Internal use only.\n" in f.read()
+
+    with pytest.raises(Exception, match="the project's identity"):
+        _call(tools, "msm.set_project_settings", {"schemaName": "other"}, path)
 
 
 def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
