@@ -47,6 +47,7 @@ from typing import Optional
 
 from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, source, statements
 from msm_plugin.lib import sections as sections_lib
+from msm_plugin.lib.project_changes import changes_project
 
 # The sections of the pending update script, as in the update script.
 CHANGES_SECTION_ID = "240"
@@ -292,6 +293,7 @@ def clear_pending_update(path: str, project_settings: dict) -> bool:
     return sections_lib.write_if_changed(path, _pending_update_template(project_settings), old)
 
 
+@changes_project
 def move_pending_update(
     schema_project_path: str, project_settings: dict, update_file_path: str
 ) -> Optional[str]:
@@ -475,6 +477,7 @@ def _check_request(edits) -> None:
             raise ValueError(f"Edit {index + 1} has to be an object with its `op`.")
 
 
+@changes_project
 def edit_schema(
     schema_project_path: str, edits: list, base_hash: str, lsp_path: str = None
 ) -> dict:

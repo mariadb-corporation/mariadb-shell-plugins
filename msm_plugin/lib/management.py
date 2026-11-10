@@ -38,6 +38,7 @@ import mysqlsh
 from msm_plugin.lib import online_alter as online_alter_lib
 from msm_plugin.lib import update_steps
 from msm_plugin.lib.source import expand_source_directives
+from msm_plugin.lib.project_changes import changes_project
 
 # Regex to match MSM sections, excluding the license and the last section
 MSM_SECTIONS_REGEX = r"--\s+#+\s+--\s+MSM\s+Section\s+(\d+):\s*(.*?)$\s+.*?--\s+#+"
@@ -304,6 +305,7 @@ def get_file_section(file_path: str, section_id: str) -> str:
         )
 
 
+@changes_project
 def set_section_sql_content(
     section_id: str,
     sql_content: str,
@@ -338,6 +340,7 @@ def set_section_sql_content(
         )
 
 
+@changes_project
 def write_sections_to_file(
     file_path: str, sections: dict[str, dict], overwrite_existing: bool = False
 ):
@@ -1105,6 +1108,7 @@ def get_schema_development_version(
     )
 
 
+@changes_project(writes=lambda call: call["write_to_file"])
 def set_development_version(
     new_version: str,
     schema_project_path: str = None,
@@ -1413,6 +1417,7 @@ def remove_empty_sections(sections: dict, keep_even_if_empty=list[str]) -> None:
         sections.pop(section_id, None)
 
 
+@changes_project
 def prepare_release(
     schema_project_path: str,
     version: str,
@@ -1614,6 +1619,7 @@ def prepare_release(
     return files_for_release
 
 
+@changes_project
 def generate_deployment_script(
     schema_project_path: str, version: str, overwrite_existing: bool = False
 ) -> str:
@@ -1941,6 +1947,7 @@ def _write_online_alter_setting(path: str, raw: dict, setting) -> list:
     return [path]
 
 
+@changes_project
 def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -> list:
     """Sets the general values of the project's online ALTER TABLE setting
     (msm.project.json, onlineAlter), what the Edit MSM Project dialog's
@@ -1976,6 +1983,7 @@ def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -
     )
 
 
+@changes_project
 def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
     """Sets a table's entry of the project's online ALTER TABLE setting
     (msm.project.json, onlineAlter.tables), what the Table Editor's Online

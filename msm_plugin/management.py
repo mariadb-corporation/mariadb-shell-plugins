@@ -319,8 +319,6 @@ def set_development_version(**kwargs) -> None:
     lib.management.set_development_version(
         schema_project_path=schema_project_path, new_version=version, write_to_file=True
     )
-    # After the change, so one that is refused leaves the years as they are
-    lib.management.update_copyright_years(schema_project_path)
 
 
 @plugin_function("msm.get.releasedVersions", shell=True, cli=True, web=True)
@@ -543,11 +541,6 @@ def set_section_sql_content(file_path: str, section_id: str, sql_content: str) -
     lib.management.set_section_sql_content(
         file_path=file_path, section_id=section_id, sql_content=sql_content
     )
-    # A change applied to a project's file moves its copyright years along,
-    # after it, so one that is refused leaves the years as they are
-    schema_project_path = lib.management.find_schema_project_path(file_path)
-    if schema_project_path is not None:
-        lib.management.update_copyright_years(schema_project_path)
 
 
 @plugin_function("msm.splitSections", shell=True, cli=True, web=True)

@@ -38,6 +38,7 @@ from typing import Callable, Optional
 from msm_plugin.lib import diagrams, layout, lsp, management, source
 from msm_plugin.lib import sections as sections_lib
 from msm_plugin.lib import workbench
+from msm_plugin.lib.project_changes import changes_project
 
 DIAGRAMS_SECTION_ID = "160"
 BREAKOUT_FILE_NAME = "160_schema_diagrams.sql"
@@ -281,6 +282,7 @@ def _write(project: _Project, rows: list) -> list:
     return written
 
 
+@changes_project
 def write_diagram_rows(schema_project_path: str, rows: list) -> list:
     """Writes the rows of the project's diagrams VIEW into Section 160, see _write().
 
@@ -455,6 +457,7 @@ def _replace_snapshot(
     return document, rows, changed
 
 
+@changes_project
 def update_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:
     """Makes the snapshot again and writes it into the diagrams VIEW.
 
@@ -483,6 +486,7 @@ def _snapshot_is_current(project: _Project, schema: Optional[dict]) -> bool:
     return schema is not None and schema["document"].get("source_hash") == _current_hash(project)
 
 
+@changes_project
 def split_sections(schema_project_path: str, section_ids: list = None, lsp_path: str = None) -> dict:
     """Splits sections into breakout files by object kind (sections.split_sections).
 
@@ -587,6 +591,7 @@ def get_diagram_image(schema_project_path: str, name: str, figure_id: str) -> st
     return picture
 
 
+@changes_project
 def set_diagram(schema_project_path: str, document: dict) -> list:
     """Adds a diagram to the VIEW, or replaces the one of the same name.
 
@@ -613,6 +618,7 @@ def set_diagram(schema_project_path: str, document: dict) -> list:
     return _write(project, rows)
 
 
+@changes_project
 def remove_diagram(schema_project_path: str, name: str) -> list:
     """Removes a diagram from the VIEW.
 
@@ -627,6 +633,7 @@ def remove_diagram(schema_project_path: str, name: str) -> list:
     return _write(project, kept)
 
 
+@changes_project
 def rename_diagram(schema_project_path: str, name: str, new_name: str) -> list:
     """Renames a diagram: its row's name and its document's. Everything else
     stays as stored (pictures and the rows' order included).
@@ -974,6 +981,7 @@ def _fill(diagram: dict, document: dict, tables: list, keep_placed: bool, **othe
     return added, connections_added, placed
 
 
+@changes_project
 def create_diagram(
     schema_project_path: str,
     name: str,
@@ -1035,6 +1043,7 @@ def create_diagram(
     }
 
 
+@changes_project
 def layout_diagram(
     schema_project_path: str,
     name: str,

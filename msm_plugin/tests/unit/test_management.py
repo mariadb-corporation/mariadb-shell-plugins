@@ -520,8 +520,10 @@ def test_update_copyright_years(tmp_path, monkeypatch):
     assert lib.management.update_copyright_years(project_path) == []
 
 
-def test_changes_through_the_plugin_move_the_copyright_years_along(tmp_path, monkeypatch):
-    this_year = lib.management.current_year()
+def test_every_write_to_a_project_moves_the_copyright_years_along(tmp_path, monkeypatch):
+    from msm_plugin.lib import sections
+
+    this_year = int(lib.management.current_year())
     project_path = create_new_project_folder(
         schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
     )
@@ -534,22 +536,68 @@ def test_changes_through_the_plugin_move_the_copyright_years_along(tmp_path, mon
             "yearOfLastUpdate"
         )
 
-    # The library function only writes the file's section
-    in_year(monkeypatch, int(this_year) + 1)
-    lib.management.set_section_sql_content("140", "\nSELECT 1;\n", dev_file)
+    # Reading leaves the years as they are
+    in_year(monkeypatch, this_year + 1)
+    lib.management.set_development_version(
+        new_version="0.0.2", schema_project_path=project_path, write_to_file=False
+    )
     assert last_update() is None
 
-    # msm.set.sectionSqlContent is a change applied to the file's project
-    set_section_sql_content(file_path=dev_file, section_id="140", sql_content="\nSELECT 2;\n")
-    assert last_update() == str(int(this_year) + 1)
+    # A file of the project, found from the file
+    lib.management.set_section_sql_content("140", "\nSELECT 1;\n", dev_file)
+    assert last_update() == str(this_year + 1)
 
-    # ... and so is msm.set.developmentVersion
-    in_year(monkeypatch, int(this_year) + 2)
-    set_development_version(schema_project_path=project_path, version="0.0.2")
-    assert last_update() == str(int(this_year) + 2)
-    assert f" * Copyright (c) {this_year}, {int(this_year) + 2}, ACME Corp.\n" in Path(
+    writes = [
+        lambda: set_development_version(schema_project_path=project_path, version="0.0.3"),
+        lambda: lib.management.set_online_alter_table(project_path, "t", {"lockWait": 2}),
+        lambda: sections.write_section_parts(
+            project_path, "140", [sections.Part("140-10_tables.sql", "Tables", "\nSELECT 2;\n")]
+        ),
+    ]
+    for offset, write in enumerate(writes, start=2):
+        in_year(monkeypatch, this_year + offset)
+        write()
+        assert last_update() == str(this_year + offset)
+    assert f" * Copyright (c) {this_year}, {this_year + len(writes) + 1}, ACME Corp.\n" in Path(
         dev_file
     ).read_text()
+
+
+def test_a_refused_write_leaves_the_copyright_years(tmp_path, monkeypatch):
+    project_path = create_new_project_folder(
+        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
+    )
+    in_year(monkeypatch, int(lib.management.current_year()) + 1)
+    with pytest.raises(ValueError):
+        lib.management.set_online_alter_table(project_path, "t", {"lockWait": 0})
+    assert get_project_settings(schema_project_path=project_path)["copyrights"][0].get(
+        "yearOfLastUpdate"
+    ) is None
+
+
+def test_a_write_inside_a_write_moves_the_years_once(tmp_path, monkeypatch):
+    from msm_plugin.lib.project_changes import changes_project
+
+    project_path = create_new_project_folder(
+        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
+    )
+    calls = []
+    real = lib.management.update_copyright_years
+    monkeypatch.setattr(
+        lib.management, "update_copyright_years", lambda path: calls.append(path) or real(path)
+    )
+
+    @changes_project
+    def inner(schema_project_path):
+        pass
+
+    @changes_project
+    def outer(schema_project_path):
+        inner(schema_project_path)
+        inner(schema_project_path=schema_project_path)
+
+    outer(project_path)
+    assert calls == [project_path]
 
 
 def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path, monkeypatch):
