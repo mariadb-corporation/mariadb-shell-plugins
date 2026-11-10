@@ -699,6 +699,8 @@ def _is_object(kind: str, name: str, item: dict) -> bool:
     return diagrams.same_name(item.get("name") or "", name) and (
         _object_type(kind) != "routine" or item.get("kind") == kind
     )
+
+
 _CHECK_OPTION = re.compile(r"\s+WITH\s+(?:CASCADED\s+|LOCAL\s+)?CHECK\s+OPTION\s*$", re.IGNORECASE)
 
 
@@ -710,7 +712,10 @@ def get_object_templates() -> dict:
         the CREATE statement with string.Template placeholders}, placeholders:
         {kind: the placeholders it may use}}.
     """
-    return {"templates": dict(OBJECT_TEMPLATES), "placeholders": dict(OBJECT_PLACEHOLDERS)}
+    return {
+        "templates": dict(OBJECT_TEMPLATES),
+        "placeholders": {kind: list(names) for kind, names in OBJECT_PLACEHOLDERS.items()},
+    }
 
 
 def _object_name_problem(name) -> Optional[str]:
@@ -743,9 +748,13 @@ def _filled_template(kind: str, name: str, template, table, schema: str) -> str:
     ).strip().rstrip(";").rstrip()
 
 
-def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> dict:
+def _template_object(
+    kind: str, name: str, sql: str, table: str = None, lsp_path: str = None
+) -> dict:
     """The object a filled template creates, in the outline's shape the edit
-    ops take; refused unless it is one CREATE of that kind and name."""
+    ops take; refused unless it is one CREATE of that kind and name, named
+    unqualified (an MSM script names its schema in its USE only), and for a
+    trigger on table."""
     import tempfile
 
     binary = lsp.require_lsp(lsp_path)
@@ -757,13 +766,13 @@ def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> di
     errors = [note for note in outlined.get("notes", []) if note.get("kind") == "syntax-error"]
     member = _object_type(kind) + "s"
     found = [
-        (key, item)
+        (key, item, schema.get("name"))
         for schema in outlined.get("schemas", [])
         for key in diagrams.SCHEMA_OBJECT_KINDS
         for item in schema.get(key, [])
     ]
     wanted = [
-        item for key, item in found
+        (item, qualifier) for key, item, qualifier in found
         if key == member and (_object_type(kind) != "routine" or item.get("kind") == kind)
     ]
     if errors or len(found) != 1 or len(wanted) != 1:
@@ -773,10 +782,20 @@ def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> di
         )
     # Sent back as the outline has it: the ops ignore its positions (and a
     # view's reads)
-    item = dict(wanted[0])
+    item, qualifier = dict(wanted[0][0]), wanted[0][1]
+    if qualifier is not None:
+        raise ValueError(
+            f"The template of a {kind} names the schema `{qualifier}`: an MSM script names its "
+            "objects unqualified, after its USE."
+        )
     if not _is_object(kind, name, item):
         raise ValueError(
             f"The template of a {kind} creates `{item.get('name')}`, not `{name}`: name it ${{name}}."
+        )
+    if kind == "trigger" and not diagrams.same_name(item.get("table") or "", table):
+        raise ValueError(
+            f"The template of the trigger is on `{item.get('table')}`, not on `{table}`: "
+            "name its table ${table}."
         )
     if kind == "view" and item.get("check_option"):
         # The outline's definition holds it; the op writes it from check_option
@@ -831,10 +850,15 @@ def add_schema_object(
         raise ValueError(problem)
     if kind == "trigger" and not table:
         raise ValueError("A trigger needs its table.")
+    if kind == "trigger":
+        # Filled into the template's `${table}` as the name is
+        problem = _object_name_problem(table)
+        if problem:
+            raise ValueError(problem)
     sql = _filled_template(
         kind, name, template, table, management.get_schema_name(schema_project_path)
     )
-    item = _template_object(kind, name, sql, lsp_path)
+    item = _template_object(kind, name, sql, table, lsp_path)
     object_type = _object_type(kind)
     result = edit_schema(
         schema_project_path, [{"op": f"add_{object_type}", object_type: item}], base_hash, lsp_path

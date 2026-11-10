@@ -1202,6 +1202,10 @@ def test_a_users_template_is_filled(project):
     ("function", "f", "CREATE PROCEDURE `${name}`() SELECT 1", None, "one CREATE FUNCTION statement"),
     ("view", "v", "CREATE VIEW `other` AS SELECT 1", None, "creates `other`, not `v`"),
     ("view", "v", "CREATE VIEW `${name}` AS SELEC 1", None, "one CREATE VIEW statement"),
+    ("view", "v", "CREATE VIEW `other`.`${name}` AS SELECT 1", None, "names the schema `other`"),
+    ("trigger", "tr", "CREATE TRIGGER `${name}` BEFORE INSERT ON `customer` FOR EACH ROW SET @x = 1",
+     "orders", "on `customer`, not on `orders`"),
+    ("trigger", "tr", None, "a`b", "cannot be a name"),
 ])
 def test_a_bad_object_is_refused_before_anything_is_written(project, kind, name, template, table, message):
     before = dev_script(project)
