@@ -124,10 +124,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 ## Files that matter
 
 - run_tests.py -> symlinks mcp_plugin + msm_plugin + rest_plugin into a temp config home
-  (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
-  requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
-  requirements.txt is what makes the `mcp < 3.0.0` pin actually bind), then runs pytest.
-  Exits early if the install fails. `-k/--only` to filter, `-s/--shell`, `-u/--userhome`.
+  (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), checks the shell's
+  `mcp` is 2.x, installs `requirements.txt` (test tools only) with `pip install --target`
+  into a `test_python_deps_*` temp dir held to the shell's versions (`-c` of its
+  `pip list --format=freeze`), removes what the shell already has from it, and puts it on
+  `PYTHONPATH`; then runs pytest. Never into the shell's own site-packages: on 2026-11-10
+  that let pip, misled by stale dist-infos in a dev build, swap `pydantic_core` 2.50.4 for
+  2.50.2 under `pydantic` 2.14.3 and break the shell. Same helper
+  (`_install_test_dependencies`) in the msm, rest and dba_core runners. Exits early if
+  the install fails. `-k/--only` to filter, `-s/--shell`, `-u/--userhome`.
   `-e/--e2e` opts into the `e2e`-marked tests (it just forwards `--e2e` to pytest).
   .coveragerc omits msm/mrs/shell/site-pkgs.
 

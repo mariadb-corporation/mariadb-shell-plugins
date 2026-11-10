@@ -111,6 +111,94 @@ def _create_symlink(target: Path, link_name: Path) -> None:
         os.symlink(target, link_name)
 
 
+def _install_test_dependencies(shell: str, requirements: Path, target: Path, env: dict) -> int:
+    """Installs the test dependencies into a folder of their own.
+
+    The shell ships what its plugins need at run time (mcp, pydantic, ...);
+    the tests only add their tools (pytest, pytest-cov, ...). Those are never
+    installed into the shell's own site-packages: resolving their
+    dependencies there lets pip replace a package the shell bundles, and one
+    that no longer matches the rest breaks the shell (pydantic_core swapped
+    under pydantic). They go into target instead, which the caller puts on
+    PYTHONPATH for the test run.
+
+    pip is held to the versions the shell has, and every package the shell
+    already has is removed from target again, so the tests always run
+    against the shell's own packages.
+
+    Args:
+        shell: The shell command to run pip with.
+        requirements: The plugin's requirements.txt.
+        target: The folder to install into; it is emptied first.
+        env: The environment to run pip in.
+
+    Returns:
+        pip's exit code, 0 on success.
+    """
+    import csv
+    import re
+
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True)
+
+    listed = subprocess.run(
+        f"{shell} --pym pip list --format=freeze",
+        shell=True, env=env, capture_output=True, text=True,
+    )
+    if listed.returncode != 0:
+        print(listed.stdout + listed.stderr)
+        print("Failed to list the packages of the shell's Python.")
+        return listed.returncode
+    installed = sorted(
+        line.strip() for line in listed.stdout.splitlines()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*==\S+", line.strip())
+    )
+    constraints = target.parent / f"{target.name}-constraints.txt"
+    constraints.write_text("\n".join(installed) + "\n")
+
+    command = (
+        f"{shell} --pym pip install --disable-pip-version-check "
+        f"--target {shlex.quote(str(target))} -r {shlex.quote(str(requirements))} "
+        f"-c {shlex.quote(str(constraints))}"
+    )
+    print(command)
+    completed = subprocess.run(command, shell=True, env=env)
+    if completed.returncode != 0:
+        print("Failed to install the test dependencies.")
+        return completed.returncode
+
+    def key(name: str) -> str:
+        return re.sub(r"[-_.]+", "_", name).lower()
+
+    have = {key(line.split("==", 1)[0]): line.split("==", 1)[1] for line in installed}
+    for info in sorted(target.glob("*.dist-info")):
+        name, _, version = info.name[: -len(".dist-info")].rpartition("-")
+        if have.get(key(name)) != version:
+            continue
+        record = info / "RECORD"
+        rows = csv.reader(record.read_text().splitlines()) if record.is_file() else []
+        for row in rows:
+            path = (target / row[0]).resolve() if row else None
+            if path is not None and path.is_relative_to(target.resolve()) and path.is_file():
+                path.unlink()
+        shutil.rmtree(info, ignore_errors=True)
+    # The folders the removed files leave empty, deepest first
+    for folder in sorted((p for p in target.rglob("*") if p.is_dir()), reverse=True):
+        if folder.name == "__pycache__":
+            shutil.rmtree(folder, ignore_errors=True)
+        if folder.exists() and not any(folder.iterdir()):
+            folder.rmdir()
+    remaining = sorted(info.name for info in target.glob("*.dist-info"))
+    print("Test dependencies the shell does not have: " + (", ".join(remaining) or "none"))
+    return 0
+
+
+def _with_pythonpath(env: dict, folder: Path) -> None:
+    """Puts folder in front of the PYTHONPATH of env."""
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{folder}{os.pathsep}{existing}" if existing else str(folder)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -220,15 +308,31 @@ def main() -> int:
     pattern = f"-k {shlex.quote(args.only)}" if args.only else ""
     e2e = "--e2e" if args.e2e else ""
     keycloak = "--keycloak" if args.keycloak else ""
-    # Install the test dependencies into the shell's Python. Driven off
-    # requirements.txt so the versions here honour the pins declared there,
-    # notably the MCP SDK major version.
-    command = f"{shell} --pym pip install -r {plugin_dir / 'requirements.txt'}"
-    print(command)
-    completed = subprocess.run(command, shell=True, env=env)
-    if completed.returncode != 0:
-        print("Failed to install the test dependencies.")
-        return completed.returncode
+    # The MCP SDK comes with the shell, not from requirements.txt. The plugin
+    # is written against its 2.x API (mcp.server.mcpserver), so a shell that
+    # bundles another major version is reported here, not as a failure of
+    # every test.
+    code = "import importlib.metadata as m; print(m.version('mcp'))"
+    found = subprocess.run(
+        f"{shell} --py -e {shlex.quote(code)}",
+        shell=True, env=env, capture_output=True, text=True,
+    )
+    lines = [line.strip() for line in found.stdout.splitlines() if line.strip()]
+    sdk_version = lines[-1] if found.returncode == 0 and lines else None
+    if sdk_version is None or not sdk_version.startswith("2."):
+        print(found.stdout + found.stderr)
+        print(f"The shell bundles MCP SDK {sdk_version or '(none)'}; the plugin needs 2.x.")
+        return 1
+
+    # The test tools go into a folder of their own, never into the shell's
+    # site-packages: see _install_test_dependencies.
+    test_deps = Path(tempfile.mkdtemp(prefix="test_python_deps_")) / "site"
+    returncode = _install_test_dependencies(
+        shell, plugin_dir / "requirements.txt", test_deps, env
+    )
+    if returncode != 0:
+        return returncode
+    _with_pythonpath(env, test_deps)
 
     command = (
         f"{shell} --pym pytest -c {plugin_dir / 'pytest-coverage.ini'} "

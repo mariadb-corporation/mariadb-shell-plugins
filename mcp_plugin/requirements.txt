@@ -1,12 +1,10 @@
 # Copyright (c) 2026, MariaDB plc.
 
-# Run the following command to install the dependencies in the local MariaDB Shell
-# mariadb-shell --pym pip install -r mcp_plugin/requirements.txt
-
-# The MCP Python SDK, which provides MCPServer. The 2.0 release renamed
-# mcp.server.fastmcp.FastMCP to mcp.server.mcpserver.MCPServer, so the major
-# version is pinned to avoid silently picking up another incompatible API.
-mcp >= 2.0.0, < 3.0.0
+# The test dependencies. run_tests.py installs them into a folder of its own
+# and puts it on PYTHONPATH for the run; never install them into the shell's
+# own site-packages (mariadb-shell --pym pip install ...): pip may then replace
+# a package the shell bundles with a version that breaks it. The packages the
+# plugin needs at run time come with the shell and are not listed here.
 
 # pytest 7.0 crashes on the shell's Python 3.14 (its assertion rewriter uses
 # ast.Str, removed in Python 3.12), so the floor is the oldest release verified

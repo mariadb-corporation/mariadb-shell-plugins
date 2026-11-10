@@ -1,8 +1,11 @@
 # Copyright (c) 2025, Oracle and/or its affiliates.
 # Copyright (c) 2026, MariaDB plc.
 
-# Run the following command to install the dependencies in the local MariaDB Shell
-# mariadb-shell --pym pip install -r msm_plugin/requirements.txt
+# The test dependencies. run_tests.py installs them into a folder of its own
+# and puts it on PYTHONPATH for the run; never install them into the shell's
+# own site-packages (mariadb-shell --pym pip install ...): pip may then replace
+# a package the shell bundles with a version that breaks it. The packages the
+# plugin needs at run time come with the shell and are not listed here.
 
 # pytest 7.0 crashes on the shell's Python 3.14 (its assertion rewriter uses
 # ast.Str, removed in Python 3.12), so the floor is the oldest release verified

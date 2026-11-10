@@ -84,7 +84,7 @@ Most of the context is in this file. Areas with a file of their own in
 - `templates/scripts/schema_next.sql`, `schema_a.b.c.sql`, `schema_x.y.z_to_a.b.c.sql`, `schema_deployment_a.b.c.sql` -> the section layouts; the deployment template's placeholders decide which sections ever reach a server
 - `templates/msm.project/` -> scaffolded project files; `templates/license/` -> license headers
 - `tests/conftest.py`, `tests/unit/test_management.py` -> sandbox fixture; release/deploy/backup tests; `tests/unit/test_projects.py` -> the project list, on a monkeypatched `projects.get_data_path`
-- `run_tests.py` -> symlinks the plugin into a temp `dot_mariadb_shell`, pip-installs `requirements.txt`, runs pytest in the shell
+- `run_tests.py` -> symlinks the plugin into a temp `dot_mariadb_shell`, installs `requirements.txt` (test tools) into a `test_python_deps_*` temp dir on `PYTHONPATH`, never into the shell's site-packages (see mcp_plugin `context/testing.md`), runs pytest in the shell
 - `../mcp_plugin/lib/msm_functions.py` -> the MCP wrappers (path guard, `msm.deploy_schema` only with the `db` group; the diagram tools and `msm.prepare_release` run through `_in_project`: authorize, then the msm call in a worker thread inside `source.checked_includes`)
 - `~/git/ai-plugins/additional-skills/schema-management/*/SKILL.md` -> agent-facing docs of the workflow (section rules, SOURCE syntax)
 
