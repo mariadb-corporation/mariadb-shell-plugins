@@ -1174,6 +1174,86 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
         assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
 
 
+def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir):
+    # Every update script's Section 290 runs on every deployment of a later
+    # version, after the target's Section 150. A procedure 1.1.0 removes and
+    # 1.2.0 adds again must not be dropped by 1.0.0-to-1.1.0's 290, on a
+    # fresh install or an update, while 1.1.0's own deployment still drops it.
+    schema_name = "msm_routine_again"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    procedure = "DELIMITER %%\nCREATE OR REPLACE PROCEDURE `p`() BEGIN END%%\nDELIMITER ;"
+
+    def procedures():
+        return [
+            row["ROUTINE_NAME"]
+            for row in lib.core.MsmDbExec(
+                "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
+                "WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = 'p'"
+            )
+            .exec(sandbox_session, [schema_name])
+            .items
+        ]
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content=procedure)
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content="")
+    files = prepare_release(
+        schema_project_path=project, version="1.1.0", next_version="1.2.0"
+    )
+    set_section_sql_content(
+        file_path=update_script(files),
+        section_id="290",
+        sql_content="DROP PROCEDURE IF EXISTS `P`;\nDROP FUNCTION IF EXISTS `helper`;",
+    )
+
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content=procedure)
+    prepare_release(schema_project_path=project, version="1.2.0", next_version="1.3.0")
+
+    scripts = {
+        version: generate_deployment_script(schema_project_path=project, version=version)
+        for version in ("1.0.0", "1.1.0", "1.2.0")
+    }
+    for version, dropped in (("1.1.0", True), ("1.2.0", False)):
+        with open(scripts[version], "r") as f:
+            script = f.read()
+        assert ("\nDROP PROCEDURE IF EXISTS `P`;" in script) == dropped
+        # A DROP of a routine the target does not define stays
+        assert "\nDROP FUNCTION IF EXISTS `helper`;" in script
+    assert (
+        "-- Left out: version 1.2.0 defines this routine in its Section 150.\n"
+        "-- DROP PROCEDURE IF EXISTS `P`;"
+    ) in script
+
+    with fresh_schema(sandbox_session, schema_name):
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert procedures() == ["p"]
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert procedures() == []
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
+
+        drop_schema(sandbox_session, schema_name)
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
+
+        drop_schema(sandbox_session, schema_name)
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
+
+
 def test_release_states_its_own_version(temp_dir):
     # A new project develops 0.0.1. Released as 1.0.0, the release script's
     # msm_schema_version view has to say 1.0.0, not the development version

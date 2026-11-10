@@ -105,8 +105,8 @@ ALTER TABLE `my_table`
 -- the update of the database schema, and of PROCEDUREs and FUNCTIONs the new
 -- version no longer has. Note that DROP IF EXISTS needs to be used. This
 -- section runs on every deployment of a later version too, after its Section
--- 150: if a later version adds a PROCEDURE or FUNCTION of a removed one's name
--- again, take that DROP out of here.
+-- 150; a DROP of a routine that version defines again is left out of its
+-- deployment script.
 -- #############################################################################
 
 -- Drop optional helper PROCEDUREs and FUNCTIONs and removed ones here.
