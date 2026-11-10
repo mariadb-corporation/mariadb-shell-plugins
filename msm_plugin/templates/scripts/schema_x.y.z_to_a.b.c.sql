@@ -56,24 +56,26 @@ DELIMITER ;
 
 
 -- #############################################################################
--- MSM Section 240: Non-idempotent Schema Object Changes and All DROPs
+-- MSM Section 240: Non-idempotent Schema Object Changes and DROPs
 -- -----------------------------------------------------------------------------
 -- This section contains changes performed on schema TABLEs. It is important to
 -- note that these changes need to be carefully processed during a schema
 -- upgrade operation. These changes must be executed in the right order as
 -- each operation will result in a state change that often cannot be easily
--- revered. This might include DROP statements on other schema objects (VIEWs,
--- PROCEDUREs, FUNCTIONs, TRIGGERs EVENTs, ...) as they could otherwise prevent
--- change of the TABLE structure. These schema objects may then be re-created
--- inside the MSM Section 250: Idempotent Schema Object Changes. If there are
--- no changes required, this section can be skipped.
+-- reversed. This might include DROP statements on other schema objects (VIEWs,
+-- TRIGGERs, EVENTs, ...) as they could otherwise prevent change of the TABLE
+-- structure, and the DROP of objects the new version no longer has. Do not
+-- re-create these objects here: Section 150 of the new version re-creates them
+-- after all update steps have run. A DROP PROCEDURE or DROP FUNCTION cannot
+-- run here, put it into the MSM Section 260. If there are no changes
+-- required, this section can be skipped.
 -- -----------------------------------------------------------------------------
--- TABLE changes and all DROP statements
+-- TABLE changes and DROP statements
 -- #############################################################################
 
 /*
 -- ToDo: Add ALTER TABLE statements or new CREATE TABLE statements. Include
--- DROP TRIGGER/EVENT/... statements and re-create them in the next section.
+-- DROP TRIGGER/EVENT/... statements of objects the new version removes.
 -- Perform DML statements if needed.
 
 -- -----------------------------------------------------------------------------
@@ -86,45 +88,17 @@ ALTER TABLE `my_table`
 
 
 -- #############################################################################
--- MSM Section 250: Idempotent Schema Object Additions And Changes
+-- MSM Section 260: Removal of PROCEDUREs and FUNCTIONs
 -- -----------------------------------------------------------------------------
--- This section contains the new and update creation of all schema objects,
--- except TABLEs, ROLEs and GRANTs. Ensure that all existing objects are
--- overwritten in a clean manner using explicit DROP IF EXISTS statements or
--- CREATE OR REPLACE when re-creating the objects. All object removals must
--- be defined in the MSM Section 240. If there are no changes required, this
--- section can be skipped.
--- -----------------------------------------------------------------------------
--- All other schema object definitions (VIEWs, PROCEDUREs, FUNCTIONs, TRIGGERs,
--- EVENTs, ...) that are new or have changed
+-- The DROP of every PROCEDURE and FUNCTION the new version no longer has,
+-- which cannot run inside Section 240. Every deployment of this or a later
+-- version runs this section, a fresh install too, after the update steps and
+-- before Section 150, which creates all routines the deployed version has
+-- again. So use DROP IF EXISTS. If there are no changes required, this section
+-- can be skipped.
 -- #############################################################################
 
-DELIMITER %%
-
-/*
--- ToDo: Add schema objects create statements
-
--- -----------------------------------------------------------------------------
--- VIEW `${schema_name}`.`my_view`
--- -----------------------------------------------------------------------------
-
-CREATE OR REPLACE VIEW `my_view` AS
-    SELECT t.`id`, t.`name`
-    FROM `my_table` AS t
-    ORDER BY t.`name`%%
-
--- -----------------------------------------------------------------------------
--- PROCEDURE `${schema_name}`.`my_proc`
--- -----------------------------------------------------------------------------
-
-DROP PROCEDURE IF EXISTS `my_proc`%%
-CREATE PROCEDURE `my_proc`(INOUT value INT)
-BEGIN
-    SET value = value + 1;
-END%%
-*/
-
-DELIMITER ;
+-- Drop the removed PROCEDUREs and FUNCTIONs here.
 
 
 -- #############################################################################

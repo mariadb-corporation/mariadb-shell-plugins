@@ -222,6 +222,18 @@ DROP PROCEDURE `msm_create_or_update`;
 
 
 -- #############################################################################
+-- MSM Section 360: Removal of PROCEDUREs and FUNCTIONs
+-- -----------------------------------------------------------------------------
+-- The PROCEDUREs and FUNCTIONs the updates removed, dropped before Section 150
+-- creates every one this version has.
+-- #############################################################################
+
+-- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Removal of PROCEDUREs and FUNCTIONs
+${section_260_removal_of_procedures_and_functions}
+-- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Removal of PROCEDUREs and FUNCTIONs
+
+
+-- #############################################################################
 -- MSM Section 150: Idempotent Schema Objects
 -- -----------------------------------------------------------------------------
 -- This section contains the creation of all schema objects except TABLEs.

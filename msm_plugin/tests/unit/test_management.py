@@ -812,9 +812,6 @@ def test_prepare_release(sandbox_session, project_path):
     )
 
     # Add a stored procedure
-    sql_content_dev = get_sql_content_from_section(
-        file_path=dev_sql_file_path, section_id="150"
-    )
     set_section_sql_content(
         file_path=dev_sql_file_path,
         section_id="150",
@@ -843,15 +840,6 @@ def test_prepare_release(sandbox_session, project_path):
         file_path=update_sql_file_path,
         section_id="240",
         sql_content=MSM_SECTION_140_SQL_CONTENT_002,
-    )
-
-    update_sql_file_path = os.path.join(
-        project_path, "releases", "updates", "my_schema_0.0.1_to_0.0.2.sql"
-    )
-    set_section_sql_content(
-        file_path=update_sql_file_path,
-        section_id="250",
-        sql_content=MSM_SECTION_150_SQL_CONTENT_002,
     )
 
     # Generate deployment script
@@ -1184,6 +1172,83 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
         drop_schema(sandbox_session, schema_name)
         deploy_schema(schema_project_path=project, version="1.1.0")
         assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
+
+
+def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir):
+    # Every update script's Section 260 runs on every deployment of a later
+    # version, before the target's Section 150. A procedure 1.1.0 removes and
+    # 1.2.0 adds again must survive 1.0.0-to-1.1.0's DROP, on a fresh install
+    # and on every update, while 1.1.0's own deployment drops it.
+    schema_name = "msm_routine_again"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    procedure = "DELIMITER %%\nCREATE OR REPLACE PROCEDURE `p`() BEGIN END%%\nDELIMITER ;"
+
+    def procedures():
+        return [
+            row["ROUTINE_NAME"]
+            for row in lib.core.MsmDbExec(
+                "SELECT ROUTINE_NAME FROM information_schema.ROUTINES "
+                "WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = 'p'"
+            )
+            .exec(sandbox_session, [schema_name])
+            .items
+        ]
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content=procedure)
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content="")
+    files = prepare_release(
+        schema_project_path=project, version="1.1.0", next_version="1.2.0"
+    )
+    set_section_sql_content(
+        file_path=update_script(files),
+        section_id="260",
+        sql_content="DROP PROCEDURE IF EXISTS `P`;",
+    )
+
+    set_section_sql_content(file_path=dev_file, section_id="150", sql_content=procedure)
+    prepare_release(schema_project_path=project, version="1.2.0", next_version="1.3.0")
+
+    for version in ("1.0.0", "1.1.0", "1.2.0"):
+        script_path = generate_deployment_script(schema_project_path=project, version=version)
+        if version != "1.0.0":
+            with open(script_path, "r") as f:
+                script = f.read()
+            # Section 360 runs the 260s before Section 150 (none in 1.1.0) and 160
+            assert (
+                script.index("MSM Section 360")
+                < script.index("\nDROP PROCEDURE IF EXISTS `P`;")
+                < script.index("MSM Section 160")
+            )
+
+    with fresh_schema(sandbox_session, schema_name):
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert procedures() == ["p"]
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert procedures() == []
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
+
+        drop_schema(sandbox_session, schema_name)
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
+
+        drop_schema(sandbox_session, schema_name)
+        deploy_schema(schema_project_path=project, version="1.2.0")
+        assert procedures() == ["p"]
 
 
 def test_release_states_its_own_version(temp_dir):

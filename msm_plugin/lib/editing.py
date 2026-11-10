@@ -33,7 +33,7 @@ column added - asks for the change here, and msm makes it in the SQL:
 - the files are written, the diagrams follow renamed objects, and the
   snapshot (MSM Section 160) is made again;
 - the statements are kept in the pending update script,
-  ``development/<schema>_update_next.sql``, whose Sections 240 and 290
+  ``development/<schema>_update_next.sql``, whose Sections 240 and 260
   prepare_release moves into the update script of the next release.
 
 Everything is written, or nothing: a failure after the first file was
@@ -51,7 +51,9 @@ from msm_plugin.lib.project_changes import changes_project
 
 # The sections of the pending update script, as in the update script.
 CHANGES_SECTION_ID = "240"
-REMOVALS_SECTION_ID = "290"
+REMOVALS_SECTION_ID = "260"
+# Where a pending update script written before Section 260 keeps them
+_LEGACY_REMOVALS_SECTION_ID = "290"
 
 # What a migration statement does, as the binary tags it (action, object):
 # - the CREATE of a view, routine, trigger or event is not kept. Section 150
@@ -60,11 +62,12 @@ REMOVALS_SECTION_ID = "290"
 #   second statement of rename_routine and rename_trigger), and none but a
 #   view's CREATE can run inside the update procedure (MariaDB 1303 for a
 #   routine or trigger, 1576 for an event);
-# - the DROP of a routine goes in Section 290: a stored routine is not
+# - the DROP of a routine goes in Section 260: a stored routine is not
 #   dropped from within another (MariaDB 1357);
 # - the DROP of a table, sequence, view, routine, trigger or event is kept
-#   with IF EXISTS, as the binary writes it without: Section 150 runs before
-#   290 and may have dropped the routine already (MariaDB 1305);
+#   with IF EXISTS, as the binary writes it without: for a routine, every
+#   deployment runs every update script's Section 260, a fresh install too,
+#   where the routine does not exist (MariaDB 1305);
 # - everything else goes in Section 240: a trigger's or event's DROP and an
 #   event's ALTER EVENT ... RENAME TO run inside a procedure, and sequences
 #   go with the tables.
@@ -225,7 +228,7 @@ def _pending_update_template(project_settings: dict) -> str:
     return (
         f"{notices}\n"
         "-- #############################################################################\n"
-        f"-- MSM Section {CHANGES_SECTION_ID}: Non-idempotent Schema Object Changes and All DROPs\n"
+        f"-- MSM Section {CHANGES_SECTION_ID}: Non-idempotent Schema Object Changes and DROPs\n"
         "-- -----------------------------------------------------------------------------\n"
         "-- The changes made to the TABLEs of the development script since the last\n"
         "-- release, written by msm.editSchema in the order they were made.\n"
@@ -235,7 +238,7 @@ def _pending_update_template(project_settings: dict) -> str:
         "-- #############################################################################\n"
         "\n\n"
         "-- #############################################################################\n"
-        f"-- MSM Section {REMOVALS_SECTION_ID}: Removal of Update Helpers\n"
+        f"-- MSM Section {REMOVALS_SECTION_ID}: Removal of PROCEDUREs and FUNCTIONs\n"
         "-- -----------------------------------------------------------------------------\n"
         "-- The DROPs of PROCEDUREs and FUNCTIONs, which cannot run inside Section 240.\n"
         "-- #############################################################################\n"
@@ -247,17 +250,24 @@ def _section_body(section: Optional[dict]) -> str:
     return (section or {}).get("sql_content", "").strip("\n")
 
 
+def _pending_bodies(text: str) -> dict:
+    """The section bodies of a pending update script's text, by section id;
+    the routine DROPs of one written before Section 260 from its Section 290."""
+    sections = management.get_script_sections(text)
+    removals = sections.get(REMOVALS_SECTION_ID) or sections.get(_LEGACY_REMOVALS_SECTION_ID)
+    return {
+        CHANGES_SECTION_ID: _section_body(sections.get(CHANGES_SECTION_ID)),
+        REMOVALS_SECTION_ID: _section_body(removals),
+    }
+
+
 def read_pending_update(path: str) -> dict:
     """The statements of a pending update script, by section ({"240": sql,
-    "290": sql}, empty where none)."""
+    "260": sql}, empty where none)."""
     text = sections_lib.read_if_exists(path)
     if text is None:
         return {CHANGES_SECTION_ID: "", REMOVALS_SECTION_ID: ""}
-    sections = management.get_script_sections(text)
-    return {
-        section_id: _section_body(sections.get(section_id))
-        for section_id in (CHANGES_SECTION_ID, REMOVALS_SECTION_ID)
-    }
+    return _pending_bodies(text)
 
 
 def pending_update_text(old: Optional[str], project_settings: dict, statements: dict) -> str:
@@ -272,6 +282,14 @@ def pending_update_text(old: Optional[str], project_settings: dict, statements: 
     """
     script = old if old is not None else _pending_update_template(project_settings)
     sections = management.get_script_sections(script)
+    if REMOVALS_SECTION_ID not in sections:
+        # Written before Section 260: made again, its statements kept
+        statements = {
+            section_id: "\n\n".join(part for part in (body, statements.get(section_id)) if part)
+            for section_id, body in _pending_bodies(script).items()
+        }
+        script = _pending_update_template(project_settings)
+        sections = management.get_script_sections(script)
     for section_id, sql in statements.items():
         if not sql:
             continue
