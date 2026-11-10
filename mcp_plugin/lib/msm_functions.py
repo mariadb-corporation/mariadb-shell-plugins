@@ -1353,7 +1353,10 @@ def register_msm_tools(server, function_groups=()) -> None:
 
             def _list():
                 with db_functions.use_session(connection_id, client) as session:
-                    return msm_live_schema.list_schema_objects(session, schema)
+                    try:
+                        return msm_live_schema.list_schema_objects(session, schema)
+                    except ValueError as error:
+                        raise tool_error(str(error)) from error
 
             return await anyio.to_thread.run_sync(_list)
 

@@ -90,7 +90,6 @@ _FOREIGN_KEY_LINE = re.compile(
     r"(?:`(?:[^`]|``)+`|\w+)(?:\s*\.\s*(?:`(?:[^`]|``)+`|\w+))?)",
     re.IGNORECASE,
 )
-_QUOTED_NAME = re.compile(r"`(?:[^`]|``)+`")
 
 
 def _rows(session, sql: str, params: list) -> list:
@@ -169,6 +168,11 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
             a trigger whose table is not selected.
     """
     available = {kind: [item["name"] for item in listed[kind]] for kind in OBJECT_KINDS}
+    # Triggers in their firing order (each table's list keeps ACTION_ORDER),
+    # as the order they are created in sets it on the deployed schema
+    available["triggers"] = [
+        trigger for table in listed["tables"] for trigger in table["triggers"]
+    ]
     if objects is None:
         return available
     if not isinstance(objects, dict):
@@ -256,9 +260,11 @@ def table_sql(sql: str, schema: str, tables: set) -> tuple:
 
     SHOW CREATE TABLE writes one definition per line, so a foreign key is
     left out by its line."""
-    lines = _AUTO_INCREMENT.sub("", sql).split("\n")
     kept, left_out = [], []
-    for line in lines:
+    for line in sql.split("\n"):
+        if line.startswith(")"):
+            # The table options, not a column's DEFAULT or COMMENT
+            line = _AUTO_INCREMENT.sub("", line)
         match = _FOREIGN_KEY_LINE.match(line)
         if match:
             ref_schema, ref_table = _reference_name(match.group("ref"))
@@ -305,7 +311,21 @@ _SECTION_150 = (
 )
 
 
-def schema_sql(session, schema: str, selected: dict, task=None) -> statements_lib.Imported:
+# A quoted name used as a qualifier: `t`.`c` (or `schema`.`t`)
+_QUALIFIER = re.compile(r"(`(?:[^`]|``)+`)\s*\.\s*(?=`)")
+
+
+def _read_by_view(sql: Optional[str], schema: str) -> set:
+    """The names a view's columns are qualified with: the tables and views
+    it reads, as SHOW CREATE VIEW writes every column `t`.`c` (and a table
+    `schema`.`t`, which names the schema too: callers match the names
+    against the schema's objects)."""
+    return {name[1:-1].replace("``", "`") for name in _QUALIFIER.findall(sql or "")}
+
+
+def schema_sql(
+    session, schema: str, selected: dict, task=None, not_selected: set = frozenset()
+) -> statements_lib.Imported:
     """The CREATE statements of the selected objects of a live schema,
     grouped as an MSM development script keeps them (statements.Imported).
 
@@ -315,6 +335,10 @@ def schema_sql(session, schema: str, selected: dict, task=None) -> statements_li
     after the views it selects from), routines, triggers and events are
     written to be run again, in DELIMITER %% blocks as Section 150 has them,
     without their DEFINER and the schema's own name in qualified names.
+
+    A view that reads a table or view of the schema among not_selected
+    (the listed ones the import leaves out) gets a warning: it will not
+    deploy without it.
 
     A task given (the shell task manager's) gets the stage READING_STAGE
     with a step per object; a cancel of it raises TaskCancelled.
@@ -363,11 +387,16 @@ def schema_sql(session, schema: str, selected: dict, task=None) -> statements_li
         result.tables = "\n\n".join(create) or None
 
         view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
-        quoted_views = {quote_identifier(name): name for name in selected["views"]}
-        view_uses = {
-            name: {quoted_views[q] for q in _QUOTED_NAME.findall(sql or "") if q in quoted_views}
-            for name, sql in view_sql.items()
-        }
+        selected_views = set(selected["views"])
+        view_uses = {}
+        for name, sql in view_sql.items():
+            reads = _read_by_view(sql, schema)
+            view_uses[name] = reads & selected_views
+            for missing in sorted(reads & not_selected):
+                result.warnings.append(
+                    f"The view `{name}` reads `{missing}`, which is not imported; the "
+                    "project will not deploy the view without it."
+                )
         views = [idempotent("VIEW", name, view_sql[name])
                  for name in _ordered(selected["views"], view_uses)]
         result.views = statements_lib.delimiter_block([sql for sql in views if sql], "VIEWs")

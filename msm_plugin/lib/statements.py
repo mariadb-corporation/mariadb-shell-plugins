@@ -643,9 +643,14 @@ def unqualified(sql: str, schema: str) -> str:
     """The statement without the schema's own name in front of the object
     names it qualifies (`schema`.`t` becomes `t`), so it runs in any schema
     it is used in; strings and comments are left as they are."""
-    # The qualifier first: where it starts, it wins over the quoted name
+    # The qualifier first: where it starts, it wins over the quoted name. The
+    # name it qualifies is taken with it, so that a table named like the
+    # schema keeps its place in `schema`.`schema`.`column`.
     pattern = re.compile(
-        rf"{re.escape(quote_identifier(schema))}\s*\.\s*(?=`)|(?P<keep>{_QUOTED_OR_COMMENT})",
+        rf"{re.escape(quote_identifier(schema))}\s*\.\s*(?P<name>`(?:[^`]|``)*`)"
+        rf"|(?P<keep>{_QUOTED_OR_COMMENT})",
         re.DOTALL,
     )
-    return pattern.sub(lambda m: m.group("keep") or "", sql)
+    return pattern.sub(
+        lambda m: m.group("name") if m.group("name") is not None else m.group("keep"), sql
+    )

@@ -1142,20 +1142,38 @@ def _imported_snapshot(project_path: str, lsp_path: str = None) -> tuple:
 def _new_imported_project(schema_name: str, target_path: str, fill, **options) -> dict:
     """Creates the project folder of an import (create_schema_project_folder
     with options) and fills it, fill(project_path) -> its result; a project
-    that cannot be completed is removed again."""
+    that cannot be completed is removed again, and a project folder it was
+    to overwrite is put back."""
     license = options.pop("license", None)
-    project_path = management.create_schema_project_folder(
-        schema_name=schema_name,
-        target_path=target_path,
-        license=license if license is not None else "None",
-        allow_special_chars=True,
-        **options,
-    )
+    # A folder to overwrite is moved aside until the new project is complete,
+    # so that a failed or cancelled import does not lose it
+    existing = management.project_folder_path(target_path, schema_name)
+    backup = None
+    if options.get("overwrite_existing") and os.path.exists(existing):
+        backup = f"{existing}.{uuid.uuid4().hex}.replaced"
+        os.rename(existing, backup)
     try:
-        return {"project_path": project_path, **fill(project_path)}
+        project_path = management.create_schema_project_folder(
+            schema_name=schema_name,
+            target_path=target_path,
+            license=license if license is not None else "None",
+            allow_special_chars=True,
+            **options,
+        )
+    except BaseException:
+        if backup is not None:
+            os.rename(backup, existing)
+        raise
+    try:
+        result = {"project_path": project_path, **fill(project_path)}
     except BaseException:
         shutil.rmtree(project_path, ignore_errors=True)
+        if backup is not None:
+            os.rename(backup, existing)
         raise
+    if backup is not None:
+        shutil.rmtree(backup, ignore_errors=True)
+    return result
 
 
 def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -> dict:
@@ -1356,7 +1374,11 @@ def create_project_from_live_schema(
             session, schema, target_path, objects, lsp_path=lsp_path, **options
         )
     listed, selected = prepared
-    imported = live_schema.schema_sql(session, schema, selected, task)
+    readable = ("tables", "views", "sequences")
+    not_selected = {
+        item["name"] for kind in readable for item in listed[kind]
+    } - {name for kind in readable for name in selected[kind]}
+    imported = live_schema.schema_sql(session, schema, selected, task, not_selected)
 
     def fill(project_path: str) -> dict:
         with live_schema.task_stage(task, LIVE_WRITING_STAGE):

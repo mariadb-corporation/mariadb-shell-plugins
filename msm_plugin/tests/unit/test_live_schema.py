@@ -118,8 +118,11 @@ def test_a_live_schema_becomes_a_project(live, tmp_path):
     )
     # Nothing ties the statements to the server they were read from
     assert "DEFINER=" not in script
-    # (the template's CREATE SCHEMA and USE name it, as in every project)
-    assert f"`{LIVE_SCHEMA}`.`customer`" not in script
+    # MSM scripts name the schema in its USE only: every object name is
+    # unqualified (the template's CREATE SCHEMA and USE name it, and comments)
+    code = [line for line in script.splitlines() if not line.lstrip().startswith("--")]
+    naming = [line for line in code if f"`{LIVE_SCHEMA}`" in line]
+    assert all(line.startswith(("CREATE SCHEMA IF NOT EXISTS", "USE ")) for line in naming), naming
     assert "AUTO_INCREMENT=" not in script
     assert "msm_schema_version` AS SELECT 1" not in script
     # Each table after the tables it refers to, the sequence first; each
@@ -284,6 +287,28 @@ def test_the_schemas_own_name_goes_only_where_it_qualifies_a_name():
         "select `t`.`id` AS `id`, 'in `shop`.`t` a string' from `t`"
         " -- `shop`.`c` in a comment\n join `it's`.`shop` on 1"
     )
+    # A table named like the schema keeps qualifying its columns
+    assert statements.unqualified(
+        "select `shop`.`shop`.`id` AS `id` from (`shop`.`shop` join `shop`.`o`)", "shop"
+    ) == "select `shop`.`id` AS `id` from (`shop` join `o`)"
+    # Objects of the schemas it references stay fully qualified
+    assert statements.unqualified(
+        "select `shop`.`o`.`id`, `crm`.`c`.`name` from `shop`.`o` join `crm`.`c`", "shop"
+    ) == "select `o`.`id`, `crm`.`c`.`name` from `o` join `crm`.`c`"
     assert statements.without_definer(
         "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select 1"
     ) == "CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v` AS select 1"
+
+
+
+@needs_lsp
+def test_a_view_without_what_it_reads_is_imported_with_a_warning(live, tmp_path):
+    result = modeling.create_project_from_live_schema(
+        live, LIVE_SCHEMA, str(tmp_path), copyright_holder="ACME Corp.",
+        objects={"views": ["a_first_names"]},
+    )
+    assert result["views"] == 1
+    assert result["warnings"] == [
+        "The view `a_first_names` reads `customer_names`, which is not imported; the "
+        "project will not deploy the view without it."
+    ]
