@@ -1738,3 +1738,44 @@ def test_a_custom_license_text_is_written_into_the_development_script(tmp_path):
     assert "-- MSM Section 000: Database Schema Development Script" in text
     settings = get_project_settings(schema_project_path=project_path)
     assert (settings["license"], settings["customLicense"]) == ("CUSTOM", custom)
+
+
+def test_a_custom_license_year_follows_set_years(tmp_path):
+    project_path = _settings_project(tmp_path)
+    dev_file = lib.management.get_schema_development_file_path(project_path)
+    lib.management.set_project_settings(project_path, {
+        "license": "CUSTOM", "customLicense": "/*\n * (C) ${year} ${copyright_holder}\n */\n",
+    })
+    lib.management.set_project_settings(project_path, {"copyrights": [
+        {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": False},
+    ]})
+    assert Path(dev_file).read_text().startswith("/*\n * (C) 2020 ACME Corp\n */\n")
+
+
+def test_a_license_name_must_be_a_template(tmp_path):
+    project_path = _settings_project(tmp_path)
+    with pytest.raises(ValueError, match="No license stored"):
+        lib.management.set_project_settings(project_path, {"license": "../scripts/x"})
+
+
+def test_a_custom_license_text_is_removed_with_its_license(tmp_path):
+    project_path = _settings_project(tmp_path)
+    lib.management.set_project_settings(
+        project_path, {"license": "CUSTOM", "customLicense": "/*\n${copyright_notices}\n */\n"}
+    )
+    # Its text cannot go while the license is CUSTOM ...
+    with pytest.raises(ValueError, match="No custom license text"):
+        lib.management.set_project_settings(project_path, {"customLicense": None})
+    # ... but with it
+    lib.management.set_project_settings(project_path, {"license": "MIT", "customLicense": None})
+    settings = get_project_settings(schema_project_path=project_path)
+    assert settings["license"] == "MIT" and "customLicense" not in settings
+
+
+def test_a_new_project_needs_a_license_template_by_its_name(tmp_path):
+    with pytest.raises(ValueError, match="No license stored under the given license name"):
+        create_new_project_folder(
+            schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp.",
+            license="../license/MIT",
+        )
+    assert list(tmp_path.iterdir()) == []

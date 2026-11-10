@@ -894,7 +894,7 @@ def get_online_alter_settings(**kwargs) -> dict:
 def set_project_settings(settings: dict, **kwargs) -> list:
     """Changes settings of a schema project's msm.project.json
 
-    Only the keys given change; null removes an optional one (onlineAlter,
+    Only the keys given change; null removes an optional one (customLicense, onlineAlter,
     substitutions, maxInlineSectionSize, schemaDependencies). A value replaces
     the stored one as a whole. Everything is checked first, and nothing is
     written when anything is refused. Changed copyright years, holders or a

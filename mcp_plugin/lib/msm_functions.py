@@ -1040,7 +1040,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     ) -> list:
         """Changes settings of a schema project's msm.project.json.
 
-        Only the keys given change; null removes an optional one (onlineAlter,
+        Only the keys given change; null removes an optional one (customLicense, onlineAlter,
         substitutions, maxInlineSectionSize, schemaDependencies), so it takes
         msm's default again. Each value replaces the stored one as a whole:
         read the settings with msm.get_project_information, change them, send

@@ -820,7 +820,8 @@ def get_license_text(
     else:
         template_folder = os.path.join(Path(__file__).parent.parent, "templates")
         license_file_path = os.path.join(template_folder, "license", f"{license}.txt")
-        if not os.path.exists(license_file_path):
+        # Only a template's name: the name becomes a path under templates/license
+        if license not in get_available_licenses() or not os.path.exists(license_file_path):
             raise ValueError(
                 f"No license stored under the given license name `{license}`. Please use a custom license text."
             )
@@ -944,6 +945,15 @@ def create_schema_project_folder(
     )
 
     # Checked before anything is written
+    if license is not None and license.upper() == "CUSTOM":
+        raise ValueError(
+            "A CUSTOM license needs its text: create the project with a license template "
+            "and set license and customLicense with msm.set_project_settings."
+        )
+    if license is not None and license not in get_available_licenses():
+        raise ValueError(
+            f"No license stored under the given license name `{license}`. Please use a custom license text."
+        )
     year_of_creation = (
         check_copyright_year(year_of_creation) if year_of_creation else current_year()
     )
@@ -2005,7 +2015,9 @@ PROJECT_SETTING_KEYS = (
 _IDENTITY_KEYS = ("schemaName", "schemaFileName")
 _MIRROR_KEYS = ("copyrightHolder", "yearOfCreation")
 # Keys a project may go without: None given for one removes it
-_OPTIONAL_KEYS = ("onlineAlter", "substitutions", "maxInlineSectionSize", "schemaDependencies")
+_OPTIONAL_KEYS = (
+    "customLicense", "onlineAlter", "substitutions", "maxInlineSectionSize", "schemaDependencies"
+)
 
 
 def _checked_settings(raw: dict, settings: dict) -> dict:
@@ -2034,9 +2046,10 @@ def _checked_settings(raw: dict, settings: dict) -> dict:
         new["copyrights"] = copyrights
         new["copyrightHolder"] = copyrights[0]["holder"]
         new["yearOfCreation"] = copyrights[0]["yearOfCreation"]
-    for key in ("license", "customLicense"):
-        if key in settings and not isinstance(settings[key], str):
-            raise ValueError(f"`{key}` must be a string.")
+    if "license" in settings and not isinstance(settings["license"], str):
+        raise ValueError("`license` must be a string.")
+    if settings.get("customLicense") is not None and not isinstance(settings["customLicense"], str):
+        raise ValueError("`customLicense` must be a string, or null to remove it.")
     online_alter_lib.read_setting(new.get(online_alter_lib.SETTING), "the settings")
     get_substitution_definitions(new)
     lib.sections.get_max_inline_section_size(new)
@@ -2052,11 +2065,22 @@ def _checked_settings(raw: dict, settings: dict) -> dict:
 
 
 def _license_key(project_settings: dict) -> tuple:
-    """What the license block of a project's files is made from, but the years."""
+    """What the license block of a project's files is made from, but the
+    years of the notices; the first holder's years where a CUSTOM text puts
+    them into the block as ${year}."""
+    copyrights = get_project_copyrights(project_settings)
+    license = project_settings.get("license")
+    custom_license = project_settings.get("customLicense")
+    year = None
+    if str(license).upper() == "CUSTOM" and any(
+        placeholder in str(custom_license or "") for placeholder in ("${year}", "$year")
+    ):
+        year = get_copyright_years(copyrights[0])
     return (
-        [str(c.get("holder") or "").strip() for c in get_project_copyrights(project_settings)],
-        project_settings.get("license"),
-        project_settings.get("customLicense"),
+        [str(c.get("holder") or "").strip() for c in copyrights],
+        license,
+        custom_license,
+        year,
     )
 
 
@@ -2070,22 +2094,31 @@ def _replace_notice_run(text: str | None, project_settings: dict) -> tuple:
     if not run:
         return text, 0
     prefix = COPYRIGHT_COMMENT_PREFIX_REGEX.match(lines[run.start]).group(0)
+    # The file's own line break, so a CRLF file stays one
+    line_break = "\r\n" if lines[run.start].endswith("\r\n") else "\n"
     notices = render_copyright_notices(project_settings, prefix=prefix).split("\n")
-    lines[run.start : run.stop] = [line + "\n" for line in notices]
+    lines[run.start : run.stop] = [line + line_break for line in notices]
     return "".join(lines), len(notices) - len(run)
 
 
 def _with_license_section(script: str, project_settings: dict) -> str:
     """The development script with what lies before its first section, the
-    license, made again as creation makes it from the template."""
+    license, made again as creation makes it from the template.
+
+    Raises:
+        ValueError: For a script without sections, which has no license
+            block to tell from its SQL.
+    """
     first = re.search(MSM_SECTIONS_REGEX, script, re.MULTILINE | re.DOTALL)
+    if first is None:
+        raise ValueError("The development script has no MSM sections; its license block cannot be found.")
     with open(DEVELOPMENT_SCRIPT_TEMPLATE) as f:
         template = strip_template_copyright_header(f.readlines())
     template_first = re.search(MSM_SECTIONS_REGEX, template, re.MULTILINE | re.DOTALL)
     preamble = Template(template[: template_first.start()]).substitute(
         license=get_license_text(project_settings=project_settings)
     )
-    return preamble + script[first.start() if first else 0 :]
+    return preamble + script[first.start() :]
 
 
 def _license_block_texts(schema_project_path: str, old: dict, new: dict) -> tuple:
@@ -2095,6 +2128,8 @@ def _license_block_texts(schema_project_path: str, old: dict, new: dict) -> tupl
     line its SQL now starts on."""
     dev_file = get_schema_development_file_path(schema_project_path)
     script = lib.sections.read_if_exists(dev_file)
+    if script is None:
+        raise ValueError(f"The development script {dev_file} is missing.")
     new_script = _with_license_section(script, new)
     moved = new_script.count("\n") != script.count("\n")
     texts = []
@@ -2114,7 +2149,7 @@ def _license_block_texts(schema_project_path: str, old: dict, new: dict) -> tupl
 def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str = None) -> list:
     """Changes settings of a project's msm.project.json.
 
-    Only the keys given change; None removes an optional one (onlineAlter,
+    Only the keys given change; None removes an optional one (customLicense, onlineAlter,
     substitutions, maxInlineSectionSize, schemaDependencies), so it takes
     msm's default again. A value replaces the whole stored one: onlineAlter
     with its general values and its tables, copyrights the list of holders.
@@ -2179,7 +2214,7 @@ def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str
     if current:
         try:
             written += lib.modeling.update_schema_definition(schema_project_path, lsp_path)["files"]
-        except ValueError:
+        except (ValueError, OSError):
             pass  # Left stale: the next editSchema asks for the snapshot again
     return list(dict.fromkeys(written))
 
