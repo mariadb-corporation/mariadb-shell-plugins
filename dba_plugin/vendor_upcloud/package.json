@@ -1,6 +1,6 @@
 {
     "name": "dba-vendor-upcloud-shell-plugin",
-    "version": "26.11.0",
+    "version": "26.11.1",
     "description": "UpCloud vendor plugin for the MariaDB DBA plugin of MariaDB Shell",
     "scripts": {
         "run-pytest": "clear; cd ../dba_core && mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py --vendors=upcloud"

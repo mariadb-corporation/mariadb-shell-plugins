@@ -25,7 +25,7 @@
 import json
 
 # Define plugin version
-VERSION = "26.11.0"
+VERSION = "26.11.1"
 
 
 def get_status(session):
