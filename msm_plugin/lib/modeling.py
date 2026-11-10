@@ -1306,7 +1306,7 @@ def prepare_live_import(
         True, enforce_target_path, copyrights, year_of_creation,
     )
     binary = lsp.require_lsp(lsp_path)
-    listed = live_schema.list_schema_objects(session, schema, lsp_path)
+    listed = live_schema.list_schema_objects(session, schema, binary)
     selected = live_schema.selected_objects(listed, objects)
     # The views are written in the order of what they read, which only the
     # binary's parser tells

@@ -167,7 +167,7 @@ def _run_json(binary: str, arguments: list, sql: str):
         raise LspError(f"`{name}` wrote no JSON: {e}")
 
 
-def outline(binary: str, sql: str, source_dir: str) -> dict:
+def outline(binary: str, sql: str, source_dir: Optional[str] = None) -> dict:
     """Outlines SQL text with the binary.
 
     The binary expands the SOURCE directives itself, relative to source_dir,
@@ -176,12 +176,16 @@ def outline(binary: str, sql: str, source_dir: str) -> dict:
     Args:
         binary: The binary, from find_lsp().
         sql: The SQL text.
-        source_dir: The folder relative SOURCE paths are taken from.
+        source_dir: The folder relative SOURCE paths are taken from; None
+            for SQL without SOURCE directives (an empty folder is given).
 
     Returns:
         The outline, as the binary writes it (docs/outline-format.md of the
         lsp-server).
     """
+    if source_dir is None:
+        with tempfile.TemporaryDirectory() as empty:
+            return _run_json(binary, ["outline", "--source-dir", empty], sql)
     return _run_json(binary, ["outline", "--source-dir", source_dir], sql)
 
 
@@ -209,14 +213,20 @@ def split(binary: str, sql: str) -> list:
     return result.get("statements", [])
 
 
+def _answer_key(binary: str, question: tuple) -> tuple:
+    """What an answer of the binary is kept under: its build (path and
+    modification time) and the question."""
+    try:
+        return (binary, os.stat(binary).st_mtime_ns, question)
+    except OSError:
+        return (binary, None, question)
+
+
 def _answer(binary: str, arguments: tuple) -> tuple:
     """The binary's (exit code, stdout, stderr) for arguments without
     input, asked once per build; (None, "", "") where it could not be run
     (asked again next time)."""
-    try:
-        key = (binary, os.stat(binary).st_mtime_ns, arguments)
-    except OSError:
-        key = (binary, None, arguments)
+    key = _answer_key(binary, arguments)
     if key not in _answers:
         try:
             answer = subprocess.run(
@@ -292,16 +302,10 @@ def outlines_view_reads(binary: str) -> bool:
     """Whether the binary's outline tells what each view reads (its
     ``views[].reads``; lsp-server #36): asked once per build, by outlining a
     view and looking for the member, which an older binary leaves out."""
-    import tempfile
-
-    try:
-        key = (binary, os.stat(binary).st_mtime_ns, ("outline-view-reads",))
-    except OSError:
-        key = (binary, None, ("outline-view-reads",))
+    key = _answer_key(binary, ("outline-view-reads",))
     if key not in _answers:
         try:
-            with tempfile.TemporaryDirectory() as source_dir:
-                outlined = outline(binary, "CREATE VIEW v AS SELECT 1;\n", source_dir)
+            outlined = outline(binary, "CREATE VIEW v AS SELECT 1;\n")
         except (ValueError, OSError):
             return False  # not kept: tried again next time
         views = [view for schema in outlined.get("schemas", []) for view in schema.get("views", [])]

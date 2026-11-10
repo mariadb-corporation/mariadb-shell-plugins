@@ -1418,8 +1418,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                 objects left out), sorted by kind then name, [] for none; null
                 where its definition cannot be read or parsed, and for every
                 view without a mariadb-lsp whose parser tells what views read
-                (CTE names and aliases are no reads).
-                msm.import_live_schema
+                (CTE names and aliases are no reads). msm.import_live_schema
                 warns about a view that reads an object it does not import,
                 from these same reads.
             """

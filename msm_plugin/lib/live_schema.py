@@ -40,7 +40,7 @@ import time
 from contextlib import contextmanager
 from typing import Optional
 
-from msm_plugin.lib import core, management
+from msm_plugin.lib import core, diagrams, management
 from msm_plugin.lib import statements as statements_lib
 from msm_plugin.lib.statements import quote_identifier
 
@@ -115,11 +115,6 @@ def _schema_version(session, schema: str, left_out: list) -> Optional[str]:
 _READ_KINDS = ("functions", "sequences", "tables", "views")
 
 
-def _read_names(listed: dict) -> dict:
-    """The names of the listing's objects a view can read, by kind."""
-    return {kind: {item["name"] for item in listed[kind]} for kind in _READ_KINDS}
-
-
 # The kinds of mariadb-lsp outline's reads, as the listing's kinds take them
 _LSP_READ_KINDS = {
     "table_or_view": ("tables", "views"),
@@ -134,11 +129,10 @@ def _view_reads(
     """What each view reads (its definition by name in definitions), as
     mariadb-lsp's parser finds it (outline's views[].reads, which knows CTE
     names and aliases for what they are): [{kind, name}] of the listed
-    objects (names) of the schema, the view itself left out, sorted by kind
-    then name; None for a view whose reads cannot be worked out (no
+    objects (names) of the schema, named as the listing names them (names
+    compare as diagrams.same_name does), the view itself left out, sorted by
+    kind then name; None for a view whose reads cannot be worked out (no
     definition, one that does not parse, no binary that outlines reads)."""
-    import tempfile
-
     from msm_plugin.lib import lsp
 
     unknown = {view: None for view in definitions}
@@ -150,21 +144,25 @@ def _view_reads(
         f"CREATE VIEW {quote_identifier(view)} AS {sql};\n" for view, sql in readable.items()
     )
     try:
-        with tempfile.TemporaryDirectory() as source_dir:
-            outlined = lsp.outline(binary, script, source_dir)
+        outlined = lsp.outline(binary, script)
     except (ValueError, OSError):
         return unknown
+    # The listing's own spelling of each name, lower-cased, as diagrams.same_name compares them
+    listed = {kind: {each.lower(): each for each in names[kind]} for kind in names}
     views = [view for each in outlined.get("schemas", []) for view in each.get("views", [])]
     by_view = {}
     for view in views:
         reads = set()
         for read in view["reads"] or []:
-            if read.get("schema") not in (None, schema):
+            if read.get("schema") is not None and not diagrams.same_name(read["schema"], schema):
                 continue
             for kind in _LSP_READ_KINDS.get(read.get("kind"), ()):
-                if read["name"] in names[kind] and not (kind == "views" and read["name"] == view["name"]):
-                    reads.add((kind, read["name"]))
-        by_view[view["name"]] = [{"kind": kind, "name": name} for kind, name in sorted(reads)]
+                name = listed[kind].get(read["name"].lower())
+                if name is not None:
+                    reads.add((kind, name))
+        name = listed["views"].get(view["name"].lower(), view["name"])
+        reads.discard(("views", name))
+        by_view[name] = [{"kind": kind, "name": each} for kind, each in sorted(reads)]
     # A view the binary could not parse makes no view of the outline: None
     return {view: by_view.get(view) for view in definitions}
 
@@ -220,11 +218,11 @@ def list_schema_objects(session, schema: str, lsp_path: str = None) -> dict:
             tables[row["table"]]["triggers"].append(row["name"])
     result["triggers"].sort(key=lambda trigger: trigger["name"])
     result["events"] = [{"name": row["name"]} for row in _rows(session, _EVENTS_SQL, [schema])]
-    definitions = {row["name"]: row["definition"] for row in _rows(session, _VIEWS_SQL, [schema])}
-    names = _read_names(result)
+    stored = {row["name"]: row["definition"] for row in _rows(session, _VIEWS_SQL, [schema])}
     reads = _view_reads(
-        {view["name"]: definitions.get(view["name"]) for view in result["views"]},
-        names, schema, lsp_path,
+        {view["name"]: stored.get(view["name"]) for view in result["views"]},
+        {kind: {item["name"] for item in result[kind]} for kind in _READ_KINDS},
+        schema, lsp_path,
     )
     for view in result["views"]:
         view["reads"] = reads[view["name"]]

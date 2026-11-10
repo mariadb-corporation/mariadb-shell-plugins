@@ -348,8 +348,6 @@ def test_a_view_without_what_it_reads_is_imported_with_a_warning(live, tmp_path)
     ]
 
 
-
-
 @needs_view_reads
 def test_the_parser_knows_a_cte_named_like_a_table(live, monkeypatch):
     live.run_sql(

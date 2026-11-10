@@ -654,4 +654,3 @@ def unqualified(sql: str, schema: str) -> str:
     return pattern.sub(
         lambda m: m.group("name") if m.group("name") is not None else m.group("keep"), sql
     )
-
