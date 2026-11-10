@@ -539,7 +539,8 @@ def edit_schema(
     # After base_hash was checked: moving the years along gives the snapshot
     # the hash of the script with the new notices. Not undone where the edit
     # fails, as it is a change of its own.
-    if management.update_copyright_years(schema_project_path):
+    bumped = management.update_copyright_years(schema_project_path)
+    if bumped:
         project = modeling._Project.load(schema_project_path)
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
@@ -651,7 +652,8 @@ def edit_schema(
 
     return {
         "rows": rows,
-        "files": written,
+        # The files the years were moved along in, too
+        "files": bumped + [path for path in written if path not in bumped],
         "migration": kept,
         "migration_file": migration_file,
         "notes": result.get("notes", []),

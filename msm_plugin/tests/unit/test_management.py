@@ -305,7 +305,12 @@ def test_render_copyright_notices():
     )
 
 
-def test_copyright_settings_migration():
+def in_year(monkeypatch, year):
+    """Applies changes as if in the given year."""
+    monkeypatch.setattr(lib.management, "current_year", lambda: str(year))
+
+
+def test_copyright_settings_migration(monkeypatch):
     # The single holder format of projects created before the copyrights list
     legacy = {"copyrightHolder": "ACME Corp.", "yearOfCreation": "2025"}
     assert lib.management.get_project_copyrights(legacy) == [
@@ -331,34 +336,40 @@ def test_copyright_settings_migration():
 
     # Only the holder added last follows a change applied in a later year
     copyrights = lib.management.get_project_copyrights(squeezed)
-    assert lib.management.bump_copyright_years(copyrights, "2030")
+    in_year(monkeypatch, 2030)
+    assert lib.management.bump_copyright_years(copyrights)
     assert lib.management.render_copyright_notices({"copyrights": copyrights}) == (
         "Copyright (c) 2025, Oracle and/or its affiliates.\n"
         "Copyright (c) 2026, 2030, MariaDB plc"
     )
 
 
-def test_bump_copyright_years():
+def test_bump_copyright_years(monkeypatch):
     copyrights = [
         {"holder": "Upstream Inc.", "yearOfCreation": "2021", "tracksUpdates": False},
         {"holder": "ACME Corp.", "yearOfCreation": "2026", "tracksUpdates": True},
     ]
     # Nothing to do in the year of creation
-    assert not lib.management.bump_copyright_years(copyrights, "2026")
+    in_year(monkeypatch, 2026)
+    assert not lib.management.bump_copyright_years(copyrights)
     assert "yearOfLastUpdate" not in copyrights[1]
 
     # 2026, then 2026, 2027, then 2026, 2028
-    assert lib.management.bump_copyright_years(copyrights, "2027")
+    in_year(monkeypatch, 2027)
+    assert lib.management.bump_copyright_years(copyrights)
     assert lib.management.get_copyright_years(copyrights[1]) == "2026, 2027"
-    assert not lib.management.bump_copyright_years(copyrights, "2027")
-    assert lib.management.bump_copyright_years(copyrights, "2028")
+    in_year(monkeypatch, 2027)
+    assert not lib.management.bump_copyright_years(copyrights)
+    in_year(monkeypatch, 2028)
+    assert lib.management.bump_copyright_years(copyrights)
     assert lib.management.get_copyright_years(copyrights[1]) == "2026, 2028"
 
     # The inherited notice stays frozen
     assert lib.management.get_copyright_years(copyrights[0]) == "2021"
 
     # A year that lies before the last update does not move it back
-    assert not lib.management.bump_copyright_years(copyrights, "2027")
+    in_year(monkeypatch, 2027)
+    assert not lib.management.bump_copyright_years(copyrights)
     assert copyrights[1]["yearOfLastUpdate"] == "2028"
 
 
@@ -443,7 +454,7 @@ def test_create_new_project_folder_with_a_year_of_creation(tmp_path):
     assert not os.path.exists(os.path.join(temp_dir, "other_schema.msm.project"))
 
 
-def test_update_copyright_years(tmp_path):
+def test_update_copyright_years(tmp_path, monkeypatch):
     temp_dir = str(tmp_path)
     this_year = lib.management.current_year()
     project_path = create_new_project_folder(
@@ -474,7 +485,8 @@ def test_update_copyright_years(tmp_path):
     assert lib.management.update_copyright_years(project_path) == []
 
     later = str(int(this_year) + 1)
-    written = lib.management.update_copyright_years(project_path, later)
+    in_year(monkeypatch, later)
+    written = lib.management.update_copyright_years(project_path)
     settings_path = os.path.join(project_path, "msm.project.json")
     assert written[0] == settings_path
     assert dev_file in written and breakout in written
@@ -495,10 +507,42 @@ def test_update_copyright_years(tmp_path):
     assert Path(released).read_text() == f"-- Copyright (c) {this_year}, ACME Corp.\n"
 
     # Once per year
-    assert lib.management.update_copyright_years(project_path, later) == []
+    assert lib.management.update_copyright_years(project_path) == []
 
 
-def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path):
+def test_changes_through_the_plugin_move_the_copyright_years_along(tmp_path, monkeypatch):
+    this_year = lib.management.current_year()
+    project_path = create_new_project_folder(
+        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
+    )
+    dev_file = lib.management.get_schema_development_file_path(
+        schema_project_path=project_path
+    )
+
+    def last_update():
+        return get_project_settings(schema_project_path=project_path)["copyrights"][0].get(
+            "yearOfLastUpdate"
+        )
+
+    # The library function only writes the file's section
+    in_year(monkeypatch, int(this_year) + 1)
+    lib.management.set_section_sql_content("140", "\nSELECT 1;\n", dev_file)
+    assert last_update() is None
+
+    # msm.set.sectionSqlContent is a change applied to the file's project
+    set_section_sql_content(file_path=dev_file, section_id="140", sql_content="\nSELECT 2;\n")
+    assert last_update() == str(int(this_year) + 1)
+
+    # ... and so is msm.set.developmentVersion
+    in_year(monkeypatch, int(this_year) + 2)
+    set_development_version(schema_project_path=project_path, version="0.0.2")
+    assert last_update() == str(int(this_year) + 2)
+    assert f" * Copyright (c) {this_year}, {int(this_year) + 2}, ACME Corp.\n" in Path(
+        dev_file
+    ).read_text()
+
+
+def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path, monkeypatch):
     temp_dir = str(tmp_path)
     project_path = create_new_project_folder(
         schema_name=SCHEMA_NAME, target_path=temp_dir, copyright_holder="ACME Corp."
@@ -512,7 +556,8 @@ def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path):
         json.dump(raw, f)
 
     later = str(int(lib.management.current_year()) + 1)
-    assert lib.management.update_copyright_years(project_path, later)[0] == settings_path
+    in_year(monkeypatch, later)
+    assert lib.management.update_copyright_years(project_path)[0] == settings_path
     with open(settings_path) as f:
         raw = json.load(f)
     assert raw["copyrights"] == [
@@ -546,6 +591,32 @@ def test_license_text_holds_every_notice():
     assert "MariaDB plc" not in license_text
     # No placeholder is left unsubstituted
     assert "${" not in license_text
+
+
+def test_the_license_sentence_ends_with_one_period():
+    # The BSD text ends a sentence after ${copyright_holder}: a holder stored
+    # with its own final period does not get a second one there, while the
+    # notice shows the holder as stored
+    license_text = lib.management.get_license_text(project_settings={
+        "license": "BSD",
+        "customLicense": "",
+        "copyrights": [{"holder": "ACME Corp.", "yearOfCreation": "2026",
+                        "tracksUpdates": True}],
+    })
+    assert "was developed by the ACME Corp.\n" in license_text
+    assert ".." not in license_text
+    assert " * Copyright (c) 2026, ACME Corp.\n" in license_text
+
+
+def test_a_last_update_before_the_creation_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="yearOfLastUpdate 2021 lies before"):
+        create_new_project_folder(
+            schema_name=SCHEMA_NAME,
+            target_path=str(tmp_path),
+            copyrights=[{"holder": "X", "yearOfCreation": "2025",
+                         "yearOfLastUpdate": "2021", "tracksUpdates": False}],
+        )
+    assert not os.path.exists(os.path.join(str(tmp_path), f"{SCHEMA_NAME}.msm.project"))
 
 
 def test_create_new_project_folder_with_multiple_copyrights():
@@ -1446,3 +1517,19 @@ def test_deployment_with_substitutions(sandbox_session, temp_dir):
             )
     finally:
         cleanup()
+
+
+def test_markdown_files_of_the_users_own_keep_their_years(tmp_path, monkeypatch):
+    from msm_plugin.lib import management
+
+    in_year(monkeypatch, "2026")
+    project_path = management.create_schema_project_folder(
+        "own_md", str(tmp_path), "ACME Corp.", license="MIT")
+    notes = Path(project_path, "development", "notes.md")
+    notes.write_text("Copyright (c) 2026, ACME Corp.\n")
+
+    in_year(monkeypatch, "2027")
+    written = management.update_copyright_years(project_path)
+    assert os.path.join(project_path, "README.md") in written
+    assert str(notes) not in written
+    assert notes.read_text() == "Copyright (c) 2026, ACME Corp.\n"

@@ -33,7 +33,7 @@ import os
 import shutil
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from msm_plugin.lib import diagrams, layout, lsp, management, source
 from msm_plugin.lib import sections as sections_lib
@@ -387,6 +387,37 @@ def _current_hash(project: _Project) -> str:
 def current_source_hash(schema_project_path: str) -> str:
     """The hash the snapshot of the development script as it is now would have."""
     return _current_hash(_Project.load(schema_project_path))
+
+
+def keeping_snapshot_current(schema_project_path: str, change: Callable[[], list]) -> list:
+    """Runs change, which rewrites only comments of the development script,
+    and gives a snapshot that matched the script before the hash of the
+    script after: nothing it describes changed.
+
+    Args:
+        schema_project_path: The project folder.
+        change: Writes the files and returns the ones it wrote.
+
+    Returns:
+        The files written, by change and for the snapshot.
+    """
+    try:
+        project = _Project.load(schema_project_path)
+        current = _snapshot_is_current(project, _schema_row(_rows(project)))
+    except (ValueError, OSError):
+        # A script that cannot be read has no snapshot to keep current.
+        current = False
+
+    written = change()
+    if current:
+        project = _Project.load(schema_project_path)
+        rows = _rows(project)
+        snapshot = _schema_row(rows)
+        new_hash = _current_hash(project)
+        if snapshot["document"].get("source_hash") != new_hash:
+            snapshot["document"]["source_hash"] = new_hash
+            written += [path for path in _write(project, rows) if path not in written]
+    return written
 
 
 def _is_diagram(row: dict, name: str = None) -> bool:

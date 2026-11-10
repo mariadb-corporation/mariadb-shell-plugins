@@ -353,12 +353,13 @@ def test_the_first_edit_of_a_year_moves_the_copyright_years_along(
 
 
 @needs_lsp
-def test_moving_the_copyright_years_keeps_a_current_snapshot_current(project):
+def test_moving_the_copyright_years_keeps_a_current_snapshot_current(project, monkeypatch):
     assert base_hash(project) == modeling.current_source_hash(project)
     before = dev_script(project)
 
     later = str(int(management.current_year()) + 1)
-    written = management.update_copyright_years(project, later)
+    monkeypatch.setattr(management, "current_year", lambda: later)
+    written = management.update_copyright_years(project)
 
     assert management.get_schema_development_file_path(project) in written
     # Only the notice and the snapshot's hash changed

@@ -94,10 +94,10 @@ def create_new_project_folder(
     ):
         copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
         if year_of_creation is None:
-            this_year = lib.management.current_year()
-            year_of_creation = (
-                lib.core.prompt(f"Enter the year of creation of the copyright ({this_year}): ")
-                or this_year
+            # An empty answer is the current year
+            year_of_creation = lib.core.prompt(
+                "Enter the year of creation of the copyright "
+                f"({lib.management.current_year()}): "
             )
 
     # The schema name was checked above, a missing one raised there
@@ -316,6 +316,7 @@ def set_development_version(**kwargs) -> None:
     elif version is None:
         raise ValueError("No version specified.")
 
+    lib.management.update_copyright_years(schema_project_path)
     lib.management.set_development_version(
         schema_project_path=schema_project_path, new_version=version, write_to_file=True
     )
@@ -538,7 +539,10 @@ def set_section_sql_content(file_path: str, section_id: str, sql_content: str) -
     Returns:
         None
     """
-
+    # A change applied to a project's file moves its copyright years along
+    schema_project_path = lib.management.find_schema_project_path(file_path)
+    if schema_project_path is not None:
+        lib.management.update_copyright_years(schema_project_path)
     lib.management.set_section_sql_content(
         file_path=file_path, section_id=section_id, sql_content=sql_content
     )

@@ -322,10 +322,6 @@ def set_section_sql_content(
         None
     """
     if sections is None and file_path is not None:
-        # A change applied to a project's file moves its copyright years along
-        schema_project_path = find_schema_project_path(file_path)
-        if schema_project_path is not None:
-            update_copyright_years(schema_project_path)
         sections = get_file_sections(file_path)
     elif sections is None:
         raise ValueError("Either a file_path or sections must be set.")
@@ -439,9 +435,7 @@ def get_project_copyrights(project_settings: dict) -> list:
     if copyrights:
         return copyrights
 
-    year_of_creation = project_settings.get("yearOfCreation") or date.today().strftime(
-        "%Y"
-    )
+    year_of_creation = project_settings.get("yearOfCreation") or current_year()
 
     copyrights = []
     for line in str(project_settings.get("copyrightHolder") or "").splitlines():
@@ -477,7 +471,7 @@ def current_year() -> str:
     return date.today().strftime("%Y")
 
 
-def get_copyright_years(copyright: dict, year: str = None) -> str:
+def get_copyright_years(copyright: dict) -> str:
     """Returns the year part of a copyright notice, from the years stored.
 
     The last-update year is only shown when it differs from the year of
@@ -486,13 +480,11 @@ def get_copyright_years(copyright: dict, year: str = None) -> str:
 
     Args:
         copyright: A single copyright entry.
-        year: The year of creation of an entry that has none, defaulting to
-            the current one.
 
     Returns:
         Either "<creation>" or "<creation>, <last update>".
     """
-    creation = str(copyright.get("yearOfCreation") or year or current_year())
+    creation = str(copyright.get("yearOfCreation") or current_year())
     update = copyright.get("yearOfLastUpdate")
 
     if not update or str(update) == creation:
@@ -533,7 +525,7 @@ def check_copyright_year(year, name: str = "yearOfCreation") -> str:
     Raises:
         ValueError: For anything else.
     """
-    text = str(year).strip() if isinstance(year, (str, int)) and not isinstance(year, bool) else ""
+    text = str(year).strip()
     if not re.fullmatch(r"\d{4}", text):
         raise ValueError(f"The {name} has to be a year of four digits, not `{year}`.")
     if text > current_year():
@@ -541,17 +533,17 @@ def check_copyright_year(year, name: str = "yearOfCreation") -> str:
     return text
 
 
-def bump_copyright_years(copyrights: list, year: str = None) -> bool:
-    """Sets the last-update year of the holders that track updates.
+def bump_copyright_years(copyrights: list) -> bool:
+    """Sets the last-update year of the holders that track updates to the
+    current year.
 
     Args:
         copyrights: The copyright entries, changed in place.
-        year: The year a change is applied in, defaulting to the current one.
 
     Returns:
         Whether an entry changed.
     """
-    year = year or current_year()
+    year = current_year()
     changed = False
     for copyright in copyrights:
         if not copyright.get("tracksUpdates"):
@@ -591,65 +583,63 @@ def refresh_notice_years(text: str, copyrights: list) -> str:
     }
     if not tracking:
         return text
-
     lines = text.splitlines(keepends=True)
-    pos = next(
-        (i for i, line in enumerate(lines) if COPYRIGHT_NOTICE_REGEX.search(line)), None
-    )
-    if pos is None:
-        return text
-    while pos < len(lines):
-        notice = COPYRIGHT_NOTICE_REGEX.search(lines[pos])
+    in_run = False
+    for pos, line in enumerate(lines):
+        notice = COPYRIGHT_NOTICE_REGEX.search(line)
         if notice is None:
-            break
+            if in_run:
+                break
+            continue
+        in_run = True
         holder = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", notice.group(3))
         copyright = tracking.get(_holder_key(holder))
         if copyright is not None:
-            end = notice.end(2) if notice.group(2) else notice.end(1)
-            line = lines[pos]
-            lines[pos] = (
-                line[: notice.start(1)] + get_copyright_years(copyright) + line[end:]
-            )
-        pos += 1
+            # end() is -1 for a notice without a last-update year
+            end = max(notice.end(1), notice.end(2))
+            lines[pos] = line[: notice.start(1)] + get_copyright_years(copyright) + line[end:]
     return "".join(lines)
+
+
+# The markdown files of the project template, relative to the project folder
+_PROJECT_TEMPLATE = Path(__file__).parent.parent / "templates" / "msm.project"
+_TEMPLATE_MARKDOWN_FILES = sorted(
+    str(path.relative_to(_PROJECT_TEMPLATE)) for path in _PROJECT_TEMPLATE.rglob("*.md")
+)
 
 
 def _project_files_with_notices(schema_project_path: str, project_settings: dict) -> list:
     """The files of a project whose notices follow the years of the settings.
 
     The development scripts (the development script, the pending update
-    script and the breakout files) and the project's markdown files. Released
-    files keep the notices they were released with.
+    script and the breakout files) and the markdown files the project
+    template creates (README and CHANGELOG files); markdown files of the
+    user's own are left alone. Released files keep the notices they were
+    released with.
     """
-    development = os.path.join(schema_project_path, "development")
-    file_name = project_settings.get("schemaFileName")
+    breakouts = Path(schema_project_path, "development", lib.sections.BREAKOUT_FOLDER)
     files = [
-        os.path.join(development, f"{file_name}_next.sql"),
-        os.path.join(development, f"{file_name}_update_next.sql"),
+        get_schema_development_file_path(schema_project_path),
+        lib.editing.pending_update_path(schema_project_path, project_settings),
+        *sorted(str(path) for path in breakouts.glob("*.sql")),
+        *(os.path.join(schema_project_path, path) for path in _TEMPLATE_MARKDOWN_FILES),
     ]
-    sections_folder = os.path.join(development, "sections")
-    if os.path.isdir(sections_folder):
-        files += sorted(
-            str(path) for path in Path(sections_folder).glob("*.sql") if path.is_file()
-        )
-    files += sorted(str(path) for path in Path(schema_project_path).rglob("*.md"))
     return [path for path in files if os.path.isfile(path)]
 
 
 def find_schema_project_path(file_path: str) -> str | None:
     """The project folder a file belongs to: the closest folder above it that
-    holds an msm.project.json file, or None."""
+    is a schema project, or None."""
     folder = os.path.dirname(os.path.abspath(os.path.expanduser(file_path)))
-    while True:
-        if os.path.isfile(os.path.join(folder, "msm.project.json")):
-            return folder
+    while not lib.projects.is_project_folder(folder):
         parent = os.path.dirname(folder)
         if parent == folder:
             return None
         folder = parent
+    return folder
 
 
-def update_copyright_years(schema_project_path: str, year: str = None) -> list:
+def update_copyright_years(schema_project_path: str) -> list:
     """Moves the copyright years along when a change is applied to a project.
 
     In the first change of a year, the holders that track updates get that
@@ -658,64 +648,37 @@ def update_copyright_years(schema_project_path: str, year: str = None) -> list:
     changes of the same year find nothing to do.
 
     The development script's header is part of the text the schema
-    snapshot's source_hash is taken of. A snapshot that matched the script
-    before gets the new hash, as only a comment changed; a client then reads
-    the diagrams again before its next msm.editSchema.
+    snapshot's source_hash is taken of, so a snapshot that matched the script
+    before gets the new hash (modeling.keeping_snapshot_current); a client
+    then reads the diagrams again before its next msm.editSchema.
 
     Args:
         schema_project_path: The project folder.
-        year: The year the change is applied in, defaulting to the current one.
 
     Returns:
         The files written; none where the years were up to date.
     """
-    settings_path = os.path.join(schema_project_path, "msm.project.json")
     project_settings = get_project_settings(schema_project_path)
-    copyrights = [dict(copyright) for copyright in project_settings["copyrights"]]
-    if not bump_copyright_years(copyrights, year):
+    copyrights = project_settings["copyrights"]
+    if not bump_copyright_years(copyrights):
         return []
 
-    # Here and not at the top: lib.modeling imports this module.
-    from msm_plugin.lib import modeling
+    def change() -> list:
+        # The notices first, the settings last: a write that fails part way
+        # leaves the settings behind, so the next change tries again.
+        written = []
+        for path in _project_files_with_notices(schema_project_path, project_settings):
+            text = lib.sections.read_if_exists(path)
+            if lib.sections.write_if_changed(path, refresh_notice_years(text, copyrights), text):
+                written.append(path)
+        # get_project_settings derives only the copyrights list, so a project
+        # in the single holder format gets the list written.
+        settings_path = os.path.join(schema_project_path, "msm.project.json")
+        with open(settings_path, "w") as f:
+            f.write(json.dumps(project_settings, indent=4))
+        return [settings_path, *written]
 
-    try:
-        project = modeling._Project.load(schema_project_path)
-        snapshot = modeling._schema_row(modeling._rows(project))
-        carry_hash = modeling._snapshot_is_current(project, snapshot)
-    except Exception:
-        # A script that cannot be read has no snapshot to keep current.
-        carry_hash = False
-
-    # Not get_project_settings' copy, which adds what it derives on reading.
-    # A project in the single holder format gets the list written.
-    with open(settings_path) as f:
-        raw = json.load(f)
-    raw["copyrights"] = copyrights
-    with open(settings_path, "w") as f:
-        f.write(json.dumps(raw, indent=4))
-    written = [settings_path]
-
-    for path in _project_files_with_notices(schema_project_path, project_settings):
-        with open(path) as f:
-            text = f.read()
-        refreshed = refresh_notice_years(text, copyrights)
-        if refreshed != text:
-            with open(path, "w") as f:
-                f.write(refreshed)
-            written.append(path)
-
-    if carry_hash:
-        project = modeling._Project.load(schema_project_path)
-        rows = modeling._rows(project)
-        snapshot = modeling._schema_row(rows)
-        new_hash = modeling._current_hash(project)
-        if snapshot["document"].get("source_hash") != new_hash:
-            snapshot["document"]["source_hash"] = new_hash
-            written += [
-                path for path in modeling._write(project, rows) if path not in written
-            ]
-
-    return written
+    return lib.modeling.keeping_snapshot_current(schema_project_path, change)
 
 
 def strip_template_copyright_header(lines: list) -> str:
@@ -797,7 +760,9 @@ def get_license_text(
                 ),
                 # The first holder on its own, so a custom license text written
                 # against the single holder form keeps working.
-                "copyright_holder": str(copyrights[0].get("holder") or "").strip(),
+                # Without a final period, as the templates write their own
+                # after it ("was developed by the ${copyright_holder}.").
+                "copyright_holder": str(copyrights[0].get("holder") or "").strip().rstrip("."),
                 "year": get_copyright_years(copyrights[0]),
             }
         )
@@ -903,19 +868,21 @@ def create_schema_project_folder(
 
     # Checked before anything is written
     year_of_creation = (
-        current_year() if year_of_creation in (None, "")
-        else check_copyright_year(year_of_creation)
+        check_copyright_year(year_of_creation) if year_of_creation else current_year()
     )
-    if copyrights:
-        copyrights = [dict(copyright) for copyright in copyrights]
-        for copyright in copyrights:
-            copyright["yearOfCreation"] = check_copyright_year(
-                copyright.get("yearOfCreation") or year_of_creation
+    copyrights = [dict(copyright) for copyright in copyrights or []]
+    for copyright in copyrights:
+        copyright["yearOfCreation"] = copyright.get("yearOfCreation") or year_of_creation
+        for key in ("yearOfCreation", "yearOfLastUpdate"):
+            if copyright.get(key):
+                copyright[key] = check_copyright_year(copyright[key], key)
+        if copyright.get("yearOfLastUpdate") and (
+            copyright["yearOfLastUpdate"] < copyright["yearOfCreation"]
+        ):
+            raise ValueError(
+                f"The yearOfLastUpdate {copyright['yearOfLastUpdate']} lies before "
+                f"the yearOfCreation {copyright['yearOfCreation']}."
             )
-            if copyright.get("yearOfLastUpdate"):
-                copyright["yearOfLastUpdate"] = check_copyright_year(
-                    copyright["yearOfLastUpdate"], "yearOfLastUpdate"
-                )
 
     target_path = os.path.abspath(os.path.expanduser(target_path))
     if not os.path.exists(target_path):
@@ -1158,13 +1125,6 @@ def set_development_version(
     Returns:
         None
     """
-    if write_to_file and schema_project_path is not None:
-        if update_copyright_years(schema_project_path) and sections:
-            # Sections read before the notices moved along would write the
-            # old years back: the header is in the first one.
-            copyrights = get_project_settings(schema_project_path)["copyrights"]
-            first = sections[next(iter(sections))]
-            first["full_content"] = refresh_notice_years(first["full_content"], copyrights)
     return schema_development_version(
         schema_project_path=schema_project_path,
         sections=sections,
