@@ -658,3 +658,227 @@ def edit_schema(
         "migration_file": migration_file,
         "notes": result.get("notes", []),
     }
+
+
+# -----------------------------------------------------------------------------
+# Adding a schema object from a template
+
+# The kinds an object can be added of, with msm's templates: the CREATE
+# statement a user would write, its names unqualified (MSM scripts name the
+# schema in its USE only). string.Template placeholders: ${name} for every
+# kind, ${table} for a trigger, ${schema} for any.
+OBJECT_TEMPLATES = {
+    "view": "CREATE VIEW `${name}` AS\nSELECT 1",
+    "procedure": "CREATE PROCEDURE `${name}`()\nBEGIN\n    SELECT 1;\nEND",
+    "function": "CREATE FUNCTION `${name}`()\nRETURNS INT\nDETERMINISTIC\nRETURN 1",
+    "trigger": (
+        "CREATE TRIGGER `${name}`\nBEFORE INSERT ON `${table}`\nFOR EACH ROW\nBEGIN\nEND"
+    ),
+    "event": "CREATE EVENT `${name}`\nON SCHEDULE EVERY 1 DAY\nDO\nBEGIN\nEND",
+    "sequence": "CREATE SEQUENCE `${name}`\nSTART WITH 1\nINCREMENT BY 1",
+}
+OBJECT_PLACEHOLDERS = {
+    "view": ["name", "schema"],
+    "procedure": ["name", "schema"],
+    "function": ["name", "schema"],
+    "trigger": ["name", "table", "schema"],
+    "event": ["name", "schema"],
+    "sequence": ["name", "schema"],
+}
+
+
+def _object_type(kind: str) -> str:
+    """The outline's and the edit ops' name of a kind: routine for a
+    procedure or a function (outline `routines`, op `add_routine`)."""
+    return "routine" if kind in ("procedure", "function") else kind
+
+
+def _is_object(kind: str, name: str, item: dict) -> bool:
+    """Whether an object of the outline (of the kind's `<type>s`) is the
+    kind's object of that name: a routine of the kind, for a routine."""
+    return diagrams.same_name(item.get("name") or "", name) and (
+        _object_type(kind) != "routine" or item.get("kind") == kind
+    )
+
+
+_CHECK_OPTION = re.compile(r"\s+WITH\s+(?:CASCADED\s+|LOCAL\s+)?CHECK\s+OPTION\s*$", re.IGNORECASE)
+
+
+def get_object_templates() -> dict:
+    """msm's templates of the objects add_schema_object adds.
+
+    Returns:
+        {templates: {view, procedure, function, trigger, event, sequence:
+        the CREATE statement with string.Template placeholders}, placeholders:
+        {kind: the placeholders it may use}}.
+    """
+    return {
+        "templates": dict(OBJECT_TEMPLATES),
+        "placeholders": {kind: list(names) for kind, names in OBJECT_PLACEHOLDERS.items()},
+    }
+
+
+def _object_name_problem(name) -> Optional[str]:
+    if not isinstance(name, str) or not name:
+        return "A name is needed."
+    if len(name) > 64 or name.endswith(" ") or "\0" in name or "`" in name:
+        return f"`{name}` cannot be a name: at most 64 characters, no backtick, no NUL, no space at its end."
+    return None
+
+
+def _filled_template(kind: str, name: str, template, table, schema: str) -> str:
+    """The template (msm's for None) filled; refused for a placeholder the
+    kind does not take, or one without a value."""
+    from string import Template
+
+    text = OBJECT_TEMPLATES[kind] if template is None else template
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError(f"The template of a {kind} must be its CREATE statement.")
+    template_object = Template(text)
+    if not template_object.is_valid():
+        raise ValueError(f"The template of a {kind} has a $ that is no placeholder: write $$ for one.")
+    unknown = sorted(set(template_object.get_identifiers()) - set(OBJECT_PLACEHOLDERS[kind]))
+    if unknown:
+        raise ValueError(
+            f"The template of a {kind} uses the placeholder ${{{unknown[0]}}}; it takes "
+            + ", ".join(f"${{{p}}}" for p in OBJECT_PLACEHOLDERS[kind]) + "."
+        )
+    return template_object.substitute(
+        name=name, schema=schema, table=table
+    ).strip().rstrip(";").rstrip()
+
+
+def _template_object(
+    kind: str, name: str, sql: str, table: str = None, lsp_path: str = None
+) -> dict:
+    """The object a filled template creates, in the outline's shape the edit
+    ops take; refused unless it is one CREATE of that kind and name, named
+    unqualified (an MSM script names its schema in its USE only), and for a
+    trigger on table."""
+    import tempfile
+
+    binary = lsp.require_lsp(lsp_path)
+    # In a DELIMITER block of its own, so a body with ; parses; the delimiter
+    # on a line of its own, so a comment ending the template does not hide it
+    script = f"DELIMITER $$\n{sql}\n$$\nDELIMITER ;\n"
+    with tempfile.TemporaryDirectory() as source_dir:
+        outlined = lsp.outline(binary, script, source_dir)
+    errors = [note for note in outlined.get("notes", []) if note.get("kind") == "syntax-error"]
+    member = _object_type(kind) + "s"
+    found = [
+        (key, item, schema.get("name"))
+        for schema in outlined.get("schemas", [])
+        for key in diagrams.SCHEMA_OBJECT_KINDS
+        for item in schema.get(key, [])
+    ]
+    wanted = [
+        (item, qualifier) for key, item, qualifier in found
+        if key == member and (_object_type(kind) != "routine" or item.get("kind") == kind)
+    ]
+    if errors or len(found) != 1 or len(wanted) != 1:
+        raise ValueError(
+            f"The template of a {kind} must be one CREATE {kind.upper()} statement"
+            + (f": {errors[0].get('message')}" if errors else ".")
+        )
+    # Sent back as the outline has it: the ops ignore its positions (and a
+    # view's reads)
+    item, qualifier = dict(wanted[0][0]), wanted[0][1]
+    if qualifier is not None:
+        raise ValueError(
+            f"The template of a {kind} names the schema `{qualifier}`: an MSM script names its "
+            "objects unqualified, after its USE."
+        )
+    if not _is_object(kind, name, item):
+        raise ValueError(
+            f"The template of a {kind} creates `{item.get('name')}`, not `{name}`: name it ${{name}}."
+        )
+    if kind == "trigger" and not diagrams.same_name(item.get("table") or "", table):
+        raise ValueError(
+            f"The template of the trigger is on `{item.get('table')}`, not on `{table}`: "
+            "name its table ${table}."
+        )
+    if kind == "view" and item.get("check_option"):
+        # The outline's definition holds it; the op writes it from check_option
+        item["definition"] = _CHECK_OPTION.sub("", item["definition"])
+    return item
+
+
+def add_schema_object(
+    schema_project_path: str,
+    kind: str,
+    name: str,
+    base_hash: str,
+    template: str = None,
+    table: str = None,
+    lsp_path: str = None,
+) -> dict:
+    """Adds a view, procedure, function, trigger, event or sequence to a
+    project from a template: msm's (get_object_templates) or the caller's,
+    the CREATE statement a user would write, filled with string.Template.
+
+    The filled template is read by mariadb-lsp and added by edit_schema's
+    add_view, add_routine, add_trigger, add_event or add_sequence: where msm
+    keeps the kind (a sequence in Section 140 before the first table, the
+    others in Section 150), written to run again, into the section's
+    breakout file where it has one, kept for the next update script, the
+    snapshot made again.
+
+    Args:
+        schema_project_path: The project folder.
+        kind: view, procedure, function, trigger, event or sequence.
+        name: The new object's name.
+        base_hash: The source_hash of the snapshot the caller knows, as for
+            edit_schema.
+        template: The CREATE statement to fill; None for msm's.
+        table: A trigger's table.
+        lsp_path: The mariadb-lsp binary or its folder.
+
+    Returns:
+        edit_schema's result, and file and line (1-based) where the new
+        statement starts.
+
+    Raises:
+        ValueError: For an unknown kind, a bad name, a trigger without a
+            table, a placeholder the kind does not take, a template that is
+            not one CREATE of the kind, and what edit_schema refuses (a name
+            taken, an unknown table, a stale base_hash).
+    """
+    if kind not in OBJECT_TEMPLATES:
+        raise ValueError(f"Unknown kind `{kind}`; the kinds are {', '.join(OBJECT_TEMPLATES)}.")
+    problem = _object_name_problem(name)
+    if problem:
+        raise ValueError(problem)
+    if kind == "trigger" and not table:
+        raise ValueError("A trigger needs its table.")
+    if kind == "trigger":
+        # Filled into the template's `${table}` as the name is
+        problem = _object_name_problem(table)
+        if problem:
+            raise ValueError(problem)
+    sql = _filled_template(
+        kind, name, template, table, management.get_schema_name(schema_project_path)
+    )
+    item = _template_object(kind, name, sql, table, lsp_path)
+    object_type = _object_type(kind)
+    result = edit_schema(
+        schema_project_path, [{"op": f"add_{object_type}", object_type: item}], base_hash, lsp_path
+    )
+
+    snapshot = result["rows"][0]["document"]
+    added = next(
+        (each for each in snapshot.get(object_type + "s", []) if _is_object(kind, name, each)), None
+    )
+    file, line = None, None
+    if added is not None and "range" in added:
+        # The snapshot's files are relative to the development folder; an
+        # object's source n is files[n + 1], one without it is in files[0]
+        files = snapshot.get("files", [])
+        source = added.get("source")
+        relative = files[source + 1] if isinstance(source, int) else (files[0] if files else None)
+        if relative is not None:
+            development = os.path.dirname(
+                management.get_schema_development_file_path(schema_project_path)
+            )
+            file = os.path.normpath(os.path.join(development, relative))
+        line = added["range"]["start"]["line"] + 1
+    return {**result, "file": file, "line": line}

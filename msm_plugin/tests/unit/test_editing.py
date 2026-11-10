@@ -1132,3 +1132,100 @@ def test_the_real_binary_renames_a_table_of_the_mrs_project(tmp_path):
         tables = {figure.get("table") for figure in row["document"]["figures"]}
         assert "url_host" not in tables
         assert ("url_hosts" in tables) == (row["name"] in shown_before)
+
+
+# -----------------------------------------------------------------------------
+# Adding an object from a template
+
+
+def test_the_object_templates_are_plain_create_statements():
+    result = editing.get_object_templates()
+    kinds = ["view", "procedure", "function", "trigger", "event", "sequence"]
+    assert list(result["templates"]) == kinds and list(result["placeholders"]) == kinds
+    assert result["templates"]["view"] == "CREATE VIEW `${name}` AS\nSELECT 1"
+    assert result["placeholders"]["trigger"] == ["name", "table", "schema"]
+    assert result["placeholders"]["view"] == ["name", "schema"]
+    # The caller's copy is its own
+    result["templates"]["view"] = "x"
+    assert editing.get_object_templates()["templates"]["view"] != "x"
+
+
+@needs_edit_ops("add_view", "add_routine", "add_trigger", "add_event", "add_sequence")
+@pytest.mark.parametrize("kind, name, table, created", [
+    ("view", "v_new", None, "VIEW `v_new`"),
+    ("procedure", "p_new", None, "PROCEDURE `p_new`"),
+    ("function", "f_new", None, "FUNCTION `f_new`"),
+    ("trigger", "tr_new", "orders", "TRIGGER `tr_new`"),
+    ("event", "e_new", None, "EVENT `e_new`"),
+    ("sequence", "s_new", None, "SEQUENCE `s_new`"),
+])
+def test_an_object_is_added_from_msms_template(project, kind, name, table, created):
+    result = editing.add_schema_object(
+        project, kind, name, base_hash(project), table=table, lsp_path=EDIT_LSP
+    )
+    # Where the statement starts, for an editor to open
+    with open(result["file"]) as f:
+        lines = f.read().split("\n")
+    assert created in lines[result["line"] - 1] or (
+        kind != "sequence" and created in " ".join(lines[result["line"] - 1:result["line"] + 1])
+    )
+    snapshot = result["rows"][0]["document"]
+    member = {"procedure": "routines", "function": "routines"}.get(kind, kind + "s")
+    assert name in [item["name"] for item in snapshot[member]]
+    assert snapshot["source_hash"] == modeling.current_source_hash(project)
+    script = dev_script(project)
+    if kind == "sequence":
+        # Section 140, before the first table
+        assert script.index(created) < script.index("CREATE TABLE IF NOT EXISTS `customer`")
+    else:
+        assert script.index(created) > script.index("MSM Section 150")
+
+
+@needs_edit_ops("add_view")
+def test_a_users_template_is_filled(project):
+    template = "CREATE VIEW `${name}` AS SELECT `id` FROM `customer` -- in ${schema}"
+    result = editing.add_schema_object(
+        project, "view", "customer_ids", base_hash(project), template=template, lsp_path=EDIT_LSP
+    )
+    view = next(v for v in result["rows"][0]["document"]["views"] if v["name"] == "customer_ids")
+    assert "`customer`" in view["definition"]
+
+
+@needs_lsp
+@pytest.mark.parametrize("kind, name, template, table, message", [
+    ("index", "x", None, None, "Unknown kind `index`"),
+    ("view", "", None, None, "A name is needed"),
+    ("view", "a`b", None, None, "cannot be a name"),
+    ("trigger", "tr", None, None, "A trigger needs its table"),
+    ("view", "v", "CREATE VIEW `${name}` AS SELECT * FROM `${table}`", None, "placeholder \\$\\{table\\}"),
+    ("view", "v", "CREATE TABLE `${name}` (id INT)", None, "one CREATE VIEW statement"),
+    ("function", "f", "CREATE PROCEDURE `${name}`() SELECT 1", None, "one CREATE FUNCTION statement"),
+    ("view", "v", "CREATE VIEW `other` AS SELECT 1", None, "creates `other`, not `v`"),
+    ("view", "v", "CREATE VIEW `${name}` AS SELEC 1", None, "one CREATE VIEW statement"),
+    ("view", "v", "CREATE VIEW `other`.`${name}` AS SELECT 1", None, "names the schema `other`"),
+    ("trigger", "tr", "CREATE TRIGGER `${name}` BEFORE INSERT ON `customer` FOR EACH ROW SET @x = 1",
+     "orders", "on `customer`, not on `orders`"),
+    ("trigger", "tr", None, "a`b", "cannot be a name"),
+])
+def test_a_bad_object_is_refused_before_anything_is_written(project, kind, name, template, table, message):
+    before = dev_script(project)
+    with pytest.raises(ValueError, match=message):
+        editing.add_schema_object(
+            project, kind, name, base_hash(project), template=template, table=table, lsp_path=EDIT_LSP
+        )
+    assert dev_script(project) == before
+
+
+@needs_edit_ops("add_view", "add_trigger")
+def test_what_the_edit_refuses_is_refused(project):
+    before = dev_script(project)
+    # Tables, views and sequences share one namespace
+    with pytest.raises(ValueError, match="customer"):
+        editing.add_schema_object(project, "view", "customer", base_hash(project), lsp_path=EDIT_LSP)
+    with pytest.raises(ValueError, match="nowhere"):
+        editing.add_schema_object(
+            project, "trigger", "tr", base_hash(project), table="nowhere", lsp_path=EDIT_LSP
+        )
+    with pytest.raises(editing.StaleSchemaError):
+        editing.add_schema_object(project, "view", "v", "sha256:old", lsp_path=EDIT_LSP)
+    assert dev_script(project) == before
