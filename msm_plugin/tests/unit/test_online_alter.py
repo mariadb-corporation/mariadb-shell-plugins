@@ -820,3 +820,76 @@ def test_a_project_without_the_setting_gets_one_with_a_tables_entry(tmp_path):
     with open(os.path.join(path, "msm.project.json")) as f:
         assert json.load(f)["onlineAlter"] == {"enabled": True,
                                                "tables": {"orders": {"enabled": False}}}
+
+
+def test_the_general_settings_are_replaced_and_the_tables_kept(tmp_path):
+    import json
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    settings_file = os.path.join(path, "msm.project.json")
+    management.set_online_alter_table(path, "orders", {"lockWait": 2})
+
+    assert management.set_online_alter_defaults(path, {"maxRetries": 3, "nboLock": "shared"}) \
+        == [settings_file]
+    with open(settings_file) as f:
+        written = json.load(f)
+    # Replaced: `enabled` is gone, so it takes msm's default (on)
+    assert written["onlineAlter"] == {"maxRetries": 3, "nboLock": "shared",
+                                      "tables": {"orders": {"lockWait": 2}}}
+    assert "copyrights" in written
+    # Read back without a table
+    read = management.get_online_alter_settings(path)
+    assert (read["table"], read["enabled"], read["options"]) == (None, None, None)
+    assert read["setting"]["maxRetries"] == 3
+    assert management.get_online_alter_settings(path, "orders")["options"]["maxRetries"] == 3
+
+    assert management.set_online_alter_defaults(path, {"maxRetries": 3, "nboLock": "shared"}) == []
+    assert management.set_online_alter_defaults(path, None) == [settings_file]
+    with open(settings_file) as f:
+        assert json.load(f)["onlineAlter"] == {"tables": {"orders": {"lockWait": 2}}}
+
+    # Without tables, an empty general level is written as the template has it
+    management.set_online_alter_table(path, "orders", None)
+    assert management.set_online_alter_defaults(path, {}) == []
+    with open(settings_file) as f:
+        assert json.load(f)["onlineAlter"] == {"enabled": True}
+    management.set_online_alter_defaults(path, {"enabled": False})
+    assert management.get_online_alter_settings(path, "orders")["enabled"] is False
+
+
+@pytest.mark.parametrize("settings, message", [
+    ([], "must be an object"),
+    ({"tables": {}}, "cannot hold `tables`"),
+    ({"maxCopy": 1}, "Unknown key `maxCopy`"),
+    ({"enabled": "yes"}, "`enabled` must be true or false"),
+    ({"lockWait": 0}, "`lock_wait` must be"),
+])
+def test_bad_general_settings_are_refused_and_nothing_is_written(tmp_path, settings, message):
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    with open(os.path.join(path, "msm.project.json")) as f:
+        before = f.read()
+    with pytest.raises(ValueError, match=message):
+        management.set_online_alter_defaults(path, settings)
+    with open(os.path.join(path, "msm.project.json")) as f:
+        assert f.read() == before
+
+
+@pytest.mark.parametrize("stored", [None, True, {"enabled": True}])
+def test_removing_the_general_settings_of_a_default_setting_writes_nothing(tmp_path, stored):
+    import json
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    settings_file = os.path.join(path, "msm.project.json")
+    with open(settings_file) as f:
+        raw = json.load(f)
+    if stored is None:
+        raw.pop("onlineAlter")
+    else:
+        raw["onlineAlter"] = stored
+    with open(settings_file, "w") as f:
+        json.dump(raw, f)
+    assert management.set_online_alter_defaults(path, None) == []

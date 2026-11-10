@@ -231,9 +231,16 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   (writes `onlineAlter.tables.<table>`, None/{} removes the entry; reads the
   raw file, so the derived `copyrights` list is not written back; a project
   without the key gets `{"enabled": true, "tables": ...}`; unchanged =
-  nothing written); shell `msm.getOnlineAlterSettings` /
-  `msm.setOnlineAlterTable`; lib `management.get_online_alter_settings` /
-  `set_online_alter_table`. `msm.get_online_alter_defaults()` (shell
+  nothing written); `msm.set_online_alter_defaults(settings?,
+  schema_project_path)` (the Edit MSM Project dialog's Online Schema Change
+  tab) replaces the general level, keeps `tables`, refuses `tables` in
+  settings; None/{} removes every general key; an empty setting is written
+  `{"enabled": true}`, as the template has it; shell
+  `msm.getOnlineAlterSettings` / `msm.setOnlineAlterTable` /
+  `msm.setOnlineAlterDefaults`; lib `management.get_online_alter_settings` /
+  `set_online_alter_table` / `set_online_alter_defaults`. Read with
+  `get_online_alter_settings` and no table (`setting` holds the general
+  level; `enabled`/`options` are None). `msm.get_online_alter_defaults()` (shell
   `msm.getOnlineAlterDefaults`, served with msm, no project) gives the same
   `defaults`, for a live table's tab, so the extension keeps no copy of
   them.

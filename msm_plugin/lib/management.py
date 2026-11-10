@@ -1725,6 +1725,60 @@ def get_online_alter_settings(schema_project_path: str, table: str = None) -> di
     }
 
 
+def _read_raw_project_settings(schema_project_path: str):
+    """msm.project.json's path and content as stored, not get_project_settings'
+    copy, which adds what it derives on reading."""
+    path = os.path.join(schema_project_path, "msm.project.json")
+    get_project_settings(schema_project_path)  # a project, and readable
+    with open(path) as f:
+        return path, json.load(f)
+
+
+def _write_online_alter_setting(path: str, raw: dict, setting) -> list:
+    """Writes the setting into msm.project.json; None means unchanged."""
+    if setting is None:
+        return []
+    raw[online_alter_lib.SETTING] = setting
+    with open(path, "w") as f:
+        f.write(json.dumps(raw, indent=4))
+    return [path]
+
+
+def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -> list:
+    """Sets the general values of the project's online ALTER TABLE setting
+    (msm.project.json, onlineAlter), what the Edit MSM Project dialog's
+    Online Schema Change tab writes. The tables' entries stay as they are.
+
+    Args:
+        schema_project_path: The project folder.
+        settings: {enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?,
+            maxLockedBytes?, lockWait?, maxRetries?}; it replaces the general
+            values, so a key left out takes msm's default again. None or {}
+            removes them all.
+
+    Returns:
+        The files written; none where nothing changed.
+
+    Raises:
+        ValueError: For settings that are no object, that hold `tables`, or
+            that online_alter.read_setting refuses.
+    """
+    if settings is not None and not isinstance(settings, dict):
+        raise ValueError("The general settings must be an object, or None to remove them.")
+    if settings and "tables" in settings:
+        raise ValueError(
+            "The general settings cannot hold `tables`; msm.set_online_alter_table "
+            "sets a table's entry."
+        )
+    # Checked as they will be read back
+    online_alter_lib.read_setting(settings or {}, "the general settings")
+
+    path, raw = _read_raw_project_settings(schema_project_path)
+    return _write_online_alter_setting(
+        path, raw, online_alter_lib.with_general(raw.get(online_alter_lib.SETTING), settings)
+    )
+
+
 def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
     """Sets a table's entry of the project's online ALTER TABLE setting
     (msm.project.json, onlineAlter.tables), what the Table Editor's Online
@@ -1751,11 +1805,7 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
     # Checked as they will be read back
     online_alter_lib.read_setting({"tables": {table: settings or {}}}, "the table's settings")
 
-    path = os.path.join(schema_project_path, "msm.project.json")
-    get_project_settings(schema_project_path)  # a project, and readable
-    # Not get_project_settings' copy, which adds what it derives on reading
-    with open(path) as f:
-        raw = json.load(f)
+    path, raw = _read_raw_project_settings(schema_project_path)
     setting = raw.get(online_alter_lib.SETTING)
     existing = setting.get("tables") if isinstance(setting, dict) else None
     if not settings and table not in (existing or {}):
@@ -1767,13 +1817,9 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
         else:
             tables.pop(table, None)
 
-    setting = online_alter_lib.with_tables(setting, change)
-    if setting is None:
-        return []
-    raw[online_alter_lib.SETTING] = setting
-    with open(path, "w") as f:
-        f.write(json.dumps(raw, indent=4))
-    return [path]
+    return _write_online_alter_setting(
+        path, raw, online_alter_lib.with_tables(setting, change)
+    )
 
 
 def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:

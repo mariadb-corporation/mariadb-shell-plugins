@@ -1020,6 +1020,38 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm.get_online_alter_settings, **_kwargs(table=table)
         )
 
+    @tool(name="msm.set_online_alter_defaults")
+    async def set_online_alter_defaults(
+        ctx: Context,
+        settings: Optional[dict] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> list:
+        """Sets a schema project's general online ALTER TABLE settings.
+
+        Writes the general values of msm.project.json's `onlineAlter`
+        setting, which deployments use for every table without values of its
+        own. The tables' entries (msm.set_online_alter_table) stay as they are.
+
+        Args:
+            settings: The general settings, replacing the ones there: enabled
+                (false runs ALTERs as written), maxRebuildBytes (largest table
+                size for an online rebuild, INPLACE or COPY; 0 = never, null =
+                no limit), galeraMaxBytes, nboLock (SHARED or EXCLUSIVE to
+                allow a Galera NBO), maxLockedBytes (largest table size for a
+                step that blocks writes), lockWait (seconds per attempt),
+                maxRetries. A key left out takes msm's default again; left out
+                or empty, all of them do. `tables` is refused.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            The files written.
+        """
+        return await _in_project(
+            ctx, schema_project_path, msm.set_online_alter_defaults,
+            **_kwargs(settings=settings),
+        )
+
     @tool(name="msm.set_online_alter_table")
     async def set_online_alter_table(
         ctx: Context,

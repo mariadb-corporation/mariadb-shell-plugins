@@ -239,10 +239,30 @@ def with_tables(setting, change: Callable[[dict], None]):
         new = {"enabled": True if setting is None else setting}
     tables = dict(new.get("tables") or {})
     change(tables)
+    new.pop("tables", None)
+    return _changed(setting, new, tables)
+
+
+def with_general(setting, general: Optional[dict]):
+    """An `onlineAlter` setting as msm.project.json has it (None, a bool or
+    a dict) with its general values replaced by general (None for none) and
+    its tables kept; None where that changes nothing."""
+    tables = setting.get("tables") if isinstance(setting, dict) else None
+    return _changed(setting, dict(general or {}), tables)
+
+
+def _changed(setting, general: dict, tables: Optional[dict]):
+    """The setting of general values and tables, None where it equals
+    setting. One with neither is written {enabled: true}, as the project
+    template has it, rather than as {}."""
+    new = dict(general)
     if tables:
         new["tables"] = tables
-    else:
-        new.pop("tables", None)
+    if not new:
+        # A setting missing or plain `true` means the same
+        if setting is None or setting is True:
+            return None
+        new = {"enabled": True}
     return None if new == setting else new
 
 
