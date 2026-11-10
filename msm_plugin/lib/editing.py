@@ -678,19 +678,27 @@ OBJECT_TEMPLATES = {
     "sequence": "CREATE SEQUENCE `${name}`\nSTART WITH 1\nINCREMENT BY 1",
 }
 OBJECT_PLACEHOLDERS = {
-    kind: ["name", "table", "schema"] if kind == "trigger" else ["name", "schema"]
-    for kind in OBJECT_TEMPLATES
+    "view": ["name", "schema"],
+    "procedure": ["name", "schema"],
+    "function": ["name", "schema"],
+    "trigger": ["name", "table", "schema"],
+    "event": ["name", "schema"],
+    "sequence": ["name", "schema"],
 }
-# Each kind: the outline's member it is listed under, the edit op adding it
-# and the op's member it goes in
-_ADDED_AS = {
-    "view": ("views", "add_view", "view"),
-    "procedure": ("routines", "add_routine", "routine"),
-    "function": ("routines", "add_routine", "routine"),
-    "trigger": ("triggers", "add_trigger", "trigger"),
-    "event": ("events", "add_event", "event"),
-    "sequence": ("sequences", "add_sequence", "sequence"),
-}
+
+
+def _object_type(kind: str) -> str:
+    """The outline's and the edit ops' name of a kind: routine for a
+    procedure or a function (outline `routines`, op `add_routine`)."""
+    return "routine" if kind in ("procedure", "function") else kind
+
+
+def _is_object(kind: str, name: str, item: dict) -> bool:
+    """Whether an object of the outline (of the kind's `<type>s`) is the
+    kind's object of that name: a routine of the kind, for a routine."""
+    return diagrams.same_name(item.get("name") or "", name) and (
+        _object_type(kind) != "routine" or item.get("kind") == kind
+    )
 _CHECK_OPTION = re.compile(r"\s+WITH\s+(?:CASCADED\s+|LOCAL\s+)?CHECK\s+OPTION\s*$", re.IGNORECASE)
 
 
@@ -721,25 +729,18 @@ def _filled_template(kind: str, name: str, template, table, schema: str) -> str:
     text = OBJECT_TEMPLATES[kind] if template is None else template
     if not isinstance(text, str) or not text.strip():
         raise ValueError(f"The template of a {kind} must be its CREATE statement.")
-    values = {"name": name, "schema": schema}
-    if kind == "trigger":
-        values["table"] = table
     template_object = Template(text)
-    used = {
-        m.group("named") or m.group("braced")
-        for m in template_object.pattern.finditer(text)
-        if m.group("named") or m.group("braced")
-    }
-    unknown = sorted(used - set(OBJECT_PLACEHOLDERS[kind]))
+    if not template_object.is_valid():
+        raise ValueError(f"The template of a {kind} has a $ that is no placeholder: write $$ for one.")
+    unknown = sorted(set(template_object.get_identifiers()) - set(OBJECT_PLACEHOLDERS[kind]))
     if unknown:
         raise ValueError(
             f"The template of a {kind} uses the placeholder ${{{unknown[0]}}}; it takes "
             + ", ".join(f"${{{p}}}" for p in OBJECT_PLACEHOLDERS[kind]) + "."
         )
-    try:
-        return template_object.substitute(values).strip().rstrip(";").rstrip()
-    except ValueError as error:
-        raise ValueError(f"The template of a {kind} is not a valid template: {error}") from None
+    return template_object.substitute(
+        name=name, schema=schema, table=table
+    ).strip().rstrip(";").rstrip()
 
 
 def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> dict:
@@ -754,7 +755,7 @@ def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> di
     with tempfile.TemporaryDirectory() as source_dir:
         outlined = lsp.outline(binary, script, source_dir)
     errors = [note for note in outlined.get("notes", []) if note.get("kind") == "syntax-error"]
-    member = _ADDED_AS[kind][0]
+    member = _object_type(kind) + "s"
     found = [
         (key, item)
         for schema in outlined.get("schemas", [])
@@ -763,18 +764,17 @@ def _template_object(kind: str, name: str, sql: str, lsp_path: str = None) -> di
     ]
     wanted = [
         item for key, item in found
-        if key == member and (kind not in ("procedure", "function") or item.get("kind") == kind)
+        if key == member and (_object_type(kind) != "routine" or item.get("kind") == kind)
     ]
     if errors or len(found) != 1 or len(wanted) != 1:
         raise ValueError(
             f"The template of a {kind} must be one CREATE {kind.upper()} statement"
             + (f": {errors[0].get('message')}" if errors else ".")
         )
-    # What the outline reports about an object but the ops do not take: its
-    # positions, and a view's reads
-    item = {key: value for key, value in wanted[0].items()
-            if key not in ("range", "selection_range", "source", "reads")}
-    if not diagrams.same_name(item.get("name") or "", name):
+    # Sent back as the outline has it: the ops ignore its positions (and a
+    # view's reads)
+    item = dict(wanted[0])
+    if not _is_object(kind, name, item):
         raise ValueError(
             f"The template of a {kind} creates `{item.get('name')}`, not `{name}`: name it ${{name}}."
         )
@@ -831,25 +831,30 @@ def add_schema_object(
         raise ValueError(problem)
     if kind == "trigger" and not table:
         raise ValueError("A trigger needs its table.")
-    schema = management.get_effective_schema_name(management.get_project_settings(schema_project_path))
-    sql = _filled_template(kind, name, template, table, schema)
+    sql = _filled_template(
+        kind, name, template, table, management.get_schema_name(schema_project_path)
+    )
     item = _template_object(kind, name, sql, lsp_path)
-    _, op, member = _ADDED_AS[kind]
-    result = edit_schema(schema_project_path, [{"op": op, member: item}], base_hash, lsp_path)
+    object_type = _object_type(kind)
+    result = edit_schema(
+        schema_project_path, [{"op": f"add_{object_type}", object_type: item}], base_hash, lsp_path
+    )
 
     snapshot = result["rows"][0]["document"]
     added = next(
-        (each for each in snapshot.get(_ADDED_AS[kind][0], [])
-         if diagrams.same_name(each["name"], name)
-         and (kind not in ("procedure", "function") or each.get("kind") == kind)),
-        None,
+        (each for each in snapshot.get(object_type + "s", []) if _is_object(kind, name, each)), None
     )
     file, line = None, None
     if added is not None and "range" in added:
+        # The snapshot's files are relative to the development folder; an
+        # object's source n is files[n + 1], one without it is in files[0]
         files = snapshot.get("files", [])
         source = added.get("source")
         relative = files[source + 1] if isinstance(source, int) else (files[0] if files else None)
         if relative is not None:
-            file = os.path.normpath(os.path.join(schema_project_path, "development", relative))
+            development = os.path.dirname(
+                management.get_schema_development_file_path(schema_project_path)
+            )
+            file = os.path.normpath(os.path.join(development, relative))
         line = added["range"]["start"]["line"] + 1
     return {**result, "file": file, "line": line}
