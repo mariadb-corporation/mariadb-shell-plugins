@@ -258,7 +258,11 @@ def _changed(setting, general: dict, tables: Optional[dict]):
     new = dict(general)
     if tables:
         new["tables"] = tables
-    new = new or {"enabled": True}
+    if not new:
+        # A setting missing or plain `true` means the same
+        if setting is None or setting is True:
+            return None
+        new = {"enabled": True}
     return None if new == setting else new
 
 

@@ -875,3 +875,21 @@ def test_bad_general_settings_are_refused_and_nothing_is_written(tmp_path, setti
         management.set_online_alter_defaults(path, settings)
     with open(os.path.join(path, "msm.project.json")) as f:
         assert f.read() == before
+
+
+@pytest.mark.parametrize("stored", [None, True, {"enabled": True}])
+def test_removing_the_general_settings_of_a_default_setting_writes_nothing(tmp_path, stored):
+    import json
+    from msm_plugin.lib import management
+
+    path = new_project(tmp_path)
+    settings_file = os.path.join(path, "msm.project.json")
+    with open(settings_file) as f:
+        raw = json.load(f)
+    if stored is None:
+        raw.pop("onlineAlter")
+    else:
+        raw["onlineAlter"] = stored
+    with open(settings_file, "w") as f:
+        json.dump(raw, f)
+    assert management.set_online_alter_defaults(path, None) == []
