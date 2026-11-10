@@ -1374,11 +1374,7 @@ def create_project_from_live_schema(
             session, schema, target_path, objects, lsp_path=lsp_path, **options
         )
     listed, selected = prepared
-    readable = ("tables", "views", "sequences")
-    not_selected = {
-        item["name"] for kind in readable for item in listed[kind]
-    } - {name for kind in readable for name in selected[kind]}
-    imported = live_schema.schema_sql(session, schema, selected, task, not_selected)
+    imported = live_schema.schema_sql(session, schema, selected, task, listed)
 
     def fill(project_path: str) -> dict:
         with live_schema.task_stage(task, LIVE_WRITING_STAGE):

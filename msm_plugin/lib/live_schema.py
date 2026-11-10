@@ -72,6 +72,11 @@ _TRIGGERS_SQL = """
     WHERE TRIGGER_SCHEMA = ?
     ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_ORDER
 """
+_VIEWS_SQL = """
+    SELECT TABLE_NAME AS name, VIEW_DEFINITION AS definition
+    FROM INFORMATION_SCHEMA.VIEWS
+    WHERE TABLE_SCHEMA = ?
+"""
 _EVENTS_SQL = """
     SELECT EVENT_NAME AS name
     FROM INFORMATION_SCHEMA.EVENTS
@@ -106,12 +111,56 @@ def _schema_version(session, schema: str, left_out: list) -> Optional[str]:
         return None
 
 
+_NAME = r"`(?:[^`]|``)+`"
+# How a view's definition names what it reads: a column's qualifier `t`.`c`,
+# a table after FROM or JOIN (`schema`.`t` too), a stored function's call `f`(
+_VIEW_READ = re.compile(
+    rf"\b(?:FROM|JOIN)\s+\(*\s*(?:{_NAME}\s*\.\s*)?(?P<source>{_NAME})"
+    rf"|(?P<qualifier>{_NAME})\s*\.\s*(?={_NAME})"
+    rf"|(?P<call>{_NAME})\s*\(",
+    re.IGNORECASE,
+)
+# The kinds a view reads, by how they are named
+_READ_KINDS = ("functions", "sequences", "tables", "views")
+
+
+def _unquoted(name: str) -> str:
+    return name[1:-1].replace("``", "`")
+
+
+def view_reads(definition: Optional[str], view: str, listed: dict) -> Optional[list]:
+    """What a view's definition (its SELECT, as the server stores it) reads
+    of the listed objects: [{kind, name}] of the listing's tables, views,
+    sequences and functions, the view itself left out, unique and sorted by
+    kind then name; None where the definition cannot be read.
+
+    The server writes every column of a view qualified (`t`.`c`) and every
+    name quoted, so each table or view it reads is a column's qualifier or
+    follows FROM or JOIN, and a stored function is a quoted name called."""
+    if not definition:
+        return None
+    names = {kind: {item["name"] for item in listed[kind]} for kind in _READ_KINDS}
+    reads = set()
+    for match in _VIEW_READ.finditer(statements_lib.without_strings_and_comments(definition)):
+        if match.group("call"):
+            name = _unquoted(match.group("call"))
+            kinds = ("functions",)
+        else:
+            name = _unquoted(match.group("source") or match.group("qualifier"))
+            kinds = ("tables", "views", "sequences")
+        for kind in kinds:
+            if name in names[kind] and not (kind == "views" and name == view):
+                reads.add((kind, name))
+    return [{"kind": kind, "name": name} for kind, name in sorted(reads)]
+
+
 def list_schema_objects(session, schema: str) -> dict:
     """The objects of a live schema an import can take, by kind.
 
     Returns:
         {schema, tables: [{name, comment, triggers}], views: [{name,
-        comment}], procedures: [{name}], functions: [{name}], triggers:
+        comment, reads: what it reads (view_reads; None where its definition
+        cannot be read)}], procedures: [{name}], functions: [{name}], triggers:
         [{name, table}], events: [{name}], sequences: [{name}],
         project_folder_name: the folder a project of the schema gets,
         schema_version: the version msm deployed or None, left_out: msm's own
@@ -151,6 +200,9 @@ def list_schema_objects(session, schema: str) -> dict:
             tables[row["table"]]["triggers"].append(row["name"])
     result["triggers"].sort(key=lambda trigger: trigger["name"])
     result["events"] = [{"name": row["name"]} for row in _rows(session, _EVENTS_SQL, [schema])]
+    definitions = {row["name"]: row["definition"] for row in _rows(session, _VIEWS_SQL, [schema])}
+    for view in result["views"]:
+        view["reads"] = view_reads(definitions.get(view["name"]), view["name"], result)
     result["schema"] = schema
     result["project_folder_name"] = management.project_folder_name(schema)
     result["schema_version"] = _schema_version(session, schema, left_out)
@@ -311,20 +363,8 @@ _SECTION_150 = (
 )
 
 
-# A quoted name used as a qualifier: `t`.`c` (or `schema`.`t`)
-_QUALIFIER = re.compile(r"(`(?:[^`]|``)+`)\s*\.\s*(?=`)")
-
-
-def _read_by_view(sql: Optional[str], schema: str) -> set:
-    """The names a view's columns are qualified with: the tables and views
-    it reads, as SHOW CREATE VIEW writes every column `t`.`c` (and a table
-    `schema`.`t`, which names the schema too: callers match the names
-    against the schema's objects)."""
-    return {name[1:-1].replace("``", "`") for name in _QUALIFIER.findall(sql or "")}
-
-
 def schema_sql(
-    session, schema: str, selected: dict, task=None, not_selected: set = frozenset()
+    session, schema: str, selected: dict, task=None, listed: dict = None
 ) -> statements_lib.Imported:
     """The CREATE statements of the selected objects of a live schema,
     grouped as an MSM development script keeps them (statements.Imported).
@@ -336,9 +376,10 @@ def schema_sql(
     written to be run again, in DELIMITER %% blocks as Section 150 has them,
     without their DEFINER and the schema's own name in qualified names.
 
-    A view that reads a table or view of the schema among not_selected
-    (the listed ones the import leaves out) gets a warning: it will not
-    deploy without it.
+    With the listing given (list_schema_objects), each view comes after the
+    views it reads, and one that reads an object the import leaves out gets
+    a warning: it will not deploy without it. Its reads are the listing's,
+    so the warning says what a client showed from the listing beforehand.
 
     A task given (the shell task manager's) gets the stage READING_STAGE
     with a step per object; a cancel of it raises TaskCancelled.
@@ -387,16 +428,21 @@ def schema_sql(
         result.tables = "\n\n".join(create) or None
 
         view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
-        selected_views = set(selected["views"])
+        chosen = {kind: set(selected[kind]) for kind in _READ_KINDS}
+        reads_of = {view["name"]: view["reads"] or [] for view in (listed or {}).get("views", [])}
         view_uses = {}
-        for name, sql in view_sql.items():
-            reads = _read_by_view(sql, schema)
-            view_uses[name] = reads & selected_views
-            for missing in sorted(reads & not_selected):
-                result.warnings.append(
-                    f"The view `{name}` reads `{missing}`, which is not imported; the "
-                    "project will not deploy the view without it."
-                )
+        for name in selected["views"]:
+            reads = reads_of.get(name, [])
+            view_uses[name] = {
+                read["name"] for read in reads
+                if read["kind"] == "views" and read["name"] in chosen["views"]
+            }
+            for read in reads:
+                if read["name"] not in chosen[read["kind"]]:
+                    result.warnings.append(
+                        f"The view `{name}` reads `{read['name']}`, which is not imported; "
+                        "the project will not deploy the view without it."
+                    )
         views = [idempotent("VIEW", name, view_sql[name])
                  for name in _ordered(selected["views"], view_uses)]
         result.views = statements_lib.delimiter_block([sql for sql in views if sql], "VIEWs")

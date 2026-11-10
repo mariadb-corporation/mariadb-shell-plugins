@@ -8,8 +8,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 ## Project
 
 The shell's bundled Python — the one that matters for every "which version does this
-behave like" question — is
-`/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`.
+behave like" question — is the shell build's `lib/mariadb-shell/lib/python3.14/site-packages`.
 Read the SDK and uvicorn sources THERE, not upstream. (Ask the shell itself rather than
 `find /`: `mariadb-shell --py -f <script printing module __file__>`.)
 **There are TWO dependency trees** in the shell build: that site-packages one, which is
