@@ -117,7 +117,8 @@ _READ_KINDS = ("functions", "sequences", "tables", "views")
 
 # The kinds of mariadb-lsp outline's reads, as the listing's kinds take them
 _LSP_READ_KINDS = {
-    "table_or_view": ("tables", "views"),
+    # A sequence read as a table (SELECT ... FROM s) is a table_or_view read
+    "table_or_view": ("tables", "views", "sequences"),
     "function": ("functions",),
     "sequence": ("sequences",),
 }
@@ -452,10 +453,18 @@ def schema_sql(
 
         view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
         chosen = {kind: set(selected[kind]) for kind in _READ_KINDS}
-        reads_of = {view["name"]: view["reads"] or [] for view in listed["views"]}
+        reads_of = {view["name"]: view["reads"] for view in listed["views"]}
         view_uses = {}
         for name in selected["views"]:
-            reads = reads_of.get(name, [])
+            reads = reads_of.get(name)
+            if reads is None:
+                # Its definition could not be read or parsed: neither its
+                # place among the views nor what it misses is known
+                result.warnings.append(
+                    f"What the view `{name}` reads could not be worked out; it may be "
+                    "written before a view it reads, and is not checked for what is not imported."
+                )
+                reads = []
             view_uses[name] = {
                 read["name"] for read in reads
                 if read["kind"] == "views" and read["name"] in chosen["views"]

@@ -366,6 +366,7 @@ def test_the_parser_knows_a_cte_named_like_a_table(live, monkeypatch):
     assert all(view["reads"] is None for view in listed["views"])
 
 
+@needs_lsp
 def test_views_are_not_imported_without_a_binary_that_tells_their_reads(live, tmp_path, monkeypatch):
     monkeypatch.setattr(lsp, "outlines_view_reads", lambda binary: False)
     with pytest.raises(ValueError, match="does not tell what a view reads"):
