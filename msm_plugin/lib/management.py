@@ -905,6 +905,60 @@ def project_folder_path(target_path: str, schema_name: str) -> str:
     )
 
 
+def check_new_project(
+    schema_name: str,
+    target_path: str,
+    copyright_holder: str = None,
+    license: str = None,
+    overwrite_existing: bool = False,
+    allow_special_chars: bool = False,
+    enforce_target_path: bool = False,
+    copyrights: list = None,
+    year_of_creation=None,
+) -> list:
+    """What create_schema_project_folder refuses, checked without writing
+    anything, so that a caller with work to do first (an import) refuses
+    with the same words before it starts; the arguments are its.
+
+    Returns:
+        The copyrights the project gets, checked.
+
+    Raises:
+        ValueError: For a schema name, license, copyright or folder
+            create_schema_project_folder would refuse.
+    """
+    check_mysql_identifier(
+        identifier=schema_name, must_be_usable_when_unquoted=not allow_special_chars
+    )
+    if license is not None and license.upper() == "CUSTOM":
+        raise ValueError(
+            "A CUSTOM license needs its text: create the project with a license template "
+            "and set license and customLicense with msm.set_project_settings."
+        )
+    if license is not None and license not in get_available_licenses():
+        raise ValueError(
+            f"No license stored under the given license name `{license}`. Please use a custom license text."
+        )
+    year_of_creation = (
+        check_copyright_year(year_of_creation) if year_of_creation else current_year()
+    )
+    copyrights = checked_copyrights(
+        copyrights or [{"holder": copyright_holder, "tracksUpdates": True}],
+        year_of_creation,
+        holder_needed=False,
+    )
+    target_path = os.path.abspath(os.path.expanduser(target_path))
+    if not os.path.exists(target_path) and not enforce_target_path:
+        raise ValueError(
+            f"The project folder cannot be created inside the directory `{target_path}` as this path "
+            "does not exist."
+        )
+    project_path = project_folder_path(target_path, schema_name)
+    if os.path.exists(project_path) and not overwrite_existing:
+        raise ValueError(f'The project folder "{project_path}" already exists.')
+    return copyrights
+
+
 def create_schema_project_folder(
     schema_name: str,
     target_path: str,
@@ -940,48 +994,21 @@ def create_schema_project_folder(
         The path of the project folder that was created.
     """
 
-    check_mysql_identifier(
-        identifier=schema_name, must_be_usable_when_unquoted=not allow_special_chars
-    )
-
     # Checked before anything is written
-    if license is not None and license.upper() == "CUSTOM":
-        raise ValueError(
-            "A CUSTOM license needs its text: create the project with a license template "
-            "and set license and customLicense with msm.set_project_settings."
-        )
-    if license is not None and license not in get_available_licenses():
-        raise ValueError(
-            f"No license stored under the given license name `{license}`. Please use a custom license text."
-        )
-    year_of_creation = (
-        check_copyright_year(year_of_creation) if year_of_creation else current_year()
-    )
-    copyrights = checked_copyrights(
-        copyrights or [{"holder": copyright_holder, "tracksUpdates": True}],
-        year_of_creation,
-        holder_needed=False,
+    copyrights = check_new_project(
+        schema_name, target_path, copyright_holder, license, overwrite_existing,
+        allow_special_chars, enforce_target_path, copyrights, year_of_creation,
     )
 
     target_path = os.path.abspath(os.path.expanduser(target_path))
-    if not os.path.exists(target_path):
-        if enforce_target_path:
-            Path(target_path).mkdir(parents=True, exist_ok=True)
-        else:
-            raise ValueError(
-                f"The project folder cannot be created inside the directory `{target_path}` as this path "
-                "does not exist."
-            )
+    Path(target_path).mkdir(parents=True, exist_ok=True)
 
     # When used in file names, critical characters need to be removed
     schema_file_name = convert_string_to_valid_filename(schema_name)
 
     project_path = project_folder_path(target_path, schema_name)
     if os.path.exists(project_path):
-        if overwrite_existing:
-            shutil.rmtree(project_path)
-        else:
-            raise ValueError(f'The project folder "{project_path}" already exists.')
+        shutil.rmtree(project_path)
 
     os.makedirs(os.path.join(project_path), exist_ok=True)
 
