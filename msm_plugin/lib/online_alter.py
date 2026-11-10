@@ -240,18 +240,11 @@ def with_tables(setting, change: Callable[[dict], None]):
     tables = dict(new.get("tables") or {})
     change(tables)
     new.pop("tables", None)
-    return _changed(setting, new, tables)
-
-
-def _changed(setting, general: dict, tables: Optional[dict]):
-    """The setting of general values and tables, None where it equals
-    setting. One with neither is written {enabled: true}, as the project
-    template has it, rather than as {}."""
-    new = dict(general)
     if tables:
         new["tables"] = tables
     if not new:
-        # A setting missing or plain `true` means the same
+        # One with neither general values nor tables is written as the
+        # project template has it; a missing or plain `true` one means that
         if setting is None or setting is True:
             return None
         new = {"enabled": True}

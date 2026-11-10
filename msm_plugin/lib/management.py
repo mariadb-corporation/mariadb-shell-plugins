@@ -32,7 +32,6 @@ import re
 import shutil
 from string import Template
 from datetime import date
-from typing import Optional
 from textwrap import indent
 import mysqlsh
 
@@ -611,6 +610,30 @@ def _holder_key(holder: str) -> str:
     return holder.strip().rstrip(".").strip()
 
 
+def _notice_run(lines: list) -> range:
+    """The positions of a file's first run of notice lines, its header."""
+    first = next((pos for pos, line in enumerate(lines) if COPYRIGHT_NOTICE_REGEX.search(line)), None)
+    if first is None:
+        return range(0)
+    end = first + 1
+    while end < len(lines) and COPYRIGHT_NOTICE_REGEX.search(lines[end]):
+        end += 1
+    return range(first, end)
+
+
+def _refresh_notice_files(schema_project_path: str, project_settings: dict, tracking_only=True) -> list:
+    """Brings the years of the notices in the project's files (those of
+    _project_files_with_notices) up to project_settings' copyrights; the
+    files written."""
+    written = []
+    for path in _project_files_with_notices(schema_project_path, project_settings):
+        text = lib.sections.read_if_exists(path)
+        refreshed = refresh_notice_years(text, project_settings["copyrights"], tracking_only)
+        if lib.sections.write_if_changed(path, refreshed, text):
+            written.append(path)
+    return written
+
+
 def refresh_notice_years(text: str, copyrights: list, tracking_only: bool = True) -> str:
     """Brings the years of the notices in a file's text up to date.
 
@@ -636,14 +659,9 @@ def refresh_notice_years(text: str, copyrights: list, tracking_only: bool = True
     if not tracking:
         return text
     lines = text.splitlines(keepends=True)
-    in_run = False
-    for pos, line in enumerate(lines):
+    for pos in _notice_run(lines):
+        line = lines[pos]
         notice = COPYRIGHT_NOTICE_REGEX.search(line)
-        if notice is None:
-            if in_run:
-                break
-            continue
-        in_run = True
         holder = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", notice.group(3))
         copyright = tracking.get(_holder_key(holder))
         # end() is -1 for a notice without a last-update year
@@ -732,11 +750,7 @@ def update_copyright_years(schema_project_path: str) -> list:
     def change() -> list:
         # The notices first, the settings last: a write that fails part way
         # leaves the settings behind, so the next change tries again.
-        written = []
-        for path in _project_files_with_notices(schema_project_path, project_settings):
-            text = lib.sections.read_if_exists(path)
-            if lib.sections.write_if_changed(path, refresh_notice_years(text, copyrights), text):
-                written.append(path)
+        written = _refresh_notice_files(schema_project_path, project_settings)
         # get_project_settings derives only the copyrights list, so a project
         # in the single holder format gets the list written.
         return [write_project_settings(schema_project_path, project_settings), *written]
@@ -2046,64 +2060,54 @@ def _license_key(project_settings: dict) -> tuple:
     )
 
 
-def _replace_notice_run(text: Optional[str], project_settings: dict) -> tuple:
-    """A file's text with its first run of notice lines, its header, made
-    from the settings; and by how many lines that run grew."""
+def _replace_notice_run(text: str | None, project_settings: dict) -> tuple:
+    """A file's text with its header's notices made from the settings, the
+    comment prefix of the first kept; and by how many lines they grew."""
     if text is None:
         return text, 0
     lines = text.splitlines(keepends=True)
-    first = next((pos for pos, line in enumerate(lines) if COPYRIGHT_NOTICE_REGEX.search(line)), None)
-    if first is None:
+    run = _notice_run(lines)
+    if not run:
         return text, 0
-    last = first
-    while last + 1 < len(lines) and COPYRIGHT_NOTICE_REGEX.search(lines[last + 1]):
-        last += 1
-    prefix = COPYRIGHT_COMMENT_PREFIX_REGEX.match(lines[first]).group(0)
+    prefix = COPYRIGHT_COMMENT_PREFIX_REGEX.match(lines[run.start]).group(0)
     notices = render_copyright_notices(project_settings, prefix=prefix).split("\n")
-    lines[first : last + 1] = [line + "\n" for line in notices]
-    return "".join(lines), len(notices) - (last - first + 1)
+    lines[run.start : run.stop] = [line + "\n" for line in notices]
+    return "".join(lines), len(notices) - len(run)
 
 
 def _with_license_section(script: str, project_settings: dict) -> str:
     """The development script with what lies before its first section, the
-    license, made again from the project's license."""
+    license, made again as creation makes it from the template."""
     first = re.search(MSM_SECTIONS_REGEX, script, re.MULTILINE | re.DOTALL)
     with open(DEVELOPMENT_SCRIPT_TEMPLATE) as f:
         template = strip_template_copyright_header(f.readlines())
     template_first = re.search(MSM_SECTIONS_REGEX, template, re.MULTILINE | re.DOTALL)
-    preamble = Template(template[: template_first.start()]).safe_substitute(
+    preamble = Template(template[: template_first.start()]).substitute(
         license=get_license_text(project_settings=project_settings)
     )
     return preamble + script[first.start() if first else 0 :]
 
 
-def _rewrite_license_blocks(schema_project_path: str, old: dict, new: dict) -> list:
-    """Writes the notices and the license of new into the project's files
-    (as update_copyright_years refreshes, released files stay as released);
-    a breakout file whose header changed its line count is included from
-    the line its SQL now starts on. The files written."""
+def _license_block_texts(schema_project_path: str, old: dict, new: dict) -> tuple:
+    """The new texts of the files whose notices and license come from the
+    settings ([(path, text, old text)]), and whether a line moved: a
+    breakout file whose header changed its line count is included from the
+    line its SQL now starts on."""
     dev_file = get_schema_development_file_path(schema_project_path)
     script = lib.sections.read_if_exists(dev_file)
     new_script = _with_license_section(script, new)
-    written = []
+    moved = new_script.count("\n") != script.count("\n")
+    texts = []
     for path in _project_files_with_notices(schema_project_path, old):
         if path == dev_file:
             continue
         text = lib.sections.read_if_exists(path)
         new_text, grown = _replace_notice_run(text, new)
         if grown and Path(path).parent.name == lib.sections.BREAKOUT_FOLDER:
-            directive = re.compile(
-                r"(SOURCE\s+'\./" + re.escape(lib.sections.BREAKOUT_FOLDER) + "/"
-                + re.escape(Path(path).name) + r"'\[ln)(\d+)(:)"
-            )
-            new_script = directive.sub(
-                lambda m: f"{m.group(1)}{int(m.group(2)) + grown}{m.group(3)}", new_script
-            )
-        if lib.sections.write_if_changed(path, new_text, text):
-            written.append(path)
-    if lib.sections.write_if_changed(dev_file, new_script, script):
-        written.insert(0, dev_file)
-    return written
+            new_script = lib.sections.shift_include_start(new_script, Path(path).name, grown)
+            moved = True
+        texts.append((path, new_text, text))
+    return [(dev_file, new_script, script), *texts], moved
 
 
 @changes_project
@@ -2118,12 +2122,12 @@ def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str
     refused.
 
     The project's files follow: changed years are brought into the notices
-    (update_copyright_years' files), and a changed holder, license or
-    custom license text makes the license blocks of the development files
-    again (released files stay as released). A schema snapshot that was
-    current is kept current: given the new hash where only years changed,
-    made again (lsp_path) where the line count of the script changed; one
-    that cannot be made again is left stale, as an editSchema then says.
+    where they stand (update_copyright_years' files), and a changed holder,
+    license or custom license text makes the notices and the license block
+    of the development files again (released files stay as released). A
+    schema snapshot that was current is kept current: given the new hash
+    where no line moved, made again (lsp_path) where one did; one that
+    cannot be made again is left stale, as an editSchema then says.
 
     Args:
         schema_project_path: The project folder.
@@ -2148,26 +2152,31 @@ def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str
     new = _checked_settings(raw, settings)
     if new == raw:
         return []
+    if "copyrights" not in settings and _license_key(raw) == _license_key(new):
+        # Nothing the files show
+        return [write_project_settings(schema_project_path, new)]
+
     old = get_project_settings(schema_project_path)
-
     if _license_key(old) == _license_key(new):
-        # Years at most: brought into the notices where they stand
-        def change() -> list:
-            written = []
-            for path in _project_files_with_notices(schema_project_path, new):
-                text = lib.sections.read_if_exists(path)
-                refreshed = refresh_notice_years(text, new["copyrights"], tracking_only=False) \
-                    if "copyrights" in new else text
-                if lib.sections.write_if_changed(path, refreshed, text):
-                    written.append(path)
-            return [*written, write_project_settings(schema_project_path, new)]
+        # The years at most, set by hand: brought in where they stand
+        texts, moved = None, False
+    else:
+        texts, moved = _license_block_texts(schema_project_path, old, new)
 
+    def change() -> list:
+        # The files first, the settings last, as update_copyright_years writes
+        if texts is None:
+            written = _refresh_notice_files(schema_project_path, new, tracking_only=False)
+        else:
+            written = [path for path, text, before in texts
+                       if lib.sections.write_if_changed(path, text, before)]
+        return [*written, write_project_settings(schema_project_path, new)]
+
+    if not moved:
         return lib.modeling.keeping_snapshot_current(schema_project_path, change)
-
     current = lib.modeling.snapshot_is_current(schema_project_path)
-    written = _rewrite_license_blocks(schema_project_path, old, new)
-    written.append(write_project_settings(schema_project_path, new))
-    if current and not lib.modeling.snapshot_is_current(schema_project_path):
+    written = change()
+    if current:
         try:
             written += lib.modeling.update_schema_definition(schema_project_path, lsp_path)["files"]
         except ValueError:
