@@ -515,6 +515,52 @@ def render_copyright_notices(project_settings: dict, prefix: str = "") -> str:
     return "\n".join(lines)
 
 
+def checked_copyrights(
+    copyrights, year_of_creation: str = None, holder_needed: bool = True
+) -> list:
+    """A project's copyrights list checked, as copies.
+
+    Args:
+        copyrights: [{holder, yearOfCreation, yearOfLastUpdate?, tracksUpdates?}].
+        year_of_creation: The yearOfCreation of an entry without one; None
+            makes it needed.
+        holder_needed: Whether an entry without a holder is refused; a
+            project may be created without one.
+
+    Raises:
+        ValueError: For an entry without a holder or a yearOfCreation, a
+            year check_copyright_year refuses, or a yearOfLastUpdate before
+            the yearOfCreation.
+    """
+    if not isinstance(copyrights, list) or not copyrights:
+        raise ValueError("`copyrights` must be a list of one copyright holder or more.")
+    checked = []
+    for copyright in copyrights:
+        if not isinstance(copyright, dict):
+            raise ValueError("Each entry of `copyrights` must be an object.")
+        copyright = dict(copyright)
+        holder = copyright.get("holder")
+        if holder_needed and (not isinstance(holder, str) or not holder.strip()):
+            raise ValueError("Each entry of `copyrights` needs a holder.")
+        if not isinstance(copyright.get("tracksUpdates", False), bool):
+            raise ValueError("`tracksUpdates` must be true or false.")
+        copyright["yearOfCreation"] = copyright.get("yearOfCreation") or year_of_creation
+        if not copyright["yearOfCreation"]:
+            raise ValueError(f"The copyright of `{holder}` needs a yearOfCreation.")
+        for key in ("yearOfCreation", "yearOfLastUpdate"):
+            if copyright.get(key):
+                copyright[key] = check_copyright_year(copyright[key], key)
+        if copyright.get("yearOfLastUpdate") and (
+            copyright["yearOfLastUpdate"] < copyright["yearOfCreation"]
+        ):
+            raise ValueError(
+                f"The yearOfLastUpdate {copyright['yearOfLastUpdate']} lies before "
+                f"the yearOfCreation {copyright['yearOfCreation']}."
+            )
+        checked.append(copyright)
+    return checked
+
+
 def check_copyright_year(year, name: str = "yearOfCreation") -> str:
     """A year of a copyright entry, as stored: four digits, not in the future.
 
@@ -564,7 +610,31 @@ def _holder_key(holder: str) -> str:
     return holder.strip().rstrip(".").strip()
 
 
-def refresh_notice_years(text: str, copyrights: list) -> str:
+def _notice_run(lines: list) -> range:
+    """The positions of a file's first run of notice lines, its header."""
+    first = next((pos for pos, line in enumerate(lines) if COPYRIGHT_NOTICE_REGEX.search(line)), None)
+    if first is None:
+        return range(0)
+    end = first + 1
+    while end < len(lines) and COPYRIGHT_NOTICE_REGEX.search(lines[end]):
+        end += 1
+    return range(first, end)
+
+
+def _refresh_notice_files(schema_project_path: str, project_settings: dict, tracking_only=True) -> list:
+    """Brings the years of the notices in the project's files (those of
+    _project_files_with_notices) up to project_settings' copyrights; the
+    files written."""
+    written = []
+    for path in _project_files_with_notices(schema_project_path, project_settings):
+        text = lib.sections.read_if_exists(path)
+        refreshed = refresh_notice_years(text, project_settings["copyrights"], tracking_only)
+        if lib.sections.write_if_changed(path, refreshed, text):
+            written.append(path)
+    return written
+
+
+def refresh_notice_years(text: str, copyrights: list, tracking_only: bool = True) -> str:
     """Brings the years of the notices in a file's text up to date.
 
     Only the first run of notice lines is looked at, the file's header, and
@@ -575,6 +645,8 @@ def refresh_notice_years(text: str, copyrights: list) -> str:
     Args:
         text: The text of the file.
         copyrights: The project's copyright entries.
+        tracking_only: Only the holders that track updates; False for all,
+            where the years were set by hand.
 
     Returns:
         The text, changed where a notice's years were out of date.
@@ -582,19 +654,14 @@ def refresh_notice_years(text: str, copyrights: list) -> str:
     tracking = {
         _holder_key(str(copyright.get("holder") or "")): copyright
         for copyright in copyrights
-        if copyright.get("tracksUpdates")
+        if copyright.get("tracksUpdates") or not tracking_only
     }
     if not tracking:
         return text
     lines = text.splitlines(keepends=True)
-    in_run = False
-    for pos, line in enumerate(lines):
+    for pos in _notice_run(lines):
+        line = lines[pos]
         notice = COPYRIGHT_NOTICE_REGEX.search(line)
-        if notice is None:
-            if in_run:
-                break
-            continue
-        in_run = True
         holder = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", notice.group(3))
         copyright = tracking.get(_holder_key(holder))
         # end() is -1 for a notice without a last-update year
@@ -683,11 +750,7 @@ def update_copyright_years(schema_project_path: str) -> list:
     def change() -> list:
         # The notices first, the settings last: a write that fails part way
         # leaves the settings behind, so the next change tries again.
-        written = []
-        for path in _project_files_with_notices(schema_project_path, project_settings):
-            text = lib.sections.read_if_exists(path)
-            if lib.sections.write_if_changed(path, refresh_notice_years(text, copyrights), text):
-                written.append(path)
+        written = _refresh_notice_files(schema_project_path, project_settings)
         # get_project_settings derives only the copyrights list, so a project
         # in the single holder format gets the list written.
         return [write_project_settings(schema_project_path, project_settings), *written]
@@ -757,7 +820,8 @@ def get_license_text(
     else:
         template_folder = os.path.join(Path(__file__).parent.parent, "templates")
         license_file_path = os.path.join(template_folder, "license", f"{license}.txt")
-        if not os.path.exists(license_file_path):
+        # Only a template's name: the name becomes a path under templates/license
+        if license not in get_available_licenses() or not os.path.exists(license_file_path):
             raise ValueError(
                 f"No license stored under the given license name `{license}`. Please use a custom license text."
             )
@@ -881,24 +945,23 @@ def create_schema_project_folder(
     )
 
     # Checked before anything is written
+    if license is not None and license.upper() == "CUSTOM":
+        raise ValueError(
+            "A CUSTOM license needs its text: create the project with a license template "
+            "and set license and customLicense with msm.set_project_settings."
+        )
+    if license is not None and license not in get_available_licenses():
+        raise ValueError(
+            f"No license stored under the given license name `{license}`. Please use a custom license text."
+        )
     year_of_creation = (
         check_copyright_year(year_of_creation) if year_of_creation else current_year()
     )
-    copyrights = [dict(copyright) for copyright in copyrights or []] or [
-        {"holder": copyright_holder, "tracksUpdates": True}
-    ]
-    for copyright in copyrights:
-        copyright["yearOfCreation"] = copyright.get("yearOfCreation") or year_of_creation
-        for key in ("yearOfCreation", "yearOfLastUpdate"):
-            if copyright.get(key):
-                copyright[key] = check_copyright_year(copyright[key], key)
-        if copyright.get("yearOfLastUpdate") and (
-            copyright["yearOfLastUpdate"] < copyright["yearOfCreation"]
-        ):
-            raise ValueError(
-                f"The yearOfLastUpdate {copyright['yearOfLastUpdate']} lies before "
-                f"the yearOfCreation {copyright['yearOfCreation']}."
-            )
+    copyrights = checked_copyrights(
+        copyrights or [{"holder": copyright_holder, "tracksUpdates": True}],
+        year_of_creation,
+        holder_needed=False,
+    )
 
     target_path = os.path.abspath(os.path.expanduser(target_path))
     if not os.path.exists(target_path):
@@ -1937,92 +2000,223 @@ def _read_raw_project_settings(schema_project_path: str) -> dict:
         return json.load(f)
 
 
-def _write_online_alter_setting(schema_project_path: str, raw: dict, setting) -> list:
-    """Writes the setting into msm.project.json; None means unchanged."""
-    if setting is None:
-        return []
-    raw[online_alter_lib.SETTING] = setting
-    return [write_project_settings(schema_project_path, raw)]
+# The keys of msm.project.json set_project_settings changes. The others are
+# the project's identity (schemaName, schemaFileName) or follow `copyrights`
+# (the copyrightHolder and yearOfCreation mirrors).
+PROJECT_SETTING_KEYS = (
+    "copyrights",
+    "license",
+    "customLicense",
+    "onlineAlter",
+    "substitutions",
+    "maxInlineSectionSize",
+    "schemaDependencies",
+)
+_IDENTITY_KEYS = ("schemaName", "schemaFileName")
+_MIRROR_KEYS = ("copyrightHolder", "yearOfCreation")
+# Keys a project may go without: None given for one removes it
+_OPTIONAL_KEYS = (
+    "customLicense", "onlineAlter", "substitutions", "maxInlineSectionSize", "schemaDependencies"
+)
 
 
-@changes_project
-def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -> list:
-    """Sets the general values of the project's online ALTER TABLE setting
-    (msm.project.json, onlineAlter), what the Edit MSM Project dialog's
-    Online Schema Change tab writes. The tables' entries stay as they are.
-
-    Args:
-        schema_project_path: The project folder.
-        settings: {enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?,
-            maxLockedBytes?, lockWait?, maxRetries?}; it replaces the general
-            values, so a key left out takes msm's default again. None or {}
-            removes them all.
-
-    Returns:
-        The files written; none where nothing changed.
-
-    Raises:
-        ValueError: For settings that are no object, that hold `tables`, or
-            that online_alter.read_setting refuses.
-    """
-    if settings is not None and not isinstance(settings, dict):
-        raise ValueError("The general settings must be an object, or None to remove them.")
-    if settings and "tables" in settings:
-        raise ValueError(
-            "The general settings cannot hold `tables`; msm.set_online_alter_table "
-            "sets a table's entry."
-        )
-    # Checked as they will be read back
-    online_alter_lib.read_setting(settings or {}, "the general settings")
-
-    raw = _read_raw_project_settings(schema_project_path)
-    return _write_online_alter_setting(
-        schema_project_path, raw, online_alter_lib.with_general(raw.get(online_alter_lib.SETTING), settings)
-    )
-
-
-@changes_project
-def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
-    """Sets a table's entry of the project's online ALTER TABLE setting
-    (msm.project.json, onlineAlter.tables), what the Table Editor's Online
-    Alter Table tab writes.
-
-    Args:
-        schema_project_path: The project folder.
-        table: The table, as named in the scripts.
-        settings: {enabled?, maxRebuildBytes?, galeraMaxBytes?, nboLock?,
-            maxLockedBytes?, lockWait?, maxRetries?}; None or {} removes the
-            table's entry, so it follows the project's general values.
-
-    Returns:
-        The files written; none where nothing changed.
-
-    Raises:
-        ValueError: For a table name that is empty, or settings
-            online_alter.read_setting refuses.
-    """
-    if not isinstance(table, str) or not table.strip():
-        raise ValueError("A table name is needed.")
-    if settings is not None and not isinstance(settings, dict):
-        raise ValueError("The table's settings must be an object, or None to remove them.")
-    # Checked as they will be read back
-    online_alter_lib.read_setting({"tables": {table: settings or {}}}, "the table's settings")
-
-    raw = _read_raw_project_settings(schema_project_path)
-    setting = raw.get(online_alter_lib.SETTING)
-    existing = setting.get("tables") if isinstance(setting, dict) else None
-    if not settings and table not in (existing or {}):
-        return []
-
-    def change(tables):
-        if settings:
-            tables[table] = dict(settings)
+def _checked_settings(raw: dict, settings: dict) -> dict:
+    """msm.project.json's content with settings applied, each value checked
+    as msm reads it back; nothing of raw is changed."""
+    if not isinstance(settings, dict):
+        raise ValueError("The settings must be an object of msm.project.json keys.")
+    for key in settings:
+        if key in _IDENTITY_KEYS:
+            raise ValueError(f"`{key}` is the project's identity and cannot be changed.")
+        if key in _MIRROR_KEYS:
+            raise ValueError(f"`{key}` follows `copyrights`; set the copyrights instead.")
+        if key not in PROJECT_SETTING_KEYS:
+            raise ValueError(
+                f"Unknown project setting `{key}`; the settings are {', '.join(PROJECT_SETTING_KEYS)}."
+            )
+    new = dict(raw)
+    for key, value in settings.items():
+        if value is None and key in _OPTIONAL_KEYS:
+            new.pop(key, None)
         else:
-            tables.pop(table, None)
+            new[key] = value
 
-    return _write_online_alter_setting(
-        schema_project_path, raw, online_alter_lib.with_tables(setting, change)
+    if "copyrights" in settings:
+        copyrights = checked_copyrights(settings["copyrights"])
+        new["copyrights"] = copyrights
+        new["copyrightHolder"] = copyrights[0]["holder"]
+        new["yearOfCreation"] = copyrights[0]["yearOfCreation"]
+    if "license" in settings and not isinstance(settings["license"], str):
+        raise ValueError("`license` must be a string.")
+    if settings.get("customLicense") is not None and not isinstance(settings["customLicense"], str):
+        raise ValueError("`customLicense` must be a string, or null to remove it.")
+    online_alter_lib.read_setting(new.get(online_alter_lib.SETTING), "the settings")
+    get_substitution_definitions(new)
+    lib.sections.get_max_inline_section_size(new)
+    dependencies = new.get("schemaDependencies", [])
+    if not isinstance(dependencies, list) or not all(
+        isinstance(name, str) and name.strip() for name in dependencies
+    ):
+        raise ValueError("`schemaDependencies` must be a list of schema names.")
+    # Renders with the new settings, or they are refused: a known license,
+    # a custom text with known placeholders
+    get_license_text(project_settings=new)
+    return new
+
+
+def _license_key(project_settings: dict) -> tuple:
+    """What the license block of a project's files is made from, but the
+    years of the notices; the first holder's years where a CUSTOM text puts
+    them into the block as ${year}."""
+    copyrights = get_project_copyrights(project_settings)
+    license = project_settings.get("license")
+    custom_license = project_settings.get("customLicense")
+    year = None
+    if str(license).upper() == "CUSTOM" and any(
+        placeholder in str(custom_license or "") for placeholder in ("${year}", "$year")
+    ):
+        year = get_copyright_years(copyrights[0])
+    return (
+        [str(c.get("holder") or "").strip() for c in copyrights],
+        license,
+        custom_license,
+        year,
     )
+
+
+def _replace_notice_run(text: str | None, project_settings: dict) -> tuple:
+    """A file's text with its header's notices made from the settings, the
+    comment prefix of the first kept; and by how many lines they grew."""
+    if text is None:
+        return text, 0
+    lines = text.splitlines(keepends=True)
+    run = _notice_run(lines)
+    if not run:
+        return text, 0
+    prefix = COPYRIGHT_COMMENT_PREFIX_REGEX.match(lines[run.start]).group(0)
+    # The file's own line break, so a CRLF file stays one
+    line_break = "\r\n" if lines[run.start].endswith("\r\n") else "\n"
+    notices = render_copyright_notices(project_settings, prefix=prefix).split("\n")
+    lines[run.start : run.stop] = [line + line_break for line in notices]
+    return "".join(lines), len(notices) - len(run)
+
+
+def _with_license_section(script: str, project_settings: dict) -> str:
+    """The development script with what lies before its first section, the
+    license, made again as creation makes it from the template.
+
+    Raises:
+        ValueError: For a script without sections, which has no license
+            block to tell from its SQL.
+    """
+    first = re.search(MSM_SECTIONS_REGEX, script, re.MULTILINE | re.DOTALL)
+    if first is None:
+        raise ValueError("The development script has no MSM sections; its license block cannot be found.")
+    with open(DEVELOPMENT_SCRIPT_TEMPLATE) as f:
+        template = strip_template_copyright_header(f.readlines())
+    template_first = re.search(MSM_SECTIONS_REGEX, template, re.MULTILINE | re.DOTALL)
+    preamble = Template(template[: template_first.start()]).substitute(
+        license=get_license_text(project_settings=project_settings)
+    )
+    return preamble + script[first.start() :]
+
+
+def _license_block_texts(schema_project_path: str, old: dict, new: dict) -> tuple:
+    """The new texts of the files whose notices and license come from the
+    settings ([(path, text, old text)]), and whether a line moved: a
+    breakout file whose header changed its line count is included from the
+    line its SQL now starts on."""
+    dev_file = get_schema_development_file_path(schema_project_path)
+    script = lib.sections.read_if_exists(dev_file)
+    if script is None:
+        raise ValueError(f"The development script {dev_file} is missing.")
+    new_script = _with_license_section(script, new)
+    moved = new_script.count("\n") != script.count("\n")
+    texts = []
+    for path in _project_files_with_notices(schema_project_path, old):
+        if path == dev_file:
+            continue
+        text = lib.sections.read_if_exists(path)
+        new_text, grown = _replace_notice_run(text, new)
+        if grown and Path(path).parent.name == lib.sections.BREAKOUT_FOLDER:
+            new_script = lib.sections.shift_include_start(new_script, Path(path).name, grown)
+            moved = True
+        texts.append((path, new_text, text))
+    return [(dev_file, new_script, script), *texts], moved
+
+
+@changes_project
+def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str = None) -> list:
+    """Changes settings of a project's msm.project.json.
+
+    Only the keys given change; None removes an optional one (customLicense, onlineAlter,
+    substitutions, maxInlineSectionSize, schemaDependencies), so it takes
+    msm's default again. A value replaces the whole stored one: onlineAlter
+    with its general values and its tables, copyrights the list of holders.
+    Everything is checked first, and nothing is written when anything is
+    refused.
+
+    The project's files follow: changed years are brought into the notices
+    where they stand (update_copyright_years' files), and a changed holder,
+    license or custom license text makes the notices and the license block
+    of the development files again (released files stay as released). A
+    schema snapshot that was current is kept current: given the new hash
+    where no line moved, made again (lsp_path) where one did; one that
+    cannot be made again is left stale, as an editSchema then says.
+
+    Args:
+        schema_project_path: The project folder.
+        settings: {copyrights?: [{holder, yearOfCreation, yearOfLastUpdate?,
+            tracksUpdates?}], license?: a template name (BSD, GPL-2.0, MIT,
+            None) or CUSTOM, customLicense?: the text of a CUSTOM license
+            (placeholders ${copyright_notices}, ${copyright_holder},
+            ${year}), onlineAlter?, substitutions?, maxInlineSectionSize?,
+            schemaDependencies?}.
+        lsp_path: The MariaDB SQL language server binary to make the
+            snapshot again with; None looks for it.
+
+    Returns:
+        The files written; none where nothing changed.
+
+    Raises:
+        ValueError: For a key that cannot be set (schemaName, schemaFileName,
+            the mirrors copyrightHolder and yearOfCreation, an unknown one)
+            or a value msm refuses on reading it.
+    """
+    raw = _read_raw_project_settings(schema_project_path)
+    new = _checked_settings(raw, settings)
+    if new == raw:
+        return []
+    if "copyrights" not in settings and _license_key(raw) == _license_key(new):
+        # Nothing the files show
+        return [write_project_settings(schema_project_path, new)]
+
+    old = get_project_settings(schema_project_path)
+    if _license_key(old) == _license_key(new):
+        # The years at most, set by hand: brought in where they stand
+        texts, moved = None, False
+    else:
+        texts, moved = _license_block_texts(schema_project_path, old, new)
+
+    def change() -> list:
+        # The files first, the settings last, as update_copyright_years writes
+        if texts is None:
+            written = _refresh_notice_files(schema_project_path, new, tracking_only=False)
+        else:
+            written = [path for path, text, before in texts
+                       if lib.sections.write_if_changed(path, text, before)]
+        return [*written, write_project_settings(schema_project_path, new)]
+
+    if not moved:
+        return lib.modeling.keeping_snapshot_current(schema_project_path, change)
+    current = lib.modeling.snapshot_is_current(schema_project_path)
+    written = change()
+    if current:
+        try:
+            written += lib.modeling.update_schema_definition(schema_project_path, lsp_path)["files"]
+        except (ValueError, OSError):
+            pass  # Left stale: the next editSchema asks for the snapshot again
+    return list(dict.fromkeys(written))
 
 
 def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:

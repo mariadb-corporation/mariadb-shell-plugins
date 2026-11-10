@@ -890,49 +890,34 @@ def get_online_alter_settings(**kwargs) -> dict:
         kwargs.get("schema_project_path", lib.core.get_working_dir()), kwargs.get("table", None)))
 
 
-@plugin_function("msm.setOnlineAlterDefaults", shell=True, cli=True, web=True)
-def set_online_alter_defaults(**kwargs) -> list:
-    """Sets the general values of a project's online ALTER TABLE setting
+@plugin_function("msm.set.projectSettings", shell=True, cli=True, web=True)
+def set_project_settings(settings: dict, **kwargs) -> list:
+    """Changes settings of a schema project's msm.project.json
 
-    Writes msm.project.json's `onlineAlter` setting, keeping its tables'
-    entries. The values given replace the general ones, so a key left out
-    takes msm's default again.
+    Only the keys given change; null removes an optional one (customLicense, onlineAlter,
+    substitutions, maxInlineSectionSize, schemaDependencies). A value replaces
+    the stored one as a whole. Everything is checked first, and nothing is
+    written when anything is refused. Changed copyright years, holders or a
+    changed license are brought into the notices and license blocks of the
+    development files; released files stay as released.
 
     Args:
+        settings (dict): The settings to change: copyrights (a list of
+            {holder, yearOfCreation, yearOfLastUpdate, tracksUpdates}), license
+            (BSD, GPL-2.0, MIT, None or CUSTOM), customLicense (the text of a
+            CUSTOM license; placeholders ${copyright_notices}, ${copyright_holder},
+            ${year}), onlineAlter, substitutions, maxInlineSectionSize,
+            schemaDependencies. schemaName and schemaFileName cannot be changed.
         **kwargs: Additional options.
 
     Keyword Args:
-        settings (dict): The general settings: enabled, maxRebuildBytes, galeraMaxBytes,
-            nboLock, maxLockedBytes, lockWait, maxRetries. Left out or empty, they are all removed.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The MariaDB SQL language server binary to make the schema snapshot
+            again with. Defaults to looking for it.
 
     Returns:
         The files written.
     """
-    return lib.management.set_online_alter_defaults(
-        kwargs.get("schema_project_path", lib.core.get_working_dir()),
-        kwargs.get("settings", None))
-
-
-@plugin_function("msm.setOnlineAlterTable", shell=True, cli=True, web=True)
-def set_online_alter_table(table: str, **kwargs) -> list:
-    """Sets a table's online ALTER TABLE settings in the project
-
-    Writes the table's entry of msm.project.json's onlineAlter setting. Without settings the
-    entry goes, and the table follows the project's general values.
-
-    Args:
-        table (str): The table, as named in the scripts.
-        **kwargs: Additional options.
-
-    Keyword Args:
-        settings (dict): The table's settings: enabled, maxRebuildBytes, galeraMaxBytes,
-            nboLock, maxLockedBytes, lockWait, maxRetries.
-        schema_project_path (str): The path to the schema project. Defaults to the working directory.
-
-    Returns:
-        The files written.
-    """
-    return lib.management.set_online_alter_table(
-        kwargs.get("schema_project_path", lib.core.get_working_dir()), table,
-        kwargs.get("settings", None))
+    return lib.management.set_project_settings(
+        kwargs.get("schema_project_path") or lib.core.get_working_dir(), settings,
+        lsp_path=kwargs.get("lsp_path"))

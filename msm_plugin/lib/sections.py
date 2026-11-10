@@ -121,6 +121,15 @@ def include_directive(file_name: str, header: str) -> str:
     return f"SOURCE './{BREAKOUT_FOLDER}/{file_name}'[{header_end(header)}:]; -- Without the header"
 
 
+def shift_include_start(script: str, file_name: str, delta: int) -> str:
+    """The script with the start bound of each include_directive of a
+    breakout file moved by delta lines, where its header grew by delta."""
+    directive = re.compile(
+        "(" + re.escape(f"SOURCE './{BREAKOUT_FOLDER}/{file_name}'[ln") + r")(\d+):"
+    )
+    return directive.sub(lambda m: f"{m.group(1)}{int(m.group(2)) + delta}:", script)
+
+
 def set_section_body(section: dict, body: str) -> None:
     """Replaces the SQL of a section (of get_file_sections) with body.
 
