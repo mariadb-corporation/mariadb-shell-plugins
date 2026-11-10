@@ -62,18 +62,20 @@ DELIMITER ;
 -- note that these changes need to be carefully processed during a schema
 -- upgrade operation. These changes must be executed in the right order as
 -- each operation will result in a state change that often cannot be easily
--- revered. This might include DROP statements on other schema objects (VIEWs,
--- PROCEDUREs, FUNCTIONs, TRIGGERs EVENTs, ...) as they could otherwise prevent
--- change of the TABLE structure. These schema objects may then be re-created
--- inside the MSM Section 250: Idempotent Schema Object Changes. If there are
--- no changes required, this section can be skipped.
+-- reversed. This might include DROP statements on other schema objects (VIEWs,
+-- TRIGGERs, EVENTs, ...) as they could otherwise prevent change of the TABLE
+-- structure, and the DROP of objects the new version no longer has. Do not
+-- re-create these objects here: Section 150 of the new version re-creates them
+-- after all update steps have run. A DROP PROCEDURE or DROP FUNCTION cannot
+-- run here, put it into the MSM Section 290. If there are no changes
+-- required, this section can be skipped.
 -- -----------------------------------------------------------------------------
--- TABLE changes and all DROP statements
+-- TABLE changes and DROP statements
 -- #############################################################################
 
 /*
 -- ToDo: Add ALTER TABLE statements or new CREATE TABLE statements. Include
--- DROP TRIGGER/EVENT/... statements and re-create them in the next section.
+-- DROP TRIGGER/EVENT/... statements of objects the new version removes.
 -- Perform DML statements if needed.
 
 -- -----------------------------------------------------------------------------
@@ -83,48 +85,6 @@ DELIMITER ;
 ALTER TABLE `my_table`
     ADD COLUMN birthday DATE;
 */
-
-
--- #############################################################################
--- MSM Section 250: Idempotent Schema Object Additions And Changes
--- -----------------------------------------------------------------------------
--- This section contains the new and update creation of all schema objects,
--- except TABLEs, ROLEs and GRANTs. Ensure that all existing objects are
--- overwritten in a clean manner using explicit DROP IF EXISTS statements or
--- CREATE OR REPLACE when re-creating the objects. All object removals must
--- be defined in the MSM Section 240. If there are no changes required, this
--- section can be skipped.
--- -----------------------------------------------------------------------------
--- All other schema object definitions (VIEWs, PROCEDUREs, FUNCTIONs, TRIGGERs,
--- EVENTs, ...) that are new or have changed
--- #############################################################################
-
-DELIMITER %%
-
-/*
--- ToDo: Add schema objects create statements
-
--- -----------------------------------------------------------------------------
--- VIEW `${schema_name}`.`my_view`
--- -----------------------------------------------------------------------------
-
-CREATE OR REPLACE VIEW `my_view` AS
-    SELECT t.`id`, t.`name`
-    FROM `my_table` AS t
-    ORDER BY t.`name`%%
-
--- -----------------------------------------------------------------------------
--- PROCEDURE `${schema_name}`.`my_proc`
--- -----------------------------------------------------------------------------
-
-DROP PROCEDURE IF EXISTS `my_proc`%%
-CREATE PROCEDURE `my_proc`(INOUT value INT)
-BEGIN
-    SET value = value + 1;
-END%%
-*/
-
-DELIMITER ;
 
 
 -- #############################################################################
@@ -142,11 +102,14 @@ DELIMITER ;
 -- MSM Section 290: Removal of Update Helpers
 -- -----------------------------------------------------------------------------
 -- Removal of optional helper PROCEDUREs and FUNCTIONs that are called during
--- the update of the database schema. Note that DROP IF EXISTS needs to be
--- used.
+-- the update of the database schema, and of PROCEDUREs and FUNCTIONs the new
+-- version no longer has. Note that DROP IF EXISTS needs to be used. This
+-- section runs on every deployment of a later version too, after its Section
+-- 150: if a later version adds a PROCEDURE or FUNCTION of a removed one's name
+-- again, take that DROP out of here.
 -- #############################################################################
 
--- Drop optional helper PROCEDUREs and FUNCTIONs here.
+-- Drop optional helper PROCEDUREs and FUNCTIONs and removed ones here.
 
 
 -- #############################################################################

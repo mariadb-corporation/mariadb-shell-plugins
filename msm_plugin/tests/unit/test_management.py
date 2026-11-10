@@ -812,9 +812,6 @@ def test_prepare_release(sandbox_session, project_path):
     )
 
     # Add a stored procedure
-    sql_content_dev = get_sql_content_from_section(
-        file_path=dev_sql_file_path, section_id="150"
-    )
     set_section_sql_content(
         file_path=dev_sql_file_path,
         section_id="150",
@@ -843,15 +840,6 @@ def test_prepare_release(sandbox_session, project_path):
         file_path=update_sql_file_path,
         section_id="240",
         sql_content=MSM_SECTION_140_SQL_CONTENT_002,
-    )
-
-    update_sql_file_path = os.path.join(
-        project_path, "releases", "updates", "my_schema_0.0.1_to_0.0.2.sql"
-    )
-    set_section_sql_content(
-        file_path=update_sql_file_path,
-        section_id="250",
-        sql_content=MSM_SECTION_150_SQL_CONTENT_002,
     )
 
     # Generate deployment script
