@@ -293,7 +293,6 @@ def clear_pending_update(path: str, project_settings: dict) -> bool:
     return sections_lib.write_if_changed(path, _pending_update_template(project_settings), old)
 
 
-@changes_project
 def move_pending_update(
     schema_project_path: str, project_settings: dict, update_file_path: str
 ) -> Optional[str]:

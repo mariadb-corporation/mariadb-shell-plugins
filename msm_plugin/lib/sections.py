@@ -254,7 +254,6 @@ def write_sections_parts(schema_project_path: str, parts_by_section: dict) -> li
     return [dev_file, *written]
 
 
-@changes_project
 def write_section_parts(schema_project_path: str, section_id: str, parts: list) -> list:
     """Sets the body of one section of the project's development script (write_sections_parts)."""
     return write_sections_parts(schema_project_path, {section_id: parts})
@@ -426,7 +425,6 @@ def _places(section_id: str, cut) -> list:
     ]
 
 
-@changes_project
 def split_sections(
     schema_project_path: str, section_ids: list = None, lsp_path: str = None
 ) -> SplitResult:
