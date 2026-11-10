@@ -550,6 +550,7 @@ def test_every_write_to_a_project_moves_the_copyright_years_along(tmp_path, monk
     writes = [
         lambda: set_development_version(schema_project_path=project_path, version="0.0.3"),
         lambda: lib.management.set_online_alter_table(project_path, "t", {"lockWait": 2}),
+        lambda: lib.management.set_online_alter_defaults(project_path, {"maxRetries": 3}),
         lambda: sections.write_section_parts(
             project_path, "140", [sections.Part("140-10_tables.sql", "Tables", "\nSELECT 2;\n")]
         ),

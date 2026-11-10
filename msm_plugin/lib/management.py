@@ -1929,23 +1929,20 @@ def get_online_alter_settings(schema_project_path: str, table: str = None) -> di
     }
 
 
-def _read_raw_project_settings(schema_project_path: str):
-    """msm.project.json's path and content as stored, not get_project_settings'
-    copy, which adds what it derives on reading."""
-    path = os.path.join(schema_project_path, "msm.project.json")
+def _read_raw_project_settings(schema_project_path: str) -> dict:
+    """msm.project.json's content as stored, not get_project_settings' copy,
+    which adds what it derives on reading."""
     get_project_settings(schema_project_path)  # a project, and readable
-    with open(path) as f:
-        return path, json.load(f)
+    with open(os.path.join(schema_project_path, "msm.project.json")) as f:
+        return json.load(f)
 
 
-def _write_online_alter_setting(path: str, raw: dict, setting) -> list:
+def _write_online_alter_setting(schema_project_path: str, raw: dict, setting) -> list:
     """Writes the setting into msm.project.json; None means unchanged."""
     if setting is None:
         return []
     raw[online_alter_lib.SETTING] = setting
-    with open(path, "w") as f:
-        f.write(json.dumps(raw, indent=4))
-    return [path]
+    return [write_project_settings(schema_project_path, raw)]
 
 
 @changes_project
@@ -1978,9 +1975,9 @@ def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -
     # Checked as they will be read back
     online_alter_lib.read_setting(settings or {}, "the general settings")
 
-    path, raw = _read_raw_project_settings(schema_project_path)
+    raw = _read_raw_project_settings(schema_project_path)
     return _write_online_alter_setting(
-        path, raw, online_alter_lib.with_general(raw.get(online_alter_lib.SETTING), settings)
+        schema_project_path, raw, online_alter_lib.with_general(raw.get(online_alter_lib.SETTING), settings)
     )
 
 
@@ -2011,7 +2008,7 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
     # Checked as they will be read back
     online_alter_lib.read_setting({"tables": {table: settings or {}}}, "the table's settings")
 
-    path, raw = _read_raw_project_settings(schema_project_path)
+    raw = _read_raw_project_settings(schema_project_path)
     setting = raw.get(online_alter_lib.SETTING)
     existing = setting.get("tables") if isinstance(setting, dict) else None
     if not settings and table not in (existing or {}):
@@ -2024,7 +2021,7 @@ def set_online_alter_table(schema_project_path: str, table: str, settings: dict 
             tables.pop(table, None)
 
     return _write_online_alter_setting(
-        path, raw, online_alter_lib.with_tables(setting, change)
+        schema_project_path, raw, online_alter_lib.with_tables(setting, change)
     )
 
 
