@@ -608,6 +608,14 @@ _TEMPLATE_MARKDOWN_FILES = sorted(
 )
 
 
+def write_project_settings(schema_project_path: str, settings: dict) -> str:
+    """Writes a project's msm.project.json, as msm formats it; its path."""
+    path = os.path.join(schema_project_path, "msm.project.json")
+    with open(path, "w") as f:
+        f.write(json.dumps(settings, indent=4))
+    return path
+
+
 def _project_files_with_notices(schema_project_path: str, project_settings: dict) -> list:
     """The files of a project whose notices follow the years of the settings.
 
@@ -673,10 +681,7 @@ def update_copyright_years(schema_project_path: str) -> list:
                 written.append(path)
         # get_project_settings derives only the copyrights list, so a project
         # in the single holder format gets the list written.
-        settings_path = os.path.join(schema_project_path, "msm.project.json")
-        with open(settings_path, "w") as f:
-            f.write(json.dumps(project_settings, indent=4))
-        return [settings_path, *written]
+        return [write_project_settings(schema_project_path, project_settings), *written]
 
     return lib.modeling.keeping_snapshot_current(schema_project_path, change)
 
@@ -870,7 +875,9 @@ def create_schema_project_folder(
     year_of_creation = (
         check_copyright_year(year_of_creation) if year_of_creation else current_year()
     )
-    copyrights = [dict(copyright) for copyright in copyrights or []]
+    copyrights = [dict(copyright) for copyright in copyrights or []] or [
+        {"holder": copyright_holder, "tracksUpdates": True}
+    ]
     for copyright in copyrights:
         copyright["yearOfCreation"] = copyright.get("yearOfCreation") or year_of_creation
         for key in ("yearOfCreation", "yearOfLastUpdate"):
@@ -907,21 +914,8 @@ def create_schema_project_folder(
     os.makedirs(os.path.join(project_path), exist_ok=True)
 
     # Copy the template project file structure
-    template_folder = os.path.join(Path(__file__).parent.parent, "templates")
-    shutil.copytree(
-        Path(os.path.join(template_folder, "msm.project")),
-        project_path,
-        dirs_exist_ok=True,
-    )
+    shutil.copytree(_PROJECT_TEMPLATE, project_path, dirs_exist_ok=True)
 
-    if not copyrights:
-        copyrights = [
-            {
-                "holder": copyright_holder,
-                "yearOfCreation": year_of_creation,
-                "tracksUpdates": True,
-            }
-        ]
     # Creating the project is the first change applied to it
     bump_copyright_years(copyrights)
 
@@ -938,12 +932,9 @@ def create_schema_project_folder(
         "schemaDependencies": [],
         "schemaName": schema_name,
         "schemaFileName": schema_file_name,
-        "yearOfCreation": copyrights[0].get("yearOfCreation", year_of_creation),
+        "yearOfCreation": copyrights[0]["yearOfCreation"],
     }
-
-    # Write the msm.project.json file
-    with open(os.path.join(project_path, "msm.project.json"), "w") as f:
-        f.write(json.dumps(project_settings, indent=4))
+    write_project_settings(project_path, project_settings)
 
     # Replace placeholders in all markdown files
     files = list(Path(project_path).rglob("*.md"))
