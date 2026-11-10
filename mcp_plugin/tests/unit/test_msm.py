@@ -405,6 +405,25 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                 )
                 assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
 
+                # The general values, written without touching the table's
+                payload(
+                    await call(
+                        "msm.set_online_alter_defaults",
+                        {
+                            "schema_project_path": project_path,
+                            "settings": {"maxRetries": 3},
+                        },
+                    )
+                )
+                settings = payload(
+                    await call(
+                        "msm.get_online_alter_settings",
+                        {"schema_project_path": project_path},
+                    )
+                )
+                assert settings["setting"]["maxRetries"] == 3
+                assert settings["setting"]["tables"]["mcp_pytest_table"] == {"lockWait": 2}
+
                 # One ALTER TABLE run online, as a task followed with task.get
                 started = payload(
                     await call(
