@@ -1735,11 +1735,8 @@ def _read_raw_project_settings(schema_project_path: str):
 
 
 def _write_online_alter_setting(path: str, raw: dict, setting) -> list:
-    """Writes the setting into msm.project.json; None means unchanged. An
-    empty one is kept as the template writes it, rather than as {}."""
-    if setting == {}:
-        setting = {"enabled": True}
-    if setting is None or setting == raw.get(online_alter_lib.SETTING):
+    """Writes the setting into msm.project.json; None means unchanged."""
+    if setting is None:
         return []
     raw[online_alter_lib.SETTING] = setting
     with open(path, "w") as f:
@@ -1774,15 +1771,12 @@ def set_online_alter_defaults(schema_project_path: str, settings: dict = None) -
             "sets a table's entry."
         )
     # Checked as they will be read back
-    online_alter_lib.read_setting(dict(settings or {}), "the general settings")
+    online_alter_lib.read_setting(settings or {}, "the general settings")
 
     path, raw = _read_raw_project_settings(schema_project_path)
-    old = raw.get(online_alter_lib.SETTING)
-    tables = old.get("tables") if isinstance(old, dict) else None
-    setting = dict(settings or {})
-    if tables:
-        setting["tables"] = tables
-    return _write_online_alter_setting(path, raw, setting)
+    return _write_online_alter_setting(
+        path, raw, online_alter_lib.with_general(raw.get(online_alter_lib.SETTING), settings)
+    )
 
 
 def set_online_alter_table(schema_project_path: str, table: str, settings: dict = None) -> list:
