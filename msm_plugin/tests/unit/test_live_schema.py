@@ -336,8 +336,50 @@ def test_a_view_without_what_it_reads_is_imported_with_a_warning(live, tmp_path)
     ]
 
 
-
 def test_a_view_whose_definition_cannot_be_read_reads_none():
     listed = {kind: [] for kind in live_schema.OBJECT_KINDS}
     assert live_schema.view_reads(None, "v", listed) is None
     assert live_schema.view_reads("", "v", listed) is None
+
+
+def test_a_view_reads_only_names_of_its_own_schema():
+    listed = {kind: [] for kind in live_schema.OBJECT_KINDS}
+    listed["tables"] = [{"name": "note"}, {"name": "d"}, {"name": "shop"}]
+    listed["functions"] = [{"name": "f"}]
+    definition = (
+        "select `shop`.`f`(`n`.`id`) AS `a`,`crm`.`f`(1) AS `b`,"
+        "extract(year from `n`.`d`) AS `y`,`shop`.`note`.`id` AS `i` "
+        "from `crm`.`note` `n` join `shop`.`note`"
+    )
+    assert live_schema.view_reads(definition, "v", listed, "shop") == [
+        {"kind": "functions", "name": "f"}, {"kind": "tables", "name": "note"},
+    ]
+    # The other schema's `note` alone is not read
+    assert live_schema.view_reads(
+        "select `n`.`id` AS `id` from `crm`.`note` `n`", "v", listed, "shop"
+    ) == []
+
+
+def _parser_reads_views() -> bool:
+    """Whether the mariadb-lsp found outlines a view's reads."""
+    names = {kind: set() for kind in ("functions", "sequences", "tables", "views")}
+    return live_schema._parsed_view_reads({"v": "select 1"}, names, "s", None) is not None
+
+
+def test_the_parser_knows_a_cte_named_like_a_table(live, monkeypatch):
+    live.run_sql(
+        f"CREATE VIEW `{LIVE_SCHEMA}`.`cte_view` AS WITH `note` AS (SELECT 1 AS `id`) "
+        "SELECT `note`.`id` AS `id` FROM `note` JOIN `customer` `c` ON 1"
+    )
+    if _parser_reads_views():
+        reads = {v["name"]: v["reads"] for v in live_schema.list_schema_objects(live, LIVE_SCHEMA)["views"]}
+        # The CTE is no read of the table `note`, the alias `c` none of a table `c`
+        assert reads["cte_view"] == [{"kind": "tables", "name": "customer"}]
+        assert reads["doubled"] == [
+            {"kind": "functions", "name": "twice"}, {"kind": "tables", "name": "note"}
+        ]
+    # Without a binary that outlines them, the text is read: the CTE's name
+    # is taken for the table
+    monkeypatch.setattr(lsp, "find_lsp", lambda lsp_path=None: None)
+    reads = {v["name"]: v["reads"] for v in live_schema.list_schema_objects(live, LIVE_SCHEMA)["views"]}
+    assert reads["cte_view"] == [{"kind": "tables", "name": "customer"}, {"kind": "tables", "name": "note"}]

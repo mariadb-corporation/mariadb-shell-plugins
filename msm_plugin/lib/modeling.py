@@ -1305,7 +1305,7 @@ def prepare_live_import(
         True, enforce_target_path, copyrights, year_of_creation,
     )
     lsp.require_lsp(lsp_path)
-    listed = live_schema.list_schema_objects(session, schema)
+    listed = live_schema.list_schema_objects(session, schema, lsp_path)
     return listed, live_schema.selected_objects(listed, objects)
 
 
@@ -1374,7 +1374,7 @@ def create_project_from_live_schema(
             session, schema, target_path, objects, lsp_path=lsp_path, **options
         )
     listed, selected = prepared
-    imported = live_schema.schema_sql(session, schema, selected, task, listed)
+    imported = live_schema.schema_sql(session, schema, selected, listed, task)
 
     def fill(project_path: str) -> dict:
         with live_schema.task_stage(task, LIVE_WRITING_STAGE):
