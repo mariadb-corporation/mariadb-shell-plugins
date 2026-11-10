@@ -350,6 +350,8 @@ def test_the_first_edit_of_a_year_moves_the_copyright_years_along(
     assert copyrights[0]["yearOfLastUpdate"] == later
     assert f" * Copyright (c) {created}, {later}, Example Ltd.\n" in dev_script(project)
     assert result["rows"][0]["document"]["source_hash"] == modeling.current_source_hash(project)
+    # The files are the edit's own, not the ones the years were moved in
+    assert os.path.join(project, "README.md") not in result["files"]
 
 
 @needs_lsp

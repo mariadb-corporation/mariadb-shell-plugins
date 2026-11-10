@@ -492,8 +492,8 @@ def edit_schema(
 
     Returns:
         {rows, files, migration, migration_file, notes}: the rows of the
-        diagrams VIEW afterwards (the new snapshot first), the files
-        written, the statements kept for the next release's update script
+        diagrams VIEW afterwards (the new snapshot first), the files the
+        edits wrote (not those the copyright years were moved in), the statements kept for the next release's update script
         (none before the first release, which creates the schema from the
         script) and the file they went into, and the binary's notes on what
         it could not change itself.
@@ -541,8 +541,7 @@ def edit_schema(
     # After base_hash was checked: moving the years along gives the snapshot
     # the hash of the script with the new notices. Not undone where the edit
     # fails, as it is a change of its own.
-    bumped = management.update_copyright_years(schema_project_path)
-    if bumped:
+    if management.update_copyright_years(schema_project_path):
         project = modeling._Project.load(schema_project_path)
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
@@ -654,8 +653,7 @@ def edit_schema(
 
     return {
         "rows": rows,
-        # The files the years were moved along in, too
-        "files": bumped + [path for path in written if path not in bumped],
+        "files": written,
         "migration": kept,
         "migration_file": migration_file,
         "notes": result.get("notes", []),
