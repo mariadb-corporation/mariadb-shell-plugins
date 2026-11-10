@@ -35,7 +35,6 @@ from datetime import date
 from textwrap import indent
 import mysqlsh
 
-from msm_plugin.lib import lsp, statements
 from msm_plugin.lib import online_alter as online_alter_lib
 from msm_plugin.lib import update_steps
 from msm_plugin.lib.source import expand_source_directives
@@ -1485,68 +1484,6 @@ def sql_content_has_no_statement(
     return re.sub(pattern, "", sql_content, 0).strip() == ""
 
 
-def _outlined_routines(binary: str, sql: str, source_dir: str) -> set:
-    """The (schema, kind, name) of every routine the outline of sql has, in lower case."""
-    outline = lsp.outline(binary, sql, source_dir)
-    return {
-        (schema.get("name", "").lower(), routine.get("kind"), routine.get("name", "").lower())
-        for schema in outline.get("schemas", [])
-        for routine in schema.get("routines", [])
-    }
-
-
-def without_drops_of_target_routines(
-    removals: str,
-    target_objects: str,
-    schema_name: str,
-    target_version: str,
-    binary: str,
-    source_dir: str,
-) -> str:
-    """An update script's Section 290 without the DROPs of routines the target defines.
-
-    Every update script's Section 290 runs on every deployment of a later
-    version, after the target's Section 150. A routine one release removed
-    and a later one adds again would be created by the target's 150 and then
-    dropped by the old 290. Such a DROP is commented out instead. The
-    outline tells what a statement drops: it applies a DROP to what the
-    target's Section 150 created.
-
-    Args:
-        removals: The Section 290 body of an update script.
-        target_objects: The Section 150 body of the target version.
-        schema_name: The schema the scripts USE.
-        target_version: The target version, for the comment.
-        binary: The mariadb-lsp binary.
-        source_dir: The folder the outline takes SOURCE paths from.
-
-    Returns:
-        removals, with every DROP of a target routine commented out.
-    """
-    prefix = f"USE {statements.quote_identifier(schema_name)};\n{target_objects}\nDELIMITER ;\n"
-    target = _outlined_routines(binary, prefix, source_dir)
-    if not target or _outlined_routines(binary, prefix + removals, source_dir) == target:
-        return removals
-
-    entries = statements.sql_entries(removals, lsp.split(binary, removals))
-    for begin, end, delimiter in reversed(entries):
-        statement = removals[begin:end]
-        if delimiter != ";":
-            statement_sql = f"DELIMITER {delimiter}\n{statement}\nDELIMITER ;\n"
-        else:
-            statement_sql = statement + "\n"
-        if _outlined_routines(binary, prefix + statement_sql, source_dir) >= target:
-            continue
-        commented = "\n".join(f"-- {line}" for line in statement.splitlines())
-        removals = (
-            removals[:begin]
-            + f"-- Left out: version {target_version} defines this routine in its Section 150.\n"
-            + commented
-            + removals[end:]
-        )
-    return removals
-
-
 def remove_empty_sections(sections: dict, keep_even_if_empty=list[str]) -> None:
     """Removes all empty sections from the given section dict
 
@@ -1955,17 +1892,6 @@ def generate_deployment_script(
                     .get("sql_content", "")
                     .strip("\n")
                 )
-                if section_id == "290" and not sql_content_has_no_statement(sql_content):
-                    sql_content = without_drops_of_target_routines(
-                        removals=sql_content,
-                        target_objects=target_version_sections.get("150", {}).get(
-                            "sql_content", ""
-                        ),
-                        schema_name=schema_name,
-                        target_version=version,
-                        binary=lsp.require_lsp(),
-                        source_dir=schema_project_path,
-                    )
                 sql_content_indent = (
                     indent(sql_content, " " * needs_indent)
                     if needs_indent

@@ -1175,10 +1175,10 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
 
 
 def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir):
-    # Every update script's Section 290 runs on every deployment of a later
-    # version, after the target's Section 150. A procedure 1.1.0 removes and
-    # 1.2.0 adds again must not be dropped by 1.0.0-to-1.1.0's 290, on a
-    # fresh install or an update, while 1.1.0's own deployment still drops it.
+    # Every update script's Section 260 runs on every deployment of a later
+    # version, before the target's Section 150. A procedure 1.1.0 removes and
+    # 1.2.0 adds again must survive 1.0.0-to-1.1.0's DROP, on a fresh install
+    # and on every update, while 1.1.0's own deployment drops it.
     schema_name = "msm_routine_again"
     project = create_new_project_folder(
         schema_name=schema_name,
@@ -1214,27 +1214,24 @@ def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir
     )
     set_section_sql_content(
         file_path=update_script(files),
-        section_id="290",
-        sql_content="DROP PROCEDURE IF EXISTS `P`;\nDROP FUNCTION IF EXISTS `helper`;",
+        section_id="260",
+        sql_content="DROP PROCEDURE IF EXISTS `P`;",
     )
 
     set_section_sql_content(file_path=dev_file, section_id="150", sql_content=procedure)
     prepare_release(schema_project_path=project, version="1.2.0", next_version="1.3.0")
 
-    scripts = {
-        version: generate_deployment_script(schema_project_path=project, version=version)
-        for version in ("1.0.0", "1.1.0", "1.2.0")
-    }
-    for version, dropped in (("1.1.0", True), ("1.2.0", False)):
-        with open(scripts[version], "r") as f:
-            script = f.read()
-        assert ("\nDROP PROCEDURE IF EXISTS `P`;" in script) == dropped
-        # A DROP of a routine the target does not define stays
-        assert "\nDROP FUNCTION IF EXISTS `helper`;" in script
-    assert (
-        "-- Left out: version 1.2.0 defines this routine in its Section 150.\n"
-        "-- DROP PROCEDURE IF EXISTS `P`;"
-    ) in script
+    for version in ("1.0.0", "1.1.0", "1.2.0"):
+        script_path = generate_deployment_script(schema_project_path=project, version=version)
+        if version != "1.0.0":
+            with open(script_path, "r") as f:
+                script = f.read()
+            # Section 360 runs the 260s before Section 150 (none in 1.1.0) and 160
+            assert (
+                script.index("MSM Section 360")
+                < script.index("\nDROP PROCEDURE IF EXISTS `P`;")
+                < script.index("MSM Section 160")
+            )
 
     with fresh_schema(sandbox_session, schema_name):
         deploy_schema(schema_project_path=project, version="1.0.0")

@@ -67,7 +67,7 @@ DELIMITER ;
 -- structure, and the DROP of objects the new version no longer has. Do not
 -- re-create these objects here: Section 150 of the new version re-creates them
 -- after all update steps have run. A DROP PROCEDURE or DROP FUNCTION cannot
--- run here, put it into the MSM Section 290. If there are no changes
+-- run here, put it into the MSM Section 260. If there are no changes
 -- required, this section can be skipped.
 -- -----------------------------------------------------------------------------
 -- TABLE changes and DROP statements
@@ -88,6 +88,20 @@ ALTER TABLE `my_table`
 
 
 -- #############################################################################
+-- MSM Section 260: Removal of PROCEDUREs and FUNCTIONs
+-- -----------------------------------------------------------------------------
+-- The DROP of every PROCEDURE and FUNCTION the new version no longer has,
+-- which cannot run inside Section 240. Every deployment of this or a later
+-- version runs this section, a fresh install too, after the update steps and
+-- before Section 150, which creates all routines the deployed version has
+-- again. So use DROP IF EXISTS. If there are no changes required, this section
+-- can be skipped.
+-- #############################################################################
+
+-- Drop the removed PROCEDUREs and FUNCTIONs here.
+
+
+-- #############################################################################
 -- MSM Section 270: Authorization
 -- -----------------------------------------------------------------------------
 -- This section is used to define changes for ROLEs and GRANTs in respect to
@@ -102,14 +116,11 @@ ALTER TABLE `my_table`
 -- MSM Section 290: Removal of Update Helpers
 -- -----------------------------------------------------------------------------
 -- Removal of optional helper PROCEDUREs and FUNCTIONs that are called during
--- the update of the database schema, and of PROCEDUREs and FUNCTIONs the new
--- version no longer has. Note that DROP IF EXISTS needs to be used. This
--- section runs on every deployment of a later version too, after its Section
--- 150; a DROP of a routine that version defines again is left out of its
--- deployment script.
+-- the update of the database schema. Note that DROP IF EXISTS needs to be
+-- used.
 -- #############################################################################
 
--- Drop optional helper PROCEDUREs and FUNCTIONs and removed ones here.
+-- Drop optional helper PROCEDUREs and FUNCTIONs here.
 
 
 -- #############################################################################

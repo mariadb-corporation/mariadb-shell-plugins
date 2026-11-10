@@ -231,7 +231,7 @@ def test_untagged_migrations_are_sorted_into_the_sections():
     assert statements == {
         "240": "-- msm.editSchema: rename_table customer -> client\n"
                "RENAME TABLE `customer` TO `client`;",
-        "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;\n"
+        "260": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;\n"
                "drop function if exists `f`;",
     }
 
@@ -257,7 +257,7 @@ def test_tagged_migrations_are_placed_by_their_tags():
         "240": "-- msm.editSchema: drop_table t\n/* t */ DROP TABLE IF EXISTS `t`;\n"
                "-- msm.editSchema: drop_column t c\nALTER TABLE `t` DROP COLUMN `c`;\n"
                "CREATE VIEW `v` AS SELECT 1;",
-        "290": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;",
+        "260": "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;",
     }
     with pytest.raises(ValueError, match="without its `action`"):
         editing.migration_statements(edits, [{"edit": 1, "sql": "DROP TABLE `t`"}])
@@ -289,11 +289,39 @@ def test_triggers_events_and_sequences_are_placed_by_their_tags():
                "-- msm.editSchema: drop_event f\nDROP EVENT IF EXISTS `f`;\n"
                "-- msm.editSchema: add_sequence s\nCREATE SEQUENCE `s`;\n"
                "-- msm.editSchema: drop_sequence s\nDROP SEQUENCE IF EXISTS `s`;",
-        "290": "",
+        "260": "",
     }
     assert kept == ["DROP TRIGGER IF EXISTS `t`", "ALTER EVENT `e` RENAME TO `f`",
                     "DROP EVENT IF EXISTS `f`", "CREATE SEQUENCE `s`",
                     "DROP SEQUENCE IF EXISTS `s`"]
+
+
+def test_a_pending_script_written_before_section_260_keeps_its_drops(project):
+    """Routine DROPs went into the pending script's Section 290 before Section
+    260 took them: they are read from there and moved when the next is added."""
+    settings = management.get_project_settings(project)
+    legacy = editing.pending_update_text(
+        None, settings, {"240": "ALTER TABLE `t` ADD `c` INT;"}
+    ).replace(
+        "MSM Section 260: Removal of PROCEDUREs and FUNCTIONs",
+        "MSM Section 290: Removal of Update Helpers",
+    ) + "DROP PROCEDURE IF EXISTS `p`;\n"
+    path = editing.pending_update_path(project, settings)
+    with open(path, "w") as f:
+        f.write(legacy)
+    assert editing.read_pending_update(path) == {
+        "240": "ALTER TABLE `t` ADD `c` INT;",
+        "260": "DROP PROCEDURE IF EXISTS `p`;",
+    }
+
+    text = editing.pending_update_text(legacy, settings, {"260": "DROP FUNCTION IF EXISTS `f`;"})
+    assert "MSM Section 290" not in text
+    with open(path, "w") as f:
+        f.write(text)
+    assert editing.read_pending_update(path) == {
+        "240": "ALTER TABLE `t` ADD `c` INT;",
+        "260": "DROP PROCEDURE IF EXISTS `p`;\n\nDROP FUNCTION IF EXISTS `f`;",
+    }
 
 
 def test_diagrams_follow_renamed_events_and_sequences():
@@ -422,7 +450,7 @@ def test_a_released_project_keeps_the_migration(project, fake_edit, monkeypatch)
         "-- msm.editSchema: rename_table client -> buyer\n"
         "RENAME TABLE `client` TO `buyer`;"
     )
-    assert kept["290"] == "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;"
+    assert kept["260"] == "-- msm.editSchema: rename_routine p -> q\nDROP PROCEDURE IF EXISTS `p`;"
     with open(pending) as f:
         assert f.read().startswith("-- Copyright (c)")
 
@@ -483,7 +511,7 @@ def test_a_release_takes_the_pending_migration(project, fake_edit):
     )
     # The next section's banner keeps its blank lines.
     assert "`client`;\n\n\n-- ####" in sections["240"]["full_content"] + "\n-- ####"
-    assert editing.read_pending_update(pending) == {"240": "", "290": ""}
+    assert editing.read_pending_update(pending) == {"240": "", "260": ""}
 
 
 # -----------------------------------------------------------------------------
@@ -752,7 +780,7 @@ def test_untagged_update_script_gets_tables_and_drops_but_no_views_or_routines()
                "CREATE TABLE `note` (\n  `id` INT UNSIGNED NOT NULL\n);\n"
                "-- msm.editSchema: drop_view customer_ids\n"
                "DROP VIEW IF EXISTS `customer_ids`;",
-        "290": "-- msm.editSchema: drop_routine count_customers\n"
+        "260": "-- msm.editSchema: drop_routine count_customers\n"
                "DROP PROCEDURE IF EXISTS `count_customers`;",
     }
     assert editing._describe(STRUCTURAL_EDITS[2]) == "modify_column orders customer_id"
@@ -844,7 +872,7 @@ def test_structural_edits_reach_a_deployed_schema_through_the_next_release(deplo
     assert "CREATE TABLE `note`" in kept["240"]
     assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
     assert "DROP VIEW IF EXISTS `customer_ids`;" in kept["240"]
-    assert kept["290"].endswith("DROP PROCEDURE IF EXISTS `count_customers`;")
+    assert kept["260"].endswith("DROP PROCEDURE IF EXISTS `count_customers`;")
 
     release(path, "1.0.1", "1.0.2")
     assert column(
@@ -872,7 +900,7 @@ def test_structural_edits_reach_a_deployed_schema_through_the_next_release(deplo
     kept = pending(path)
     assert "ADD CONSTRAINT `fk_note_customer` FOREIGN KEY" in kept["240"]
     assert "DROP FOREIGN KEY `fk_orders_customer`" in kept["240"]
-    assert "CREATE" not in kept["240"].replace("CREATE TABLE", "") + kept["290"]
+    assert "CREATE" not in kept["240"].replace("CREATE TABLE", "") + kept["260"]
     release(path, "1.0.2", "1.0.3")
     assert foreign_keys(column) == ["fk_note_customer"]
     assert column(
@@ -928,8 +956,8 @@ def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
     kept = pending(path)
     # Section 150 creates the trigger and the event; the sequence goes with the tables
     assert "CREATE SEQUENCE `order_numbers`" in kept["240"]
-    assert "CREATE TRIGGER" not in kept["240"] + kept["290"]
-    assert "CREATE EVENT" not in kept["240"] + kept["290"]
+    assert "CREATE TRIGGER" not in kept["240"] + kept["260"]
+    assert "CREATE EVENT" not in kept["240"] + kept["260"]
     modeling.create_diagram(path, "Objects", tables=[], lsp_path=EDIT_LSP,
                             events=["nightly"], sequences=["order_numbers"])
 
@@ -1067,14 +1095,14 @@ def test_renames_reach_a_deployed_schema_through_the_next_release(deployed):
     kept = pending(path)
     assert "RENAME TABLE `customer` TO `client`;" in kept["240"]
     assert "ALTER TABLE `client` RENAME COLUMN `id` TO `client_id`;" in kept["240"]
-    # Section 150 creates the routine under its new name; the old one goes in 290
-    assert "CREATE PROCEDURE" not in kept["240"] + kept["290"]
-    assert "DROP PROCEDURE" in kept["290"] and "count_customers" in kept["290"]
+    # Section 150 creates the routine under its new name; the old one goes in 260
+    assert "CREATE PROCEDURE" not in kept["240"] + kept["260"]
+    assert "DROP PROCEDURE" in kept["260"] and "count_customers" in kept["260"]
 
     files = release(path, "1.0.1", "1.0.2")
     update = os.path.join(path, "releases", "updates", f"{DEPLOYED_SCHEMA}_1.0.0_to_1.0.1.sql")
     assert update in files
-    assert pending(path) == {"240": "", "290": ""}
+    assert pending(path) == {"240": "", "260": ""}
 
     assert sorted(column(
         "SELECT TABLE_NAME FROM information_schema.TABLES "
