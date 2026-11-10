@@ -228,6 +228,54 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
     return lib.editing.edit_schema(_project(kwargs), edits, base_hash, kwargs.get("lsp_path"))
 
 
+@plugin_function("msm.getObjectTemplates", shell=True, cli=True, web=True)
+def get_object_templates() -> dict:
+    """Returns msm's templates of the objects msm.addSchemaObject adds
+
+    Returns:
+        templates (view, procedure, function, trigger, event, sequence: the CREATE statement,
+        with string.Template placeholders) and placeholders (for each kind, those it takes:
+        ${name} and ${schema}, and ${table} for a trigger).
+    """
+    return lib.editing.get_object_templates()
+
+
+@plugin_function("msm.addSchemaObject", shell=True, cli=True, web=True)
+def add_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
+    """Adds a view, procedure, function, trigger, event or sequence to a schema project
+
+    The template (msm's, see msm.getObjectTemplates, or the one given) is filled with the name
+    and read by the MariaDB SQL language server's binary mariadb-lsp, then added as
+    msm.editSchema adds it: a sequence in MSM Section 140 before the first table, the others
+    in Section 150, written to be run again, into the section's breakout file where it has one;
+    once the project has a release, kept for the next update script; the schema snapshot is
+    made again.
+
+    Args:
+        kind (str): view, procedure, function, trigger, event or sequence.
+        name (str): The new object's name.
+        base_hash (str): The source_hash of the schema snapshot the caller knows, as for
+            msm.editSchema.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        template (str): The CREATE statement to fill instead of msm's, with ${name}, ${schema}
+            and, for a trigger, ${table}.
+        table (str): A trigger's table.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        What msm.editSchema returns, and file and line (1-based) where the new statement starts.
+    """
+    return lib.editing.add_schema_object(
+        _project(kwargs), kind, name, base_hash,
+        template=kwargs.get("template"), table=kwargs.get("table"),
+        lsp_path=kwargs.get("lsp_path"),
+    )
+
+
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)
 def remove_schema_diagram(name: str, **kwargs) -> list:
     """Removes a diagram from a schema project

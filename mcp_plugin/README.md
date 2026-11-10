@@ -299,6 +299,8 @@ Management (`msm`) plugin:
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
 | `msm.deploy_schema` | `deploy_schema` |
 | `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
+| `msm.get_object_templates` | `get_object_templates` (`msm_plugin/modeling.py`) |
+| `msm.add_schema_object` | `add_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.list_live_schema_objects` | `lib/live_schema.list_schema_objects` (with the db group) |
 | `msm.import_live_schema` | `lib/modeling.create_project_from_live_schema` (with the db group) |
 | `msm.get_online_alter_defaults` | `get_online_alter_defaults` |

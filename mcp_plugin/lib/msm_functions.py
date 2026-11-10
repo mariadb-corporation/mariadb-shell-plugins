@@ -773,6 +773,73 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
+    @tool(name="msm.get_object_templates")
+    def get_object_templates() -> dict:
+        """Returns msm's templates of the objects msm.add_schema_object adds.
+
+        Returns:
+            {templates: {view, procedure, function, trigger, event, sequence:
+            the plain CREATE statement, with string.Template placeholders},
+            placeholders: {kind: the placeholders it takes: name and schema,
+            and table for a trigger}}. msm adds what its sections need (the
+            form that runs again, the DELIMITER) itself.
+        """
+        return msm_modeling.get_object_templates()
+
+    @tool(name="msm.add_schema_object")
+    async def add_schema_object(
+        ctx: Context,
+        kind: str,
+        name: str,
+        base_hash: str,
+        template: Optional[str] = None,
+        table: Optional[str] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Adds a view, procedure, function, trigger, event or sequence to a schema project.
+
+        The template (msm's, see msm.get_object_templates, or the one given)
+        is filled with the name and read by mariadb-lsp, then added as
+        msm.edit_schema adds it: a sequence in MSM Section 140 before the
+        first table, the others in Section 150, written to run again, into
+        the section's breakout file where it has one; once the project has a
+        release, kept for the next update script; the snapshot made again.
+        Refused: a bad name, one taken (tables, views and sequences share a
+        namespace; a procedure and a function may share a name), a trigger
+        without its table or with one the project lacks, a placeholder the
+        kind does not take, a template that is not one CREATE of the kind,
+        and a stale base_hash.
+
+        Args:
+            kind: view, procedure, function, trigger, event or sequence.
+            name: The new object's name.
+            base_hash: The source_hash of the snapshot the caller knows (as
+                for msm.edit_schema).
+            template: The CREATE statement to fill instead of msm's: plain
+                SQL with ${name}, ${schema} and, for a trigger, ${table}.
+            table: A trigger's table.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.edit_schema returns (rows, files, migration,
+            migration_file, notes), and file and line (1-based) where the new
+            statement starts.
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.add_schema_object,
+            kind,
+            name,
+            base_hash,
+            **_kwargs(template=template, table=table, lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
+
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(
         ctx: Context,
