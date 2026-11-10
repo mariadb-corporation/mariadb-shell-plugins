@@ -897,11 +897,15 @@ def development_script_substitutions(project_settings: dict, version: str) -> di
     }
 
 
+def project_folder_name(schema_name: str) -> str:
+    """The name of the folder a project of a schema gets."""
+    return f"{convert_string_to_valid_filename(schema_name)}.msm.project"
+
+
 def project_folder_path(target_path: str, schema_name: str) -> str:
     """The folder create_schema_project_folder makes for a schema in target_path."""
     return os.path.join(
-        os.path.abspath(os.path.expanduser(target_path)),
-        f"{convert_string_to_valid_filename(schema_name)}.msm.project",
+        os.path.abspath(os.path.expanduser(target_path)), project_folder_name(schema_name)
     )
 
 

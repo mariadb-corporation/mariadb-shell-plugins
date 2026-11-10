@@ -26,7 +26,7 @@
 The reverse of a deployment: the objects of a live schema are listed
 (list_schema_objects), and the CREATE statements the server gives for them
 (SHOW CREATE ...) are grouped as an MSM development script keeps them
-(schema_sql), the way a MySQL Workbench model is imported (workbench.Imported).
+(schema_sql), the way a MySQL Workbench model is imported (statements.Imported).
 modeling.create_project_from_live_schema writes them into a new project.
 
 What makes a statement depend on the server it was read from is taken out:
@@ -35,14 +35,14 @@ deployed under any name), and a table's AUTO_INCREMENT counter. Data, users,
 roles and grants are not read.
 """
 
-import os
 import re
 import time
+from contextlib import contextmanager
 from typing import Optional
 
-from msm_plugin.lib import management
+from msm_plugin.lib import core, management
 from msm_plugin.lib import statements as statements_lib
-from msm_plugin.lib import workbench
+from msm_plugin.lib.statements import quote_identifier
 
 # The kinds of objects listed and selected, as the objects dicts name them
 OBJECT_KINDS = ("tables", "views", "procedures", "functions", "triggers", "events", "sequences")
@@ -50,6 +50,9 @@ OBJECT_KINDS = ("tables", "views", "procedures", "functions", "triggers", "event
 # msm's own objects in a deployed schema (Sections 120, 160 and helpers);
 # never imported, as every development script makes them itself.
 MSM_PREFIX = "msm_"
+
+# The stage schema_sql reports to a task
+READING_STAGE = "Reading the objects"
 
 _TABLES_SQL = """
     SELECT TABLE_NAME AS name, TABLE_TYPE AS type, TABLE_COMMENT AS comment
@@ -81,51 +84,27 @@ _FOREIGN_KEYS_SQL = """
     WHERE CONSTRAINT_SCHEMA = ? AND UNIQUE_CONSTRAINT_SCHEMA = CONSTRAINT_SCHEMA
 """
 
-# A DEFINER clause as SHOW CREATE writes it: DEFINER=`user`@`host`,
-# DEFINER=CURRENT_USER or DEFINER=`role`
-_QUOTED = r"(?:`(?:[^`]|``)*`|'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\")"
-_DEFINER = re.compile(
-    rf"\s+DEFINER\s*=\s*(?:CURRENT_USER(?:\s*\(\s*\))?|(?:{_QUOTED}|[\w.$-]+)"
-    rf"(?:\s*@\s*(?:{_QUOTED}|[\w.%$-]+))?)",
-    re.IGNORECASE,
-)
 _AUTO_INCREMENT = re.compile(r"\s+AUTO_INCREMENT=\d+")
 _FOREIGN_KEY_LINE = re.compile(
     r"^\s*CONSTRAINT\s+.*?\bFOREIGN\s+KEY\b.*?\bREFERENCES\s+(?P<ref>"
     r"(?:`(?:[^`]|``)+`|\w+)(?:\s*\.\s*(?:`(?:[^`]|``)+`|\w+))?)",
     re.IGNORECASE,
 )
-
-
-def _quote(name: str) -> str:
-    return workbench.quote_identifier(name)
+_QUOTED_NAME = re.compile(r"`(?:[^`]|``)+`")
 
 
 def _rows(session, sql: str, params: list) -> list:
-    result = session.run_sql(sql, params)
-    columns = [column.get_column_label() for column in result.get_columns()]
-    return [dict(zip(columns, row)) for row in result.fetch_all()]
+    return core.MsmDbExec(sql).exec(session, params).items
 
 
-def _schema_exists(session, schema: str) -> bool:
-    return bool(_rows(
-        session, "SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?", [schema]
-    ))
-
-
-def _schema_version(session, schema: str, views: list) -> Optional[str]:
+def _schema_version(session, schema: str, left_out: list) -> Optional[str]:
     """The version msm deployed, where the schema has msm's version view."""
-    if f"{MSM_PREFIX}schema_version" not in views:
+    if f"{MSM_PREFIX}schema_version" not in left_out:
         return None
     try:
-        rows = _rows(
-            session, f"SELECT major, minor, patch FROM {_quote(schema)}.`msm_schema_version`", []
-        )
+        return "%d.%d.%d" % tuple(core.get_db_schema_version(session, schema))
     except Exception:
         return None
-    if not rows:
-        return None
-    return "%d.%d.%d" % (rows[0]["major"], rows[0]["minor"], rows[0]["patch"])
 
 
 def list_schema_objects(session, schema: str) -> dict:
@@ -145,7 +124,7 @@ def list_schema_objects(session, schema: str) -> dict:
         ValueError: For a schema the server does not have (or the account
             cannot see).
     """
-    if not _schema_exists(session, schema):
+    if not core.db_schema_exists(session, schema):
         raise ValueError(f"The server has no schema `{schema}`, or this account cannot see it.")
     result = {kind: [] for kind in OBJECT_KINDS}
     left_out = []
@@ -163,10 +142,9 @@ def list_schema_objects(session, schema: str) -> dict:
     for row in _rows(session, _ROUTINES_SQL, [schema]):
         if row["name"].startswith(MSM_PREFIX):
             left_out.append(row["name"])
-        elif (row["type"] or "").upper() == "FUNCTION":
-            result["functions"].append({"name": row["name"]})
         else:
-            result["procedures"].append({"name": row["name"]})
+            kind = "functions" if (row["type"] or "").upper() == "FUNCTION" else "procedures"
+            result[kind].append({"name": row["name"]})
     tables = {table["name"]: table for table in result["tables"]}
     for row in _rows(session, _TRIGGERS_SQL, [schema]):
         result["triggers"].append({"name": row["name"], "table": row["table"]})
@@ -175,9 +153,7 @@ def list_schema_objects(session, schema: str) -> dict:
     result["triggers"].sort(key=lambda trigger: trigger["name"])
     result["events"] = [{"name": row["name"]} for row in _rows(session, _EVENTS_SQL, [schema])]
     result["schema"] = schema
-    result["project_folder_name"] = os.path.basename(
-        management.project_folder_path("", schema)
-    )
+    result["project_folder_name"] = management.project_folder_name(schema)
     result["schema_version"] = _schema_version(session, schema, left_out)
     result["left_out"] = sorted(left_out)
     return result
@@ -207,30 +183,55 @@ def selected_objects(listed: dict, objects: Optional[dict]) -> dict:
         names = objects.get(kind) or []
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise ValueError(f"`objects.{kind}` must be a list of names.")
-        missing = [name for name in names if name not in available[kind]]
+        known = set(available[kind])
+        missing = [name for name in names if name not in known]
         if missing:
             raise ValueError(
                 f"The schema `{listed['schema']}` has no {kind[:-1]} `{missing[0]}`."
             )
         # In the schema's order, each once
-        selected[kind] = [name for name in available[kind] if name in names]
+        wanted = set(names)
+        selected[kind] = [name for name in available[kind] if name in wanted]
     table_of = {trigger["name"]: trigger["table"] for trigger in listed["triggers"]}
+    tables = set(selected["tables"])
     if "triggers" not in objects:
-        selected["triggers"] = [
-            trigger for trigger in available["triggers"] if table_of[trigger] in selected["tables"]
-        ]
+        selected["triggers"] = [t for t in available["triggers"] if table_of[t] in tables]
     for trigger in selected["triggers"]:
-        if table_of[trigger] not in selected["tables"]:
+        if table_of[trigger] not in tables:
             raise ValueError(
                 f"The trigger `{trigger}` needs its table `{table_of[trigger]}` in the selection."
             )
     return selected
 
 
+@contextmanager
+def task_stage(task, name: str):
+    """A stage of a task of the shell task manager, where one is given:
+    started, timed and finished around the block, which gets a step(done,
+    total) to report progress with; a cancel asked for raises TaskCancelled
+    at each of them."""
+    if task is None:
+        yield lambda done, total: None
+        return
+    task.check_cancelled()
+    task.stage_started(name)
+    started = time.monotonic()
+
+    def step(done: int, total: int) -> None:
+        task.check_cancelled()
+        task.progress(done, total, stage=name)
+
+    yield step
+    task.check_cancelled()
+    task.stage_finished(name, round(time.monotonic() - started, 1))
+
+
 def _show_create(session, kind: str, schema: str, name: str) -> Optional[str]:
     """The CREATE statement the server gives for an object; None where it
     gives none (a routine the account may not read)."""
-    rows = _rows(session, f"SHOW CREATE {kind} {_quote(schema)}.{_quote(name)}", [])
+    rows = _rows(
+        session, f"SHOW CREATE {kind} {quote_identifier(schema)}.{quote_identifier(name)}", []
+    )
     if not rows:
         return None
     row = rows[0]
@@ -241,19 +242,9 @@ def _show_create(session, kind: str, schema: str, name: str) -> Optional[str]:
     return None
 
 
-def _without_definer(sql: str) -> str:
-    return _DEFINER.sub("", sql, count=1)
-
-
-def _unqualified(sql: str, schema: str) -> str:
-    """The statement without the schema's own name in front of object names."""
-    quoted = re.escape(_quote(schema))
-    return re.sub(rf"{quoted}\s*\.\s*(?=`)", "", sql)
-
-
 def _reference_name(reference: str) -> tuple:
     """(schema or None, table) of a REFERENCES target."""
-    parts = [part.strip() for part in re.findall(r"`(?:[^`]|``)+`|\w+", reference)]
+    parts = re.findall(r"`(?:[^`]|``)+`|\w+", reference)
     names = [part[1:-1].replace("``", "`") if part.startswith("`") else part for part in parts]
     return (None, names[0]) if len(names) == 1 else (names[0], names[1])
 
@@ -261,7 +252,10 @@ def _reference_name(reference: str) -> tuple:
 def table_sql(sql: str, schema: str, tables: set) -> tuple:
     """A CREATE TABLE statement of SHOW CREATE TABLE without its AUTO_INCREMENT
     counter and without the foreign keys to tables of the schema that are
-    not imported; and the names of the foreign keys left out."""
+    not imported; and the (name, table) of the foreign keys left out.
+
+    SHOW CREATE TABLE writes one definition per line, so a foreign key is
+    left out by its line."""
     lines = _AUTO_INCREMENT.sub("", sql).split("\n")
     kept, left_out = [], []
     for line in lines:
@@ -278,7 +272,7 @@ def table_sql(sql: str, schema: str, tables: set) -> tuple:
         if kept[pos].lstrip().startswith(")"):
             kept[pos - 1] = kept[pos - 1].rstrip().rstrip(",")
             break
-    return _unqualified("\n".join(kept), schema), left_out
+    return statements_lib.unqualified("\n".join(kept), schema), left_out
 
 
 def _ordered(names: list, depends_on: dict) -> list:
@@ -302,118 +296,94 @@ def _ordered(names: list, depends_on: dict) -> list:
     return ordered
 
 
-READING_STAGE = "Reading the objects"
+# The kinds of Section 150, after the views: the selected kinds each takes,
+# what SHOW CREATE calls them, the Imported member and its block's title
+_SECTION_150 = (
+    ("routines", (("procedures", "PROCEDURE"), ("functions", "FUNCTION")), "PROCEDUREs and FUNCTIONs"),
+    ("triggers", (("triggers", "TRIGGER"),), "TRIGGERs"),
+    ("events", (("events", "EVENT"),), "EVENTs"),
+)
 
 
-class _Reporter:
-    """Reports to a task (the shell task manager's), where one is given:
-    the stage, its progress, and a cancel asked for, raised."""
-
-    def __init__(self, task):
-        self.task = task
-        self.started = None
-
-    def stage(self, name: str) -> None:
-        if self.task is not None:
-            self.task.check_cancelled()
-            self.task.stage_started(name)
-        self.started = time.monotonic()
-
-    def progress(self, done: int, total: int, stage: str) -> None:
-        if self.task is not None:
-            self.task.check_cancelled()
-            self.task.progress(done, total, stage=stage)
-
-    def finished(self, name: str) -> None:
-        if self.task is not None:
-            self.task.check_cancelled()
-            self.task.stage_finished(name, round(time.monotonic() - self.started, 1))
-
-
-def schema_sql(session, schema: str, selected: dict, task=None) -> workbench.Imported:
+def schema_sql(session, schema: str, selected: dict, task=None) -> statements_lib.Imported:
     """The CREATE statements of the selected objects of a live schema,
-    grouped as an MSM development script keeps them (workbench.Imported).
+    grouped as an MSM development script keeps them (statements.Imported).
 
     Sequences and tables go in Section 140's tables part, each table after
     the tables its foreign keys refer to where no cycle forbids (Section 010
     turns the foreign key checks off, so a cycle deploys too). Views (each
     after the views it selects from), routines, triggers and events are
-    written to be run again, in DELIMITER %% blocks as Section 150 has them.
+    written to be run again, in DELIMITER %% blocks as Section 150 has them,
+    without their DEFINER and the schema's own name in qualified names.
 
     A task given (the shell task manager's) gets the stage READING_STAGE
     with a step per object; a cancel of it raises TaskCancelled.
     """
-    result = workbench.Imported()
+    result = statements_lib.Imported()
     tables = set(selected["tables"])
-    report = _Reporter(task)
-    report.stage(READING_STAGE)
     total = sum(len(names) for names in selected.values())
-    done = [0]
+    with task_stage(task, READING_STAGE) as step:
+        done = 0
 
-    def show_create(kind: str, name: str) -> Optional[str]:
-        sql = _show_create(session, kind, schema, name)
-        done[0] += 1
-        report.progress(done[0], total, READING_STAGE)
-        return sql
+        def show_create(kind: str, name: str) -> Optional[str]:
+            nonlocal done
+            sql = _show_create(session, kind, schema, name)
+            done += 1
+            step(done, total)
+            return sql
 
-    references = {}
-    for row in _rows(session, _FOREIGN_KEYS_SQL, [schema]):
-        if row["table"] in tables and row["referenced"] in tables:
-            references.setdefault(row["table"], set()).add(row["referenced"])
-    statements = []
-    for name in selected["sequences"]:
-        sql = show_create("SEQUENCE", name)
-        statements.append(_unqualified(statements_lib.strip_statement(sql), schema) + ";")
-    for name in _ordered(selected["tables"], references):
-        sql, left_out = table_sql(show_create("TABLE", name), schema, tables)
-        for foreign_key, referenced in left_out:
-            result.warnings.append(
-                f"The foreign key `{foreign_key}` of `{name}` refers to `{referenced}`, which "
-                "is not imported; it was left out."
+        def idempotent(kind: str, name: str, sql: Optional[str]) -> Optional[str]:
+            if not sql:
+                result.warnings.append(
+                    f"The server gave no CREATE statement for the {kind.lower()} `{name}` "
+                    "(this account may not read its definition); it was left out."
+                )
+                return None
+            sql = statements_lib.unqualified(statements_lib.without_definer(sql), schema)
+            return statements_lib.banner(kind, name) + statements_lib.idempotent_create(
+                kind, name, sql
             )
-        statements.append(sql + ";")
-    result.tables = "\n\n".join(statements) or None
 
-    def idempotent(kind: str, name: str, sql: Optional[str]) -> Optional[str]:
-        if not sql:
-            result.warnings.append(
-                f"The server gave no CREATE statement for the {kind.lower()} `{name}` (this "
-                "account may not read its definition); it was left out."
-            )
-            return None
-        sql = _unqualified(_without_definer(sql), schema)
-        return workbench._banner(kind, name) + workbench._idempotent(kind, name, sql)
+        references = {}
+        for row in _rows(session, _FOREIGN_KEYS_SQL, [schema]):
+            if row["table"] in tables and row["referenced"] in tables:
+                references.setdefault(row["table"], set()).add(row["referenced"])
+        create = []
+        for name in selected["sequences"]:
+            sql = statements_lib.strip_statement(show_create("SEQUENCE", name))
+            create.append(statements_lib.unqualified(sql, schema) + ";")
+        for name in _ordered(selected["tables"], references):
+            sql, left_out = table_sql(show_create("TABLE", name), schema, tables)
+            for foreign_key, referenced in left_out:
+                result.warnings.append(
+                    f"The foreign key `{foreign_key}` of `{name}` refers to `{referenced}`, "
+                    "which is not imported; it was left out."
+                )
+            create.append(sql + ";")
+        result.tables = "\n\n".join(create) or None
 
-    view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
-    view_uses = {
-        name: {other for other in selected["views"]
-               if other != name and sql and _quote(other) in sql}
-        for name, sql in view_sql.items()
-    }
-    views = [idempotent("VIEW", name, view_sql[name])
-             for name in _ordered(selected["views"], view_uses)]
-    routines = [idempotent("PROCEDURE", name, show_create("PROCEDURE", name))
-                for name in selected["procedures"]]
-    routines += [idempotent("FUNCTION", name, show_create("FUNCTION", name))
-                 for name in selected["functions"]]
-    triggers = [idempotent("TRIGGER", name, show_create("TRIGGER", name))
-                for name in selected["triggers"]]
-    events = [idempotent("EVENT", name, show_create("EVENT", name))
-              for name in selected["events"]]
-    views, routines, triggers, events = (
-        [sql for sql in group if sql] for group in (views, routines, triggers, events)
-    )
-    result.views = workbench._block(views, "VIEWs")
-    result.routines = workbench._block(routines, "PROCEDUREs and FUNCTIONs")
-    result.triggers = workbench._block(triggers, "TRIGGERs")
-    result.events = workbench._block(events, "EVENTs")
-    report.finished(READING_STAGE)
-    result.counts = {
-        "tables": len(selected["tables"]),
-        "sequences": len(selected["sequences"]),
-        "views": len(views),
-        "routines": len(routines),
-        "triggers": len(triggers),
-        "events": len(events),
-    }
+        view_sql = {name: show_create("VIEW", name) for name in selected["views"]}
+        quoted_views = {quote_identifier(name): name for name in selected["views"]}
+        view_uses = {
+            name: {quoted_views[q] for q in _QUOTED_NAME.findall(sql or "") if q in quoted_views}
+            for name, sql in view_sql.items()
+        }
+        views = [idempotent("VIEW", name, view_sql[name])
+                 for name in _ordered(selected["views"], view_uses)]
+        result.views = statements_lib.delimiter_block([sql for sql in views if sql], "VIEWs")
+        result.counts = {
+            "tables": len(selected["tables"]),
+            "sequences": len(selected["sequences"]),
+            "views": len([sql for sql in views if sql]),
+        }
+        for member, kinds, title in _SECTION_150:
+            written = [
+                sql
+                for kind, show in kinds
+                for sql in (idempotent(show, name, show_create(show, name))
+                            for name in selected[kind])
+                if sql
+            ]
+            setattr(result, member, statements_lib.delimiter_block(written, title))
+            result.counts[member] = len(written)
     return result

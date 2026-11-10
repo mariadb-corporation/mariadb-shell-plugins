@@ -442,11 +442,6 @@ def _table_options(table: dict) -> str:
     return "\n".join(options)
 
 
-def _banner(kind: str, name: str) -> str:
-    rule = "-- " + "-" * 77
-    return f"{rule}\n-- {kind} `{name}`\n{rule}\n"
-
-
 def table_sql(model: Model, table: dict, foreign_keys: list) -> str:
     """The CREATE TABLE statement of a table, with these of its foreign keys."""
     members = [_column_sql(model, column) for column in table.get("columns", [])]
@@ -458,7 +453,7 @@ def table_sql(model: Model, table: dict, foreign_keys: list) -> str:
     body = ",\n".join("  " + member.replace("\n", "\n  ") for member in members)
     options = _table_options(table)
     return (
-        _banner("TABLE", table["name"])
+        statements_lib.banner("TABLE", table["name"])
         + f"CREATE TABLE IF NOT EXISTS {quote_identifier(table['name'])} (\n{body}\n)"
         + (f"\n{options}" if options else "")
         + ";"
@@ -538,25 +533,6 @@ def inserts_sql(model: Model, table: dict) -> Optional[str]:
     )
 
 
-def _idempotent(kind: str, name: str, sql: str) -> str:
-    """A CREATE statement of section 150, safe to run where the object exists."""
-    statement = statements_lib.strip_statement(sql)
-    if kind in ("VIEW", "EVENT"):
-        statement = re.sub(
-            r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?", "CREATE OR REPLACE ", statement,
-            count=1, flags=re.IGNORECASE,
-        )
-        return f"{statement}%%"
-    return f"DROP {kind} IF EXISTS {quote_identifier(name)}%%\n{statement}%%"
-
-
-def _block(statements: list, title: str) -> Optional[str]:
-    """Statements ending with %%, in a DELIMITER block of their own."""
-    if not statements:
-        return None
-    return f"-- {title}\n\nDELIMITER %%\n\n" + "\n\n".join(statements) + "\n\nDELIMITER ;"
-
-
 def _object_name(sql: str, fallback: str) -> str:
     match = re.search(
         r"\b(?:VIEW|PROCEDURE|FUNCTION|TRIGGER|EVENT)\s+(?:IF\s+NOT\s+EXISTS\s+)?"
@@ -584,26 +560,7 @@ def _privilege_target(model: Model, privilege: dict, schema_name: str) -> str:
     return name if "." in name else quote_identifier(name)
 
 
-@dataclass
-class Imported:
-    """The SQL of a schema, grouped as an MSM development script keeps it.
-
-    Each member is the SQL of one part, or None where it has none.
-    """
-
-    tables: Optional[str] = None
-    table_additions: Optional[str] = None
-    inserts: Optional[str] = None
-    views: Optional[str] = None
-    routines: Optional[str] = None
-    triggers: Optional[str] = None
-    events: Optional[str] = None
-    roles: Optional[str] = None
-    counts: dict = field(default_factory=dict)
-    warnings: list = field(default_factory=list)
-
-
-def schema_sql(model: Model, schema: dict) -> Imported:
+def schema_sql(model: Model, schema: dict) -> statements_lib.Imported:
     """Writes the CREATE statements of a schema of the model.
 
     Tables go in an order that lets each one refer to the tables before it;
@@ -613,7 +570,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
     as MSM Section 150 has them. Roles get CREATE ROLE IF NOT EXISTS and
     their GRANTs on the schema's objects.
     """
-    result = Imported()
+    result = statements_lib.Imported()
     tables = [table for table in schema.get("tables", []) if not table.get("isStub")]
     table_ids = {table["_id"] for table in tables}
     order, later = _ordered_tables(model, tables)
@@ -677,7 +634,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
             return
         name = _object_name(sql, fallback_name)
         grouped["PROCEDURE" if kind == "FUNCTION" else kind].append(
-            _banner(kind, name) + _idempotent(kind, name, sql)
+            statements_lib.banner(kind, name) + statements_lib.idempotent_create(kind, name, sql)
         )
 
     for view in schema.get("views", []):
@@ -690,10 +647,10 @@ def schema_sql(model: Model, schema: dict) -> Imported:
     for event in schema.get("events", []):
         add(event.get("sqlDefinition"), "EVENT", event.get("name", ""))
 
-    result.views = _block(grouped["VIEW"], "VIEWs")
-    result.routines = _block(grouped["PROCEDURE"], "PROCEDUREs and FUNCTIONs")
-    result.triggers = _block(grouped["TRIGGER"], "TRIGGERs")
-    result.events = _block(grouped["EVENT"], "EVENTs")
+    result.views = statements_lib.delimiter_block(grouped["VIEW"], "VIEWs")
+    result.routines = statements_lib.delimiter_block(grouped["PROCEDURE"], "PROCEDUREs and FUNCTIONs")
+    result.triggers = statements_lib.delimiter_block(grouped["TRIGGER"], "TRIGGERs")
+    result.events = statements_lib.delimiter_block(grouped["EVENT"], "EVENTs")
 
     roles = model.catalog.get("roles", [])
     role_statements = []
@@ -714,7 +671,7 @@ def schema_sql(model: Model, schema: dict) -> Imported:
                     f"GRANT {quote_identifier(role['name'])} TO "
                     f"{quote_identifier(child_role['name'])};"
                 )
-        role_statements.append(_banner("ROLE", role["name"]) + "\n".join(lines))
+        role_statements.append(statements_lib.banner("ROLE", role["name"]) + "\n".join(lines))
     result.roles = "\n\n".join(role_statements) or None
 
     result.counts = {

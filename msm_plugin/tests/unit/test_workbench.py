@@ -443,7 +443,7 @@ def test_a_statement_s_kind_and_an_event_saved_as_a_routine():
     # As Workbench saves a view: a comment first.
     assert statements.statement_kind("--\n-- View structure for view `v`\n--\n\nCREATE VIEW v \n"
                                      "AS \nSELECT 1") == "VIEW"
-    assert workbench._idempotent("VIEW", "v", "/* x */ -- y\nCREATE VIEW v AS SELECT 1;") == (
+    assert statements.idempotent_create("VIEW", "v", "/* x */ -- y\nCREATE VIEW v AS SELECT 1;") == (
         "CREATE OR REPLACE VIEW v AS SELECT 1%%")
 
 

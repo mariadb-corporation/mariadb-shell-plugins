@@ -273,3 +273,17 @@ def test_the_new_project_is_checked_before_the_objects_are_read(live, tmp_path):
             live, LIVE_SCHEMA, str(tmp_path / "missing"), copyright_holder="ACME Corp.",
             task=_Task(),
         )
+
+
+def test_the_schemas_own_name_goes_only_where_it_qualifies_a_name():
+    from msm_plugin.lib import statements
+
+    sql = ("select `shop`.`t`.`id` AS `id`, 'in `shop`.`t` a string' from `shop` . `t`"
+           " -- `shop`.`c` in a comment\n join `it's`.`shop` on 1")
+    assert statements.unqualified(sql, "shop") == (
+        "select `t`.`id` AS `id`, 'in `shop`.`t` a string' from `t`"
+        " -- `shop`.`c` in a comment\n join `it's`.`shop` on 1"
+    )
+    assert statements.without_definer(
+        "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select 1"
+    ) == "CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v` AS select 1"

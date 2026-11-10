@@ -188,7 +188,7 @@ def get_current_session(session=None):
 def get_db_schema_version(session, schema_name):
     row = (
         select(
-            table=f"`{schema_name}`.`msm_schema_version`",
+            table=f"{quote_ident(schema_name)}.`msm_schema_version`",
             cols=[
                 "major",
                 "minor",

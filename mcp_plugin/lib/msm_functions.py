@@ -1430,8 +1430,6 @@ def register_msm_tools(server, function_groups=()) -> None:
                 selection, a missing mariadb-lsp) refuses this call, before
                 the task starts, with msm.create_project's words.
             """
-            from msm_plugin.lib import live_schema as msm_live_schema
-            from msm_plugin.lib import lsp as msm_lsp
             from msm_plugin.lib import modeling as msm_lib_modeling
             from msm_plugin.lib import source
 
@@ -1447,24 +1445,30 @@ def register_msm_tools(server, function_groups=()) -> None:
                 db_functions.session_opener, connection_id, client
             )
 
-            def check():
+            options = dict(
+                objects=objects,
+                copyright_holder=copyright_holder,
+                license=license,
+                overwrite_existing=overwrite_existing,
+                enforce_target_path=enforce_target_path,
+                copyrights=copyrights,
+                lsp_path=lsp_path,
+                year_of_creation=year_of_creation,
+            )
+
+            def prepare():
+                session = open_session()
                 try:
-                    msm_management.check_new_project(
-                        schema, target_path, copyright_holder, license, overwrite_existing,
-                        True, enforce_target_path, copyrights, year_of_creation,
+                    return msm_lib_modeling.prepare_live_import(
+                        session, schema, target_path, **options
                     )
-                    msm_lsp.require_lsp(lsp_path)
-                    session = open_session()
-                    try:
-                        msm_live_schema.selected_objects(
-                            msm_live_schema.list_schema_objects(session, schema), objects
-                        )
-                    finally:
-                        session.close()
                 except ValueError as error:
                     raise tool_error(str(error)) from error
+                finally:
+                    session.close()
 
-            await anyio.to_thread.run_sync(check)
+            # What refuses the import refuses this call, before the task starts
+            prepared = await anyio.to_thread.run_sync(prepare)
             task = tasks.create(
                 TASK_TYPE_MSM, "import_live_schema",
                 f"Create an MSM project from the schema `{schema}`", client,
@@ -1479,18 +1483,8 @@ def register_msm_tools(server, function_groups=()) -> None:
                         lambda path: db_functions.allowed_include(path, owner)
                     ):
                         result = msm_lib_modeling.create_project_from_live_schema(
-                            session,
-                            schema,
-                            target_path,
-                            objects=objects,
-                            copyright_holder=copyright_holder,
-                            license=license,
-                            overwrite_existing=overwrite_existing,
-                            enforce_target_path=enforce_target_path,
-                            copyrights=copyrights,
-                            lsp_path=lsp_path,
-                            year_of_creation=year_of_creation,
-                            task=task,
+                            session, schema, target_path, task=task, prepared=prepared,
+                            **options,
                         )
                 finally:
                     session.close()

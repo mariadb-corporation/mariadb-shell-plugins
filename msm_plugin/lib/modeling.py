@@ -1108,12 +1108,9 @@ def layout_diagram(
 # MySQL Workbench models
 
 
-def _write_imported(
-    project_path: str, imported: workbench.Imported, lsp_path: str = None, between=None
-):
-    """Writes imported SQL into a new project's script and makes the schema
-    snapshot from it (between() called in between); the project, the
-    snapshot, the diagrams VIEW's rows and the files written."""
+def _write_imported(project_path: str, imported) -> list:
+    """Writes imported SQL (statements.Imported) into a new project's
+    script; the files written."""
     # The import's SQL by the object kinds each part takes (None: every kind)
     by_kinds = {
         frozenset({"TABLE"}): imported.tables,
@@ -1125,7 +1122,7 @@ def _write_imported(
         frozenset({"EVENT"}): imported.events,
         None: imported.roles,
     }
-    files = sections_lib.write_sections_parts(project_path, {
+    return sections_lib.write_sections_parts(project_path, {
         section_id: [
             sections_lib.Part(layout.file_name, layout.title, by_kinds[layout.kinds])
             for layout in layouts
@@ -1133,17 +1130,39 @@ def _write_imported(
         for section_id, layouts in sections_lib.SECTION_PARTS.items()
     })
 
-    if between is not None:
-        between()
+
+def _imported_snapshot(project_path: str, lsp_path: str = None) -> tuple:
+    """The schema snapshot of a new project's imported script: the project,
+    the snapshot and the diagrams VIEW's rows, not written yet."""
     project = _Project.load(project_path)
     schema_document, rows, _ = _replace_snapshot(project, _rows(project), lsp_path)
-    return project, schema_document, rows, files
+    return project, schema_document, rows
+
+
+def _new_imported_project(schema_name: str, target_path: str, fill, **options) -> dict:
+    """Creates the project folder of an import (create_schema_project_folder
+    with options) and fills it, fill(project_path) -> its result; a project
+    that cannot be completed is removed again."""
+    license = options.pop("license", None)
+    project_path = management.create_schema_project_folder(
+        schema_name=schema_name,
+        target_path=target_path,
+        license=license if license is not None else "None",
+        allow_special_chars=True,
+        **options,
+    )
+    try:
+        return {"project_path": project_path, **fill(project_path)}
+    except BaseException:
+        shutil.rmtree(project_path, ignore_errors=True)
+        raise
 
 
 def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -> dict:
     """Writes a schema of a Workbench model into a new project's script."""
     imported = workbench.schema_sql(model, schema)
-    project, schema_document, rows, files = _write_imported(project_path, imported, lsp_path)
+    files = _write_imported(project_path, imported)
+    project, schema_document, rows = _imported_snapshot(project_path, lsp_path)
     documents, warnings = workbench.diagram_documents(model, schema)
     warnings = imported.warnings + warnings
     for document in documents:
@@ -1214,24 +1233,15 @@ def create_project_from_workbench_model(
     # it would be removed again.
     lsp.require_lsp(lsp_path)
 
-    project_path = management.create_schema_project_folder(
-        schema_name=model_schema["name"],
-        target_path=target_path,
-        copyright_holder=copyright_holder,
-        license=license if license is not None else "None",
-        overwrite_existing=overwrite_existing,
-        allow_special_chars=True,
-        enforce_target_path=enforce_target_path,
-        copyrights=copyrights,
-        year_of_creation=year_of_creation,
+    result = _new_imported_project(
+        model_schema["name"], target_path,
+        lambda project_path: _import_into(project_path, model, model_schema, lsp_path),
+        copyright_holder=copyright_holder, license=license,
+        overwrite_existing=overwrite_existing, enforce_target_path=enforce_target_path,
+        copyrights=copyrights, year_of_creation=year_of_creation,
     )
-    try:
-        result = _import_into(project_path, model, model_schema, lsp_path)
-    except BaseException:
-        shutil.rmtree(project_path, ignore_errors=True)
-        raise
     return {
-        "project_path": project_path,
+        "project_path": result.pop("project_path"),
         "schema": model_schema["name"],
         **result,
         "scripts_not_imported": model.scripts,
@@ -1241,6 +1251,44 @@ def create_project_from_workbench_model(
 # The stages of a live import after live_schema.READING_STAGE
 LIVE_WRITING_STAGE = "Writing the project"
 LIVE_SNAPSHOT_STAGE = "Making the schema snapshot"
+
+
+def prepare_live_import(
+    session,
+    schema: str,
+    target_path: str,
+    objects: dict = None,
+    copyright_holder: str = None,
+    license: str = None,
+    overwrite_existing: bool = False,
+    enforce_target_path: bool = False,
+    copyrights: list = None,
+    lsp_path: str = None,
+    year_of_creation: str = None,
+) -> tuple:
+    """What refuses an import of a live schema, checked before an object is
+    read (the arguments are create_project_from_live_schema's): the new
+    project (management.check_new_project), the binary the snapshot needs,
+    the schema and the selection.
+
+    Returns:
+        (listed, selected): live_schema.list_schema_objects' listing and
+        the names the import takes, for create_project_from_live_schema's
+        prepared.
+
+    Raises:
+        ValueError: For what create_schema_project_folder refuses, a
+            missing mariadb-lsp, an unknown schema or a bad selection.
+    """
+    from msm_plugin.lib import live_schema
+
+    management.check_new_project(
+        schema, target_path, copyright_holder, license, overwrite_existing,
+        True, enforce_target_path, copyrights, year_of_creation,
+    )
+    lsp.require_lsp(lsp_path)
+    listed = live_schema.list_schema_objects(session, schema)
+    return listed, live_schema.selected_objects(listed, objects)
 
 
 def create_project_from_live_schema(
@@ -1256,6 +1304,7 @@ def create_project_from_live_schema(
     lsp_path: str = None,
     year_of_creation: str = None,
     task=None,
+    prepared: tuple = None,
 ) -> dict:
     """Creates a schema project from a schema on a server (live_schema).
 
@@ -1273,7 +1322,8 @@ def create_project_from_live_schema(
         target_path: The folder to create the project folder in.
         objects: {tables?, views?, procedures?, functions?, triggers?,
             events?, sequences?: [names]}, the objects to import (a kind left
-            out: none of it); None for all. A trigger needs its table.
+            out: none of it; no triggers list: the selected tables'
+            triggers); None for all.
         copyright_holder: The project's copyright holder.
         license: The project's license.
         overwrite_existing: Replace an existing project folder.
@@ -1283,9 +1333,11 @@ def create_project_from_live_schema(
         year_of_creation: The year of creation of the copyright, defaulting
             to the current one.
         task: A task of the shell task manager to report to: the stages
-            live_schema.READING_STAGE (a step per object), WRITING_STAGE and
-            SNAPSHOT_STAGE; a cancel of it raises TaskCancelled, and the
-            project is removed again.
+            live_schema.READING_STAGE (a step per object), LIVE_WRITING_STAGE
+            and LIVE_SNAPSHOT_STAGE; a cancel of it raises TaskCancelled, and
+            the project is removed again.
+        prepared: What prepare_live_import returned for these arguments,
+            where the caller checked them already; None checks them here.
 
     Returns:
         {project_path, schema, tables, sequences, views, routines, triggers,
@@ -1294,46 +1346,32 @@ def create_project_from_live_schema(
     """
     from msm_plugin.lib import live_schema
 
-    # Everything that refuses the import is checked before the objects are
-    # read: the new project, the selection, the binary the snapshot needs.
-    management.check_new_project(
-        schema, target_path, copyright_holder, license, overwrite_existing,
-        True, enforce_target_path, copyrights, year_of_creation,
+    options = dict(
+        copyright_holder=copyright_holder, license=license,
+        overwrite_existing=overwrite_existing, enforce_target_path=enforce_target_path,
+        copyrights=copyrights, year_of_creation=year_of_creation,
     )
-    listed = live_schema.list_schema_objects(session, schema)
-    selected = live_schema.selected_objects(listed, objects)
-    lsp.require_lsp(lsp_path)
+    if prepared is None:
+        prepared = prepare_live_import(
+            session, schema, target_path, objects, lsp_path=lsp_path, **options
+        )
+    listed, selected = prepared
     imported = live_schema.schema_sql(session, schema, selected, task)
-    report = live_schema._Reporter(task)
-    report.stage(LIVE_WRITING_STAGE)
 
-    project_path = management.create_schema_project_folder(
-        schema_name=schema,
-        target_path=target_path,
-        copyright_holder=copyright_holder,
-        license=license if license is not None else "None",
-        overwrite_existing=overwrite_existing,
-        allow_special_chars=True,
-        enforce_target_path=enforce_target_path,
-        copyrights=copyrights,
-        year_of_creation=year_of_creation,
-    )
-    def to_snapshot():
-        report.finished(LIVE_WRITING_STAGE)
-        report.stage(LIVE_SNAPSHOT_STAGE)
+    def fill(project_path: str) -> dict:
+        with live_schema.task_stage(task, LIVE_WRITING_STAGE):
+            files = _write_imported(project_path, imported)
+        with live_schema.task_stage(task, LIVE_SNAPSHOT_STAGE):
+            project, _, rows = _imported_snapshot(project_path, lsp_path)
+            files += _write(project, rows)
+        return {"files": list(dict.fromkeys(files))}
 
-    try:
-        project, _, rows, files = _write_imported(project_path, imported, lsp_path, to_snapshot)
-        files += _write(project, rows)
-        report.finished(LIVE_SNAPSHOT_STAGE)
-    except BaseException:
-        shutil.rmtree(project_path, ignore_errors=True)
-        raise
+    result = _new_imported_project(schema, target_path, fill, **options)
     return {
-        "project_path": project_path,
+        "project_path": result["project_path"],
         "schema": schema,
         **imported.counts,
         "schema_version": listed["schema_version"],
         "warnings": imported.warnings,
-        "files": list(dict.fromkeys(files)),
+        "files": result["files"],
     }

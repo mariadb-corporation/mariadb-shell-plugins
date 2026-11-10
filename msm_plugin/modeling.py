@@ -375,6 +375,23 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         return result
 
 
+def _prompted_copyright_holder(kwargs) -> str:
+    """An import's copyright holder, asked for in an interactive shell where none is given."""
+    copyright_holder = kwargs.get("copyright_holder")
+    if (
+        copyright_holder is None
+        and not kwargs.get("copyrights")
+        and lib.core.get_interactive_default()
+    ):
+        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+    return copyright_holder
+
+
+def _print_notes(result: dict) -> None:
+    for warning in result["warnings"]:
+        print(f"Note: {warning}")
+
+
 @plugin_function("msm.importWorkbenchModel", shell=True, cli=True, web=True)
 def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
     """Creates a schema project from a MySQL Workbench model (.mwb)
@@ -410,13 +427,7 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
         roles and inserted rows, the diagrams, the attached scripts that were not imported,
         warnings on what else was left out, and the files written.
     """
-    copyright_holder = kwargs.get("copyright_holder")
-    if (
-        copyright_holder is None
-        and not kwargs.get("copyrights")
-        and lib.core.get_interactive_default()
-    ):
-        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+    copyright_holder = _prompted_copyright_holder(kwargs)
 
     result = lib.modeling.create_project_from_workbench_model(
         model_path,
@@ -445,8 +456,7 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
                 "Scripts of the model that were not imported: "
                 + ", ".join(result["scripts_not_imported"])
             )
-        for warning in result["warnings"]:
-            print(f"Note: {warning}")
+        _print_notes(result)
     else:
         return result
 
@@ -514,13 +524,7 @@ def import_live_schema(schema: str, target_path: str, **kwargs) -> dict:
         left out, and the files written.
     """
     session = lib.core.get_current_session(kwargs.get("session", None))
-    copyright_holder = kwargs.get("copyright_holder")
-    if (
-        copyright_holder is None
-        and not kwargs.get("copyrights")
-        and lib.core.get_interactive_default()
-    ):
-        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+    copyright_holder = _prompted_copyright_holder(kwargs)
 
     result = lib.modeling.create_project_from_live_schema(
         session,
@@ -545,7 +549,6 @@ def import_live_schema(schema: str, target_path: str, **kwargs) -> dict:
             f"{result['routines']} routine(s), {result['triggers']} trigger(s) and "
             f"{result['events']} event(s)."
         )
-        for warning in result["warnings"]:
-            print(f"Note: {warning}")
+        _print_notes(result)
     else:
         return result
