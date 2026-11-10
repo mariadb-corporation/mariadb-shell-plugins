@@ -335,6 +335,41 @@ def test_a_rename_reaches_the_sql_the_diagrams_and_the_snapshot(project, fake_ed
 
 
 @needs_lsp
+def test_the_first_edit_of_a_year_moves_the_copyright_years_along(
+    project, fake_edit, monkeypatch
+):
+    created = management.current_year()
+    later = str(int(created) + 1)
+    hash_before = base_hash(project)
+    monkeypatch.setattr(management, "current_year", lambda: later)
+
+    # The hash the client read before the notices changed is still accepted
+    result = editing.edit_schema(project, [RENAME], hash_before)
+
+    copyrights = management.get_project_settings(project)["copyrights"]
+    assert copyrights[0]["yearOfLastUpdate"] == later
+    assert f" * Copyright (c) {created}, {later}, Example Ltd.\n" in dev_script(project)
+    assert result["rows"][0]["document"]["source_hash"] == modeling.current_source_hash(project)
+
+
+@needs_lsp
+def test_moving_the_copyright_years_keeps_a_current_snapshot_current(project):
+    assert base_hash(project) == modeling.current_source_hash(project)
+    before = dev_script(project)
+
+    later = str(int(management.current_year()) + 1)
+    written = management.update_copyright_years(project, later)
+
+    assert management.get_schema_development_file_path(project) in written
+    # Only the notice and the snapshot's hash changed
+    after = dev_script(project)
+    assert after.count("\n") == before.count("\n")
+    assert base_hash(project) == modeling.current_source_hash(project)
+    assert [table["name"] for table in modeling.read_diagram_rows(project)[0]["document"]["tables"]] \
+        == ["customer", "orders"]
+
+
+@needs_lsp
 def test_edits_against_an_old_snapshot_are_refused(project, fake_edit):
     before = dev_script(project)
     with pytest.raises(editing.StaleSchemaError, match="changed since"):

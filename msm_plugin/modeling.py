@@ -397,6 +397,7 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
         copyright_holder (str): The name of the copyright holder.
         license (str): The license to use for the project.
         copyrights (list): The copyright notices of the project, instead of copyright_holder.
+        year_of_creation (str): The year of creation of the copyright. Defaults to the current year.
         overwrite_existing (bool): If the project folder already exists, overwrite it.
         enforce_target_path (bool): Create the target_path if it does not yet exist.
         add_to_project_list (bool): Whether to add the new project to the project list (see
@@ -426,6 +427,7 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
         overwrite_existing=bool(kwargs.get("overwrite_existing", False)),
         enforce_target_path=bool(kwargs.get("enforce_target_path", False)),
         copyrights=kwargs.get("copyrights"),
+        year_of_creation=kwargs.get("year_of_creation"),
         lsp_path=kwargs.get("lsp_path"),
     )
     if kwargs.get("add_to_project_list", True):

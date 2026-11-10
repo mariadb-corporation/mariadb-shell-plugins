@@ -195,6 +195,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        year_of_creation: Optional[str] = None,
         folder: Optional[str] = None,
         caption: Optional[str] = None,
         color: Optional[str] = None,
@@ -211,10 +212,15 @@ def register_msm_tools(server, function_groups=()) -> None:
             allow_special_chars: Allow all characters in the schema name.
             enforce_target_path: Create the target_path if it does not exist.
             copyrights: The copyright notices of the project, for a project held
-                by more than one copyright holder. Each entry takes a holder, a
-                yearOfCreation, an optional yearOfLastUpdate and a tracksUpdates
-                flag marking the holders whose year follows the current one.
-                When given, it takes the place of copyright_holder.
+                by more than one copyright holder. Each entry takes a holder
+                (written into the notice as given, a final period included),
+                a yearOfCreation, an optional yearOfLastUpdate and a
+                tracksUpdates flag marking the holders whose yearOfLastUpdate
+                is moved to the current year when a change is applied in a
+                later year. When given, it takes the place of copyright_holder.
+            year_of_creation: The year of creation of the copyright, such as
+                "2024" for a schema that existed before. Defaults to the
+                current year; an entry of copyrights without one gets it.
             folder: The folder of the project list to file it in, such as
                 "/Shop". Defaults to the top level.
             caption: The caption to show it with in the project list.
@@ -244,6 +250,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                 allow_special_chars=allow_special_chars,
                 enforce_target_path=enforce_target_path,
                 copyrights=copyrights,
+                year_of_creation=year_of_creation,
             ),
         )
         await _add_new_project(project_path, owner, mcp_access, folder, caption, color)
@@ -881,6 +888,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         overwrite_existing: bool = False,
         enforce_target_path: bool = False,
         copyrights: Optional[list] = None,
+        year_of_creation: Optional[str] = None,
         mcp_access: bool = False,
     ) -> dict:
         """Creates a database schema project from a MySQL Workbench model (.mwb).
@@ -905,6 +913,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             enforce_target_path: Create the target_path if it does not exist.
             copyrights: The copyright notices of the project, instead of
                 copyright_holder (see msm.create_project).
+            year_of_creation: The year of creation of the copyright (see
+                msm.create_project).
 {gui_argument_doc}
 
         Returns:
@@ -935,6 +945,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             copyrights=copyrights,
             lsp_path=_lsp_path(),
             model=model,
+            year_of_creation=year_of_creation,
         )
         await _add_new_project(result["project_path"], owner, mcp_access)
         return result

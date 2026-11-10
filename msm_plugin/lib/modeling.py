@@ -1119,6 +1119,7 @@ def create_project_from_workbench_model(
     copyrights: list = None,
     lsp_path: str = None,
     model: workbench.Model = None,
+    year_of_creation: str = None,
 ) -> dict:
     """Creates a schema project from a schema of a MySQL Workbench model.
 
@@ -1142,6 +1143,8 @@ def create_project_from_workbench_model(
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
         model: The model read from model_path already (read_model), which
             is then not read again.
+        year_of_creation: The year of creation of the copyright, defaulting
+            to the current one.
 
     Returns:
         {project_path, schema, tables, views, routines, triggers, events,
@@ -1164,6 +1167,7 @@ def create_project_from_workbench_model(
         allow_special_chars=True,
         enforce_target_path=enforce_target_path,
         copyrights=copyrights,
+        year_of_creation=year_of_creation,
     )
     try:
         result = _import_into(project_path, model, model_schema, lsp_path)

@@ -536,6 +536,11 @@ def edit_schema(
             + ", ".join(f"`{op}`" for op in unsupported)
             + f" yet; it does {', '.join(sorted(supported))}. A newer MariaDB Shell may."
         )
+    # After base_hash was checked: moving the years along gives the snapshot
+    # the hash of the script with the new notices. Not undone where the edit
+    # fails, as it is a change of its own.
+    if management.update_copyright_years(schema_project_path):
+        project = modeling._Project.load(schema_project_path)
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
     request = {"format": lsp.EDIT_FORMAT, "schema": schema_name, "edits": edits}
