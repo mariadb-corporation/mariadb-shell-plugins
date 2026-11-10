@@ -179,12 +179,15 @@ def test_stdio_deploy_schema_requires_the_db_group():
 
     # msm.online_alter_table too, and with it the task tools that follow it
     assert "msm.online_alter_table" not in msm_only and "task.get" not in msm_only
+    assert "msm.import_live_schema" not in msm_only
+    assert "msm.list_live_schema_objects" not in msm_only
     assert "msm.get_online_alter_settings" in msm_only
     assert "msm.get_online_alter_defaults" in msm_only
 
     with_db = helpers.list_tool_names(["msm", "db"])
     assert "msm.deploy_schema" in with_db
     assert "msm.online_alter_table" in with_db and "task.get" in with_db
+    assert "msm.import_live_schema" in with_db and "msm.list_live_schema_objects" in with_db
     assert "msm.get_deployment_script_versions" in with_db
     assert "db.connect" in with_db
 
@@ -384,6 +387,64 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                     tables = [tables]
                 assert "mcp_pytest_table" in [
                     entry["name"] for entry in tables or []
+                ]
+
+                # The deployed schema, read back into a project of its own
+                listed = payload(
+                    await call(
+                        "msm.list_live_schema_objects",
+                        {"connection_id": connection_id, "schema": SCHEMA_NAME},
+                    )
+                )
+                assert [t["name"] for t in listed["tables"]] == ["mcp_pytest_table"]
+                assert listed["schema_version"] == "0.0.1"
+                assert "msm_schema_version" in listed["left_out"]
+                assert listed["project_folder_name"] == f"{SCHEMA_NAME}.msm.project"
+                # Refused before a task starts, as msm.create_project refuses
+                refused = await call(
+                    "msm.import_live_schema",
+                    {
+                        "connection_id": connection_id,
+                        "schema": SCHEMA_NAME,
+                        "target_path": allowed_temp_dir,
+                    },
+                )
+                assert refused.is_error is True
+                assert "already exists" in str(helpers.tool_payload(refused))
+                started = payload(
+                    await call(
+                        "msm.import_live_schema",
+                        {
+                            "connection_id": connection_id,
+                            "schema": SCHEMA_NAME,
+                            "target_path": os.path.join(allowed_temp_dir, "imported"),
+                            "enforce_target_path": True,
+                            "copyright_holder": COPYRIGHT_HOLDER,
+                            "objects": {"tables": ["mcp_pytest_table"]},
+                            "folder": "/Imported",
+                        },
+                    )
+                )
+                # A task, followed with task.get
+                state = {"status": started["status"]}
+                for _ in range(30):
+                    if state["status"] in ("completed", "failed", "cancelled"):
+                        break
+                    state = payload(
+                        await call(
+                            "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                        )
+                    )
+                assert state["status"] == "completed", state
+                imported = state["result"]
+                assert imported["tables"] == 1 and imported["schema_version"] == "0.0.1"
+                assert os.path.isdir(imported["project_path"])
+                projects = payload(await call("msm.list_projects", {}))
+                # A single-entry list comes back as the bare entry
+                if isinstance(projects, dict):
+                    projects = [projects]
+                assert {"project_path": imported["project_path"], "folder": "/Imported"} in [
+                    {"project_path": p["project_path"], "folder": p["folder"]} for p in projects
                 ]
 
                 # The online ALTER TABLE setting, written and read back

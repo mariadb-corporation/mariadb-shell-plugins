@@ -68,6 +68,7 @@ _NEW_PROJECT_MCP_ACCESS = (
 _GUI_ARGUMENTS = {
     "msm.create_project": _NEW_PROJECT_MCP_ACCESS,
     "msm.import_workbench_model": _NEW_PROJECT_MCP_ACCESS,
+    "msm.import_live_schema": _NEW_PROJECT_MCP_ACCESS,
     "msm.add_project": (
         "mcp_access",
         """            mcp_access: Whether LLMs may work on the project through an MCP
@@ -93,10 +94,11 @@ def _register_with_gui_argument(tool, name, function) -> None:
 def register_msm_tools(server, function_groups=()) -> None:
     """Registers the MariaDB Schema Management tools on the given server.
 
-    All tools but msm.deploy_schema work on a schema project on disk and are
-    always registered. msm.deploy_schema needs a database connection opened
-    with db.connect, so it is only registered when the db function group is
-    served as well - it would have no way to obtain a connection otherwise.
+    The tools that work on a schema project on disk are always registered.
+    Those that need a database connection opened with db.connect
+    (msm.deploy_schema, msm.online_alter_table, msm.list_live_schema_objects,
+    msm.import_live_schema) are only registered when the db function group is
+    served as well - they would have no way to obtain a connection otherwise.
 
     Args:
         server: The MCPServer instance to register the tools on.
@@ -1324,3 +1326,178 @@ def register_msm_tools(server, function_groups=()) -> None:
 
             tasks.start(task, work)
             return {"task_id": task.id, "status": task.status}
+
+        @tool(name="msm.list_live_schema_objects")
+        async def list_live_schema_objects(ctx: Context, connection_id: str, schema: str) -> dict:
+            """Lists the objects of a schema on a server that msm.import_live_schema can import.
+
+            Args:
+                connection_id: The UUID returned by db.connect.
+                schema: The schema on the server.
+
+            Returns:
+                {schema, tables: [{name, comment, triggers: [names]}], views:
+                [{name, comment}], procedures: [{name}], functions: [{name}],
+                triggers: [{name, table}], events: [{name}], sequences:
+                [{name}], project_folder_name: the folder a project of the
+                schema gets (<schema>.msm.project), schema_version: the
+                version msm deployed of the schema ("x.y.z") or null,
+                left_out: msm's own objects (views and routines named msm_*:
+                msm_schema_version, msm_schema_diagrams, helpers), which are
+                never imported; empty for a schema msm does not manage unless
+                it names objects so}. Each list is sorted by name.
+            """
+            from msm_plugin.lib import live_schema as msm_live_schema
+
+            client = general.get_client_identity(ctx)
+
+            def _list():
+                with db_functions.use_session(connection_id, client) as session:
+                    try:
+                        return msm_live_schema.list_schema_objects(session, schema)
+                    except ValueError as error:
+                        raise tool_error(str(error)) from error
+
+            return await anyio.to_thread.run_sync(_list)
+
+        async def import_live_schema(
+            ctx: Context,
+            connection_id: str,
+            schema: str,
+            target_path: str,
+            objects: Optional[dict] = None,
+            copyright_holder: Optional[str] = None,
+            license: Optional[str] = None,
+            overwrite_existing: bool = False,
+            enforce_target_path: bool = False,
+            copyrights: Optional[list] = None,
+            year_of_creation: Union[str, int, None] = None,
+            folder: Optional[str] = None,
+            caption: Optional[str] = None,
+            color: Optional[str] = None,
+            mcp_access: bool = False,
+        ) -> dict:
+            """Creates a database schema project from a schema on a server.
+
+            The reverse of a deployment. The development script gets the
+            CREATE statements the server gives for the schema's objects, or
+            for the selected ones: tables and sequences (MSM Section 140),
+            views, routines, triggers and events (Section 150, written to be
+            run again), in breakout files under development/sections/ where a
+            section is large. DEFINER clauses, the schema's own name in
+            qualified names and the tables' AUTO_INCREMENT counters are left
+            out, so the project deploys anywhere under any name. The schema
+            snapshot is then made from that SQL. Data, users, roles and
+            grants are not imported, nor msm's own objects.
+
+            Args:
+                connection_id: The UUID returned by db.connect.
+                schema: The schema on the server; the project gets its name.
+                target_path: The path the project folder should be created in.
+                objects: The objects to import: {tables, views, procedures,
+                    functions, triggers, events, sequences: [names]}, as
+                    msm.list_live_schema_objects lists them. A kind left out
+                    imports none of it. Left out, all objects are imported.
+                    Without a triggers list, the selected tables bring their
+                    triggers; a listed trigger needs its table. A foreign key
+                    to a table of the schema that is not imported is left
+                    out, with a warning.
+                copyright_holder: The name of the copyright holder.
+                license: The license to use for the project.
+                overwrite_existing: Overwrite the project folder if it exists.
+                enforce_target_path: Create the target_path if it does not exist.
+                copyrights: The copyright notices of the project, instead of
+                    copyright_holder (see msm.create_project).
+                year_of_creation: The year of creation of the copyright (see
+                    msm.create_project).
+                folder: The folder of the project list to file it in, such as
+                    "/Shop". Defaults to the top level.
+                caption: The caption to show it with in the project list.
+                color: The color to show it in (red, orange, yellow, green,
+                    blue or purple).
+{gui_argument_doc}
+
+            Returns:
+                {task_id, status}: the import runs as a task of type msm and
+                kind import_live_schema, followed with task.get, stopped with
+                task.cancel (a cancelled import leaves no project behind).
+                Its stages: "Reading the objects" (a step per object),
+                "Writing the project", "Making the schema snapshot". Its
+                result: project_path, schema, the numbers of tables,
+                sequences, views, routines, triggers and events,
+                schema_version (the version msm deployed of the schema, or
+                null), warnings on what was left out, and the files written.
+                The project is added to the project list (see
+                msm.list_projects). What refuses the import (the target path,
+                an existing project folder, the license, the copyrights, the
+                selection, a missing mariadb-lsp) refuses this call, before
+                the task starts, with msm.create_project's words.
+            """
+            from msm_plugin.lib import modeling as msm_lib_modeling
+            from msm_plugin.lib import source
+
+            await general.require_allowed_path(ctx, target_path)
+            _require_new_project_access(ctx, target_path, schema)
+            msm_projects.normalize_details(folder, caption, color)
+            client = general.get_client_identity(ctx)
+            owner = client.user
+            lsp_path = _lsp_path()
+            # Resolved before the task starts, so that a wrong connection
+            # fails the call itself, as do the checks below.
+            open_session = await anyio.to_thread.run_sync(
+                db_functions.session_opener, connection_id, client
+            )
+
+            options = dict(
+                objects=objects,
+                copyright_holder=copyright_holder,
+                license=license,
+                overwrite_existing=overwrite_existing,
+                enforce_target_path=enforce_target_path,
+                copyrights=copyrights,
+                lsp_path=lsp_path,
+                year_of_creation=year_of_creation,
+            )
+
+            def prepare():
+                session = open_session()
+                try:
+                    return msm_lib_modeling.prepare_live_import(
+                        session, schema, target_path, **options
+                    )
+                except ValueError as error:
+                    raise tool_error(str(error)) from error
+                finally:
+                    session.close()
+
+            # What refuses the import refuses this call, before the task starts
+            prepared = await anyio.to_thread.run_sync(prepare)
+            task = tasks.create(
+                TASK_TYPE_MSM, "import_live_schema",
+                f"Create an MSM project from the schema `{schema}`", client,
+                MAX_RUNNING_MSM_TASKS,
+                {"connection_id": connection_id, "schema": schema, "target_path": target_path},
+            )
+
+            def work(task):
+                session = open_session()
+                try:
+                    with source.checked_includes(
+                        lambda path: db_functions.allowed_include(path, owner)
+                    ):
+                        result = msm_lib_modeling.create_project_from_live_schema(
+                            session, schema, target_path, task=task, prepared=prepared,
+                            **options,
+                        )
+                finally:
+                    session.close()
+                msm_projects.add_project(
+                    result["project_path"], folder, caption, color, owner=owner,
+                    mcp_access=mcp_access if general.is_gui_mode() else True,
+                )
+                return result
+
+            tasks.start(task, work)
+            return {"task_id": task.id, "status": task.status}
+
+        _register_with_gui_argument(tool, "msm.import_live_schema", import_live_schema)

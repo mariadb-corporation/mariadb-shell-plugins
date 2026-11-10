@@ -36,7 +36,7 @@ No shell imports: lib/workbench.py classifies the SQL of a model with it.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 _CREATE = re.compile(
@@ -570,3 +570,87 @@ def _block(run: list) -> str:
     if delimiter == ";":
         return sql
     return f"DELIMITER {delimiter}\n\n{sql}\n\nDELIMITER ;"
+
+
+# -----------------------------------------------------------------------------
+# Imported SQL, as the importers (workbench, live_schema) write it
+
+
+@dataclass
+class Imported:
+    """The SQL of an imported schema (a Workbench model's, a live one's),
+    grouped as an MSM development script keeps it.
+
+    Each member is the SQL of one part, or None where it has none.
+    """
+
+    tables: Optional[str] = None
+    table_additions: Optional[str] = None
+    inserts: Optional[str] = None
+    views: Optional[str] = None
+    routines: Optional[str] = None
+    triggers: Optional[str] = None
+    events: Optional[str] = None
+    roles: Optional[str] = None
+    counts: dict = field(default_factory=dict)
+    warnings: list = field(default_factory=list)
+
+
+def banner(kind: str, name: str) -> str:
+    """The banner comment an imported statement is written under."""
+    rule = "-- " + "-" * 77
+    return f"{rule}\n-- {kind} `{name}`\n{rule}\n"
+
+
+def idempotent_create(kind: str, name: str, sql: str) -> str:
+    """A CREATE statement of section 150, safe to run where the object exists."""
+    statement = strip_statement(sql)
+    if kind in ("VIEW", "EVENT"):
+        statement = re.sub(
+            r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?", "CREATE OR REPLACE ", statement,
+            count=1, flags=re.IGNORECASE,
+        )
+        return f"{statement}%%"
+    return f"DROP {kind} IF EXISTS {quote_identifier(name)}%%\n{statement}%%"
+
+
+def delimiter_block(statements: list, title: str) -> Optional[str]:
+    """Statements ending with %%, in a DELIMITER block of their own."""
+    if not statements:
+        return None
+    return f"-- {title}\n\nDELIMITER %%\n\n" + "\n\n".join(statements) + "\n\nDELIMITER ;"
+
+
+# A DEFINER clause as SHOW CREATE writes it: DEFINER=`user`@`host`,
+# DEFINER=CURRENT_USER or DEFINER=`role`
+_QUOTED = r"(?:`(?:[^`]|``)*`|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\")"
+DEFINER = re.compile(
+    rf"\s+DEFINER\s*=\s*(?:CURRENT_USER(?:\s*\(\s*\))?|(?:{_QUOTED}|[\w.$-]+)"
+    rf"(?:\s*@\s*(?:{_QUOTED}|[\w.%$-]+))?)",
+    re.IGNORECASE,
+)
+# What a qualifier is never looked for in: other quoted names, strings and comments
+_QUOTED_OR_COMMENT = rf"{_QUOTED}|--[^\n]*|#[^\n]*|/\*.*?\*/"
+
+
+def without_definer(sql: str) -> str:
+    """A CREATE statement without its DEFINER clause, so it creates the
+    object for whoever runs it."""
+    return DEFINER.sub("", sql, count=1)
+
+
+def unqualified(sql: str, schema: str) -> str:
+    """The statement without the schema's own name in front of the object
+    names it qualifies (`schema`.`t` becomes `t`), so it runs in any schema
+    it is used in; strings and comments are left as they are."""
+    # The qualifier first: where it starts, it wins over the quoted name. The
+    # name it qualifies is taken with it, so that a table named like the
+    # schema keeps its place in `schema`.`schema`.`column`.
+    pattern = re.compile(
+        rf"{re.escape(quote_identifier(schema))}\s*\.\s*(?P<name>`(?:[^`]|``)*`)"
+        rf"|(?P<keep>{_QUOTED_OR_COMMENT})",
+        re.DOTALL,
+    )
+    return pattern.sub(
+        lambda m: m.group("name") if m.group("name") is not None else m.group("keep"), sql
+    )

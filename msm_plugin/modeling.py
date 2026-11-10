@@ -375,6 +375,23 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
         return result
 
 
+def _prompted_copyright_holder(kwargs) -> str:
+    """An import's copyright holder, asked for in an interactive shell where none is given."""
+    copyright_holder = kwargs.get("copyright_holder")
+    if (
+        copyright_holder is None
+        and not kwargs.get("copyrights")
+        and lib.core.get_interactive_default()
+    ):
+        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+    return copyright_holder
+
+
+def _print_notes(result: dict) -> None:
+    for warning in result["warnings"]:
+        print(f"Note: {warning}")
+
+
 @plugin_function("msm.importWorkbenchModel", shell=True, cli=True, web=True)
 def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
     """Creates a schema project from a MySQL Workbench model (.mwb)
@@ -410,13 +427,7 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
         roles and inserted rows, the diagrams, the attached scripts that were not imported,
         warnings on what else was left out, and the files written.
     """
-    copyright_holder = kwargs.get("copyright_holder")
-    if (
-        copyright_holder is None
-        and not kwargs.get("copyrights")
-        and lib.core.get_interactive_default()
-    ):
-        copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
+    copyright_holder = _prompted_copyright_holder(kwargs)
 
     result = lib.modeling.create_project_from_workbench_model(
         model_path,
@@ -445,7 +456,99 @@ def import_workbench_model(model_path: str, target_path: str, **kwargs) -> dict:
                 "Scripts of the model that were not imported: "
                 + ", ".join(result["scripts_not_imported"])
             )
-        for warning in result["warnings"]:
-            print(f"Note: {warning}")
+        _print_notes(result)
+    else:
+        return result
+
+
+@plugin_function("msm.listLiveSchemaObjects", shell=True, cli=True, web=True)
+def list_live_schema_objects(schema: str, **kwargs) -> dict:
+    """Lists the objects of a schema on a server that msm.importLiveSchema can import
+
+    Args:
+        schema (str): The schema on the server.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        session (object): The database session to use. Defaults to the global session.
+
+    Returns:
+        The tables (with their comments and triggers), views, procedures, functions, triggers
+        (with their tables), events and sequences of the schema, the version msm deployed of it
+        where it has one, and msm's own objects, which are never imported.
+    """
+    session = lib.core.get_current_session(kwargs.get("session", None))
+    result = lib.live_schema.list_schema_objects(session, schema)
+    if lib.core.get_interactive_default():
+        print(json.dumps(result, indent=4))
+        return None
+    return result
+
+
+@plugin_function("msm.importLiveSchema", shell=True, cli=True, web=True)
+def import_live_schema(schema: str, target_path: str, **kwargs) -> dict:
+    """Creates a schema project from a schema on a server
+
+    The development script gets the CREATE statements the server gives for the schema's objects,
+    or for the selected ones: its tables and sequences (MSM Section 140), its views, routines,
+    triggers and events (Section 150). DEFINER clauses, the schema's own name in qualified names
+    and the tables' AUTO_INCREMENT counters are left out, so the project deploys anywhere under
+    any name. A section larger than the project's maxInlineSectionSize goes into breakout files
+    under development/sections/. Then the schema snapshot is made from that SQL by the
+    mariadb-lsp binary. Data, users, roles and grants are not imported, nor msm's own objects.
+
+    Args:
+        schema (str): The schema on the server; the project gets its name.
+        target_path (str): The folder to create the project folder in.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        objects (dict): The objects to import, {tables, views, procedures, functions, triggers,
+            events, sequences: [names]}; a kind left out imports none of it. Defaults to all
+            objects. A trigger needs its table.
+        session (object): The database session to use. Defaults to the global session.
+        copyright_holder (str): The name of the copyright holder.
+        license (str): The license to use for the project.
+        copyrights (list): The copyright notices of the project, instead of copyright_holder.
+        year_of_creation (str): The year of creation of the copyright. Defaults to the current year.
+        overwrite_existing (bool): If the project folder already exists, overwrite it.
+        enforce_target_path (bool): Create the target_path if it does not yet exist.
+        add_to_project_list (bool): Whether to add the new project to the project list (see
+            msm.listProjects). Defaults to True.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        The project's path and schema, the numbers of tables, sequences, views, routines, triggers
+        and events, the version msm deployed of the schema where it has one, warnings on what was
+        left out, and the files written.
+    """
+    session = lib.core.get_current_session(kwargs.get("session", None))
+    copyright_holder = _prompted_copyright_holder(kwargs)
+
+    result = lib.modeling.create_project_from_live_schema(
+        session,
+        schema,
+        target_path,
+        objects=kwargs.get("objects"),
+        copyright_holder=copyright_holder,
+        license=kwargs.get("license"),
+        overwrite_existing=bool(kwargs.get("overwrite_existing", False)),
+        enforce_target_path=bool(kwargs.get("enforce_target_path", False)),
+        copyrights=kwargs.get("copyrights"),
+        year_of_creation=kwargs.get("year_of_creation"),
+        lsp_path=kwargs.get("lsp_path"),
+    )
+    if kwargs.get("add_to_project_list", True):
+        lib.projects.add_project(result["project_path"])
+
+    if lib.core.get_interactive_default():
+        print(
+            f"Created the project `{result['project_path']}` with {result['tables']} table(s), "
+            f"{result['sequences']} sequence(s), {result['views']} view(s), "
+            f"{result['routines']} routine(s), {result['triggers']} trigger(s) and "
+            f"{result['events']} event(s)."
+        )
+        _print_notes(result)
     else:
         return result
