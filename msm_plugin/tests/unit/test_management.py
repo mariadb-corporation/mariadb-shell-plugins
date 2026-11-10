@@ -570,6 +570,8 @@ def test_a_refused_write_leaves_the_copyright_years(tmp_path, monkeypatch):
     in_year(monkeypatch, int(lib.management.current_year()) + 1)
     with pytest.raises(ValueError):
         lib.management.set_online_alter_table(project_path, "t", {"lockWait": 0})
+    # ... and so does one that writes nothing
+    assert lib.management.set_online_alter_table(project_path, "t", None) == []
     assert get_project_settings(schema_project_path=project_path)["copyrights"][0].get(
         "yearOfLastUpdate"
     ) is None

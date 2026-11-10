@@ -27,7 +27,8 @@ Every lib function that writes into a project is marked @changes_project.
 After it succeeds, the project's copyright years are moved along
 (management.update_copyright_years), so a change of a later year shows in
 the notices, whichever function made it. A call refused with an error
-leaves the years as they are. Calls inside a marked call leave it to the
+leaves the years as they are, and so does one that returns an empty list of
+files written: it wrote nothing. Calls inside a marked call leave it to the
 outermost one, so a change moves the years once.
 
 A function whose own output carries the notices moves the years itself
@@ -48,7 +49,7 @@ from typing import Callable, Optional
 _in_change = contextvars.ContextVar("msm_in_project_change", default=False)
 
 
-def changes_project(function: Callable = None, *, writes: Callable[[dict], bool] = None):
+def changes_project(function: Callable):
     """Marks a lib function that writes into a schema project.
 
     The project is the call's `schema_project_path` argument, or the
@@ -57,11 +58,7 @@ def changes_project(function: Callable = None, *, writes: Callable[[dict], bool]
 
     Args:
         function: The function marked.
-        writes: For a function that writes only on some calls: given the
-            call's arguments by name, whether this one writes.
     """
-    if function is None:
-        return lambda function: changes_project(function, writes=writes)
     signature = inspect.signature(function)
     if not {"schema_project_path", "file_path"} & set(signature.parameters):
         raise TypeError(
@@ -76,9 +73,10 @@ def changes_project(function: Callable = None, *, writes: Callable[[dict], bool]
         token = _in_change.set(True)
         try:
             result = function(*args, **kwargs)
-            bound = signature.bind(*args, **kwargs)
-            bound.apply_defaults()
-            if writes is None or writes(bound.arguments):
+            # An empty list of the files written: nothing was written
+            if result != []:
+                bound = signature.bind(*args, **kwargs)
+                bound.apply_defaults()
                 path = _project_path(bound.arguments)
                 if path is not None:
                     from msm_plugin.lib import management

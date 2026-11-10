@@ -1108,7 +1108,8 @@ def get_schema_development_version(
     )
 
 
-@changes_project(writes=lambda call: call["write_to_file"])
+# Not marked: with write_to_file it writes through write_sections_to_file,
+# which is, and without it writes nothing.
 def set_development_version(
     new_version: str,
     schema_project_path: str = None,
