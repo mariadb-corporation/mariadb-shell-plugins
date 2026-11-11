@@ -344,8 +344,9 @@ def _build_schema_definition(
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(project, hashed)
 
+    binary = lsp.find_lsp(lsp_path) if outline else lsp.require_lsp(lsp_path)
     if not outline:
-        outline = lsp.outline(lsp.require_lsp(lsp_path), script, project.development)
+        outline = lsp.outline(binary, script, project.development)
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])
@@ -365,7 +366,10 @@ def _build_schema_definition(
         )
 
     schema_name = management.get_effective_schema_name(project.settings)
-    return diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
+    document = diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
+    # Whether its REST part tells what Section 180 creates (rest_objects)
+    document[diagrams.REST_OUTLINE_MEMBER] = binary is not None and lsp.outlines_rest(binary)
+    return document
 
 
 def build_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:

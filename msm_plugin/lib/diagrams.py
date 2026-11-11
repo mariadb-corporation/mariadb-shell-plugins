@@ -607,21 +607,26 @@ def footprint(figure: dict) -> tuple:
     return width, height
 
 
+# The snapshot's member saying whether the mariadb-lsp that made it outlines
+# the REST definition as msm needs (lsp.outlines_rest)
+REST_OUTLINE_MEMBER = "rest_outline"
+
+
 def rest_objects(schema_document: dict) -> Optional[set]:
-    """The rest_paths.object_key()s of the REST objects the snapshot's Section 180
-    creates; None where its REST part cannot tell (a service without
-    `declared`: a mariadb-lsp from before lsp-server #39, which can put an
-    object under the wrong schema)."""
-    services = (schema_document.get("rest") or {}).get("services", [])
-    if any("declared" not in service for service in services):
+    """The rest_paths.object_key()s of the REST objects the snapshot's Section
+    180 creates; None where its REST part cannot tell: a snapshot made
+    without a mariadb-lsp that outlines REST as msm needs (REST_OUTLINE_MEMBER
+    not true), whose REST part can be empty or put an object under the wrong
+    schema."""
+    if schema_document.get(REST_OUTLINE_MEMBER) is not True:
         return None
     return {
         rest_paths.object_key(
             service.get("path") or "", schema.get("path") or "", item.get("path") or ""
         )
-        for service in services
-        for schema in service.get("schemas", [])
-        for item in schema.get("objects", [])
+        for service in (schema_document.get("rest") or {}).get("services") or []
+        for schema in service.get("schemas") or []
+        for item in schema.get("objects") or []
     }
 
 

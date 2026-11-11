@@ -412,30 +412,43 @@ REST_PART = {"services": [{
 
 
 def test_reconcile_keeps_the_rest_objects_section_180_creates():
-    schema = {"tables": [], "rest": REST_PART}
+    schema = {"tables": [], "rest": REST_PART, diagrams.REST_OUTLINE_MEMBER: True}
     document = diagram("D", tables=())
     document["figures"] = [
         # Paths compared as the server does: case ignored, quotes left out
         rest_figure("kept", "MIKE,anna@/Notes", "`/app`", "/NOTE"),
         rest_figure("gone", "mike,anna@/notes", "/app", "/gone"),
         rest_figure("other service", "mike@/notes", "/app", "/note"),
+        # The shell sorts a service's developers
+        rest_figure("developers", "anna,mike@/notes", "/app", "/note"),
     ]
     assert diagrams.reconcile_diagram(document, schema)
-    assert [f["id"] for f in document["figures"]] == ["kept"]
+    assert [f["id"] for f in document["figures"]] == ["kept", "developers"]
     assert not diagrams.reconcile_diagram(document, schema)
 
     # Without Section 180's REST, none is left
-    assert diagrams.reconcile_diagram(document, {"tables": []})
+    assert diagrams.reconcile_diagram(
+        document, {"tables": [], "rest": {}, diagrams.REST_OUTLINE_MEMBER: True}
+    )
     assert document["figures"] == []
 
 
 def test_reconcile_keeps_rest_figures_where_the_snapshot_cannot_tell():
-    # A snapshot of a mariadb-lsp before the REST outline features
-    old = {"services": [{"path": "/notes", "schemas": []}]}
+    # A snapshot of a mariadb-lsp without the REST outline features, one with
+    # no REST part at all, or one made before msm recorded which it was
     document = diagram("D", tables=())
     document["figures"] = [rest_figure("r", "/notes", "/app", "/note")]
-    assert not diagrams.reconcile_diagram(document, {"tables": [], "rest": old})
-    assert [f["id"] for f in document["figures"]] == ["r"]
+    for schema in (
+        {"tables": [], "rest": REST_PART, diagrams.REST_OUTLINE_MEMBER: False},
+        {"tables": [], "rest": {}, diagrams.REST_OUTLINE_MEMBER: False},
+        {"tables": [], "rest": {"services": [{"path": "/notes", "schemas": None}]}},
+    ):
+        assert not diagrams.reconcile_diagram(document, schema)
+        assert [f["id"] for f in document["figures"]] == ["r"]
+    # A REST part with null lists
+    assert diagrams.rest_objects(
+        {"rest": {"services": [{"path": "/n", "schemas": None}]}, diagrams.REST_OUTLINE_MEMBER: True}
+    ) == set()
 
 
 def test_a_rest_figure_covers_its_depth_and_stays_in_place():
@@ -800,6 +813,7 @@ def test_a_rest_object_section_180_drops_leaves_the_diagrams(project):
 
     management.set_section_sql_content("180", "\n" + rest, dev_file)
     result = modeling.update_schema_definition(project)
+    assert modeling.read_diagram_rows(project)[0]["document"][diagrams.REST_OUTLINE_MEMBER]
     assert result["changed_diagrams"] == ["Main"]
     figures = modeling.get_diagram_rows(project, "Main")[-1]["document"]["figures"]
     assert [figure["id"] for figure in figures if figure["type"] == "RestObjectFigure"] == ["c"]
