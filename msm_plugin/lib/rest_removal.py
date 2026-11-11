@@ -29,7 +29,7 @@ REMOVE AUTH APP ... IF EXISTS of every auth app link it no longer names:
 objects first, then schemas, links and services. What a removed service or
 schema held is listed too, so a later version that defines the service
 again does not keep the rest of it. A REST schema that takes its objects from
-another database is dropped with FOR DATABASE <the old one>: only where the
+another database is dropped with FOR SCHEMA <the old one>: only where the
 server still has it there, as its objects cannot move along.
 
 Every later deployment script runs those sections (its Section 380) before
@@ -246,7 +246,7 @@ def removals(previous: dict, current: dict) -> tuple:
                 else:
                     schemas.append(
                         f"DROP REST SCHEMA IF EXISTS {schema['path']} {on_service} "
-                        f"FOR DATABASE {schema['database_sql']};"
+                        f"FOR SCHEMA {schema['database_sql']};"
                     )
         kept_links = kept_service["auth_apps"] if kept_service else {}
         for app_key, name in service["auth_apps"].items():

@@ -131,7 +131,7 @@ def test_a_schema_on_another_database_is_dropped_where_it_still_is():
     removals, warnings = rest_removal.removals(
         outlined(on_database("`a`")), outlined(on_database("`b`"))
     )
-    assert removals == ["DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR DATABASE `a`;"]
+    assert removals == ["DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR SCHEMA `a`;"]
     assert warnings == []
 
 
@@ -141,7 +141,7 @@ def test_a_moved_schema_keeps_the_placeholders_of_its_database():
     )
     assert removals == [
         "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n "
-        "FOR DATABASE /*<msm:schema_prefix>*/shop;"
+        "FOR SCHEMA /*<msm:schema_prefix>*/shop;"
     ]
 
 
@@ -154,7 +154,7 @@ def test_a_database_changing_only_in_case_is_named():
 
 
 def test_a_move_back_keeps_the_schema_and_a_move_on_drops_it():
-    drop = "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR DATABASE `a`;\n"
+    drop = "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR SCHEMA `a`;\n"
     [back] = kept(on_database("`a`"), drop)
     assert commented(back) == [drop.strip()]
     [on] = kept(on_database("`c`"), drop)
@@ -421,7 +421,7 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     moved = on_sandbox(REST_V2).replace(f"`{SANDBOX_SCHEMA}`", f"`{OTHER_DATABASE}`")
     release(path, moved + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.3.0", "1.4.0")
     assert statements(update_section_280(path, "1.2.0", "1.3.0", SANDBOX_SCHEMA)) == [
-        f"DROP REST SCHEMA IF EXISTS /APP FROM SERVICE /Notes FOR DATABASE `{SANDBOX_SCHEMA}`;",
+        f"DROP REST SCHEMA IF EXISTS /APP FROM SERVICE /Notes FOR SCHEMA `{SANDBOX_SCHEMA}`;",
     ]
     release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.4.0",
             "1.5.0")

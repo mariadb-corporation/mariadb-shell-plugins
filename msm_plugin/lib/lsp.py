@@ -342,7 +342,7 @@ def outline_features(binary: str) -> frozenset:
 # endpoints a release removed: the auth app links of each service, the
 # service and schema a statement that names none of them works on, and
 # which services and schemas the file creates rather than only names, and
-# the DROP REST SCHEMA ... FOR DATABASE that applies only on that database.
+# the DROP REST SCHEMA ... FOR SCHEMA that applies only on that database.
 REST_OUTLINE_FEATURES = frozenset(
     ("rest_auth_app_links", "rest_current_schema", "rest_declared", "rest_drop_for_database")
 )
