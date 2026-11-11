@@ -75,8 +75,11 @@ def _quote_text(text: str) -> str:
 
 
 def _line(note: dict) -> str:
+    """Where a note's statement is: a line of Section 180, not of the file."""
     line = (note.get("start") or {}).get("line")
-    return f"line {line + 1}: " if isinstance(line, int) else ""
+    if not isinstance(line, int):
+        return ""
+    return f"Section {REST_DEFINITION_SECTION_ID} line {line + 1}: "
 
 
 def require_rest_lsp(lsp_path: Optional[str] = None) -> str:

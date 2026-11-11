@@ -134,7 +134,7 @@ def test_a_statement_msm_cannot_place_is_named():
         "CREATE REST VIEW /x AS `shop`.`x`;", "", "1.0.0", LSP
     )
     assert "msm could not place every REST statement" in body
-    assert "version 1.0.0, line 1: CREATE REST VIEW /x" in body
+    assert "version 1.0.0, Section 180 line 1: CREATE REST VIEW /x" in body
     assert statements(body) == []
 
 
