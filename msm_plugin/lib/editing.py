@@ -166,9 +166,10 @@ _RENAMES = {
 
 def rename_in_diagram(diagram: dict, edit: dict) -> bool:
     """Makes a diagram follow an edit that renames a table, a view, a
-    routine, an event or a sequence: its figures and connections name
-    objects, and would otherwise be dropped as showing what the schema no
-    longer has. A renamed trigger needs nothing: the table card lists the
+    routine, an event or a sequence: its figures name objects, and would
+    otherwise be dropped as showing what the schema no longer has. A
+    connection needs nothing: reconcile_diagram takes its table from its
+    start figure. Nor does a renamed trigger: the table card lists the
     snapshot's triggers.
 
     Returns:
@@ -200,11 +201,6 @@ def rename_in_diagram(diagram: dict, edit: dict) -> bool:
             if same(figure.get("name"), old):
                 figure["name"] = new_name
             changed = True
-    if op == "rename_table":
-        for connection in diagram.get("connections", []):
-            if same(connection.get("table"), old):
-                connection["table"] = new_name
-                changed = True
     return changed
 
 

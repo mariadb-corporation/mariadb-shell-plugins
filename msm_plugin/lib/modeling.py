@@ -819,11 +819,8 @@ def _add_connections(diagram: dict, tables: dict, schema_name: str, taken: set) 
     added = 0
     for name, start in figure_of.items():
         for foreign_key in tables[name].get("foreign_keys", []) if name in tables else []:
-            references = foreign_key.get("references") or {}
-            other_schema = references.get("schema")
-            if other_schema is not None and other_schema.lower() != schema_name.lower():
-                continue
-            end = figure_of.get((references.get("table") or "").lower())
+            parent = diagrams.foreign_key_parent(foreign_key, schema_name)
+            end = None if parent is None else figure_of.get(parent)
             key = (name, foreign_key["name"].lower())
             if end is None or key in drawn:
                 continue
@@ -1176,6 +1173,15 @@ def _new_imported_project(schema_name: str, target_path: str, fill, **options) -
     return result
 
 
+def _shown_count(document: dict) -> int:
+    """How many figures, connections and group members a diagram shows."""
+    return (
+        len(document["figures"])
+        + len(document["connections"])
+        + sum(len(diagrams.figure_members(figure)) for figure in document["figures"])
+    )
+
+
 def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -> dict:
     """Writes a schema of a Workbench model into a new project's script."""
     imported = workbench.schema_sql(model, schema)
@@ -1185,7 +1191,11 @@ def _import_into(project_path: str, model, schema: dict, lsp_path: str = None) -
     warnings = imported.warnings + warnings
     for document in documents:
         diagrams.validate_diagram(document)
-        if diagrams.reconcile_diagram(document, schema_document):
+        # reconcile_diagram also reports names it rewrote (a key's case, a
+        # key matched by definition): warn only for what it left out.
+        shown = _shown_count(document)
+        diagrams.reconcile_diagram(document, schema_document)
+        if _shown_count(document) < shown:
             warnings.append(
                 f"The diagram `{document['name']}` shows tables or foreign keys the "
                 "imported SQL does not define; they were left out."

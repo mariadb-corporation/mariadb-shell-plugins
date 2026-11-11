@@ -683,22 +683,102 @@ def figure_objects(figure: dict, catalog: dict):
     return objects.get(figure_object_name(figure).lower())
 
 
+def foreign_key_parent(foreign_key: dict, schema_name) -> Optional[str]:
+    """The lower-case name of the table a foreign key references, the table
+    a connection draws it to; None for a key into another schema, which no
+    connection draws."""
+    references = foreign_key.get("references") or {}
+    other = references.get("schema")
+    if other is not None and schema_name is not None and not same_name(other, schema_name):
+        return None
+    return (references.get("table") or "").lower()
+
+
+def _match_connections(connections: list, figures: dict, tables: dict, schema_name) -> list:
+    """Matches the connections to the foreign keys they draw (see
+    reconcile_diagram).
+
+    Args:
+        connections: The diagram's connections, in order.
+        figures: The figures kept, by id.
+        tables: The snapshot's tables, by lower-case name.
+        schema_name: The snapshot's schema.
+
+    Returns:
+        (connection, foreign key name, child table name) for each connection
+        matched, in the order of the connections.
+    """
+    matched = [None] * len(connections)
+    unmatched, taken = [], set()
+
+    def match(index, pair, child, foreign_key):
+        matched[index] = (connections[index], foreign_key["name"], child["name"])
+        taken.add((*pair, foreign_key["name"].lower()))
+
+    # First by name: the key of the connection's name, if it still joins
+    # the two tables.
+    for index, connection in enumerate(connections):
+        start = figures.get(connection.get("startFigure"))
+        end = figures.get(connection.get("endFigure"))
+        if not (start and end and is_table_figure(start) and is_table_figure(end)):
+            continue
+        child, parent = tables.get(figure_table(start)), figure_table(end)
+        if child is None or parent not in tables:
+            continue
+        pair = (connection.get("startFigure"), connection.get("endFigure"))
+        foreign_key = next(
+            (
+                key for key in child.get("foreign_keys", [])
+                if same_name(key.get("name"), connection.get("foreignKey"))
+            ),
+            None,
+        )
+        if foreign_key is not None and foreign_key_parent(foreign_key, schema_name) == parent:
+            match(index, pair, child, foreign_key)
+        else:
+            unmatched.append((index, pair, child, parent))
+    # Then by definition: a key between the two tables that no connection
+    # between the two figures draws yet.
+    for index, pair, child, parent in unmatched:
+        foreign_key = next(
+            (
+                key for key in child.get("foreign_keys", [])
+                if (*pair, key["name"].lower()) not in taken
+                and foreign_key_parent(key, schema_name) == parent
+            ),
+            None,
+        )
+        if foreign_key is not None:
+            match(index, pair, child, foreign_key)
+    return [item for item in matched if item is not None]
+
+
 def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     """Drops the figures and connections of objects the schema no longer has.
 
     A table figure shows a table, a view figure a view, a sequence figure a
     sequence, and a group figure lists routines or events, losing the ones
-    the schema no longer has and going with the last of them; a connection
-    is a foreign key of the table of its start figure. Figures of other
-    types are left alone. New objects are not added: placing them is up to
-    the user or the layout.
+    the schema no longer has and going with the last of them. Figures of
+    other types are left alone. New objects are not added: placing them is
+    up to the user or the layout.
+
+    A connection draws a foreign key of the table of its start figure (the
+    child) that references the table of its end figure (the parent). It is
+    matched to the key by its definition, not by its name alone: first to
+    the key of its name, then, where that key is gone or references another
+    table, to a key between the two tables that has no connection between
+    the two figures yet, in the order the child defines them. A matched
+    connection is kept with all its settings, `foreignKey` and `table`
+    rewritten to the key's and the child's current names, so a key dropped
+    and added again under another name keeps its line. Only a connection
+    with no key left to match, or with a figure gone, is dropped.
 
     Args:
         diagram: The msm-diagram/1 document, changed in place.
         schema_document: The msm-schema/1 snapshot.
 
     Returns:
-        Whether anything was dropped.
+        Whether anything was dropped or a connection's names rewritten.
     """
     objects = catalog(schema_document)
     tables = objects["tables"]
@@ -720,29 +800,22 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
         elif kind is not None and figure_objects(figure, objects) is None:
             continue
         kept_figures.append(figure)
-    figure_ids = {figure.get("id") for figure in kept_figures}
+    kept_by_id = {figure.get("id"): figure for figure in kept_figures}
 
-    def has_foreign_key(connection) -> bool:
-        table = tables.get((connection.get("table") or "").lower())
-        return table is not None and any(
-            same_name(foreign_key.get("name"), connection.get("foreignKey"))
-            for foreign_key in table.get("foreign_keys", [])
-        )
+    matches = _match_connections(
+        connections, kept_by_id, tables, schema_document.get("schema")
+    )
+    for connection, key_name, table_name in matches:
+        if (connection.get("foreignKey"), connection.get("table")) != (key_name, table_name):
+            connection.update(foreignKey=key_name, table=table_name)
+            changed = True
 
-    kept_connections = [
-        connection
-        for connection in connections
-        if connection.get("startFigure") in figure_ids
-        and connection.get("endFigure") in figure_ids
-        and has_foreign_key(connection)
-    ]
-
-    if len(kept_figures) != len(figures) or len(kept_connections) != len(connections):
+    if len(kept_figures) != len(figures) or len(matches) != len(connections):
         changed = True
         diagram["figures"] = kept_figures
-        diagram["connections"] = kept_connections
+        diagram["connections"] = [connection for connection, _, _ in matches]
         for layer in diagram.get("layers", []):
             layer["figures"] = [
-                figure for figure in layer.get("figures", []) if figure in figure_ids
+                figure for figure in layer.get("figures", []) if figure in kept_by_id
             ]
     return changed
