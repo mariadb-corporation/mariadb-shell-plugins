@@ -247,6 +247,10 @@ def test_a_rename_reaches_every_file(project):
     # Not the schema: an alias and a string only spelled as it
     assert "SELECT shop.id FROM customer AS shop" in script
     assert "'shop.x'" in script
+    # The banners of Section 150's commented-out example
+    assert "-- VIEW `store`.`my_view`" in script
+    assert "-- PROCEDURE `store`.`my_proc`" in script
+    assert "`shop`.`my_" not in script
 
     assert read(path, "README.md").startswith("# Database Schema Project `store`")
     assert read(path, "CHANGELOG.md").startswith("# Database Schema Change Log for `store`")
@@ -303,6 +307,17 @@ def test_a_markdown_line_the_user_changed_stays(project):
     readme = read(path, "README.md")
     assert readme.startswith("# Our `shop` schema")
     assert "development of the `store` database schema" in readme
+
+
+@needs_rename_lsp
+def test_an_example_banner_the_user_changed_stays(project):
+    dev_file = management.get_schema_development_file_path(project)
+    text = read(dev_file).replace("-- VIEW `shop`.`my_view`", "-- VIEW `shop`.`our_view`")
+    with open(dev_file, "w") as f:
+        f.write(text)
+    script = read(rename(project, "store")["project_path"], "development", "store_next.sql")
+    assert "-- VIEW `shop`.`our_view`" in script
+    assert "-- PROCEDURE `store`.`my_proc`" in script
 
 
 @needs_rename_lsp
