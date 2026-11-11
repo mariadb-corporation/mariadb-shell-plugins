@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from msm_plugin.lib import lsp, management, rest_removal
+from msm_plugin.lib import core, lsp, management, rest_removal
 from msm_plugin.lib.management import create_schema_project_folder
 from msm_plugin.tests.unit import helpers
 
@@ -61,7 +61,7 @@ CREATE OR REPLACE REST SCHEMA /APP ON SERVICE /notes FROM `shop`;
 CREATE OR REPLACE REST VIEW /Note ON SERVICE /notes SCHEMA /app AS `shop`.`note` {
     id: id
 };
-CREATE OR REPLACE REST FUNCTION /add ON SERVICE /notes SCHEMA /app AS `shop`.`add_note`;"""
+CREATE OR REPLACE REST FUNCTION /add ON SERVICE /notes SCHEMA /app AS `shop`.`f`;"""
 
 V1_TO_V2 = [
     "DROP REST PROCEDURE IF EXISTS /add FROM SERVICE /notes SCHEMA /app;",
@@ -253,3 +253,153 @@ def test_a_release_with_an_old_binary_writes_nothing(project, monkeypatch):
     assert not os.path.exists(
         os.path.join(project, "releases", "updates", "shop_1.0.0_to_1.1.0.sql")
     )
+
+
+# -----------------------------------------------------------------------------
+# Deployed on a server with the REST metadata
+
+SANDBOX_SCHEMA = "msm_rest_removal"
+SERVICES = ("/notes", "/gone", "/shared")
+SANDBOX_OBJECTS = """DELIMITER %%
+CREATE OR REPLACE PROCEDURE `add_note`() BEGIN END%%
+CREATE OR REPLACE FUNCTION `f`() RETURNS INT RETURN 1%%
+CREATE OR REPLACE VIEW `v` AS SELECT 1 AS `id`%%
+DELIMITER ;"""
+
+
+def on_sandbox(sql: str) -> str:
+    return sql.replace("`shop`", f"`{SANDBOX_SCHEMA}`")
+
+
+def rows(session, sql: str) -> list:
+    return core.MsmDbExec(sql).exec(session).items
+
+
+def rest_state(session) -> dict:
+    """{service: {id, links, schemas: {path: {object path: (id, type)}}}} of
+    the test's services, paths in lower case."""
+    services = {}
+    for row in rows(session, "SELECT `id`, `url_context_root` AS `path` "
+                    "FROM `mariadb_rest_service`.`service`"):
+        if row["path"].lower() in SERVICES:
+            services[row["path"].lower()] = {"id": row["id"], "links": set(), "schemas": {}}
+    for row in rows(session, """SELECT s.`url_context_root` AS `service`, a.`name`
+            FROM `mariadb_rest_service`.`service_has_auth_app` h
+            JOIN `mariadb_rest_service`.`service` s ON s.`id` = h.`service_id`
+            JOIN `mariadb_rest_service`.`auth_app` a ON a.`id` = h.`auth_app_id`"""):
+        if row["service"].lower() in services:
+            services[row["service"].lower()]["links"].add(row["name"].lower())
+    for row in rows(session, """SELECT s.`url_context_root` AS `service`,
+                rs.`request_path` AS `schema`, ro.`request_path` AS `object`,
+                ro.`id`, ro.`object_type`
+            FROM `mariadb_rest_service`.`rest_schema` rs
+            JOIN `mariadb_rest_service`.`service` s ON s.`id` = rs.`service_id`
+            LEFT JOIN `mariadb_rest_service`.`rest_object` ro ON ro.`rest_schema_id` = rs.`id`"""):
+        service = services.get(row["service"].lower())
+        if service is None:
+            continue
+        objects = service["schemas"].setdefault(row["schema"].lower(), {})
+        if row["object"] is not None:
+            objects[row["object"].lower()] = (row["id"], row["object_type"])
+    return services
+
+
+def layout(state: dict) -> dict:
+    """The state without ids."""
+    return {
+        path: (sorted(service["links"]), {
+            schema: {item: kind for item, (_, kind) in objects.items()}
+            for schema, objects in service["schemas"].items()
+        })
+        for path, service in state.items()
+    }
+
+
+@pytest.fixture
+def rest_sandbox(sandbox_session):
+    """The sandbox with the REST metadata, the auth apps the definitions
+    link and the service /shared another project would own; the test's
+    services and schema are dropped before and after."""
+    session = sandbox_session
+    session.run_sql("CONFIGURE REST METADATA")
+    session.run_sql("CREATE REST AUTH APP IF NOT EXISTS 'MRS' VENDOR MRS")
+    session.run_sql("CREATE REST AUTH APP IF NOT EXISTS 'Other' VENDOR MRS")
+
+    def clean():
+        for path in SERVICES:
+            session.run_sql(f"DROP REST SERVICE IF EXISTS {path}")
+        session.run_sql(f"DROP SCHEMA IF EXISTS `{SANDBOX_SCHEMA}`")
+
+    def fresh():
+        clean()
+        session.run_sql("CREATE REST SERVICE /shared")
+
+    fresh()
+    try:
+        yield session, fresh
+    finally:
+        clean()
+
+
+V2_LAYOUT = {
+    "/notes": (["mrs"], {"/app": {"/note": "TABLE", "/add": "FUNCTION"}}),
+    "/shared": ([], {}),
+}
+
+
+def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
+    session, fresh = rest_sandbox
+    path = create_schema_project_folder(
+        schema_name=SANDBOX_SCHEMA, target_path=str(tmp_path),
+        copyright_holder="Example Ltd.", license="MIT",
+    )
+    dev_file = management.get_schema_development_file_path(path)
+    management.set_section_sql_content(
+        "140", "\nCREATE TABLE `note` (`id` INT PRIMARY KEY);\n", dev_file
+    )
+    management.set_section_sql_content("150", "\n" + SANDBOX_OBJECTS + "\n", dev_file)
+    release(path, on_sandbox(REST_V1), "1.0.0", "1.1.0")
+    release(path, on_sandbox(REST_V2), "1.1.0", "1.2.0")
+    # The service /gone comes back, without its schema and link
+    release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.2.0",
+            "1.3.0")
+    for version in ("1.0.0", "1.1.0", "1.2.0"):
+        management.generate_deployment_script(path, version, lsp_path=LSP)
+
+    def deploy(version):
+        management.deploy_schema(session, path, version)
+
+    # A fresh install of 1.1.0: its removals find nothing to drop
+    deploy("1.1.0")
+    assert layout(rest_state(session)) == V2_LAYOUT
+
+    # 1.0.0, then the update to 1.1.0, which keeps what stays in place
+    fresh()
+    deploy("1.0.0")
+    before = rest_state(session)
+    assert set(before) == {"/notes", "/gone", "/shared"}
+    deploy("1.1.0")
+    after = rest_state(session)
+    assert layout(after) == V2_LAYOUT
+    assert after["/notes"]["id"] == before["/notes"]["id"]
+    assert after["/notes"]["schemas"]["/app"]["/note"] == before["/notes"]["schemas"]["/app"]["/note"]
+
+    # 1.0.0 straight to 1.2.0: /gone keeps its id, not its schema and link
+    fresh()
+    deploy("1.0.0")
+    before = rest_state(session)
+    deploy("1.2.0")
+    after = rest_state(session)
+    assert layout(after) == {**V2_LAYOUT, "/gone": ([], {})}
+    assert after["/gone"]["id"] == before["/gone"]["id"]
+
+    # 1.1.0 to 1.2.0, where 1.0.0's removals run again on what is gone
+    fresh()
+    deploy("1.1.0")
+    deploy("1.2.0")
+    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
+
+    # A fresh install of 1.2.0
+    fresh()
+    deploy("1.2.0")
+    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
