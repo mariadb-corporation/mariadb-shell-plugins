@@ -49,7 +49,7 @@ import os
 import re
 from typing import Optional
 
-from msm_plugin.lib import diagrams, editing, lsp, management
+from msm_plugin.lib import editing, lsp, management, rest_paths
 from msm_plugin.lib import statements as statements_lib
 
 REST_DEFINITION_SECTION_ID = "180"
@@ -149,7 +149,7 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
         path = service.get("path") or ""
         if not path:
             continue
-        entry = services.setdefault(diagrams.rest_path_key(path), {
+        entry = services.setdefault(rest_paths.path_key(path), {
             "path": path, "declared": False, "auth_apps": {}, "schemas": {},
         })
         entry["declared"] = entry["declared"] or service.get("declared") is True
@@ -161,7 +161,7 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
             schema_path = schema.get("path") or ""
             if not schema_path:
                 continue
-            schema_entry = entry["schemas"].setdefault(diagrams.rest_path_key(schema_path), {
+            schema_entry = entry["schemas"].setdefault(rest_paths.path_key(schema_path), {
                 "path": schema_path, "declared": False, "database": None,
                 "database_sql": None, "objects": {},
             })
@@ -174,7 +174,7 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
             for item in schema.get("objects", []):
                 item_path = item.get("path") or ""
                 if item_path:
-                    schema_entry["objects"][diagrams.rest_path_key(item_path)] = {
+                    schema_entry["objects"][rest_paths.path_key(item_path)] = {
                         "kind": item.get("kind"), "path": item_path,
                     }
     return services, warnings

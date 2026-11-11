@@ -44,6 +44,8 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from msm_plugin.lib import rest_paths
+
 DIAGRAMS_VIEW = "msm_schema_diagrams"
 SCHEMA_FORMAT = "msm-schema/1"
 DIAGRAM_FORMAT = "msm-diagram/1"
@@ -590,33 +592,23 @@ def figure_kind(figure: dict) -> Optional[FigureKind]:
     return FIGURE_KINDS.get(figure_type(figure))
 
 
+def is_number(value) -> bool:
+    """Whether a document's value is a number (a bool is none)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def footprint(figure: dict) -> tuple:
     """The (width, height) a figure covers on the page: a REST object
     figure's card covers its depth, as it stands upright."""
     width, height = figure.get("width", 0), figure.get("height", 0)
     if figure_type(figure) == REST_OBJECT_FIGURE:
         depth = figure.get("depth")
-        height = depth if isinstance(depth, (int, float)) and not isinstance(depth, bool) \
-            else REST_OBJECT_DEPTH
+        height = depth if is_number(depth) else REST_OBJECT_DEPTH
     return width, height
 
 
-_PATH_QUOTES = ("`", "'", '"')
-
-
-def rest_path_key(path: str) -> str:
-    """A REST path as the server compares it: unquoted, case ignored."""
-    if len(path) >= 2 and path[0] == path[-1] and path[0] in _PATH_QUOTES:
-        path = path[1:-1]
-    return path.lower()
-
-
-def rest_object_key(service: str, schema: str, rest_object: str) -> tuple:
-    return rest_path_key(service), rest_path_key(schema), rest_path_key(rest_object)
-
-
 def rest_objects(schema_document: dict) -> Optional[set]:
-    """The rest_object_key()s of the REST objects the snapshot's Section 180
+    """The rest_paths.object_key()s of the REST objects the snapshot's Section 180
     creates; None where its REST part cannot tell (a service without
     `declared`: a mariadb-lsp from before lsp-server #39, which can put an
     object under the wrong schema)."""
@@ -624,7 +616,9 @@ def rest_objects(schema_document: dict) -> Optional[set]:
     if any("declared" not in service for service in services):
         return None
     return {
-        rest_object_key(service.get("path") or "", schema.get("path") or "", item.get("path") or "")
+        rest_paths.object_key(
+            service.get("path") or "", schema.get("path") or "", item.get("path") or ""
+        )
         for service in services
         for schema in service.get("schemas", [])
         for item in schema.get("objects", [])
@@ -632,8 +626,9 @@ def rest_objects(schema_document: dict) -> Optional[set]:
 
 
 def figure_rest_object_key(figure: dict) -> tuple:
-    return rest_object_key(*(
-        figure.get(member) if isinstance(figure.get(member), str) else ""
+    """The rest_paths.object_key() of the REST object a figure shows."""
+    return rest_paths.object_key(*(
+        value if isinstance(value := figure.get(member), str) else ""
         for member in ("restService", "restSchema", "restObject")
     ))
 
@@ -815,8 +810,8 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
     sequence, and a group figure lists routines or events, losing the ones
     the schema no longer has and going with the last of them. A REST object
     figure goes with its object, where the snapshot's REST part can tell
-    (rest_objects). Figures of other types are left alone. New objects are not added: placing them is
-    up to the user or the layout.
+    (rest_objects). Figures of other types are left alone. New objects are
+    not added: placing them is up to the user or the layout.
 
     A connection draws a foreign key of the table of its start figure (the
     child) that references the table of its end figure (the parent). It is

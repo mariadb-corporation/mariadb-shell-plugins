@@ -839,10 +839,6 @@ def _add_connections(diagram: dict, tables: dict, schema_name: str, taken: set) 
     return added
 
 
-def _is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def _size_figure(figure: dict, objects, grow: bool = False) -> None:
     """Gives a figure the size its card needs for what it shows (see
     diagrams.figure_objects): the width where it has none, the height
@@ -854,9 +850,9 @@ def _size_figure(figure: dict, objects, grow: bool = False) -> None:
         title, kind.rows(objects), kind.sections(objects, figure), figure
     )
     manual = figure.get("manualSizing") is True
-    if not _is_number(figure.get("width")) or (grow and not manual and figure["width"] < width):
+    if not diagrams.is_number(figure.get("width")) or (grow and not manual and figure["width"] < width):
         figure["width"] = width
-    if not (manual and _is_number(figure.get("height"))):
+    if not (manual and diagrams.is_number(figure.get("height"))):
         figure["height"] = height
 
 
@@ -888,7 +884,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     moving = []  # (figure, what it shows)
     staying = []
     for figure in diagram["figures"]:
-        placed = _is_number(figure.get("left")) and _is_number(figure.get("top"))
+        placed = diagrams.is_number(figure.get("left")) and diagrams.is_number(figure.get("top"))
         objects = diagrams.figure_objects(figure, catalog)
         if objects is not None and layer_of(figure) is None and not (keep_placed and placed):
             moving.append((figure, objects))
@@ -904,7 +900,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         width, height = diagrams.footprint(figure)
         boxes.append((left, top, left + width, top + height))
     for layer in layers.values():
-        if all(_is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
+        if all(diagrams.is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
             boxes.append(
                 (layer["left"], layer["top"], layer["left"] + layer["width"],
                  layer["top"] + layer["height"])
@@ -941,8 +937,8 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         right = max(box[2] for box in boxes) + layout.MARGIN
         bottom = max(box[3] for box in boxes) + layout.MARGIN
         width, height = diagram.get("width"), diagram.get("height")
-        diagram["width"] = float(max(right, width if _is_number(width) else 0))
-        diagram["height"] = float(max(bottom, height if _is_number(height) else 0))
+        diagram["width"] = float(max(right, width if diagrams.is_number(width) else 0))
+        diagram["height"] = float(max(bottom, height if diagrams.is_number(height) else 0))
     return [diagrams.figure_object_name(figure) for figure, _ in moving]
 
 
