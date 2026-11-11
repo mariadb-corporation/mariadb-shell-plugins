@@ -582,7 +582,9 @@ def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_te
         "schema_name": "shop",
         "exists": True,
     }
-    assert _call(tools, "msm.list_projects") == [{**added, "development_version": None}]
+    assert _call(tools, "msm.list_projects") == [
+        {**added, "development_version": None, "last_released_version": None}
+    ]
 
     moved = _call(
         tools, "msm.update_project", shop, new_folder="/Archive", new_caption="Old"
@@ -892,6 +894,68 @@ def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):
 
     assert _call(tools, "msm.update_project", shop, new_caption="Mine")["caption"] == "Mine"
     assert _call(tools, "msm.remove_project", shop) == shop
+
+
+# --- renaming the schema ---------------------------------------------------------
+
+
+def _rename_lsp():
+    """A binary that renames schemas: MSM_TEST_LSP, else the one msm finds."""
+    binary = msm_lsp.find_lsp(os.environ.get("MSM_TEST_LSP"))
+    if binary is not None and "rename_schema" in msm_lsp.edit_ops(binary):
+        return binary
+    return None
+
+
+def test_a_project_kept_from_llms_is_not_renamed(project_lists, allowed_temp_dir):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    tools = _msm_tools()
+    shop = _make_project(allowed_temp_dir, "shop")
+    project_lists.add_project(shop, mcp_access=False)
+
+    answer = _call(tools, "msm.rename_schema", "store", True, shop)
+    assert (answer["allowed"], answer["reason"]) == (False, "restricted")
+    assert "keeps to the MariaDB VS Code extension" in answer["message"]
+    with pytest.raises(ToolError, match="keeps to the MariaDB VS Code extension"):
+        _call(tools, "msm.rename_schema", "store", False, shop)
+    assert os.path.isdir(shop)
+
+
+def test_a_released_project_is_not_renamed_through_the_tool(project_lists, allowed_temp_dir):
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    with open(os.path.join(path, "releases", "versions", "shop_1.0.0.sql"), "w") as f:
+        f.write("-- released\n")
+
+    [listed] = _call(tools, "msm.list_projects")
+    assert listed["last_released_version"] == "1.0.0"
+    answer = _call(tools, "msm.rename_schema", None, True, path)
+    assert (answer["allowed"], answer["reason"]) == (False, "released")
+    with pytest.raises(Exception, match="released already"):
+        _call(tools, "msm.rename_schema", "store", False, path)
+
+
+@pytest.mark.skipif(_rename_lsp() is None, reason="no mariadb-lsp binary that renames schemas")
+def test_a_schema_is_renamed_through_the_tool(project_lists, allowed_temp_dir, monkeypatch):
+    monkeypatch.setattr(config, "get_lsp_path", _rename_lsp)
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+
+    assert _call(tools, "msm.rename_schema", None, True, path)["allowed"] is True
+    dry = _call(tools, "msm.rename_schema", "store", True, path)
+    new_path = os.path.join(allowed_temp_dir, "store.msm.project")
+    assert (dry["allowed"], dry["project_path"], dry["previous_project_path"]) == (
+        True, new_path, path
+    )
+    assert os.path.isdir(path)
+
+    done = _call(tools, "msm.rename_schema", "store", False, path)
+    assert done["project_path"] == new_path
+    assert done["migration"] == []
+    assert not os.path.exists(path)
+    [listed] = _call(tools, "msm.list_projects")
+    assert (listed["project_path"], listed["schema_name"]) == (new_path, "store")
 
 
 # --- schema diagrams ------------------------------------------------------------
