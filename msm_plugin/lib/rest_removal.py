@@ -28,7 +28,9 @@ previous release's Section 180 created and this one's no longer does, and a
 REMOVE AUTH APP ... IF EXISTS of every auth app link it no longer names:
 objects first, then schemas, links and services. What a removed service or
 schema held is listed too, so a later version that defines the service
-again does not keep the rest of it.
+again does not keep the rest of it. A REST schema that takes its objects from
+another database is dropped with FOR DATABASE <the old one>: only where the
+server still has it there, as its objects cannot move along.
 
 Every later deployment script runs those sections (its Section 380) before
 its own Section 180, on a fresh install too. A statement there that drops
@@ -99,12 +101,44 @@ def _checked_rest_lsp(binary: str) -> str:
     return binary
 
 
-def definition(outlined: dict) -> tuple:
+# The database a CREATE REST SCHEMA takes its objects from, as written:
+# msm's substitution placeholders kept, which the outline leaves out
+_FROM_DATABASE = re.compile(
+    r"\bREST\s+(?:SCHEMA|DATABASE)\b.*?(?<![/\w])FROM\s+"
+    r"((?:/\*<msm:\w+>\*/|`(?:[^`]|``)*`|[\w$]+)+)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _quote_identifier(name: str) -> str:
+    return "`" + name.replace("`", "``") + "`"
+
+
+def _database_text(sql: Optional[str], schema: dict) -> Optional[str]:
+    """The database of a REST schema as its CREATE statement writes it,
+    from the lines of its range; its quoted name where they do not tell."""
+    name = schema.get("schema")
+    span = schema.get("range") or {}
+    first, last = (span.get("start") or {}).get("line"), (span.get("end") or {}).get("line")
+    if sql and isinstance(first, int) and isinstance(last, int):
+        found = _FROM_DATABASE.search("\n".join(sql.split("\n")[first:last + 1]))
+        if found:
+            return found.group(1)
+    return _quote_identifier(name) if isinstance(name, str) and name else None
+
+
+def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
     """The REST definition of an outline, and what msm could not place.
+
+    Args:
+        outlined: The outline.
+        sql: The SQL it outlines, to tell each REST schema's database as
+            written.
 
     Returns:
         ({service key: {path, declared, auth_apps: {key: name}, schemas:
-        {key: {path, declared, objects: {key: {kind, path}}}}}}, warnings)
+        {key: {path, declared, database, database_sql, objects: {key: {kind,
+        path}}}}}}, warnings)
     """
     services, warnings = {}, []
     for note in outlined.get("notes", []):
@@ -127,9 +161,13 @@ def definition(outlined: dict) -> tuple:
             if not schema_path:
                 continue
             schema_entry = entry["schemas"].setdefault(_key(schema_path), {
-                "path": schema_path, "declared": False, "objects": {},
+                "path": schema_path, "declared": False, "database": None,
+                "database_sql": None, "objects": {},
             })
-            schema_entry["declared"] = schema_entry["declared"] or schema.get("declared") is True
+            if schema.get("declared") is True:
+                schema_entry["declared"] = True
+                schema_entry["database"] = schema.get("schema")
+                schema_entry["database_sql"] = _database_text(sql, schema)
             for item in schema.get("objects", []):
                 item_path = item.get("path") or ""
                 if item_path:
@@ -152,6 +190,16 @@ def _shape(services: dict) -> dict:
         )
         for key, service in services.items()
     }
+
+
+def _moved(schema: dict, kept: dict) -> bool:
+    """Whether a REST schema both versions create takes its objects from
+    another database in the later one."""
+    return (
+        schema["declared"] and kept["declared"]
+        and bool(schema["database"]) and bool(kept["database"])
+        and schema["database"] != kept["database"]
+    )
 
 
 def removals(previous: dict, current: dict) -> tuple:
@@ -185,6 +233,21 @@ def removals(previous: dict, current: dict) -> tuple:
                 )
             if kept_schema is None and schema["declared"]:
                 schemas.append(f"DROP REST SCHEMA IF EXISTS {schema['path']} {on_service};")
+            elif kept_schema is not None and _moved(schema, kept_schema):
+                # Its objects cannot move along on the server: the schema
+                # is dropped where it still has the old database, and
+                # Section 180 creates it again
+                if schema["database"].lower() == kept_schema["database"].lower():
+                    warnings.append(
+                        f"The database of the REST schema {schema['path']} of "
+                        f"{service['path']} changes only in case; on a server with "
+                        "lower_case_table_names=0 drop the REST schema by hand."
+                    )
+                else:
+                    schemas.append(
+                        f"DROP REST SCHEMA IF EXISTS {schema['path']} {on_service} "
+                        f"FOR DATABASE {schema['database_sql']};"
+                    )
         kept_links = kept_service["auth_apps"] if kept_service else {}
         for app_key, name in service["auth_apps"].items():
             if app_key not in kept_links:
@@ -225,12 +288,14 @@ def release_removals(
         return None
     binary = lsp.require_lsp(lsp_path)
     # Any binary tells whether there is a REST statement at all
-    previous, previous_warnings = definition(lsp.outline(binary, previous_sql))
+    previous, previous_warnings = definition(lsp.outline(binary, previous_sql), previous_sql)
     if not previous and not previous_warnings:
         return None
     _checked_rest_lsp(binary)
     current, current_warnings = (
-        definition(lsp.outline(binary, current_sql)) if _has_statement(current_sql) else ({}, [])
+        definition(lsp.outline(binary, current_sql), current_sql)
+        if _has_statement(current_sql)
+        else ({}, [])
     )
     statements, warnings = removals(previous, current)
 

@@ -77,7 +77,7 @@ V1_TO_V2 = [
 
 
 def outlined(sql: str) -> dict:
-    return rest_removal.definition(lsp.outline(LSP, sql))[0]
+    return rest_removal.definition(lsp.outline(LSP, sql), sql)[0]
 
 
 def statements(sql: str) -> list:
@@ -117,6 +117,48 @@ def test_a_quoted_path_is_the_same_path():
         outlined("CREATE REST SERVICE `/s`;"), outlined("CREATE REST SERVICE /S;")
     )
     assert removals == []
+
+
+def on_database(database: str) -> str:
+    return (
+        "CREATE REST SERVICE /n;\n"
+        f"CREATE OR REPLACE REST SCHEMA /app ON SERVICE /n FROM {database};\n"
+        "CREATE OR REPLACE REST VIEW /t ON SERVICE /n SCHEMA /app AS `t`;"
+    )
+
+
+def test_a_schema_on_another_database_is_dropped_where_it_still_is():
+    removals, warnings = rest_removal.removals(
+        outlined(on_database("`a`")), outlined(on_database("`b`"))
+    )
+    assert removals == ["DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR DATABASE `a`;"]
+    assert warnings == []
+
+
+def test_a_moved_schema_keeps_the_placeholders_of_its_database():
+    removals, _ = rest_removal.removals(
+        outlined(on_database("/*<msm:schema_prefix>*/shop")), outlined(on_database("other"))
+    )
+    assert removals == [
+        "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n "
+        "FOR DATABASE /*<msm:schema_prefix>*/shop;"
+    ]
+
+
+def test_a_database_changing_only_in_case_is_named():
+    removals, warnings = rest_removal.removals(
+        outlined(on_database("`shop`")), outlined(on_database("`Shop`"))
+    )
+    assert removals == []
+    assert "changes only in case" in warnings[0]
+
+
+def test_a_move_back_keeps_the_schema_and_a_move_on_drops_it():
+    drop = "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n FOR DATABASE `a`;\n"
+    [back] = kept(on_database("`a`"), drop)
+    assert commented(back) == [drop.strip()]
+    [on] = kept(on_database("`c`"), drop)
+    assert on == drop
 
 
 def test_the_first_release_and_a_section_without_rest_remove_nothing(monkeypatch):
@@ -203,8 +245,10 @@ def release(path, rest_sql, version, next_version) -> list:
     return management.prepare_release(path, version, next_version, lsp_path=LSP)
 
 
-def update_section_280(path, version_from, version_to) -> str:
-    update = os.path.join(path, "releases", "updates", f"shop_{version_from}_to_{version_to}.sql")
+def update_section_280(path, version_from, version_to, schema="shop") -> str:
+    update = os.path.join(
+        path, "releases", "updates", f"{schema}_{version_from}_to_{version_to}.sql"
+    )
     return management.get_file_sections(update)["280"]["sql_content"]
 
 
@@ -259,6 +303,8 @@ def test_a_release_with_an_old_binary_writes_nothing(project, monkeypatch):
 # Deployed on a server with the REST metadata
 
 SANDBOX_SCHEMA = "msm_rest_removal"
+# The database 1.3.0 moves the REST schema /app to, and 1.4.0 back from
+OTHER_DATABASE = "msm_rest_removal_b"
 SERVICES = ("/notes", "/gone", "/shared")
 SANDBOX_OBJECTS = """DELIMITER %%
 CREATE OR REPLACE PROCEDURE `add_note`() BEGIN END%%
@@ -282,7 +328,9 @@ def rest_state(session) -> dict:
     for row in rows(session, "SELECT `id`, `url_context_root` AS `path` "
                     "FROM `mariadb_rest_service`.`service`"):
         if row["path"].lower() in SERVICES:
-            services[row["path"].lower()] = {"id": row["id"], "links": set(), "schemas": {}}
+            services[row["path"].lower()] = {
+                "id": row["id"], "links": set(), "schemas": {}, "databases": {},
+            }
     for row in rows(session, """SELECT s.`url_context_root` AS `service`, a.`name`
             FROM `mariadb_rest_service`.`service_has_auth_app` h
             JOIN `mariadb_rest_service`.`service` s ON s.`id` = h.`service_id`
@@ -290,7 +338,7 @@ def rest_state(session) -> dict:
         if row["service"].lower() in services:
             services[row["service"].lower()]["links"].add(row["name"].lower())
     for row in rows(session, """SELECT s.`url_context_root` AS `service`,
-                rs.`request_path` AS `schema`, ro.`request_path` AS `object`,
+                rs.`request_path` AS `schema`, rs.`name` AS `database`, ro.`request_path` AS `object`,
                 ro.`id`, ro.`object_type`
             FROM `mariadb_rest_service`.`rest_schema` rs
             JOIN `mariadb_rest_service`.`service` s ON s.`id` = rs.`service_id`
@@ -299,6 +347,7 @@ def rest_state(session) -> dict:
         if service is None:
             continue
         objects = service["schemas"].setdefault(row["schema"].lower(), {})
+        service["databases"][row["schema"].lower()] = row["database"]
         if row["object"] is not None:
             objects[row["object"].lower()] = (row["id"], row["object_type"])
     return services
@@ -329,10 +378,15 @@ def rest_sandbox(sandbox_session):
         for path in SERVICES:
             session.run_sql(f"DROP REST SERVICE IF EXISTS {path}")
         session.run_sql(f"DROP SCHEMA IF EXISTS `{SANDBOX_SCHEMA}`")
+        session.run_sql(f"DROP SCHEMA IF EXISTS `{OTHER_DATABASE}`")
 
     def fresh():
         clean()
         session.run_sql("CREATE REST SERVICE /shared")
+        # The objects of /app, in the database it moves to
+        session.run_sql(f"CREATE SCHEMA `{OTHER_DATABASE}`")
+        session.run_sql(f"CREATE TABLE `{OTHER_DATABASE}`.`note` (`id` INT PRIMARY KEY)")
+        session.run_sql(f"CREATE FUNCTION `{OTHER_DATABASE}`.`f`() RETURNS INT RETURN 1")
 
     fresh()
     try:
@@ -363,7 +417,15 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     # The service /gone comes back, without its schema and link
     release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.2.0",
             "1.3.0")
-    for version in ("1.0.0", "1.1.0", "1.2.0"):
+    # 1.3.0 moves /app to another database, 1.4.0 back
+    moved = on_sandbox(REST_V2).replace(f"`{SANDBOX_SCHEMA}`", f"`{OTHER_DATABASE}`")
+    release(path, moved + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.3.0", "1.4.0")
+    assert statements(update_section_280(path, "1.2.0", "1.3.0", SANDBOX_SCHEMA)) == [
+        f"DROP REST SCHEMA IF EXISTS /APP FROM SERVICE /Notes FOR DATABASE `{SANDBOX_SCHEMA}`;",
+    ]
+    release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.4.0",
+            "1.5.0")
+    for version in ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"):
         management.generate_deployment_script(path, version, lsp_path=LSP)
 
     def deploy(version):
@@ -403,3 +465,40 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     fresh()
     deploy("1.2.0")
     assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
+
+    def app(state):
+        """/app's database and its objects' ids."""
+        notes = state["/notes"]
+        return notes["databases"]["/app"], {
+            item: item_id for item, (item_id, _) in notes["schemas"]["/app"].items()
+        }
+
+    # The move, and the move back, each on the deployment that makes it
+    fresh()
+    deploy("1.2.0")
+    database, ids = app(rest_state(session))
+    assert database == SANDBOX_SCHEMA
+    deploy("1.3.0")
+    database, moved_ids = app(rest_state(session))
+    assert database == OTHER_DATABASE
+    assert set(moved_ids) == set(ids) and not set(moved_ids.values()) & set(ids.values())
+    deploy("1.4.0")
+    database, back_ids = app(rest_state(session))
+    assert database == SANDBOX_SCHEMA and set(back_ids) == set(ids)
+    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
+
+    # 1.2.0 straight to 1.4.0 never moves: 1.3.0's drop is commented out
+    fresh()
+    deploy("1.2.0")
+    _, ids = app(rest_state(session))
+    deploy("1.4.0")
+    assert app(rest_state(session)) == (SANDBOX_SCHEMA, ids)
+
+    # 1.0.0 straight to 1.3.0 moves it; a fresh 1.3.0 has it there too
+    fresh()
+    deploy("1.0.0")
+    deploy("1.3.0")
+    assert app(rest_state(session))[0] == OTHER_DATABASE
+    fresh()
+    deploy("1.3.0")
+    assert app(rest_state(session))[0] == OTHER_DATABASE
