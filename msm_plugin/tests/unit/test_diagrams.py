@@ -278,6 +278,84 @@ def test_a_diagram_loses_what_the_schema_no_longer_has():
     assert not diagrams.reconcile_diagram(kept, schema)
 
 
+def _orders_schema(*keys):
+    """customer, address and orders, whose foreign keys are (name, parent)
+    or (name, parent, schema)."""
+    return {
+        "schema": "shop",
+        "tables": [
+            {"name": "customer", "foreign_keys": []},
+            {"name": "address", "foreign_keys": []},
+            {
+                "name": "orders",
+                "foreign_keys": [
+                    {
+                        "name": name,
+                        "references": {"schema": (schema or [None])[0], "table": parent,
+                                       "columns": ["id"]},
+                    }
+                    for name, parent, *schema in keys
+                ],
+            },
+        ],
+    }
+
+
+def test_a_connection_follows_its_foreign_key_to_a_new_name():
+    document = diagram()
+    connection = document["connections"][0]
+    connection.update(caption="places", middleSegmentOffset=12.5, drawSplit=True, visible=False)
+    expected = {**connection, "foreignKey": "orders_ibfk_1"}
+    # Dropped and added again under another name, as the table editor does
+    schema = _orders_schema(("orders_ibfk_1", "customer"))
+    assert diagrams.reconcile_diagram(document, schema)
+    assert document["connections"] == [expected]
+    assert not diagrams.reconcile_diagram(document, schema)
+
+
+def test_a_connection_is_matched_by_name_first_then_in_the_order_of_the_keys():
+    document = diagram(tables=("customer", "orders"))
+    first = document["connections"][0]
+    second = {**first, "id": "c-2", "foreignKey": "fk_gone"}
+    third = {**first, "id": "c-3", "foreignKey": "fk_also_gone"}
+    document["connections"] += [second, third]
+    first["foreignKey"] = "FK_BILLED"  # its name, in another case
+    schema = _orders_schema(
+        ("fk_shipped", "customer"), ("fk_billed", "customer"), ("fk_other", "address")
+    )
+    assert diagrams.reconcile_diagram(document, schema)
+    # c-1 keeps its key; c-2 takes the first key left; c-3 finds none to
+    # the customer table (fk_other references address) and is dropped.
+    assert [(c["id"], c["foreignKey"]) for c in document["connections"]] == [
+        ("c-1", "fk_billed"),
+        ("c-2", "fk_shipped"),
+    ]
+
+
+def test_a_connection_whose_key_now_references_another_table_is_re_pointed_or_dropped():
+    document = diagram(tables=("customer", "orders", "address"))
+    # The key of the connection's name now references address: the line to
+    # customer draws the key that does reference customer.
+    schema = _orders_schema(("fk_orders_customer", "address"), ("fk_buyer", "customer"))
+    assert diagrams.reconcile_diagram(document, schema)
+    assert [c["foreignKey"] for c in document["connections"]] == ["fk_buyer"]
+    # No key to customer is left: the connection goes.
+    schema = _orders_schema(("fk_orders_customer", "address"))
+    assert diagrams.reconcile_diagram(document, schema)
+    assert document["connections"] == []
+
+
+def test_a_key_to_a_table_of_another_schema_draws_no_connection():
+    document = diagram()
+    assert not diagrams.reconcile_diagram(
+        document, _orders_schema(("fk_orders_customer", "customer", "SHOP"))
+    )
+    assert diagrams.reconcile_diagram(
+        document, _orders_schema(("fk_orders_customer", "customer", "crm"))
+    )
+    assert document["connections"] == []
+
+
 # -----------------------------------------------------------------------------
 # Section 160 of a project
 
