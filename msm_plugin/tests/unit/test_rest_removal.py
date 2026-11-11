@@ -558,3 +558,53 @@ def test_a_previous_release_under_another_name_is_found(project):
 def test_no_script_of_the_previous_release_is_named(project):
     body = rest_removal.release_removals_of_project(project, "shop", "0.9.0", LSP)
     assert "could not find the script of version 0.9.0" in body
+
+
+@pytest.fixture
+def no_rest_sandbox(sandbox_session):
+    """The sandbox without the REST metadata, configured again afterwards."""
+    session = sandbox_session
+    for row in helpers.query(
+        session, "SELECT `SCHEMA_NAME` AS `name` FROM information_schema.SCHEMATA "
+        "WHERE `SCHEMA_NAME` LIKE '%mariadb\\_rest\\_service%'"
+    ):
+        session.run_sql(f"DROP SCHEMA `{row['name']}`")
+    session.run_sql(f"DROP SCHEMA IF EXISTS `{SANDBOX_SCHEMA}`")
+    try:
+        yield session
+    finally:
+        session.run_sql(f"DROP SCHEMA IF EXISTS `{SANDBOX_SCHEMA}`")
+        session.run_sql("CONFIGURE REST METADATA")
+
+
+def test_a_version_without_rest_deploys_without_the_rest_metadata(no_rest_sandbox, tmp_path):
+    # 1.1.0 removes every REST endpoint 1.0.0 had: its deployment still runs
+    # 1.0.0-to-1.1.0's REST drops, which find nothing to remove there
+    session = no_rest_sandbox
+    path = create_schema_project_folder(
+        schema_name=SANDBOX_SCHEMA, target_path=str(tmp_path),
+        copyright_holder="Example Ltd.", license="MIT",
+    )
+    dev_file = management.get_schema_development_file_path(path)
+    management.set_section_sql_content(
+        "140", "\nCREATE TABLE `note` (`id` INT PRIMARY KEY);\n", dev_file
+    )
+    release(path, on_sandbox(REST_V1), "1.0.0", "1.1.0")
+    release(path, "-- No REST endpoints any more", "1.1.0", "1.2.0")
+    removals = statements(update_section_280(path, "1.0.0", "1.1.0", SANDBOX_SCHEMA))
+    assert "DROP REST SERVICE IF EXISTS /notes;" in removals
+    assert "DROP REST SERVICE IF EXISTS /gone;" in removals
+    for version in ("1.0.0", "1.1.0"):
+        management.generate_deployment_script(path, version, lsp_path=LSP)
+
+    deployment = os.path.join(
+        path, "releases", "deployment", f"{SANDBOX_SCHEMA}_deployment_1.1.0.sql"
+    )
+    section_380 = management.get_file_sections(deployment)["380"]["sql_content"]
+    assert "DROP REST SERVICE IF EXISTS /notes;" in statements(section_380)
+
+    management.deploy_schema(session, path, "1.1.0")
+    assert helpers.query(
+        session, f"SELECT COUNT(*) AS `n` FROM information_schema.TABLES "
+        f"WHERE `TABLE_SCHEMA` = '{SANDBOX_SCHEMA}' AND `TABLE_NAME` = 'note'"
+    )[0]["n"] == 1
