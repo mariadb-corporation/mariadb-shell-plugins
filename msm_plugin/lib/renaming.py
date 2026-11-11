@@ -327,32 +327,29 @@ def _rename_markdown(project_path: str, old_name: str, new_name: str) -> list:
     for name in management._TEMPLATE_MARKDOWN_FILES:
         path = os.path.join(project_path, name)
         text = sections_lib.read_if_exists(path)
+        if text is None:
+            continue
         replaced = _template_lines(
             os.path.join(management._PROJECT_TEMPLATE, name), old_name, new_name
         )
-        if text is None or not replaced:
-            continue
         if sections_lib.write_if_changed(path, _replace_lines(text, replaced), text):
             written.append(path)
     return written
 
 
-def _rename_template_examples(dev_file: str, old_name: str, new_name: str) -> list:
+def _rename_template_examples(dev_file: str, old_name: str, new_name: str) -> bool:
     """Renames the schema in the banners of the template's commented-out
     examples (Sections 140 and 150) that still read as the template wrote
-    them. The binary leaves block comments alone, and the examples are one.
-
-    Returns:
-        [dev_file] where it was written, else [].
-    """
+    them; returns whether the file was written. The binary leaves block
+    comments alone, and the examples are one."""
     text = sections_lib.read_if_exists(dev_file)
-    if text is None or sections_lib._TEMPLATE_EXAMPLE_MARK not in text:
-        return []
+    if text is None:
+        return False
     replaced = _template_lines(management.DEVELOPMENT_SCRIPT_TEMPLATE, old_name, new_name)
     new = sections_lib._TEMPLATE_EXAMPLE.sub(
         lambda match: _replace_lines(match.group(0), replaced), text
     )
-    return [dev_file] if sections_lib.write_if_changed(dev_file, new, text) else []
+    return sections_lib.write_if_changed(dev_file, new, text)
 
 
 def _rename_in(
@@ -385,9 +382,9 @@ def _rename_in(
         path, warnings,
     )
     notes = _notes(result, files)
-    for file in _rename_template_examples(project.dev_file, old_name, new_name):
-        if file not in written:
-            written.append(file)
+    if (_rename_template_examples(project.dev_file, old_name, new_name)
+            and project.dev_file not in written):
+        written.append(project.dev_file)
 
     # The pending update script, where there is one
     pending = editing.pending_update_path(path, settings)
