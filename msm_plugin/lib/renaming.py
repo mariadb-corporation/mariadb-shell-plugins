@@ -292,22 +292,32 @@ def _include_files(result: dict, development: str) -> dict:
     return paths
 
 
-def _markdown_lines(name: str, old_name: str, new_name: str) -> dict:
-    """{old line: new line} of the lines of a template markdown file the
-    schema's name fills."""
+def _template_lines(template_path: str, old_name: str, new_name: str) -> dict:
+    """{old line: new line} of the lines of a template file the schema's
+    name fills."""
     def filled(template: Template, schema_name: str) -> str:
         return template.safe_substitute(
             schema_name=schema_name,
             schema_identifier=management.get_schema_identifier(schema_name),
         )
 
-    with open(os.path.join(management._PROJECT_TEMPLATE, name)) as f:
+    with open(template_path) as f:
         templates = [Template(line) for line in f.read().splitlines()]
     return {
         filled(template, old_name): filled(template, new_name)
         for template in templates
         if set(_NAME_PLACEHOLDERS) & set(template.get_identifiers())
     }
+
+
+def _replace_lines(text: str, replaced: dict) -> str:
+    """The text with each line that is a key of replaced replaced by its
+    value; line ends stay."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        content = line.rstrip("\r\n")
+        lines[i] = replaced.get(content, content) + line[len(content):]
+    return "".join(lines)
 
 
 def _rename_markdown(project_path: str, old_name: str, new_name: str) -> list:
@@ -317,16 +327,29 @@ def _rename_markdown(project_path: str, old_name: str, new_name: str) -> list:
     for name in management._TEMPLATE_MARKDOWN_FILES:
         path = os.path.join(project_path, name)
         text = sections_lib.read_if_exists(path)
-        replaced = _markdown_lines(name, old_name, new_name)
-        if text is None or not replaced:
+        if text is None:
             continue
-        lines = text.splitlines(keepends=True)
-        for i, line in enumerate(lines):
-            content = line.rstrip("\r\n")
-            lines[i] = replaced.get(content, content) + line[len(content):]
-        if sections_lib.write_if_changed(path, "".join(lines), text):
+        replaced = _template_lines(
+            os.path.join(management._PROJECT_TEMPLATE, name), old_name, new_name
+        )
+        if sections_lib.write_if_changed(path, _replace_lines(text, replaced), text):
             written.append(path)
     return written
+
+
+def _rename_template_examples(dev_file: str, old_name: str, new_name: str) -> bool:
+    """Renames the schema in the banners of the template's commented-out
+    examples (Sections 140 and 150) that still read as the template wrote
+    them; returns whether the file was written. The binary leaves block
+    comments alone, and the examples are one."""
+    text = sections_lib.read_if_exists(dev_file)
+    if text is None:
+        return False
+    replaced = _template_lines(management.DEVELOPMENT_SCRIPT_TEMPLATE, old_name, new_name)
+    new = sections_lib._TEMPLATE_EXAMPLE.sub(
+        lambda match: _replace_lines(match.group(0), replaced), text
+    )
+    return sections_lib.write_if_changed(dev_file, new, text)
 
 
 def _rename_in(
@@ -359,6 +382,9 @@ def _rename_in(
         path, warnings,
     )
     notes = _notes(result, files)
+    if (_rename_template_examples(project.dev_file, old_name, new_name)
+            and project.dev_file not in written):
+        written.append(project.dev_file)
 
     # The pending update script, where there is one
     pending = editing.pending_update_path(path, settings)
