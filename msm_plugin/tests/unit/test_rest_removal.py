@@ -196,6 +196,20 @@ def test_a_statement_msm_cannot_place_is_named():
     assert statements(body) == []
 
 
+def test_a_binary_without_the_rest_outline_is_refused(monkeypatch):
+    outline = lsp.outline
+
+    def without_rest(*args):
+        outlined = outline(*args)
+        outlined.pop("rest", None)
+        return outlined
+
+    monkeypatch.setattr(lsp, "outline", without_rest)
+    monkeypatch.setattr(lsp, "outlines_rest", lambda binary: False)
+    with pytest.raises(lsp.LspError, match="cannot read REST definitions"):
+        rest_removal.release_removals(REST_V1, REST_V2, "1.0.0", LSP)
+
+
 def test_an_old_binary_is_refused(monkeypatch):
     monkeypatch.setattr(lsp, "outlines_rest", lambda binary: False)
     with pytest.raises(lsp.LspError, match="cannot read REST definitions"):
@@ -304,11 +318,25 @@ def test_an_update_whose_removals_all_come_back_is_left_out(project):
     ]
 
 
+def development_files(path) -> dict:
+    folder = os.path.join(path, "development")
+    return {
+        os.path.relpath(os.path.join(root, name), folder): open(os.path.join(root, name)).read()
+        for root, _, names in os.walk(folder) for name in names
+    }
+
+
 def test_a_release_with_an_old_binary_writes_nothing(project, monkeypatch):
     release(project, REST_V1, "1.0.0", "1.1.0")
+    management.set_section_sql_content(
+        "180", "\n" + REST_V2 + "\n", management.get_schema_development_file_path(project)
+    )
+    before = development_files(project)
     monkeypatch.setattr(lsp, "outlines_rest", lambda binary: False)
     with pytest.raises(lsp.LspError):
-        release(project, REST_V2, "1.1.0", "1.2.0")
+        management.prepare_release(project, "1.1.0", "1.2.0", lsp_path=LSP)
+    # Refused before the snapshot and the copyright years change them
+    assert development_files(project) == before
     assert not os.path.exists(os.path.join(project, "releases", "versions", "shop_1.1.0.sql"))
     assert not os.path.exists(
         os.path.join(project, "releases", "updates", "shop_1.0.0_to_1.1.0.sql")
@@ -516,3 +544,17 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     fresh()
     deploy("1.3.0")
     assert app()[0] == OTHER_DATABASE
+
+
+def test_a_previous_release_under_another_name_is_found(project):
+    release(project, REST_V1, "1.0.0", "1.1.0")
+    versions = os.path.join(project, "releases", "versions")
+    os.rename(os.path.join(versions, "shop_1.0.0.sql"), os.path.join(versions, "shop-1.0.0.sql"))
+    # Another name msm still takes for the version: found
+    release(project, REST_V2, "1.1.0", "1.2.0")
+    assert statements(update_section_280(project, "1.0.0", "1.1.0")) == V1_TO_V2
+
+
+def test_no_script_of_the_previous_release_is_named(project):
+    body = rest_removal.release_removals_of_project(project, "shop", "0.9.0", LSP)
+    assert "could not find the script of version 0.9.0" in body

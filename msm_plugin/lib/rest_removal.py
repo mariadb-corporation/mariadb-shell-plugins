@@ -45,6 +45,7 @@ dropped; its objects are. Paths are compared without their quotes and
 without regard to case, as the server compares them.
 """
 
+import os
 import re
 from typing import Optional
 
@@ -105,7 +106,7 @@ def _checked_rest_lsp(binary: str) -> str:
 # msm's substitution placeholders kept, which the outline leaves out
 _PLACEHOLDER = management.MSM_SUBSTITUTION_REGEX.replace("(", "(?:", 1)
 _FROM_DATABASE = re.compile(
-    r"\bREST\s+(?:SCHEMA|DATABASE)\b.*?(?<![/\w])FROM\s+"
+    r"\bREST\s+(?:SCHEMA|DATABASE)\b.*?(?<![/\w-])FROM\s+"
     rf"((?:{_PLACEHOLDER}|`(?:[^`]|``)*`|[\w$]+)+)",
     re.IGNORECASE | re.DOTALL,
 )
@@ -242,8 +243,8 @@ def removals(previous: dict, current: dict) -> tuple:
                 old, new = _written(schema), _written(kept_schema)
                 where = f"The REST schema {schema['path']} of {service['path']}"
                 if old == new:
-                    pass
-                elif schema["database_sql"] is None:
+                    continue
+                if schema["database_sql"] is None:
                     warnings.append(
                         f"{where} moves to another database, but msm could not read "
                         "its old one: drop the REST schema by hand."
@@ -297,8 +298,12 @@ def release_removals(
     if not _has_statement(previous_sql):
         return None
     binary = lsp.require_lsp(lsp_path)
-    # Any binary tells whether there is a REST statement at all
-    previous, previous_warnings = definition(lsp.outline(binary, previous_sql), previous_sql)
+    outlined = lsp.outline(binary, previous_sql)
+    # A binary with a REST part in its outline tells whether there is a REST
+    # statement at all; one without it cannot be asked
+    if "rest" not in outlined:
+        _checked_rest_lsp(binary)
+    previous, previous_warnings = definition(outlined, previous_sql)
     if not previous and not previous_warnings:
         return None
     _checked_rest_lsp(binary)
@@ -326,6 +331,52 @@ def release_removals(
         )
         lines += statements
     return "\n".join(lines) if lines else None
+
+
+def _released_version_file(project_path: str, file_name: str, version: str) -> Optional[str]:
+    """A release's version script: msm's name for it, else the one file of
+    releases/versions that msm takes for that version."""
+    folder = os.path.join(project_path, "releases", "versions")
+    path = os.path.join(folder, f"{file_name}_{version}.sql")
+    if os.path.isfile(path):
+        return path
+    found = sorted(
+        name for name in (os.listdir(folder) if os.path.isdir(folder) else [])
+        if (match := _VERSION_FILE.match(name)) and ".".join(match.groups()) == version
+    )
+    return os.path.join(folder, found[0]) if len(found) == 1 else None
+
+
+# A version script's name, as management.get_released_versions reads it
+_VERSION_FILE = re.compile(r".*?(\d+)\.(\d+)\.(\d+)\.sql$")
+
+
+def release_removals_of_project(
+    project_path: str, file_name: str, previous_version: str, lsp_path: Optional[str] = None
+) -> Optional[str]:
+    """release_removals for the next release of a project: its previous
+    release's Section 180 against the development script's.
+
+    A previous release whose script msm cannot find is named in a comment.
+    """
+    previous_file = _released_version_file(project_path, file_name, previous_version)
+    if previous_file is None:
+        return (
+            f"-- msm could not find the script of version {previous_version}, so the REST "
+            "endpoints it created and this version no longer does are not dropped here."
+        )
+    development = management.get_schema_development_file_path(project_path)
+    with open(development) as f:
+        script = management.substitute_source_statements_with_content(
+            f.read(), os.path.dirname(development)
+        )
+    section = REST_DEFINITION_SECTION_ID
+    return release_removals(
+        management.get_file_sections(previous_file).get(section, {}).get("sql_content"),
+        management.get_script_sections(script).get(section, {}).get("sql_content"),
+        previous_version,
+        lsp_path=lsp_path,
+    )
 
 
 def _commented(statement: str, version: str) -> str:

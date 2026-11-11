@@ -1595,6 +1595,24 @@ def prepare_release(
             f"The file {schema_version_file_path} already exists. Please explicitly allow to replace existing files."
         )
 
+    # The release the update script goes from; None where it has none
+    previous_version = (
+        "%d.%d.%d" % tuple(last_released_version) if last_released_version is not None else None
+    )
+    if previous_version == version:
+        previous_version = None
+
+    # The REST endpoints the previous release's Section 180 created and this
+    # one's no longer does, for the update script's Section 280. Worked out
+    # among the refusals: it may need a newer mariadb-lsp.
+    from msm_plugin.lib import rest_removal
+
+    rest_removals = None
+    if previous_version is not None:
+        rest_removals = rest_removal.release_removals_of_project(
+            schema_project_path, schema_file_name, previous_version, lsp_path=lsp_path
+        )
+
     # The release is a change applied to the project, after the refusals
     # above: they leave the development files as they are.
     if update_copyright_years(schema_project_path):
@@ -1661,36 +1679,6 @@ def prepare_release(
         section = schema_dev_expanded_sections.get(section_id, None)
         if section is not None and section_id != "910":
             schema_version_sections[section_id] = section
-
-    # The release the update script goes from; None where it has none
-    previous_version = (
-        "%d.%d.%d" % tuple(last_released_version) if last_released_version is not None else None
-    )
-    if previous_version == version:
-        previous_version = None
-
-    # The REST endpoints the previous release's Section 180 created and this
-    # one's no longer does, for the update script's Section 280. Worked out
-    # before a file of the release is written: it may need a newer mariadb-lsp.
-    from msm_plugin.lib import rest_removal
-
-    rest_removals = None
-    if previous_version is not None:
-        previous_file_path = os.path.join(
-            schema_project_path, "releases", "versions",
-            f"{schema_file_name}_{previous_version}.sql",
-        )
-        previous_sections = (
-            get_file_sections(previous_file_path) if os.path.exists(previous_file_path) else {}
-        )
-        rest_removals = rest_removal.release_removals(
-            previous_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get("sql_content"),
-            schema_version_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get(
-                "sql_content"
-            ),
-            previous_version,
-            lsp_path=lsp_path,
-        )
 
     remove_empty_sections(
         sections=schema_version_sections, keep_even_if_empty=["license", "001"]

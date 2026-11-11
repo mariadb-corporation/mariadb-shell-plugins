@@ -325,8 +325,15 @@ def outlines_view_reads(binary: str) -> bool:
 
 def outline_features(binary: str) -> frozenset:
     """What `outline --features` lists (lsp-server #39); none for an older
-    binary, which exits 2 on the option."""
+    binary, which exits 2 on the option.
+
+    Raises:
+        LspError: Where the binary could not be run (a first start that
+            timed out is tried again next time).
+    """
     code, stdout, _ = _answer(binary, ("outline", "--features"))
+    if code is None:
+        raise LspError(f"`{LSP_BINARY_NAME} outline --features` could not be run; try again.")
     if code != 0:
         return frozenset()
     try:
