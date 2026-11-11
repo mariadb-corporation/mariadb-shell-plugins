@@ -18,7 +18,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `lib.source`) because the owner has no place in the shell-facing wrappers;
   the owner is the client identity's user (`general.get_client_identity(ctx).user`). Tools:
   `msm.list_projects` (`project_path`, `folder`, `caption`, `color`, `schema_name`,
-  `exists`, plus `development_version` read by the tool, null where unreadable), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
+  `exists`, `last_released_version` from `projects.list_projects` itself, plus `development_version` read by the tool, null where unreadable), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
   (`new_folder`/`new_caption`/`new_color`, left out keeps, `""` clears),
   `msm.remove_project` (list only, disk untouched); `msm.create_project` (with `folder`/`caption`/`color`,
   checked by `projects.normalize_details` before the folder is made) calls the
@@ -30,6 +30,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   and the "project list per user" block of `test_multi_tenant.py`; both monkeypatch
   `projects.get_data_path` to a tmp dir. With it the msm group is back in
   multi-tenant mode (multi-tenant.md decision 5).
+- **Schema rename (`msm.rename_schema`, msm_plugin `lib/renaming.py`, design in msm_plugin's
+  PROJECT_CONTEXT):** called with the path normalized (`os.getcwd()` for none). On a
+  non-gui server a project kept from LLMs gets the dry-run answer `reason: "restricted"`
+  (message from `general.project_refusal`) and a `ToolError` from `require_project_access`
+  for a real call; with a name it also authorizes the PARENT folder
+  (`require_allowed_path`), as the rename works in a sibling copy and may move the folder;
+  runs through `_with_checked_includes` with `lsp_path=_lsp_path()`, `owner` = the caller
+  and `mcp_access_only=not is_gui_mode()` (dependency warnings never name hidden projects).
+  Tests in `test_msm.py`: restricted, released, and a real rename when a binary with the
+  `rename_schema` edit op is found (`MSM_TEST_LSP`, patched into `config.get_lsp_path`).
 - **Schema diagrams (#82 section 160, #83 layout, #84 Workbench import, #85 views/routines/notes/images):** ten tools in
   `lib/msm_functions.py` over `msm_plugin.modeling` (imported as `msm_modeling`):
   `msm.list_schema_diagrams`, `msm.get_schema_diagrams`, `msm.get_schema_diagram_image`
