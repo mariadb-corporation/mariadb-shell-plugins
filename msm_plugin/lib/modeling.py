@@ -901,7 +901,8 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         layer = layer_of(figure)
         left = figure["left"] + (layer.get("left", 0) if layer else 0)
         top = figure["top"] + (layer.get("top", 0) if layer else 0)
-        boxes.append((left, top, left + figure.get("width", 0), top + figure.get("height", 0)))
+        width, height = diagrams.footprint(figure)
+        boxes.append((left, top, left + width, top + height))
     for layer in layers.values():
         if all(_is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
             boxes.append(
