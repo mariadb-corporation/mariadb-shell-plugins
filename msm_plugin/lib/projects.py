@@ -331,12 +331,9 @@ def is_project_folder(project_path) -> bool:
     return os.path.isfile(os.path.join(project_path, PROJECT_SETTINGS_FILE_NAME))
 
 
-def read_schema_name(project_path):
-    """Returns the schema name a project's settings file states, or None.
-
-    None for a folder that is no project, or whose settings file cannot be
-    read: the list still names the project, and a client shows what it can.
-    """
+def read_settings(project_path):
+    """Returns a project's settings file as stored, or None for a folder that
+    is no project, or whose settings file cannot be read as an object."""
     try:
         with open(
             os.path.join(project_path, PROJECT_SETTINGS_FILE_NAME), "r",
@@ -346,7 +343,17 @@ def read_schema_name(project_path):
     except (OSError, ValueError):
         return None
 
-    schema_name = settings.get("schemaName") if isinstance(settings, dict) else None
+    return settings if isinstance(settings, dict) else None
+
+
+def read_schema_name(project_path):
+    """Returns the schema name a project's settings file states, or None.
+
+    None for a folder that is no project, or whose settings file cannot be
+    read: the list still names the project, and a client shows what it can.
+    """
+    settings = read_settings(project_path)
+    schema_name = settings.get("schemaName") if settings is not None else None
 
     return schema_name if isinstance(schema_name, str) else None
 
@@ -542,17 +549,27 @@ def list_projects(owner=None, mcp_access_only=False) -> list:
         top level), its ``caption`` and ``color`` (``""`` for none), whether
         an LLM may work on it (``mcp_access``), the
         ``schema_name`` its settings file states (None where that cannot be
-        read) and whether the folder still ``exists`` as a project - one
+        read), whether the folder still ``exists`` as a project - one
         that was moved or deleted stays listed, so a client can show it as
-        missing and offer to remove it.
+        missing and offer to remove it - and its ``last_released_version``
+        ("x.y.z", None where it has none or it cannot be read).
     """
+    # Imported here: management needs the shell (see get_data_path)
+    from msm_plugin.lib import management
+
     entries = _read_file(get_projects_file_path(owner), strict=False)
-    return [
+    listed = [
         _listed(project_path, entries[project_path])
         for project_path in sorted(entries)
         if not mcp_access_only
         or entries[project_path].get(MCP_ACCESS_FIELD, DEFAULT_MCP_ACCESS)
     ]
+    for project in listed:
+        project["last_released_version"] = (
+            management.listed_last_released_version(project["project_path"])
+            if project["exists"] else None
+        )
+    return listed
 
 
 def _real_path(path: str) -> str:
@@ -746,6 +763,59 @@ def remove_project(project_path, owner=None) -> str:
         _write_file(path, entries)
 
     return stored
+
+
+def _all_list_files() -> list:
+    """Returns every list file there is: the shell user's and each owner's."""
+    files = [get_projects_file_path()]
+    owners_folder = os.path.join(get_data_path(), OWNER_LISTS_DIR_NAME)
+    if os.path.isdir(owners_folder):
+        files += [
+            os.path.join(owners_folder, name)
+            for name in sorted(os.listdir(owners_folder))
+            if name.endswith(".json") and _OWNER_PATTERN.match(name[: -len(".json")])
+        ]
+    return [path for path in files if os.path.exists(path)]
+
+
+def move_project(project_path, new_project_path) -> list:
+    """Moves a project to its new folder in every list that has it.
+
+    A project's folder moves on disk for everyone, so the shell user's list
+    and every owner's follow; each entry keeps its folder, caption, color and
+    mcpAccess. An entry the new path had already (a project listed as
+    missing there) is replaced.
+
+    Args:
+        project_path: The folder the project was in, as it is listed.
+        new_project_path: The folder it is in now.
+
+    Returns:
+        A message for each list that could not be changed; none where all
+        were. The move of the folder is done, so a list left behind is
+        reported, not raised.
+    """
+    project_path = normalize_project_path(project_path)
+    new_project_path = normalize_project_path(new_project_path)
+    problems = []
+    for path in _all_list_files():
+        try:
+            with _file_lock(path):
+                entries = _read_file(path, strict=True)
+                stored = _stored_key(entries, project_path)
+                if stored is None:
+                    continue
+                entry = entries.pop(stored)
+                replaced = _stored_key(entries, new_project_path)
+                if replaced is not None:
+                    del entries[replaced]
+                entries[new_project_path] = entry
+                _write_file(path, entries)
+        except (OSError, ValueError) as error:
+            problems.append(
+                f"The project list '{path}' still names {project_path}: {error}"
+            )
+    return problems
 
 
 def remove_owner(owner) -> None:

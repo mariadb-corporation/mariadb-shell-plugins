@@ -56,7 +56,17 @@ RENAME_OPS = frozenset(("rename_table", "rename_column", "rename_view", "rename_
 
 
 class LspError(ValueError):
-    """The binary is missing, or did not answer as it should."""
+    """The binary is missing, or did not answer as it should.
+
+    Attributes:
+        kind: The kind of error the binary gave for refused edits
+            (edit-format.md: bad-request, unknown-object, name-taken, ...);
+            None for any other failure.
+    """
+
+    def __init__(self, message: str, kind: Optional[str] = None):
+        super().__init__(message)
+        self.kind = kind
 
 
 def _binary_name() -> str:
@@ -362,7 +372,8 @@ def edit(binary: str, sql: str, source_dir: str, request: dict) -> dict:
             where = f"Edit {which + 1}" if isinstance(which, int) else "The edits"
             raise LspError(
                 f"{where} could not be made ({error.get('kind', 'error')}): "
-                f"{error.get('message', '')}"
+                f"{error.get('message', '')}",
+                error.get("kind"),
             )
         if isinstance(error, str) and error:
             raise LspError(f"The edits could not be made: {error}")

@@ -27,6 +27,7 @@
 # cSpell:ignore mysqlsh
 
 import json
+import os
 from mysqlsh.plugin_manager import plugin_function
 from msm_plugin import lib
 import re
@@ -148,7 +149,8 @@ def list_projects() -> list[dict]:
         One dict per project, sorted by project path: project_path, the
         folder it is filed in ("/" for the top level), caption and color ("" for
         none), mcp_access (whether LLMs may work on it), the schema_name its settings file states (None where that cannot
-        be read) and whether the folder still exists as a project.
+        be read), whether the folder still exists as a project and its
+        last_released_version ("x.y.z", None where it has no release or cannot be read).
     """
     return lib.projects.list_projects()
 
@@ -907,7 +909,8 @@ def set_project_settings(settings: dict, **kwargs) -> list:
             (BSD, GPL-2.0, MIT, None or CUSTOM), customLicense (the text of a
             CUSTOM license; placeholders ${copyright_notices}, ${copyright_holder},
             ${year}), onlineAlter, substitutions, maxInlineSectionSize,
-            schemaDependencies. schemaName and schemaFileName cannot be changed.
+            schemaDependencies. schemaName and schemaFileName cannot be changed here;
+            msm.renameSchema renames the schema.
         **kwargs: Additional options.
 
     Keyword Args:
@@ -921,3 +924,75 @@ def set_project_settings(settings: dict, **kwargs) -> list:
     return lib.management.set_project_settings(
         kwargs.get("schema_project_path") or lib.core.get_working_dir(), settings,
         lsp_path=kwargs.get("lsp_path"))
+
+
+@plugin_function("msm.renameSchema", shell=True, cli=True, web=True)
+def rename_schema(new_schema_name: str = None, **kwargs) -> dict:
+    """Renames the schema of a project that has no release yet
+
+    Everything that names the schema follows: schemaName and schemaFileName in
+    msm.project.json, the development script's file names, the USE, CREATE SCHEMA, every
+    qualifier and the banners in its SQL and the files it includes (found by the MariaDB SQL
+    language server's binary mariadb-lsp), the pending update script, the lines of README.md
+    and CHANGELOG.md the template wrote, the schema snapshot of the diagrams and - where it
+    still has msm's name for the old schema - the project folder, which the project lists
+    follow. Everything is changed, or nothing.
+
+    A project with a release is refused: the databases deployed from it would keep the old
+    name.
+
+    Args:
+        new_schema_name (str): The new name. A dry run may leave it out, to learn whether the
+            project can be renamed at all.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        dry_run (bool): Work the rename out and tell what it would change, without changing
+            anything. A refusal is then answered, not raised.
+        allow_special_chars (bool): Allow a name that has to be quoted in SQL.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        allowed, reason (released, invalid-name, same-name, folder-exists or lsp-missing where
+        a dry run is refused), message, project_path (the folder afterwards),
+        previous_project_path, files (written, or that would be), migration (none: there is no
+        release) and warnings.
+    """
+    result = lib.renaming.rename_schema(
+        kwargs.get("schema_project_path") or lib.core.get_working_dir(),
+        new_schema_name,
+        dry_run=bool(kwargs.get("dry_run", False)),
+        lsp_path=kwargs.get("lsp_path"),
+        allow_special_chars=bool(kwargs.get("allow_special_chars", False)),
+    )
+    if not kwargs.get("dry_run"):
+        _follow_working_dir(result["previous_project_path"], result["project_path"])
+    if lib.core.get_interactive_default():
+        if not result["allowed"]:
+            print(result["message"])
+            return
+        verb = "would be" if kwargs.get("dry_run") else "was"
+        if result["project_path"] != result["previous_project_path"]:
+            print(f"The project {verb} moved to {result['project_path']}.")
+        print(f"{len(result['files'])} file(s) {verb} written.")
+        for warning in result["warnings"]:
+            print(f"Warning: {warning}")
+    else:
+        return result
+
+
+def _follow_working_dir(previous_path: str, new_path: str) -> None:
+    """Moves msm's working directory along where it was in a moved project."""
+    if previous_path == new_path:
+        return
+    working_dir = os.path.abspath(lib.core.get_working_dir())
+    previous_path = os.path.abspath(previous_path)
+    if working_dir != previous_path and not working_dir.startswith(previous_path + os.sep):
+        return
+    config_file = lib.core.ConfigFile()
+    config_file.settings["workingDirectory"] = os.path.normpath(
+        os.path.join(new_path, os.path.relpath(working_dir, previous_path))
+    )
+    config_file.store()

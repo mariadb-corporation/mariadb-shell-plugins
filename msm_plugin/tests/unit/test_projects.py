@@ -128,7 +128,7 @@ def test_a_project_is_added_listed_and_removed(data_path, tmp_path):
         "schema_name": "shop",
         "exists": True,
     }
-    assert projects.list_projects() == [added]
+    assert projects.list_projects() == [{**added, "last_released_version": None}]
 
     with open(projects.get_projects_file_path()) as list_file:
         content = json.load(list_file)
@@ -185,7 +185,7 @@ def test_the_path_is_stored_absolute_and_expanded(data_path, tmp_path, monkeypat
     listed = projects.add_project("shop.msm.project/")
 
     assert listed["project_path"] == shop
-    assert projects.list_projects() == [listed]
+    assert projects.list_projects() == [{**listed, "last_released_version": None}]
 
 
 def test_adding_again_changes_the_details_given_and_keeps_the_rest(data_path, tmp_path):
@@ -315,7 +315,7 @@ def test_the_shell_functions_manage_the_list(data_path, tmp_path):
 
     added = management.add_project(shop, folder="/Shop", color="blue")
     assert added["folder"] == "/Shop"
-    assert management.list_projects() == [added]
+    assert management.list_projects() == [{**added, "last_released_version": None}]
 
     updated = management.update_project(shop, caption="Prod")
     assert updated["caption"] == "Prod"

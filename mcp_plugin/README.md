@@ -306,6 +306,7 @@ Management (`msm`) plugin:
 | `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
 | `msm.get_online_alter_settings` | `get_online_alter_settings` |
 | `msm.set_project_settings` | `set_project_settings` |
+| `msm.rename_schema` | `lib/renaming.rename_schema` (dry_run; refusal reasons) |
 | `msm.list_projects` | `list_projects` |
 | `msm.add_project` | `add_project` |
 | `msm.update_project` | `update_project` |

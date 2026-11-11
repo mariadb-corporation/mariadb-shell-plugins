@@ -280,8 +280,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             its settings file states (null where that cannot be read) and
             whether the folder still "exists" as a project - one that was
             moved or deleted stays listed, so it can be shown as missing and
-            removed - and its "development_version" (null where it cannot be
-            read).
+            removed - its "development_version" and its
+            "last_released_version" (each null where there is none or it cannot
+            be read).
         """
         listed = msm_projects.list_projects(
             general.get_client_identity(ctx).user, mcp_access_only=not general.is_gui_mode()
@@ -1060,6 +1061,67 @@ def register_msm_tools(server, function_groups=()) -> None:
         """
         return await _in_project(
             ctx, schema_project_path, msm_modeling.rename_schema_diagram, name, new_name
+        )
+
+    @tool(name="msm.rename_schema")
+    async def rename_schema(
+        ctx: Context,
+        new_schema_name: Optional[str] = None,
+        dry_run: bool = False,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Renames the schema of a schema project that has no release yet.
+
+        Everything that names the schema follows, all or nothing: schemaName
+        and schemaFileName in msm.project.json, the development script's file
+        names, the USE, CREATE SCHEMA, every schema qualifier and the banners
+        in its SQL and the files it includes (found by the language server's
+        parser), the pending update script, the README/CHANGELOG lines the
+        template wrote, the schema snapshot of the diagrams and - where it
+        still has msm's name for the old schema - the project folder, which
+        the project lists follow.
+
+        Ask with dry_run first: it changes nothing and answers a refusal
+        instead of raising it. Without new_schema_name it only checks what
+        does not depend on the name.
+
+        Args:
+            new_schema_name: The new name. A name with substitution
+                placeholders (/*<msm:name>*/) is written as is.
+            dry_run: Work the rename out without changing anything.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            {allowed, reason, message, project_path, previous_project_path,
+            files, migration, warnings}. allowed is false only for a refused
+            dry run, with reason released (the project has a release),
+            invalid-name, same-name, folder-exists (the new folder exists),
+            lsp-missing (no mariadb-lsp that renames schemas) or restricted
+            (the project is closed to LLMs), and message, which tells the user
+            why. project_path is the project's folder afterwards,
+            previous_project_path the one before (the same where the folder
+            keeps its name); files are those written (or that would be), at
+            their new paths; migration is empty, as there is no release;
+            warnings are what the user has to check by hand (names in strings,
+            projects depending on the schema).
+        """
+        from msm_plugin.lib import renaming as msm_renaming
+
+        path = msm_projects.normalize_project_path(schema_project_path or os.getcwd())
+        user = general.get_client_identity(ctx).user
+        refusal = general.project_refusal(path, user)
+        if refusal is not None and dry_run:
+            return msm_renaming.refused(path, msm_renaming.REASON_RESTRICTED, refusal)
+        general.require_project_access(ctx, path)
+        await _authorize_project(ctx, path)
+        if new_schema_name is not None:
+            # The rename works in a copy next to the folder, and may move it
+            await general.require_allowed_path(ctx, os.path.dirname(path))
+        return await _with_checked_includes(
+            user, msm_renaming.rename_schema, path, new_schema_name,
+            dry_run=dry_run, lsp_path=_lsp_path(), owner=user,
+            mcp_access_only=not general.is_gui_mode(),
         )
 
     @tool(name="msm.get_online_alter_defaults")

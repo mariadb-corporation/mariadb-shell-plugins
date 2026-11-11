@@ -1364,6 +1364,16 @@ def get_updatable_versions(schema_project_path: str) -> list[list[int, int, int]
     return versions
 
 
+def listed_last_released_version(schema_project_path: str) -> str | None:
+    """A listed project's last released version as "x.y.z", or None: for
+    none, and for a folder that cannot be read, as the list still shows it."""
+    try:
+        last = get_last_released_version(schema_project_path)
+    except (OSError, ValueError, StopIteration):
+        return None
+    return "%d.%d.%d" % tuple(last) if last is not None else None
+
+
 def get_last_released_version(schema_project_path: str) -> list[int, int, int] | None:
     """Returns the last released version of the database schema
 

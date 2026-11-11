@@ -23,4 +23,4 @@
 
 from msm_plugin.lib import core, general, management, projects, diagrams, lsp, modeling
 from msm_plugin.lib import editing, layout, live_schema, sections, statements, workbench
-from msm_plugin.lib import online_alter, project_changes, update_steps
+from msm_plugin.lib import online_alter, project_changes, update_steps, renaming
