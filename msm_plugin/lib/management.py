@@ -1662,14 +1662,20 @@ def prepare_release(
         if section is not None and section_id != "910":
             schema_version_sections[section_id] = section
 
+    # The release the update script goes from; None where it has none
+    previous_version = (
+        "%d.%d.%d" % tuple(last_released_version) if last_released_version is not None else None
+    )
+    if previous_version == version:
+        previous_version = None
+
     # The REST endpoints the previous release's Section 180 created and this
     # one's no longer does, for the update script's Section 280. Worked out
     # before a file of the release is written: it may need a newer mariadb-lsp.
-    rest_removals = None
-    if last_released_version is not None and "%d.%d.%d" % tuple(last_released_version) != version:
-        from msm_plugin.lib import rest_removal
+    from msm_plugin.lib import rest_removal
 
-        previous_version = "%d.%d.%d" % tuple(last_released_version)
+    rest_removals = None
+    if previous_version is not None:
         previous_file_path = os.path.join(
             schema_project_path, "releases", "versions",
             f"{schema_file_name}_{previous_version}.sql",
@@ -1699,56 +1705,45 @@ def prepare_release(
     files_for_release.append(schema_version_file_path)
 
     # Check if update script is needed and if so, write it out
-    if last_released_version is not None:
-        last_released_version_str = "%d.%d.%d" % tuple(last_released_version)
-        if last_released_version_str != version:
-            schema_update_file_path = os.path.join(
-                schema_project_path,
-                "releases",
-                "updates",
-                f"{schema_file_name}_{last_released_version_str}_to_{version}.sql",
-            )
-            copy_template_file_and_substitute(
-                source_file_path=os.path.join(
-                    template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"
+    if previous_version is not None:
+        schema_update_file_path = os.path.join(
+            schema_project_path,
+            "releases",
+            "updates",
+            f"{schema_file_name}_{previous_version}_to_{version}.sql",
+        )
+        copy_template_file_and_substitute(
+            source_file_path=os.path.join(
+                template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"
+            ),
+            target_file_path=schema_update_file_path,
+            substitutions={
+                "license": get_license_text(project_settings=project_settings),
+                "schema_name": schema_name,
+                "schema_identifier": get_schema_identifier(schema_name),
+                "version_from": previous_version,
+                "version_to": version,
+                "version_comma_str": ", ".join(
+                    str(number)
+                    for number in lib.core.convert_version_str_to_list(version)
                 ),
-                target_file_path=schema_update_file_path,
-                substitutions={
-                    "license": get_license_text(project_settings=project_settings),
-                    "schema_name": schema_name,
-                    "schema_identifier": get_schema_identifier(schema_name),
-                    "version_from": last_released_version_str,
-                    "version_to": version,
-                    "version_comma_str": ", ".join(
-                        str(number)
-                        for number in lib.core.convert_version_str_to_list(version)
-                    ),
-                },
-            )
-            files_for_release.append(schema_update_file_path)
+            },
+        )
+        files_for_release.append(schema_update_file_path)
 
-            # The changes msm.editSchema kept for this release go into the
-            # update script's sections, and the pending script starts over.
-            from msm_plugin.lib import editing
+        # The changes msm.editSchema kept for this release go into the
+        # update script's sections with the REST removals, and the pending
+        # script starts over.
+        from msm_plugin.lib import editing
 
-            pending_path = editing.move_pending_update(
-                schema_project_path, project_settings, schema_update_file_path
-            )
-            if pending_path:
-                files_for_release.append(pending_path)
-
-            if rest_removals:
-                from msm_plugin.lib import sections as sections_lib
-
-                update_sections = get_file_sections(schema_update_file_path)
-                sections_lib.set_section_body(
-                    update_sections[rest_removal.REST_REMOVALS_SECTION_ID], rest_removals
-                )
-                write_sections_to_file(
-                    file_path=schema_update_file_path,
-                    sections=update_sections,
-                    overwrite_existing=True,
-                )
+        pending_path = editing.move_pending_update(
+            schema_project_path,
+            project_settings,
+            schema_update_file_path,
+            bodies={rest_removal.REST_REMOVALS_SECTION_ID: rest_removals},
+        )
+        if pending_path:
+            files_for_release.append(pending_path)
 
     # Update the version of the development schema file store in section
     # MSM Section 910: Database Schema Version
@@ -1861,26 +1856,14 @@ def generate_deployment_script(
     # An update script's REST removals keep what this version defines again
     from msm_plugin.lib import rest_removal
 
-    binary = []
-
-    def rest_binary() -> str:
-        if not binary:
-            binary.append(rest_removal.require_rest_lsp(lsp_path))
-        return binary[0]
-
-    removals_id = rest_removal.REST_REMOVALS_SECTION_ID
-    target_rest_sql = target_version_sections.get(
-        rest_removal.REST_DEFINITION_SECTION_ID, {}
-    ).get("sql_content")
-    for update in updatable_versions_sections.values():
-        removals = update["sections"].get(removals_id)
-        if removals is not None:
-            update["sections"][removals_id] = {
-                **removals,
-                "sql_content": rest_removal.keep_redefined(
-                    rest_binary, target_rest_sql, removals.get("sql_content"), version
-                ),
-            }
+    rest_removal.keep_redefined(
+        [update["sections"] for update in updatable_versions_sections.values()],
+        target_version_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get(
+            "sql_content"
+        ),
+        version,
+        lsp_path=lsp_path,
+    )
 
     # Prepare the schema version template file
     template_folder = os.path.join(Path(__file__).parent.parent, "templates")

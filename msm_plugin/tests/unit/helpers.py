@@ -60,3 +60,21 @@ def set_project_setting(project_path: str, key: str, value) -> None:
     settings[key] = value
     with open(settings_file, "w") as f:
         json.dump(settings, f)
+
+
+def find_test_lsp(capable) -> "str | None":
+    """The mariadb-lsp binary a test runs with, where it is capable:
+    MSM_TEST_LSP (the binary or its folder), else the binaries msm would
+    find; None where none is.
+
+    Args:
+        capable: Tells whether a binary does what the test needs.
+    """
+    from msm_plugin.lib import lsp
+
+    given = os.environ.get("MSM_TEST_LSP")
+    for candidate in [given] if given else lsp._candidates(None):
+        binary = lsp.find_lsp(candidate)
+        if binary is not None and capable(binary):
+            return binary
+    return None

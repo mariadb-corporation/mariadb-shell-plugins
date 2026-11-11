@@ -308,25 +308,41 @@ def clear_pending_update(path: str, project_settings: dict) -> bool:
 
 
 def move_pending_update(
-    schema_project_path: str, project_settings: dict, update_file_path: str
+    schema_project_path: str,
+    project_settings: dict,
+    update_file_path: str,
+    bodies: Optional[dict] = None,
 ) -> Optional[str]:
     """Moves the statements of the pending update script into the sections
     of a release's update script, and empties the pending script.
+
+    Args:
+        schema_project_path: The project folder.
+        project_settings: Its settings.
+        update_file_path: The release's update script.
+        bodies: More section bodies for the update script, by section id
+            ({"280": sql}); a None or empty one is left out.
 
     Returns:
         The pending script, where it was emptied; else None.
     """
     path = pending_update_path(schema_project_path, project_settings)
     pending = read_pending_update(path)
-    if not any(pending.values()):
+    filled = {
+        section_id: sql
+        for section_id, sql in [*pending.items(), *(bodies or {}).items()]
+        if sql
+    }
+    if not filled:
         return None
     update_sections = management.get_file_sections(update_file_path)
-    for section_id, sql in pending.items():
-        if sql:
-            sections_lib.set_section_body(update_sections[section_id], sql)
+    for section_id, sql in filled.items():
+        sections_lib.set_section_body(update_sections[section_id], sql)
     management.write_sections_to_file(
         file_path=update_file_path, sections=update_sections, overwrite_existing=True
     )
+    if not any(pending.values()):
+        return None
     return path if clear_pending_update(path, project_settings) else None
 
 

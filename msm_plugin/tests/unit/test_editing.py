@@ -40,23 +40,13 @@ import pytest
 
 from msm_plugin.lib import diagrams, editing, lsp, management, modeling
 from msm_plugin.lib.management import create_schema_project_folder
+from msm_plugin.tests.unit import helpers
 
 LSP = lsp.find_lsp()
 needs_lsp = pytest.mark.skipif(LSP is None, reason="no mariadb-lsp binary")
 
 
-def _find_edit_lsp():
-    """A binary that has the edit command, or None."""
-    given = os.environ.get("MSM_TEST_LSP")
-    candidates = [given] if given else lsp._candidates(None)
-    for candidate in candidates:
-        binary = lsp.find_lsp(candidate)
-        if binary is not None and lsp.supports_edit(binary):
-            return binary
-    return None
-
-
-EDIT_LSP = _find_edit_lsp()
+EDIT_LSP = helpers.find_test_lsp(lsp.supports_edit)
 needs_edit_lsp = pytest.mark.skipif(
     EDIT_LSP is None,
     reason="no mariadb-lsp binary with the edit command (MSM_TEST_LSP names one)",

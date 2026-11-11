@@ -47,6 +47,7 @@ import re
 from typing import Optional
 
 from msm_plugin.lib import lsp, management
+from msm_plugin.lib import statements as statements_lib
 
 REST_DEFINITION_SECTION_ID = "180"
 REST_REMOVALS_SECTION_ID = "280"
@@ -220,14 +221,11 @@ def release_removals(
     if not _has_statement(previous_sql):
         return None
     binary = lsp.require_lsp(lsp_path)
-    outlined = lsp.outline(binary, previous_sql)
     # Any binary tells whether there is a REST statement at all
-    if not (outlined.get("rest") or {}).get("services") and not any(
-        note.get("kind") in _UNRESOLVED_NOTES for note in outlined.get("notes", [])
-    ):
+    previous, previous_warnings = definition(lsp.outline(binary, previous_sql))
+    if not previous and not previous_warnings:
         return None
     _checked_rest_lsp(binary)
-    previous, previous_warnings = definition(outlined)
     current, current_warnings = (
         definition(lsp.outline(binary, current_sql)) if _has_statement(current_sql) else ({}, [])
     )
@@ -260,45 +258,64 @@ def _commented(statement: str, version: str) -> str:
     )
 
 
-def keep_redefined(
-    binary_for, target_sql: Optional[str], removals_sql: Optional[str], version: str
-) -> Optional[str]:
+class _Target:
+    """The target version's REST definition, outlined once, and whether a
+    removal changes it."""
+
+    def __init__(self, binary: str, sql: str):
+        self.binary = binary
+        self.sql = sql.rstrip("\n") + "\n"
+        self.shape = _shape(definition(lsp.outline(binary, self.sql))[0])
+
+    def removed_by(self, sql: str) -> bool:
+        outlined = lsp.outline(self.binary, self.sql + sql)
+        return _shape(definition(outlined)[0]) != self.shape
+
+
+def _keep_redefined(target: _Target, removals_sql: str, version: str) -> str:
     """An update script's Section 280 with each statement commented out that
-    removes what the target version's Section 180 defines again.
+    removes what the target defines again; the one given where none does."""
+    # One outline where the whole section removes nothing the target has
+    if not target.removed_by(removals_sql):
+        return removals_sql
+    parts, at = [], 0
+    for begin, end, _ in statements_lib.sql_entries(
+        removals_sql, lsp.split(target.binary, removals_sql)
+    ):
+        statement = removals_sql[begin:end]
+        if target.removed_by(statement + "\n"):
+            parts += [removals_sql[at:begin], _commented(statement, version)]
+            at = end
+    parts.append(removals_sql[at:])
+    return "".join(parts)
+
+
+def keep_redefined(
+    updates: list, target_sql: Optional[str], version: str, lsp_path: Optional[str] = None
+) -> None:
+    """Comments out each statement of the update scripts' Sections 280 that
+    removes what the target version's Section 180 defines again, so the
+    endpoint keeps its id.
 
     Args:
-        binary_for: Returns the binary (require_rest_lsp); called only where
-            both sections have a statement.
+        updates: The sections of each update script (get_file_sections);
+            their Section 280's sql_content is changed in place.
         target_sql: The target version's Section 180.
-        removals_sql: The update script's Section 280.
         version: The target version.
+        lsp_path: The mariadb-lsp binary or its folder; None looks for it.
+            Needed only where the target and a Section 280 have a statement.
 
-    Returns:
-        The section; the one given where nothing is commented out.
+    Raises:
+        lsp.LspError: Where it is needed and there is no binary that reads
+            REST definitions as msm needs.
     """
-    if not _has_statement(removals_sql) or not _has_statement(target_sql):
-        return removals_sql
-    binary = binary_for()
-    target_sql = target_sql.rstrip("\n") + "\n"
-    target = _shape(definition(lsp.outline(binary, target_sql))[0])
-
-    def removes_target(sql: str) -> bool:
-        return _shape(definition(lsp.outline(binary, target_sql + sql))[0]) != target
-
-    # One outline where the whole section drops nothing the target has
-    if not removes_target(removals_sql):
-        return removals_sql
-
-    encoded = removals_sql.encode("utf-8")
-    parts, at = [], 0
-    for statement in lsp.split(binary, removals_sql):
-        if statement.get("kind") != "sql":
-            continue
-        begin, end = statement["begin"], statement["end"]
-        text = encoded[begin:end].decode("utf-8")
-        if removes_target(text + "\n"):
-            parts.append(encoded[at:begin].decode("utf-8"))
-            parts.append(_commented(text, version))
-            at = end
-    parts.append(encoded[at:].decode("utf-8"))
-    return "".join(parts)
+    removals = [
+        sections[REST_REMOVALS_SECTION_ID]
+        for sections in updates
+        if _has_statement(sections.get(REST_REMOVALS_SECTION_ID, {}).get("sql_content"))
+    ]
+    if not removals or not _has_statement(target_sql):
+        return
+    target = _Target(require_rest_lsp(lsp_path), target_sql)
+    for section in removals:
+        section["sql_content"] = _keep_redefined(target, section["sql_content"], version)

@@ -32,19 +32,10 @@ import pytest
 
 from msm_plugin.lib import lsp, management, rest_removal
 from msm_plugin.lib.management import create_schema_project_folder
+from msm_plugin.tests.unit import helpers
 
 
-def _find_rest_lsp():
-    given = os.environ.get("MSM_TEST_LSP")
-    candidates = [given] if given else lsp._candidates(None)
-    for candidate in candidates:
-        binary = lsp.find_lsp(candidate)
-        if binary is not None and lsp.outlines_rest(binary):
-            return binary
-    return None
-
-
-LSP = _find_rest_lsp()
+LSP = helpers.find_test_lsp(lsp.outlines_rest)
 pytestmark = pytest.mark.skipif(
     LSP is None, reason="no mariadb-lsp binary that outlines REST definitions as msm needs"
 )
@@ -157,33 +148,40 @@ def test_an_old_binary_is_refused(monkeypatch):
 # What a deployment keeps
 
 
+def kept(target, *removals, version="1.2.0") -> list:
+    """The Sections 280 of update scripts after keep_redefined."""
+    updates = [{"280": {"sql_content": sql}} for sql in removals]
+    rest_removal.keep_redefined(updates, target, version, lsp_path=LSP)
+    return [update["280"]["sql_content"] for update in updates]
+
+
 def test_a_removal_of_what_the_target_defines_again_is_commented_out():
     removals = "\n".join(V1_TO_V2) + "\n"
     # The service comes back without its schema /g and the MRS link
     target = "CREATE OR REPLACE REST SERVICE /gone;\n" + REST_V2
-    kept = rest_removal.keep_redefined(lambda: LSP, target, removals, "1.2.0")
-    assert commented(kept) == ["DROP REST SERVICE IF EXISTS /gone;"]
-    assert statements(kept) == V1_TO_V2[:-1]
-    assert "-- msm: version 1.2.0 defines this again, so it is kept" in kept
+    [section] = kept(target, removals)
+    assert commented(section) == ["DROP REST SERVICE IF EXISTS /gone;"]
+    assert statements(section) == V1_TO_V2[:-1]
+    assert "-- msm: version 1.2.0 defines this again, so it is kept" in section
 
 
-def test_removals_of_nothing_the_target_defines_need_one_outline(monkeypatch):
+def test_the_target_is_outlined_once_for_every_update(monkeypatch):
     removals = "\n".join(V1_TO_V2) + "\n"
     calls = []
     outline = lsp.outline
     monkeypatch.setattr(lsp, "outline", lambda *a: calls.append(a) or outline(*a))
-    assert rest_removal.keep_redefined(lambda: LSP, REST_V2, removals, "1.1.0") is removals
-    assert len(calls) == 2  # the target, then the target with the whole section
+    # Nothing the target defines: one outline of each section with the target
+    assert kept(REST_V2, removals, removals, version="1.1.0") == [removals, removals]
+    assert len(calls) == 3
 
 
-def test_no_binary_is_asked_without_both_sections():
-    def no_binary():
+def test_no_binary_is_asked_without_both_sections(monkeypatch):
+    def no_binary(lsp_path=None):
         raise AssertionError("asked for a binary")
 
-    assert rest_removal.keep_redefined(no_binary, "", "DROP REST SERVICE /x;", "1.0.0") == (
-        "DROP REST SERVICE /x;"
-    )
-    assert rest_removal.keep_redefined(no_binary, REST_V1, "-- none\n", "1.0.0") == "-- none\n"
+    monkeypatch.setattr(rest_removal, "require_rest_lsp", no_binary)
+    assert kept("", "DROP REST SERVICE /x;") == ["DROP REST SERVICE /x;"]
+    assert kept(REST_V1, "-- none\n") == ["-- none\n"]
 
 
 # -----------------------------------------------------------------------------
