@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from msm_plugin.lib import core, lsp, management, rest_removal
+from msm_plugin.lib import lsp, management, rest_removal
 from msm_plugin.lib.management import create_schema_project_folder
 from msm_plugin.tests.unit import helpers
 
@@ -145,12 +145,28 @@ def test_a_moved_schema_keeps_the_placeholders_of_its_database():
     ]
 
 
+def test_a_change_of_its_placeholders_is_a_move():
+    removals, _ = rest_removal.removals(
+        outlined(on_database("/*<msm:schema_prefix>*/shop")), outlined(on_database("shop"))
+    )
+    assert removals == [
+        "DROP REST SCHEMA IF EXISTS /app FROM SERVICE /n "
+        "FOR SCHEMA /*<msm:schema_prefix>*/shop;"
+    ]
+
+
+def test_the_same_database_quoted_or_not_is_no_move():
+    assert rest_removal.removals(
+        outlined(on_database("`shop`")), outlined(on_database("shop"))
+    ) == ([], [])
+
+
 def test_a_database_changing_only_in_case_is_named():
     removals, warnings = rest_removal.removals(
         outlined(on_database("`shop`")), outlined(on_database("`Shop`"))
     )
     assert removals == []
-    assert "changes only in case" in warnings[0]
+    assert "changes its database only in case" in warnings[0]
 
 
 def test_a_move_back_keeps_the_schema_and_a_move_on_drops_it():
@@ -317,27 +333,24 @@ def on_sandbox(sql: str) -> str:
     return sql.replace("`shop`", f"`{SANDBOX_SCHEMA}`")
 
 
-def rows(session, sql: str) -> list:
-    return core.MsmDbExec(sql).exec(session).items
-
-
 def rest_state(session) -> dict:
-    """{service: {id, links, schemas: {path: {object path: (id, type)}}}} of
-    the test's services, paths in lower case."""
+    """{service: {id, links, schemas: {path: {object path: (id, type)}},
+    databases: {path: database}}} of the test's services, paths in lower
+    case."""
     services = {}
-    for row in rows(session, "SELECT `id`, `url_context_root` AS `path` "
+    for row in helpers.query(session, "SELECT `id`, `url_context_root` AS `path` "
                     "FROM `mariadb_rest_service`.`service`"):
         if row["path"].lower() in SERVICES:
             services[row["path"].lower()] = {
                 "id": row["id"], "links": set(), "schemas": {}, "databases": {},
             }
-    for row in rows(session, """SELECT s.`url_context_root` AS `service`, a.`name`
+    for row in helpers.query(session, """SELECT s.`url_context_root` AS `service`, a.`name`
             FROM `mariadb_rest_service`.`service_has_auth_app` h
             JOIN `mariadb_rest_service`.`service` s ON s.`id` = h.`service_id`
             JOIN `mariadb_rest_service`.`auth_app` a ON a.`id` = h.`auth_app_id`"""):
         if row["service"].lower() in services:
             services[row["service"].lower()]["links"].add(row["name"].lower())
-    for row in rows(session, """SELECT s.`url_context_root` AS `service`,
+    for row in helpers.query(session, """SELECT s.`url_context_root` AS `service`,
                 rs.`request_path` AS `schema`, rs.`name` AS `database`, ro.`request_path` AS `object`,
                 ro.`id`, ro.`object_type`
             FROM `mariadb_rest_service`.`rest_schema` rs
@@ -399,6 +412,8 @@ V2_LAYOUT = {
     "/notes": (["mrs"], {"/app": {"/note": "TABLE", "/add": "FUNCTION"}}),
     "/shared": ([], {}),
 }
+# 1.2.0 on: the service /gone again, without its schema and link
+V3_LAYOUT = {**V2_LAYOUT, "/gone": ([], {})}
 
 
 def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
@@ -415,16 +430,15 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     release(path, on_sandbox(REST_V1), "1.0.0", "1.1.0")
     release(path, on_sandbox(REST_V2), "1.1.0", "1.2.0")
     # The service /gone comes back, without its schema and link
-    release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.2.0",
-            "1.3.0")
+    with_gone = on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;"
+    release(path, with_gone, "1.2.0", "1.3.0")
     # 1.3.0 moves /app to another database, 1.4.0 back
-    moved = on_sandbox(REST_V2).replace(f"`{SANDBOX_SCHEMA}`", f"`{OTHER_DATABASE}`")
-    release(path, moved + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.3.0", "1.4.0")
+    moved = with_gone.replace(f"`{SANDBOX_SCHEMA}`", f"`{OTHER_DATABASE}`")
+    release(path, moved, "1.3.0", "1.4.0")
     assert statements(update_section_280(path, "1.2.0", "1.3.0", SANDBOX_SCHEMA)) == [
         f"DROP REST SCHEMA IF EXISTS /APP FROM SERVICE /Notes FOR SCHEMA `{SANDBOX_SCHEMA}`;",
     ]
-    release(path, on_sandbox(REST_V2) + "\nCREATE OR REPLACE REST SERVICE /gone;", "1.4.0",
-            "1.5.0")
+    release(path, with_gone, "1.4.0", "1.5.0")
     for version in ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"):
         management.generate_deployment_script(path, version, lsp_path=LSP)
 
@@ -452,23 +466,23 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     before = rest_state(session)
     deploy("1.2.0")
     after = rest_state(session)
-    assert layout(after) == {**V2_LAYOUT, "/gone": ([], {})}
+    assert layout(after) == V3_LAYOUT
     assert after["/gone"]["id"] == before["/gone"]["id"]
 
     # 1.1.0 to 1.2.0, where 1.0.0's removals run again on what is gone
     fresh()
     deploy("1.1.0")
     deploy("1.2.0")
-    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
+    assert layout(rest_state(session)) == V3_LAYOUT
 
     # A fresh install of 1.2.0
     fresh()
     deploy("1.2.0")
-    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
+    assert layout(rest_state(session)) == V3_LAYOUT
 
-    def app(state):
-        """/app's database and its objects' ids."""
-        notes = state["/notes"]
+    def app():
+        """/app's database and its objects' ids on the server."""
+        notes = rest_state(session)["/notes"]
         return notes["databases"]["/app"], {
             item: item_id for item, (item_id, _) in notes["schemas"]["/app"].items()
         }
@@ -476,29 +490,29 @@ def test_deployments_end_with_the_target_definition(rest_sandbox, tmp_path):
     # The move, and the move back, each on the deployment that makes it
     fresh()
     deploy("1.2.0")
-    database, ids = app(rest_state(session))
+    database, ids = app()
     assert database == SANDBOX_SCHEMA
     deploy("1.3.0")
-    database, moved_ids = app(rest_state(session))
+    database, moved_ids = app()
     assert database == OTHER_DATABASE
     assert set(moved_ids) == set(ids) and not set(moved_ids.values()) & set(ids.values())
     deploy("1.4.0")
-    database, back_ids = app(rest_state(session))
+    assert layout(rest_state(session)) == V3_LAYOUT
+    database, back_ids = app()
     assert database == SANDBOX_SCHEMA and set(back_ids) == set(ids)
-    assert layout(rest_state(session)) == {**V2_LAYOUT, "/gone": ([], {})}
 
     # 1.2.0 straight to 1.4.0 never moves: 1.3.0's drop is commented out
     fresh()
     deploy("1.2.0")
-    _, ids = app(rest_state(session))
+    _, ids = app()
     deploy("1.4.0")
-    assert app(rest_state(session)) == (SANDBOX_SCHEMA, ids)
+    assert app() == (SANDBOX_SCHEMA, ids)
 
     # 1.0.0 straight to 1.3.0 moves it; a fresh 1.3.0 has it there too
     fresh()
     deploy("1.0.0")
     deploy("1.3.0")
-    assert app(rest_state(session))[0] == OTHER_DATABASE
+    assert app()[0] == OTHER_DATABASE
     fresh()
     deploy("1.3.0")
-    assert app(rest_state(session))[0] == OTHER_DATABASE
+    assert app()[0] == OTHER_DATABASE

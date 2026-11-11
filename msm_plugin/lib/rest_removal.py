@@ -48,7 +48,7 @@ without regard to case, as the server compares them.
 import re
 from typing import Optional
 
-from msm_plugin.lib import lsp, management
+from msm_plugin.lib import editing, lsp, management
 from msm_plugin.lib import statements as statements_lib
 
 REST_DEFINITION_SECTION_ID = "180"
@@ -103,28 +103,37 @@ def _checked_rest_lsp(binary: str) -> str:
 
 # The database a CREATE REST SCHEMA takes its objects from, as written:
 # msm's substitution placeholders kept, which the outline leaves out
+_PLACEHOLDER = management.MSM_SUBSTITUTION_REGEX.replace("(", "(?:", 1)
 _FROM_DATABASE = re.compile(
     r"\bREST\s+(?:SCHEMA|DATABASE)\b.*?(?<![/\w])FROM\s+"
-    r"((?:/\*<msm:\w+>\*/|`(?:[^`]|``)*`|[\w$]+)+)",
+    rf"((?:{_PLACEHOLDER}|`(?:[^`]|``)*`|[\w$]+)+)",
     re.IGNORECASE | re.DOTALL,
 )
+_QUOTED = re.compile(r"`((?:[^`]|``)*)`")
 
 
-def _quote_identifier(name: str) -> str:
-    return "`" + name.replace("`", "``") + "`"
-
-
-def _database_text(sql: Optional[str], schema: dict) -> Optional[str]:
-    """The database of a REST schema as its CREATE statement writes it,
-    from the lines of its range; its quoted name where they do not tell."""
-    name = schema.get("schema")
+def _database_text(sql: str, line_starts: list, schema: dict) -> Optional[str]:
+    """The database of a REST schema as its CREATE statement (the outline's
+    range of it) writes it; None where msm cannot read it."""
     span = schema.get("range") or {}
-    first, last = (span.get("start") or {}).get("line"), (span.get("end") or {}).get("line")
-    if sql and isinstance(first, int) and isinstance(last, int):
-        found = _FROM_DATABASE.search("\n".join(sql.split("\n")[first:last + 1]))
-        if found:
-            return found.group(1)
-    return _quote_identifier(name) if isinstance(name, str) and name else None
+    try:
+        statement = sql[
+            editing._offset(sql, line_starts, span["start"]):
+            editing._offset(sql, line_starts, span["end"])
+        ]
+    except (KeyError, TypeError, ValueError):
+        return None
+    found = _FROM_DATABASE.search(statement)
+    return found.group(1) if found else None
+
+
+def _written(schema: dict) -> Optional[str]:
+    """A REST schema's database as written, quotes left out: what tells two
+    of them apart, placeholders included."""
+    text = schema["database_sql"]
+    if text is None:
+        return schema["database"]
+    return _QUOTED.sub(lambda quoted: quoted.group(1).replace("``", "`"), text)
 
 
 def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
@@ -141,6 +150,7 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
         path}}}}}}, warnings)
     """
     services, warnings = {}, []
+    line_starts = [0] + [m.end() for m in re.finditer("\n", sql)] if sql else None
     for note in outlined.get("notes", []):
         if note.get("kind") in _UNRESOLVED_NOTES:
             warnings.append(_line(note) + str(note.get("message", "")))
@@ -167,7 +177,9 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
             if schema.get("declared") is True:
                 schema_entry["declared"] = True
                 schema_entry["database"] = schema.get("schema")
-                schema_entry["database_sql"] = _database_text(sql, schema)
+                schema_entry["database_sql"] = (
+                    _database_text(sql, line_starts, schema) if sql else None
+                )
             for item in schema.get("objects", []):
                 item_path = item.get("path") or ""
                 if item_path:
@@ -190,16 +202,6 @@ def _shape(services: dict) -> dict:
         )
         for key, service in services.items()
     }
-
-
-def _moved(schema: dict, kept: dict) -> bool:
-    """Whether a REST schema both versions create takes its objects from
-    another database in the later one."""
-    return (
-        schema["declared"] and kept["declared"]
-        and bool(schema["database"]) and bool(kept["database"])
-        and schema["database"] != kept["database"]
-    )
 
 
 def removals(previous: dict, current: dict) -> tuple:
@@ -233,14 +235,22 @@ def removals(previous: dict, current: dict) -> tuple:
                 )
             if kept_schema is None and schema["declared"]:
                 schemas.append(f"DROP REST SCHEMA IF EXISTS {schema['path']} {on_service};")
-            elif kept_schema is not None and _moved(schema, kept_schema):
-                # Its objects cannot move along on the server: the schema
-                # is dropped where it still has the old database, and
-                # Section 180 creates it again
-                if schema["database"].lower() == kept_schema["database"].lower():
+            elif kept_schema is not None and schema["database"] and kept_schema["database"]:
+                # A schema on another database: its objects cannot move along
+                # on the server, so it is dropped where it still has the old
+                # one, and Section 180 creates it again
+                old, new = _written(schema), _written(kept_schema)
+                where = f"The REST schema {schema['path']} of {service['path']}"
+                if old == new:
+                    pass
+                elif schema["database_sql"] is None:
                     warnings.append(
-                        f"The database of the REST schema {schema['path']} of "
-                        f"{service['path']} changes only in case; on a server with "
+                        f"{where} moves to another database, but msm could not read "
+                        "its old one: drop the REST schema by hand."
+                    )
+                elif old.lower() == new.lower():
+                    warnings.append(
+                        f"{where} changes its database only in case; on a server with "
                         "lower_case_table_names=0 drop the REST schema by hand."
                     )
                 else:
