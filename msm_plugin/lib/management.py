@@ -1662,6 +1662,30 @@ def prepare_release(
         if section is not None and section_id != "910":
             schema_version_sections[section_id] = section
 
+    # The REST endpoints the previous release's Section 180 created and this
+    # one's no longer does, for the update script's Section 280. Worked out
+    # before a file of the release is written: it may need a newer mariadb-lsp.
+    rest_removals = None
+    if last_released_version is not None and "%d.%d.%d" % tuple(last_released_version) != version:
+        from msm_plugin.lib import rest_removal
+
+        previous_version = "%d.%d.%d" % tuple(last_released_version)
+        previous_file_path = os.path.join(
+            schema_project_path, "releases", "versions",
+            f"{schema_file_name}_{previous_version}.sql",
+        )
+        previous_sections = (
+            get_file_sections(previous_file_path) if os.path.exists(previous_file_path) else {}
+        )
+        rest_removals = rest_removal.release_removals(
+            previous_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get("sql_content"),
+            schema_version_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get(
+                "sql_content"
+            ),
+            previous_version,
+            lsp_path=lsp_path,
+        )
+
     remove_empty_sections(
         sections=schema_version_sections, keep_even_if_empty=["license", "001"]
     )
@@ -1713,6 +1737,19 @@ def prepare_release(
             if pending_path:
                 files_for_release.append(pending_path)
 
+            if rest_removals:
+                from msm_plugin.lib import sections as sections_lib
+
+                update_sections = get_file_sections(schema_update_file_path)
+                sections_lib.set_section_body(
+                    update_sections[rest_removal.REST_REMOVALS_SECTION_ID], rest_removals
+                )
+                write_sections_to_file(
+                    file_path=schema_update_file_path,
+                    sections=update_sections,
+                    overwrite_existing=True,
+                )
+
     # Update the version of the development schema file store in section
     # MSM Section 910: Database Schema Version
     set_development_version(
@@ -1726,14 +1763,24 @@ def prepare_release(
 
 @changes_project
 def generate_deployment_script(
-    schema_project_path: str, version: str, overwrite_existing: bool = False
+    schema_project_path: str,
+    version: str,
+    overwrite_existing: bool = False,
+    lsp_path: str = None,
 ) -> str:
     """Generate the deployment script for a release
+
+    The REST endpoints the update scripts remove (their Section 280) are
+    dropped before the version's Section 180 creates its REST definition; a
+    drop of what the version defines again is commented out, so it keeps its
+    id. Telling which needs the MariaDB SQL language server's binary,
+    mariadb-lsp, where both sections have a statement.
 
     Args:
         schema_project_path: The path to the schema project folder.
         version: The version to generate the deployment script for.
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
 
     Returns:
         The file name path of the generated script
@@ -1810,6 +1857,30 @@ def generate_deployment_script(
     if len(released_versions) == 1:
         shutil.copyfile(version_file_path, deployment_file_path)
         return deployment_file_path
+
+    # An update script's REST removals keep what this version defines again
+    from msm_plugin.lib import rest_removal
+
+    binary = []
+
+    def rest_binary() -> str:
+        if not binary:
+            binary.append(rest_removal.require_rest_lsp(lsp_path))
+        return binary[0]
+
+    removals_id = rest_removal.REST_REMOVALS_SECTION_ID
+    target_rest_sql = target_version_sections.get(
+        rest_removal.REST_DEFINITION_SECTION_ID, {}
+    ).get("sql_content")
+    for update in updatable_versions_sections.values():
+        removals = update["sections"].get(removals_id)
+        if removals is not None:
+            update["sections"][removals_id] = {
+                **removals,
+                "sql_content": rest_removal.keep_redefined(
+                    rest_binary, target_rest_sql, removals.get("sql_content"), version
+                ),
+            }
 
     # Prepare the schema version template file
     template_folder = os.path.join(Path(__file__).parent.parent, "templates")

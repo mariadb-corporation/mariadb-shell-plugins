@@ -511,7 +511,11 @@ def register_msm_tools(server, function_groups=()) -> None:
             overwrite_existing: Overwrite existing files.
 
         A release first makes the schema snapshot of the diagrams again (see
-        msm.update_schema_definition) and fails where it cannot.
+        msm.update_schema_definition) and fails where it cannot. The update
+        script's Section 280 gets a DROP ... IF EXISTS of every REST
+        service, schema and object, and a REMOVE AUTH APP ... IF EXISTS of
+        every auth app link, the previous release's Section 180 created and
+        this one's no longer does.
 
         Returns:
             The list of generated files.
@@ -1270,6 +1274,10 @@ def register_msm_tools(server, function_groups=()) -> None:
                 the current working directory.
             overwrite_existing: Overwrite existing files.
 
+        The update scripts' REST removals (Section 280) run before the
+        version's Section 180; a drop of what the version defines again is
+        commented out, so the endpoint keeps its id.
+
         Returns:
             The file name of the deployment script.
         """
@@ -1279,7 +1287,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx,
             schema_project_path,
             msm.generate_deployment_script,
-            **_kwargs(version=version, overwrite_existing=overwrite_existing),
+            **_kwargs(
+                version=version, overwrite_existing=overwrite_existing, lsp_path=_lsp_path()
+            ),
         )
 
     @tool(name="msm.get_deployment_script_versions")

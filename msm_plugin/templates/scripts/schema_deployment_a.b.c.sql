@@ -349,6 +349,19 @@ DROP PROCEDURE `msm_auth`;
 
 
 -- #############################################################################
+-- MSM Section 380: Removal of REST Endpoints
+-- -----------------------------------------------------------------------------
+-- The REST endpoints and auth app links the updates removed, dropped before
+-- Section 180 creates the REST definition of this version. A drop of what
+-- this version defines again is commented out, so it keeps its id.
+-- #############################################################################
+
+-- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Removal of REST Endpoints
+${section_280_removal_of_rest_endpoints}
+-- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Removal of REST Endpoints
+
+
+-- #############################################################################
 -- MSM Section 180: REST Service Definition
 -- -----------------------------------------------------------------------------
 -- This optional section creates the MariaDB REST Service endpoints of the

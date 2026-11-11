@@ -323,6 +323,36 @@ def outlines_view_reads(binary: str) -> bool:
     return _answers[key]
 
 
+def outline_features(binary: str) -> frozenset:
+    """What `outline --features` lists (lsp-server #39); none for an older
+    binary, which exits 2 on the option."""
+    code, stdout, _ = _answer(binary, ("outline", "--features"))
+    if code != 0:
+        return frozenset()
+    try:
+        features = json.loads(stdout).get("features")
+    except (json.JSONDecodeError, AttributeError):
+        return frozenset()
+    if not isinstance(features, list):
+        return frozenset()
+    return frozenset(feature for feature in features if isinstance(feature, str))
+
+
+# What msm needs from the outline's REST part to work out the REST
+# endpoints a release removed: the auth app links of each service, the
+# service and schema a statement that names none of them works on, and
+# which services and schemas the file creates rather than only names.
+REST_OUTLINE_FEATURES = frozenset(
+    ("rest_auth_app_links", "rest_current_schema", "rest_declared")
+)
+
+
+def outlines_rest(binary: str) -> bool:
+    """Whether the binary's outline tells the REST definition as msm needs
+    it (REST_OUTLINE_FEATURES)."""
+    return REST_OUTLINE_FEATURES <= outline_features(binary)
+
+
 def edit_ops(binary: str) -> frozenset:
     """The edit ops the binary does: what ``edit --ops`` lists; for an
     older binary its --help's ``edit ops:`` line, the renames for one with
