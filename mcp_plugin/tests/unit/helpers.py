@@ -761,6 +761,9 @@ def stub_db_tools(monkeypatch, make_session):
                 "db.execute_sql_script"
             ](context, connection_id, script, **kwargs),
             opened=opened,
+            # For the tools of other groups that work on the connection
+            connection_id=connection_id,
+            context=context,
         )
     finally:
         general.set_active_transport(None)

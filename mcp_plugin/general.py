@@ -155,6 +155,11 @@ def setup(**options) -> None:
         lsp_path (str): The mariadb-lsp binary the sql tools run, or the
             folder it is in. Empty searches the PATH, then ~/.local/bin; the
             sql group is offered only where one is found.
+        extension_groups (str): Comma-separated extension groups - the MCP
+            tools other shell plugins offer with @plugin_function(mcp=...) -
+            that a server started without function_groups serves. Empty
+            serves none unless function_groups names it. show lists the
+            groups the loaded plugins offer.
         set_dba_api_key (str): The cloud vendor, e.g. hetzner, to store the
             REST API key of, for the dba tools an agent gets. The key is read
             from dba_api_key_stdin or dba_api_key_env, or prompted for. Needs
