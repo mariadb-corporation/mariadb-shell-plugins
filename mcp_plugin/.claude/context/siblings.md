@@ -78,8 +78,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `lsp_path`, rows returned with pictures elided like `msm.edit_schema`. msm decides
   where each statement goes in Section 180 (see msm_plugin's PROJECT_CONTEXT, "Changing
   the REST definition"), so agents use these, not `msm.set_section_sql_content`, for
-  REST items. `msm.drop_rest` is a deprecated alias of `msm.drop_rest_object`, kept until
-  no client calls it (the extension uses the new name). They need a mariadb-lsp whose outline has `rest_statements`; the test
+  REST items. They need a mariadb-lsp whose outline has `rest_statements`; the test
   (`test_rest_items_are_set_and_dropped_through_the_tools`) patches such a binary
   (`MSM_TEST_LSP`, else the one msm finds) into `config.get_lsp_path` and is skipped
   without one.

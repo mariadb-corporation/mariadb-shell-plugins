@@ -303,7 +303,6 @@ Management (`msm`) plugin:
 | `msm.add_schema_object` | `add_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.set_rest_statements` | `set_rest_statements` (`msm_plugin/modeling.py`) |
 | `msm.drop_rest_object` | `drop_rest_object` (`msm_plugin/modeling.py`) |
-| `msm.drop_rest` | deprecated old name of `msm.drop_rest_object` |
 | `msm.list_live_schema_objects` | `lib/live_schema.list_schema_objects` (with the db group) |
 | `msm.import_live_schema` | `lib/modeling.create_project_from_live_schema` (with the db group) |
 | `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
