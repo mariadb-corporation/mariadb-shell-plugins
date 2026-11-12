@@ -1163,6 +1163,49 @@ def test_schema_edits_go_through_the_tool(project_lists, allowed_temp_dir, monke
         _call(tools, "msm.edit_schema", [rename], base, path)
 
 
+def _rest_statements_lsp():
+    """A mariadb-lsp that lists every statement of each REST item (MSM_TEST_LSP, else the
+    one msm finds), or None."""
+    from msm_plugin.lib import rest_editing
+
+    binary = msm_lsp.find_lsp(os.environ.get("MSM_TEST_LSP"))
+    if binary is not None and rest_editing.STATEMENTS_FEATURE in msm_lsp.outline_features(binary):
+        return binary
+    return None
+
+
+@pytest.mark.skipif(_rest_statements_lsp() is None,
+                    reason="no mariadb-lsp binary that lists the statements of REST items")
+def test_rest_items_are_set_and_dropped_through_the_tools(
+    project_lists, allowed_temp_dir, monkeypatch
+):
+    from mcp_plugin.lib import config
+    from msm_plugin.lib import management
+
+    monkeypatch.setattr(config, "get_lsp_path", _rest_statements_lsp)
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    _call(tools, "msm.update_schema_definition", path)
+    base = _call(tools, "msm.get_schema_diagrams", path)[0]["document"]["source_hash"]
+
+    result = _call(tools, "msm.set_rest_statements", [
+        "CREATE REST SERVICE /svc",
+        "CREATE REST SCHEMA /shop ON SERVICE /svc FROM `shop`",
+        "CREATE REST VIEW /customer ON SERVICE /svc SCHEMA /shop AS `shop`.`customer`",
+    ], base, schema_project_path=path)
+    assert [entry["kind"] for entry in result["statements"]] == ["service", "schema", "view"]
+    script = management.get_schema_development_file_path(path)
+    with open(script) as f:
+        assert "CREATE OR REPLACE REST VIEW /customer ON SERVICE /svc SCHEMA /shop" in f.read()
+
+    base = result["rows"][0]["document"]["source_hash"]
+    result = _call(tools, "msm.drop_rest", "object", "/svc", base, schema="/shop",
+                   object="/customer", schema_project_path=path)
+    assert len(result["removed"]) == 1
+    with open(script) as f:
+        assert "REST VIEW /customer" not in f.read()
+
+
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(
     project_lists, allowed_temp_dir, tmp_path
 ):

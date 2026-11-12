@@ -301,6 +301,8 @@ Management (`msm`) plugin:
 | `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
 | `msm.get_object_templates` | `get_object_templates` (`msm_plugin/modeling.py`) |
 | `msm.add_schema_object` | `add_schema_object` (`msm_plugin/modeling.py`) |
+| `msm.set_rest_statements` | `set_rest_statements` (`msm_plugin/modeling.py`) |
+| `msm.drop_rest` | `drop_rest` (`msm_plugin/modeling.py`) |
 | `msm.list_live_schema_objects` | `lib/live_schema.list_schema_objects` (with the db group) |
 | `msm.import_live_schema` | `lib/modeling.create_project_from_live_schema` (with the db group) |
 | `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
@@ -352,6 +354,9 @@ SQL (the CREATE statements stay the source of truth) through `mariadb-lsp edit`:
 diagrams follow renamed objects, the snapshot is made again, and once the project has
 a release the statements that take a deployed schema along are kept in
 `development/<schema>_update_next.sql` for the next release's update script.
+`msm.set_rest_statements` and `msm.drop_rest` change the REST definition, MSM Section 180,
+where msm decides the place and the form: a client hands over CREATE REST statements, or
+names the service, schema or object to drop, and never edits the section's text itself.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of
