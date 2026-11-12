@@ -277,7 +277,7 @@ def add_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
 
 
 @plugin_function("msm.setRestStatements", shell=True, cli=True, web=True)
-def set_rest_statements(statements: list, base_hash: str, **kwargs) -> dict:
+def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
     """Writes REST services, schemas and objects into MSM Section 180 of a schema project
 
     Each statement is one CREATE REST SERVICE, SCHEMA, VIEW, PROCEDURE or FUNCTION; a schema
@@ -290,6 +290,8 @@ def set_rest_statements(statements: list, base_hash: str, **kwargs) -> dict:
     items given may change. The schema snapshot is made again. Everything is written, or
     nothing.
 
+    On the command line give the statements as a JSON file with --statementsFile.
+
     Args:
         statements (list): The CREATE statements, one item each; a new schema before its
             objects.
@@ -298,6 +300,7 @@ def set_rest_statements(statements: list, base_hash: str, **kwargs) -> dict:
         **kwargs: Additional options.
 
     Keyword Args:
+        statements_file (str): A JSON file holding the statements, instead of statements.
         replaces (dict): {kind: "object", service, schema, object}: the REST object the
             statement renames. Its statements go, and the renamed one takes its place.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
@@ -309,6 +312,7 @@ def set_rest_statements(statements: list, base_hash: str, **kwargs) -> dict:
         statements: for each one written its kind, service, schema, object, file, line (1-based)
         and whether it replaced one.
     """
+    statements = _json_argument(statements, kwargs, "statements", "statements")
     if base_hash is None:
         raise ValueError("No base_hash given: the source_hash of the snapshot the caller knows.")
     if hasattr(statements, "__iter__") and not isinstance(statements, str):

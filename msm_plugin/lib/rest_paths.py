@@ -30,9 +30,7 @@ def path_key(path: str) -> str:
     """A REST path as the server compares it: unquoted, case ignored, and a
     service's developers (`mike,anna@/notes`) in order, as the shell sorts
     them, however they are spaced or quoted."""
-    if len(path) >= 2 and path[0] == path[-1] and path[0] in _QUOTES:
-        path = path[1:-1]
-    path = path.lower()
+    path = _unquoted(path).lower()
     developers, at, rest = path.partition("@")
     if at and "/" not in developers:
         names = (_unquoted(name.strip()) for name in developers.split(","))

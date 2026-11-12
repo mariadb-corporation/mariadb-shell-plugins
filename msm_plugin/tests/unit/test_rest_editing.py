@@ -32,17 +32,13 @@ import os
 
 import pytest
 
-from msm_plugin.lib import editing, lsp, management, modeling, rest_editing
+from msm_plugin.lib import editing, management, modeling, rest_editing
 from msm_plugin.lib import sections as sections_lib
 from msm_plugin.lib.management import create_schema_project_folder
 from msm_plugin.tests.unit import helpers
 
 
-def _lists_statements(binary: str) -> bool:
-    return rest_editing.STATEMENTS_FEATURE in lsp.outline_features(binary)
-
-
-LSP = helpers.find_test_lsp(_lists_statements)
+LSP = helpers.find_test_lsp(rest_editing.lists_statements)
 pytestmark = pytest.mark.skipif(
     LSP is None, reason="no mariadb-lsp binary that lists the statements of REST items"
 )
@@ -177,6 +173,23 @@ def test_a_replaced_service_loses_its_alters_but_its_auth_app_links(project):
     assert "COMMENT 'the shop'" not in text
     assert "ALTER REST SERVICE /svc ADD AUTH APP 'Other';" in text
     assert "\n\n\n" not in text
+
+
+def test_a_new_object_is_not_placed_after_what_a_replacement_removes(tmp_path):
+    path = make_project(tmp_path, "CREATE OR REPLACE REST SERVICE /svc;\n\n"
+                                  "CREATE OR REPLACE REST SCHEMA /shop ON SERVICE /svc FROM `shop`;\n\n"
+                                  "ALTER REST SCHEMA /shop ON SERVICE /svc FROM `other`;")
+    # The object comes first in the call; the schema's replacement drops its ALTER
+    set_statements(
+        path,
+        "CREATE REST VIEW /n ON SERVICE /svc SCHEMA /shop AS `shop`.`n`",
+        "CREATE REST SCHEMA /shop ON SERVICE /svc FROM `shop2`",
+    )
+    assert body(path) == (
+        "CREATE OR REPLACE REST SERVICE /svc;\n\n"
+        "CREATE OR REPLACE REST SCHEMA /shop ON SERVICE /svc FROM `shop2`;\n\n"
+        "CREATE OR REPLACE REST VIEW /n ON SERVICE /svc SCHEMA /shop AS `shop`.`n`;"
+    )
 
 
 def test_an_alter_that_also_links_an_auth_app_is_refused(tmp_path):

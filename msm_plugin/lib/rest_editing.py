@@ -35,21 +35,25 @@ in the project they go and in what form:
   next release's update script drops what the release no longer defines.
 
 Every statement of each item comes from mariadb-lsp's outline (feature
-rest_statements), so msm never parses REST SQL. The result is checked by
+rest_statements) and its delimiter from the binary's splitter, so msm reads
+no REST SQL itself, but for the words of a CREATE before its item's name
+(OR REPLACE, IF NOT EXISTS). The result is checked by
 outlining it again: the REST definition may differ only in the items named,
 and no statement may stop being applied; otherwise every file is put back.
 """
 
+import bisect
 import collections
 import os
 import re
 from typing import Optional
 
-from msm_plugin.lib import diagrams, editing, lsp, management, modeling, rest_paths, source
+from msm_plugin.lib import diagrams, editing, lsp, management, modeling, rest_paths, rest_removal
+from msm_plugin.lib import source
 from msm_plugin.lib import statements as statements_lib
 from msm_plugin.lib.project_changes import changes_project
-from msm_plugin.lib.rest_removal import REST_DEFINITION_SECTION_ID
 
+REST_DEFINITION_SECTION_ID = rest_removal.REST_DEFINITION_SECTION_ID
 STATEMENTS_FEATURE = "rest_statements"
 
 # The REST object kinds of the outline, as the statements write them.
@@ -68,11 +72,16 @@ _PLACE_MEMBERS = {"range", "selection_range", "source", "statements", "leading_c
 _CHILD_MEMBERS = {"schemas", "objects", "content_sets"}
 
 
+def lists_statements(binary: str) -> bool:
+    """Whether the binary's outline tells the REST definition as msm needs
+    it and lists every statement of each REST item (rest_statements)."""
+    return lsp.outlines_rest(binary) and STATEMENTS_FEATURE in lsp.outline_features(binary)
+
+
 def require_lsp(lsp_path: Optional[str] = None) -> str:
-    """The mariadb-lsp binary, where its outline lists every statement of
-    each REST item; raises otherwise."""
-    binary = lsp.require_lsp(lsp_path)
-    if not lsp.outlines_rest(binary) or STATEMENTS_FEATURE not in lsp.outline_features(binary):
+    """The mariadb-lsp binary, where it lists_statements; raises otherwise."""
+    binary = rest_removal.require_rest_lsp(lsp_path)
+    if STATEMENTS_FEATURE not in lsp.outline_features(binary):
         raise lsp.LspError(
             f"The REST definition is changed with the MariaDB SQL language server, and the "
             f"installed one ({binary}) cannot list the statements of REST items yet. Update "
@@ -86,7 +95,7 @@ def require_lsp(lsp_path: Optional[str] = None) -> str:
 
 
 def _items(outlined: dict) -> dict:
-    """The REST items of an outline by key, each {kind, node, parent}.
+    """The REST items of an outline by key, each {kind, node}.
 
     Keys: ("service", s), ("schema", s, p), ("object", s, p, o) and
     ("content_set", s, c), each path as rest_paths.path_key has it.
@@ -96,23 +105,21 @@ def _items(outlined: dict) -> dict:
         if not service.get("path"):
             continue
         s = rest_paths.path_key(service["path"])
-        service_key = ("service", s)
-        items[service_key] = {"kind": "service", "node": service, "parent": None}
+        items[("service", s)] = {"kind": "service", "node": service}
         for content_set in service.get("content_sets", []):
             name = content_set.get("name") or ""
             items[("content_set", s, rest_paths.path_key(name))] = {
-                "kind": "content_set", "node": content_set, "parent": service_key,
+                "kind": "content_set", "node": content_set,
             }
         for schema in service.get("schemas", []):
             if not schema.get("path"):
                 continue
             p = rest_paths.path_key(schema["path"])
-            schema_key = ("schema", s, p)
-            items[schema_key] = {"kind": "schema", "node": schema, "parent": service_key}
+            items[("schema", s, p)] = {"kind": "schema", "node": schema}
             for item in schema.get("objects", []):
                 if item.get("path"):
                     items[("object", s, p, rest_paths.path_key(item["path"]))] = {
-                        "kind": item.get("kind"), "node": item, "parent": schema_key,
+                        "kind": item.get("kind"), "node": item,
                     }
     return items
 
@@ -185,6 +192,7 @@ class _Files:
         self.binary = binary
         self.includes = outlined.get("includes", [])
         self.texts = {}
+        self.line_starts = {}
         self.entries = {}
         self.spans = collections.defaultdict(list)
         # The statements removed, by _place
@@ -201,15 +209,13 @@ class _Files:
 
     def text(self, path: str) -> str:
         if path not in self.texts:
-            self.texts[path] = (
-                self.project.script if path == self.project.dev_file else self.project.read(path)[1]
-            )
+            text = self.project.script if path == self.project.dev_file else self.project.read(path)[1]
+            self.texts[path] = text
+            self.line_starts[path] = editing.line_starts(text)
         return self.texts[path]
 
     def offset(self, path: str, position: dict) -> int:
-        text = self.text(path)
-        line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
-        return editing._offset(text, line_starts, position)
+        return editing._offset(self.text(path), self.line_starts[path], position)
 
     def entry(self, path: str, offset: int) -> tuple:
         """The (begin, end after the delimiter, delimiter) of the statement
@@ -217,31 +223,31 @@ class _Files:
         if path not in self.entries:
             text = self.text(path)
             self.entries[path] = statements_lib.sql_entries(text, lsp.split(self.binary, text))
-        found = next(
-            (entry for entry in self.entries[path] if entry[0] <= offset < entry[1]), None
-        )
+        entries = self.entries[path]
+        index = bisect.bisect_right(entries, offset, key=lambda entry: entry[0]) - 1
+        found = entries[index] if index >= 0 and offset < entries[index][1] else None
         if found is None:
             raise ValueError(
                 f"The statement at character {offset} of `{path}` is not one the shell runs."
             )
         return found
 
-    def line_of(self, path: str, offset: int) -> int:
-        """The 1-based line of an offset."""
-        return self.text(path).count("\n", 0, offset) + 1
+    def statement(self, statement: dict) -> tuple:
+        """(path, text, begin, end, delimiter) of a statement: end after its
+        delimiter and a line comment after it on its line."""
+        path = self.path(statement.get("source"))
+        text = self.text(path)
+        begin = self.offset(path, statement["range"]["start"])
+        _, end, delimiter = self.entry(path, begin)
+        return path, text, begin, statements_lib._comment_after(text, end), delimiter
 
     def removal(self, statement: dict) -> tuple:
         """(path, start, end) of a statement with its delimiter, the comments
         right above it and its lines where it has them to itself."""
-        path = self.path(statement.get("source"))
-        text = self.text(path)
-        begin = self.offset(path, statement["range"]["start"])
-        _, end, _ = self.entry(path, begin)
-        start = begin
+        path, text, start, end, _ = self.statement(statement)
         if statement.get("leading_comments"):
             start = min(start, self.offset(path, statement["leading_comments"]["start"]))
         line_start = text.rfind("\n", 0, start) + 1
-        end = statements_lib._comment_after(text, end)
         line_end = text.find("\n", end)
         line_end = len(text) if line_end < 0 else line_end
         if not text[line_start:start].strip() and not text[end:line_end].strip():
@@ -259,11 +265,10 @@ class _Files:
 
     def end_of(self, statement: dict) -> tuple:
         """(path, offset, delimiter) right after a statement's line."""
-        path = self.path(statement.get("source"))
-        text = self.text(path)
-        begin = self.offset(path, statement["range"]["start"])
-        _, end, delimiter = self.entry(path, begin)
-        end = statements_lib._comment_after(text, end)
+        # Every statement ends with its delimiter: one without, the last of
+        # an include or of the script, would run into what follows it, and
+        # the project's snapshot could not be made in the first place
+        path, text, _, end, delimiter = self.statement(statement)
         line_end = text.find("\n", end)
         if line_end >= 0 and not text[end:line_end].strip():
             end = line_end
@@ -285,13 +290,7 @@ class _Files:
         """{path: (old, new)} of every file with spans."""
         texts = {}
         for path, spans in self.spans.items():
-            # By position only, and stable: inserts at one place keep their order
-            spans = sorted(spans, key=lambda span: span[:2])
-            at = 0
-            for start, end, _ in spans:
-                if start < at:
-                    raise ValueError(f"msm's changes to `{path}` overlap.")
-                at = max(at, end)
+            spans = editing.checked_spans(spans, f"msm's changes to `{path}` overlap.")
             old = self.text(path)
             texts[path] = (old, editing.apply_spans(old, spans))
         return texts
@@ -336,8 +335,9 @@ def _read_statement(binary: str, sql, index: int) -> dict:
     """The REST item one statement a client gave creates.
 
     Returns:
-        {key, kind, path, service, schema, text}: text is the statement in
-        the form Section 180 needs, without its delimiter.
+        {key, kind, paths (the service's, the schema's, the object's, as far
+        as the item goes), text}: text is the statement in the form Section
+        180 needs, without its delimiter.
     """
     where = f"Statement {index + 1}"
     if not isinstance(sql, str) or not sql.strip():
@@ -352,10 +352,8 @@ def _read_statement(binary: str, sql, index: int) -> dict:
             "service (ON SERVICE /svc), an object its service and schema (ON SERVICE /svc "
             "SCHEMA /schema)."
         )
-    created = [
-        (key, item) for key, item in _items(outlined).items()
-        if any(statement["kind"] == "create" for statement in item["node"].get("statements", []))
-    ]
+    items = _items(outlined)
+    created = [(key, item) for key, item in items.items() if _creates(item)]
     if len(created) != 1:
         raise ValueError(f"{where} has to be one CREATE REST SERVICE, SCHEMA, VIEW, PROCEDURE or "
                          "FUNCTION statement.")
@@ -363,11 +361,11 @@ def _read_statement(binary: str, sql, index: int) -> dict:
     if key[0] == "content_set" or (key[0] == "object" and item["kind"] not in OBJECT_KINDS):
         raise ValueError(f"{where}: msm takes CREATE REST SERVICE, SCHEMA, VIEW, PROCEDURE and "
                          "FUNCTION statements only.")
-    statement = next(s for s in item["node"]["statements"] if s["kind"] == "create")
-    line_starts = [0] + [match.end() for match in re.finditer("\n", sql)]
-    start = editing._offset(sql, line_starts, statement["range"]["start"])
-    name = editing._offset(sql, line_starts, statement["selection_range"]["start"])
-    end = editing._offset(sql, line_starts, statement["range"]["end"])
+    statement = _creates(item)[0]
+    starts = editing.line_starts(sql)
+    start = editing._offset(sql, starts, statement["range"]["start"])
+    name = editing._offset(sql, starts, statement["selection_range"]["start"])
+    end = editing._offset(sql, starts, statement["range"]["end"])
     text = sql[start:end]
     head = text[: name - start]
     if _IF_NOT_EXISTS.search(head):
@@ -381,10 +379,10 @@ def _read_statement(binary: str, sql, index: int) -> dict:
         raise ValueError(f"{where} has to start with CREATE.")
     if not found.group(1):
         text = text[: found.end()] + " OR REPLACE" + text[found.end():]
-    items = _items(outlined)
-    parent = items.get(item["parent"]) if item["parent"] else None
-    grandparent = items.get(parent["parent"]) if parent and parent["parent"] else None
-    paths = [node["node"]["path"] for node in (grandparent, parent, item) if node]
+    paths, at = [], key
+    while at is not None:
+        paths.insert(0, items[at]["node"]["path"])
+        at = _parent_key(at)
     return {"key": key, "kind": item["kind"], "paths": paths, "text": text.strip()}
 
 
@@ -400,8 +398,7 @@ def _result_entry(statement: dict, files: _Files, items: dict, replaced: bool) -
         "line": None,
         "replaced": replaced,
     }
-    item = items.get(statement["key"])
-    creates = [s for s in (item or {"node": {}})["node"].get("statements", []) if s["kind"] == "create"]
+    creates = _creates(items.get(statement["key"]))
     if creates:
         path = files.path(creates[0].get("source"))
         entry["file"] = os.path.normpath(path)
@@ -443,9 +440,7 @@ def _check_result(before: dict, after: dict, changing: set, gone: set, kept: set
             )
     for key in kept:
         item = after.get(key)
-        if item is None or not any(
-            statement["kind"] == "create" for statement in item["node"].get("statements", [])
-        ):
+        if not _creates(item):
             raise ValueError(
                 f"The new statement of the {_describe(key, after) if item else key[-1]} does not "
                 f"take effect where msm put it in Section {REST_DEFINITION_SECTION_ID}. Nothing "
@@ -453,37 +448,52 @@ def _check_result(before: dict, after: dict, changing: set, gone: set, kept: set
             )
 
 
-def _checking(binary: str, before_outline: dict, changing: set, gone: set, kept: set,
-              found: dict):
-    """The check write_texts runs on the files as written; keeps their outline in found."""
+def _checking(binary: str, before_outline: dict, before: dict, changing: set, gone: set,
+              kept: set):
+    """The check write_texts runs on the files as written: returns their outline.
+
+    Args:
+        before_outline: The outline before.
+        before: Its items (_items).
+    """
+    unread_before = _unread(before_outline)
 
     def check(project):
-        script, _ = modeling._outline_input(project)
-        outlined = lsp.outline(binary, script, project.development)
-        new_notes = _unread(outlined) - _unread(before_outline)
+        outlined = _outline(project, binary)
+        new_notes = _unread(outlined) - unread_before
         if new_notes:
-            kind, message = next(iter(new_notes))
+            _, message = next(iter(new_notes))
             raise ValueError(
                 f"A statement would no longer be applied afterwards ({message}): it may depend "
                 "on a USE REST or a statement that went. Nothing was written."
             )
-        _check_result(_items(before_outline), _items(outlined), changing, gone, kept)
-        found["outline"] = outlined
+        _check_result(before, _items(outlined), changing, gone, kept)
         return outlined
 
     return check
 
 
+def _outline(project, binary: str) -> dict:
+    """The project's outline, as the snapshot is made from it."""
+    script, _ = modeling._outline_input(project)
+    return lsp.outline(binary, script, project.development)
+
+
 def _start(schema_project_path: str, base_hash: str, lsp_path: Optional[str]) -> tuple:
-    """(project, binary, outline) once base_hash is checked and the copyright years moved."""
+    """(project, binary) once base_hash is checked."""
     project = modeling._Project.load(schema_project_path)
     editing.check_base_hash(project, base_hash)
-    binary = require_lsp(lsp_path)
-    # As edit_schema does: a change of its own, not undone
+    return project, require_lsp(lsp_path)
+
+
+def _move_years(schema_project_path: str, project, binary: str, outlined: dict) -> tuple:
+    """(project, outline) once the copyright years moved, after the request
+    was checked: a refused call leaves them. As edit_schema does, a change
+    of its own, not undone."""
     if management.update_copyright_years(schema_project_path):
         project = modeling._Project.load(schema_project_path)
-    script, _ = modeling._outline_input(project)
-    return project, binary, lsp.outline(binary, script, project.development)
+        outlined = _outline(project, binary)
+    return project, outlined
 
 
 def _answer(rows: list, written: list, notes: list, **members) -> dict:
@@ -617,7 +627,7 @@ def set_rest_statements(
     if not isinstance(statements, list) or not statements:
         raise ValueError("No statements given: pass a list of CREATE REST statements.")
     renamed = _check_replaces(replaces)
-    project, binary, outlined = _start(schema_project_path, base_hash, lsp_path)
+    project, binary = _start(schema_project_path, base_hash, lsp_path)
     given = [_read_statement(binary, sql, index) for index, sql in enumerate(statements)]
     keys = [statement["key"] for statement in given]
     if len(set(keys)) != len(keys):
@@ -627,38 +637,51 @@ def set_rest_statements(
         if len(objects) != 1:
             raise ValueError("replaces goes with the statement of one REST object.")
 
+    outlined = _outline(project, binary)
+    # The REST object a statement renames, where it is another one
+    old = None
+    if renamed is not None and renamed not in keys:
+        old = _items(outlined).get(renamed)
+        if not _creates(old):
+            raise ValueError(
+                f"Section {REST_DEFINITION_SECTION_ID} creates no REST object "
+                f"{replaces['object']} on {replaces['service']} {replaces['schema']} "
+                "to rename."
+            )
+
+    project, outlined = _move_years(schema_project_path, project, binary, outlined)
     items = _items(outlined)
+    if old is not None:
+        old = items[renamed]
     files = _Files(project, binary, outlined)
-    includes = outlined.get("includes", [])
+    includes = files.includes
     # Where each new item went, for the items on it that follow
     placed = {}
-    changing, replaced = set(), {}
-    for statement in given:
+    changing, replaced = set(keys) | ({renamed} if old is not None else set()), {}
+
+    def replacing(statement):
+        return bool(_creates(items.get(statement["key"]))) or (
+            old is not None and statement["key"][0] == "object"
+        )
+
+    # Replacements first, so no new item is placed after a statement a
+    # later replacement removes; each group in the order given
+    for statement in sorted(given, key=lambda statement: not replacing(statement)):
         key, text = statement["key"], statement["text"]
-        changing.add(key)
         item = items.get(key)
-        # The REST object this statement renames, where it is another one
-        old = None
-        if renamed is not None and key[0] == "object" and renamed != key:
-            old = items.get(renamed)
-            if not _creates(old):
-                raise ValueError(
-                    f"Section {REST_DEFINITION_SECTION_ID} creates no REST object "
-                    f"{replaces['object']} on {replaces['service']} {replaces['schema']} "
-                    "to rename."
-                )
-            changing.add(renamed)
+        # The renamed object goes with the one object statement
+        renaming = old if key[0] == "object" else None
         if _creates(item):
             # Replaced where it stands; the renamed one goes
             _replace(files, _creates(item)[0], text)
-            for other in _overridden(item) + (old["node"].get("statements", []) if old else []):
+            for other in _overridden(item) + (renaming["node"].get("statements", []) if renaming else []):
                 files.remove(other)
             replaced[key] = True
-        elif old is not None:
+        elif renaming is not None:
             # Where the renamed one stood
-            first = _creates(old)[0]
+            first = _creates(renaming)[0]
             _replace(files, first, text)
-            for other in old["node"].get("statements", []):
+            for other in renaming["node"].get("statements", []):
                 if other is not first:
                     files.remove(other)
             replaced[key] = True
@@ -675,14 +698,14 @@ def set_rest_statements(
                     changing.add(parent)
                 parent = _parent_key(parent)
 
-    gone = {renamed} if renamed is not None and renamed not in keys else set()
-    found = {}
-    rows, written = editing.write_texts(
+    gone = {renamed} if old is not None else set()
+    rows, written, after_outline = editing.write_texts(
         project, files.new_texts(), lsp_path,
-        check=_checking(binary, outlined, changing, gone, set(keys), found),
+        check=_checking(binary, outlined, items, changing, gone, set(keys)),
     )
-    after = _items(found["outline"])
-    after_files = _Files(modeling._Project.load(schema_project_path), binary, found["outline"])
+    after = _items(after_outline)
+    # The project's files stay where they are; the includes are the new outline's
+    after_files = _Files(project, binary, after_outline)
     return _answer(rows, written, [], statements=[
         _result_entry(statement, after_files, after, replaced[statement["key"]])
         for statement in given
@@ -741,21 +764,22 @@ def drop_rest(
             a result that would change more than the item.
     """
     key = _drop_key(kind, service, schema, rest_object)
-    project, binary, outlined = _start(schema_project_path, base_hash, lsp_path)
-    items = _items(outlined)
-    item = items.get(key)
-    if item is None:
+    project, binary = _start(schema_project_path, base_hash, lsp_path)
+    outlined = _outline(project, binary)
+    if key not in _items(outlined):
         what = {"service": service, "schema": f"{schema} on {service}",
                 "object": f"{rest_object} on {service} {schema}"}[kind]
         raise ValueError(f"Section {REST_DEFINITION_SECTION_ID} has no REST {kind} {what}.")
+    project, outlined = _move_years(schema_project_path, project, binary, outlined)
+    items = _items(outlined)
+    item = items[key]
 
     files = _Files(project, binary, outlined)
-    includes = outlined.get("includes", [])
     removed = []
-    for statement in _subtree_statements(items, key, includes):
+    for statement in _subtree_statements(items, key, files.includes):
         path = files.path(statement.get("source"))
-        begin = files.offset(path, statement["range"]["start"])
-        removed.append({"file": os.path.normpath(path), "line": files.line_of(path, begin)})
+        removed.append({"file": os.path.normpath(path),
+                        "line": statement["range"]["start"]["line"] + 1})
         if statement.get("shared") and key[0] == "schema":
             # USE REST SERVICE s SCHEMA p: the service stays in use
             service_use = next(
@@ -779,9 +803,8 @@ def drop_rest(
             f"{kind} itself stays where it is created."
         )
     gone = {other for other in items if _in_subtree(other, key)}
-    found = {}
-    rows, written = editing.write_texts(
+    rows, written, _ = editing.write_texts(
         project, files.new_texts(), lsp_path,
-        check=_checking(binary, outlined, gone, gone, set(), found),
-    ) if files.spans else (modeling._rows(project), [])
+        check=_checking(binary, outlined, items, gone, gone, set()),
+    )
     return _answer(rows, written, notes, removed=removed)

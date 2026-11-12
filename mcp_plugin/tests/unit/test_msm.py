@@ -1169,9 +1169,7 @@ def _rest_statements_lsp():
     from msm_plugin.lib import rest_editing
 
     binary = msm_lsp.find_lsp(os.environ.get("MSM_TEST_LSP"))
-    if binary is not None and rest_editing.STATEMENTS_FEATURE in msm_lsp.outline_features(binary):
-        return binary
-    return None
+    return binary if binary is not None and rest_editing.lists_statements(binary) else None
 
 
 @pytest.mark.skipif(_rest_statements_lsp() is None,

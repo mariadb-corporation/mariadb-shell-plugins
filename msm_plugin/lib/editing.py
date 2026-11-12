@@ -115,24 +115,37 @@ def edit_spans(text: str, edits: list) -> list:
     Raises:
         ValueError: For a position the text lacks, or edits that overlap.
     """
-    line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
-    # By position only, and stable: inserts at one position keep the order
-    # the server gave them in, as LSP has it.
-    spans = sorted(
-        (
+    starts = line_starts(text)
+    return checked_spans(
+        [
             (
-                _offset(text, line_starts, edit["range"]["start"]),
-                _offset(text, line_starts, edit["range"]["end"]),
+                _offset(text, starts, edit["range"]["start"]),
+                _offset(text, starts, edit["range"]["end"]),
                 edit["new_text"],
             )
             for edit in edits
-        ),
-        key=lambda span: span[:2],
+        ],
+        "The language server's text edits overlap.",
     )
+
+
+def line_starts(text: str) -> list:
+    """The index in text where each line starts, for _offset."""
+    return [0] + [match.end() for match in re.finditer("\n", text)]
+
+
+def checked_spans(spans: list, overlap: str) -> list:
+    """(start, end, new_text) spans in order, refused with the message
+    overlap where two overlap.
+
+    By position only, and stable: inserts at one position keep the order
+    they were given in, as LSP has it.
+    """
+    spans = sorted(spans, key=lambda span: span[:2])
     at = 0
     for start, end, _ in spans:
         if start < at or end < start:
-            raise ValueError("The language server's text edits overlap.")
+            raise ValueError(overlap)
         at = end
     return spans
 
@@ -544,7 +557,9 @@ def write_texts(
             puts every file back.
 
     Returns:
-        (the rows of the diagrams VIEW afterwards, the files written).
+        (the rows of the diagrams VIEW afterwards, the files written, the
+        outline the snapshot was made from: the one given or check's, else
+        None).
     """
     # The files as they are on disk, to put back.
     originals = {path: sections_lib.read_if_exists(path) for path in texts}
@@ -581,7 +596,7 @@ def write_texts(
                 with open(path, "w") as f:
                     f.write(old)
         raise
-    return rows, written
+    return rows, written, outline
 
 
 def _check_request(edits) -> None:
@@ -718,7 +733,7 @@ def edit_schema(
     # The binary's outline of the texts it edited is the outline of the
     # files as written (Section 160 blanked as in the request); an older
     # answer without it has the binary run again.
-    rows, written = write_texts(project, texts, lsp_path, outline, follow_renames)
+    rows, written, _ = write_texts(project, texts, lsp_path, outline, follow_renames)
 
     return {
         "rows": rows,
