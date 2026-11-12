@@ -905,8 +905,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
-    @tool(name="msm.drop_rest")
-    async def drop_rest(
+    @tool(name="msm.drop_rest_object")
+    async def drop_rest_object(
         ctx: Context,
         kind: str,
         service: str,
@@ -946,7 +946,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         result = await _in_project(
             ctx,
             schema_project_path,
-            msm_modeling.drop_rest,
+            msm_modeling.drop_rest_object,
             kind,
             service,
             base_hash,
@@ -954,6 +954,38 @@ def register_msm_tools(server, function_groups=()) -> None:
         )
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
+
+    @tool(name="msm.drop_rest")
+    async def drop_rest(
+        ctx: Context,
+        kind: str,
+        service: str,
+        base_hash: str,
+        schema: Optional[str] = None,
+        object: Optional[str] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Deprecated: use msm.drop_rest_object, which this calls.
+
+        The old name of msm.drop_rest_object, kept until the clients that
+        called it have moved on.
+
+        Args:
+            kind: service, schema or object.
+            service: The service's path as Section 180 writes it.
+            base_hash: The source_hash of the snapshot the caller knows.
+            schema: The REST schema's path, for a schema or an object.
+            object: The REST object's path, for an object.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.drop_rest_object returns.
+        """
+        return await drop_rest_object(
+            ctx, kind, service, base_hash, schema=schema, object=object,
+            schema_project_path=schema_project_path,
+        )
 
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(

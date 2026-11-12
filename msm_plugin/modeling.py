@@ -325,8 +325,8 @@ def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs
     )
 
 
-@plugin_function("msm.dropRest", shell=True, cli=True, web=True)
-def drop_rest(kind: str, service: str, base_hash: str, **kwargs) -> dict:
+@plugin_function("msm.dropRestObject", shell=True, cli=True, web=True)
+def drop_rest_object(kind: str, service: str, base_hash: str, **kwargs) -> dict:
     """Removes a REST service, schema or object from MSM Section 180 of a schema project
 
     Every statement of it and of what is on it goes, with the comments right above each; a USE
@@ -354,7 +354,7 @@ def drop_rest(kind: str, service: str, base_hash: str, **kwargs) -> dict:
         removed: the file and line (1-based, before the change) of each statement removed or
         changed. A note says where the section only names the item: the item itself stays.
     """
-    return lib.rest_editing.drop_rest(
+    return lib.rest_editing.drop_rest_object(
         _project(kwargs), kind, service, base_hash,
         schema=kwargs.get("schema"), rest_object=kwargs.get("object"),
         lsp_path=kwargs.get("lsp_path"),

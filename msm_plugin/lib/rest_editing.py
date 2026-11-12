@@ -30,7 +30,7 @@ in the project they go and in what form:
   removed, as they would override what was saved. A new item goes after
   the statements of its parent (a service after the whole definition),
   into the file they are in, a breakout file too.
-- drop_rest removes every statement of an item and of what is on it, with
+- drop_rest_object removes every statement of an item and of what is on it, with
   the comments right above each. It never writes a DROP: Section 280 of the
   next release's update script drops what the release no longer defines.
 
@@ -731,7 +731,7 @@ def _drop_key(kind: str, service, schema, rest_object) -> tuple:
 
 
 @changes_project
-def drop_rest(
+def drop_rest_object(
     schema_project_path: str,
     kind: str,
     service: str,
