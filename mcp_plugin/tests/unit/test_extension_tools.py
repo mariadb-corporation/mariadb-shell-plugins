@@ -27,7 +27,6 @@ server with a real plugin (tests/fixtures/extension_plugins/mcp_ext_test).
 import asyncio
 import json
 import os
-import time
 
 import mysqlsh
 import pytest
@@ -152,27 +151,8 @@ def no_tasks():
     tasks.clear()
 
 
-@pytest.fixture
-def extension_setting():
-    """Leaves the extensionGroups setting as the test found it."""
-    had_settings = config.settings_file_exists()
-    before = config.get_extension_groups()
-    yield
-    if had_settings:
-        config.set_extension_groups(before)
-    else:
-        path = config.get_settings_file_path()
-        if os.path.exists(path):
-            os.remove(path)
-
-
-def _tools(groups, gui=False):
-    previous = general.is_gui_mode()
-    general.set_gui_mode(gui)
-    try:
-        mcp_server = server.build_mcp_server(groups)
-    finally:
-        general.set_gui_mode(previous)
+def _tools(groups):
+    mcp_server = server.build_mcp_server(groups)
     return mcp_server, {tool.name: tool for tool in asyncio.run(mcp_server.list_tools())}
 
 
@@ -311,11 +291,16 @@ def test_tools_that_cannot_be_served_are_left_out(registry, logged):
     )
 
 
-def test_a_gui_tool_is_served_with_gui_only(registry):
+def test_a_gui_tool_is_not_served_to_an_agent(registry):
     registry[:] = [entry(refuse, "orders.refuse", group="orders", gui=True)]
 
     assert "orders.refuse" not in _tools(["orders"])[1]
-    assert "orders.refuse" in _tools(["orders"], gui=True)[1]
+
+
+def test_a_gui_tool_is_served_with_gui(registry, gui_mode):
+    registry[:] = [entry(refuse, "orders.refuse", group="orders", gui=True)]
+
+    assert "orders.refuse" in _tools(["orders"])[1]
 
 
 def test_only_the_groups_asked_for_are_served(registry):
@@ -432,13 +417,6 @@ def test_a_result_is_made_json(registry):
 # --- background tasks ----------------------------------------------------------------
 
 
-def _finished(task, timeout=10):
-    deadline = time.monotonic() + timeout
-    while task.status not in tasks.FINISHED_STATES and time.monotonic() < deadline:
-        task.wait_for_change(task.version, 0.1)
-    return task.status
-
-
 def test_a_task_tool_runs_as_a_background_task(registry, monkeypatch, no_tasks):
     registry[:] = [entry(checksum, "orders.checksum", group="orders", task=True)]
     mcp_server, tools = _tools(["db", "orders"])
@@ -457,7 +435,7 @@ def test_a_task_tool_runs_as_a_background_task(registry, monkeypatch, no_tasks):
         client = general.get_client_identity(stubbed.context)
         task = tasks.get(started["task_id"], client)
 
-        assert _finished(task) == tasks.COMPLETED
+        assert helpers.finished(task, timeout=10) == tasks.COMPLETED
         assert task.summary()["task_type"] == "orders"
         assert task.snapshot()["result"] == {"checksum": "checksum", "rounds": 3}
         # its own session, closed when it ends
@@ -477,21 +455,21 @@ def test_a_task_tool_can_be_cancelled(registry, monkeypatch, no_tasks):
         task = tasks.get(started["task_id"], general.get_client_identity(stubbed.context))
         task.cancel()
 
-        assert _finished(task) == tasks.CANCELLED
+        assert helpers.finished(task, timeout=10) == tasks.CANCELLED
         assert stubbed.opened[-1].closed
 
 
 # --- which groups a server serves ------------------------------------------------------
 
 
-def test_the_setting_serves_a_group_by_default(registry, logged, extension_setting):
+def test_the_setting_serves_a_group_by_default(registry, logged, saved_settings):
     registry[:] = [entry(refuse, "orders.refuse", group="orders")]
     available = extension_functions.available_groups()
 
     config.set_extension_groups([])
     assert server._default_extension_groups(available) == []
 
-    config.set_extension_groups("orders, gone")
+    config.set_extension_groups(["orders", "gone"])
     assert config.get_extension_groups() == ["orders", "gone"]
     assert server._default_extension_groups(available) == ["orders"]
     assert (
@@ -519,7 +497,7 @@ def test_multi_tenant_mode_serves_no_extension_group(registry):
         server._check_multi_tenant("streamable-http", ["db", "orders"], False)
 
 
-def test_setup_sets_and_shows_the_groups(registry, capsys, extension_setting):
+def test_setup_sets_and_shows_the_groups(registry, capsys, saved_settings):
     registry[:] = [entry(refuse, "orders.refuse", group="orders")]
 
     setup_cli.apply({"extension_groups": "orders,later"})

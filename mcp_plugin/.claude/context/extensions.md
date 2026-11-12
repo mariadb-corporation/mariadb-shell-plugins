@@ -16,7 +16,9 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
   and completed by `_mcp_definition` at load: keys `group` (required),
   `name` (default `_python_name` of the FQN's last part), `readOnly`,
   `destructive`, `task`, `gui` (bools), `paths` (named parameters, not
-  `session`/`task`). `mcp=True` is refused. A mistake fails the function's
+  `session`, nor `task` in a task tool - as the server fills them in).
+  `mcp=True` is refused. Built-in group names are NOT checked there but by the
+  server, at start (the docs say so). A mistake fails the function's
   registration like a docstring mistake does. Shell test:
   `plugin_decorator_norecord.py`, the three `MCP` chunks.
 - **Discovery** (`lib/extension_functions.py`): `registrar.get_registry()` read
@@ -37,11 +39,13 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
   extension group with its own message, and the multi-tenant default never adds
   them.
 - **Publishing** (`ExtensionTool`): the SDK builds the schema from the
-  function's signature and type hints and calls it with keywords, so
-  `_make_tool_function` WRITES OUT an async function with `exec` - `ctx:
-  Context`, then every published parameter keyword-only (so required/optional
-  order cannot clash), types from the docstring's `(type)` via `_TYPES`
-  (`Optional[...]` for a `None` default, `Any` untyped). Description = brief,
+  function's signature and calls it with keywords, so `_make_tool_function`
+  gives a plain `async def function(ctx: Context, **arguments)` a
+  `__signature__` (as `register_with_gui_argument` does): `ctx`, then every
+  published parameter keyword-only (so required/optional order cannot clash),
+  types from the docstring's `(type)` via `_TYPES` (`Optional[...]` for a
+  `None` default, `Any` untyped). `ctx` keeps its real annotation, which is
+  how the SDK finds it (`get_type_hints`). Description = brief,
   details (shell markup `<b>`/`@li` made plain), an `Args:` block of the
   PUBLISHED parameters (connection_id line, `options` with its Keyword Args),
   the task sentence. Over 4,096 characters is logged.
@@ -59,8 +63,15 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
   connection fails the call), a fresh session per task, closed in `finally`.
   `register_extension_tools` returns whether a task tool was served, and
   `build_mcp_server` then registers the `task.*` tools too.
-- **Results** go through `_plain`: run_sql results -> list of row dicts, the
-  shell's Dict/List, dates (isoformat), Decimals (str), anything else `str`.
+- **Results** go through `_plain`: a run_sql result -> its rows exactly as
+  `db.execute_sql` reads them (`db_functions._read_result_set`), the shell's
+  Dict/List, dates (isoformat), Decimals (str), anything else `str`.
+- **Which groups are extension groups**: `extension_functions.extension_groups_in`
+  (not in `SUPPORTED_FUNCTION_GROUPS`), used by `build_mcp_server` and the one
+  multi-tenant refusal, which names built-in and extension groups each with
+  its reason. `available_groups()` reads the registry entries only (no
+  signature inspection); `setup_cli.extension_group_rows()` is the listing the
+  menu and `--show` share.
 - **Errors**: the plugin raises `mysqlsh.Error`; `tool_registrar` converts it
   (client sees `Shell Error: ...`). Our own refusals use `tool_error`.
 - **Logging**: one `[mcp] server: serving extension tool <tool> of <FQN>` line
@@ -79,7 +90,8 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
 - `lib/config.py` `get/set_extension_groups`; `lib/setup_cli.py`
   `_set_extension_groups`, `_extension_groups`, `_print_extension_groups`;
   `lib/setup.py` `_extension_groups_menu_entries`, `_toggle_extension_group`.
-- `tests/unit/test_extension_tools.py` (21) and the fixture plugin
+- `tests/unit/test_extension_tools.py` (22; `saved_settings` in conftest,
+  `helpers.finished` shared with test_util) and the fixture plugin
   `tests/fixtures/extension_plugins/mcp_ext_test/` (group `ext_test`).
 - Docs: README "Tools of other shell plugins (extension groups)"; mariadb-shell
   `docs-ref/.../extending-mariadb-shell/plugins.md` "Offering a Function as an
@@ -94,8 +106,12 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
   it: run the shell tests with `env -u MARIADB_SHELL_PLUGINS_PATH -u
   MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS`.
 - **Shell scripted tests run line by line**: a `def` with blank lines in its
-  body ends early (IndentationError on the next lines). The shell test uses a
-  template string and a loop instead.
+  body ends early (IndentationError on the next lines). The shell test builds
+  ONE plugin with every invalid definition, each `plugin_function(...)(f)` in
+  a `try` (it prints, then raises), so one shell run checks them all.
+- **`--quiet-start=2` hides what plugins print while loading** (the
+  "Could not register function" lines), so the shell test's error checks call
+  `testutil.call_mysqlsh` without it, not `__call_mysqlsh`.
 - One row comes back from `helpers.tool_payload` as the row itself (one content
   block per list element).
 - `FunctionData(function, fully_qualified_name=..., shell=False, mcp=...)` builds

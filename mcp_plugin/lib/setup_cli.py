@@ -999,17 +999,38 @@ def _show(options: dict) -> None:
     print(f"  Wrapper:            {tooling['wrapper_path']}")
 
 
-def _print_extension_groups(groups: dict) -> None:
-    """Prints the extension groups part of --show, if there is any."""
+def extension_group_rows(groups: dict = None) -> list:
+    """Each extension group offered or set, for a listing.
+
+    Args:
+        groups (dict): What :func:`_extension_groups` returns, or None to
+            read it.
+
+    Returns:
+        list: ``(group, served by default, the functions offering it)`` per
+        group, sorted, the last a text.
+    """
+    groups = groups or _extension_groups()
     served = groups["served_by_default"]
     available = groups["available"]
-    if not served and not available:
-        return
 
-    print("Extension groups:")
-    for group in sorted(set(served) | set(available)):
-        state = "served by default" if group in served else "served when named"
-        offered = ", ".join(available.get(group, [])) or "no loaded plugin offers it"
+    return [
+        (
+            group,
+            group in served,
+            ", ".join(available.get(group, [])) or "no loaded plugin offers it",
+        )
+        for group in sorted(set(served) | set(available))
+    ]
+
+
+def _print_extension_groups(groups: dict) -> None:
+    """Prints the extension groups part of --show, if there is any."""
+    rows = extension_group_rows(groups)
+    if rows:
+        print("Extension groups:")
+    for group, served, offered in rows:
+        state = "served by default" if served else "served when named"
         print(f"  {group} ({state}): {offered}")
 
 

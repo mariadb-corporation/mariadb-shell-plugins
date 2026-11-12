@@ -770,6 +770,24 @@ def stub_db_tools(monkeypatch, make_session):
         db_functions._sessions.clear()
 
 
+def finished(task, timeout=5):
+    """Waits for a background task to end; returns its status.
+
+    Args:
+        task: The shell's task (mysqlsh.task_manager.Task).
+        timeout (float): The most seconds to wait.
+
+    Returns:
+        str: Its status then, which is still running if it did not end.
+    """
+    from mysqlsh import task_manager
+
+    deadline = time.monotonic() + timeout
+    while task.status not in task_manager.FINISHED_STATES and time.monotonic() < deadline:
+        task.wait_for_change(task.version, 0.1)
+    return task.status
+
+
 def write_file(directory, relative_path, text):
     """Writes a file under directory, making its folders, and returns its path.
 

@@ -208,12 +208,10 @@ class ExtensionTool:
         for name, _annotation, _default in self.parameters:
             if name == CONNECTION_ID_PARAMETER:
                 arguments.append(f"    {name}: The UUID returned by db.connect.")
-            elif name == OPTIONS_PARAMETER:
-                arguments.append(f"    {name}: {self._brief(self.options_name)}")
-                arguments.extend(self._option_lines(self.options_name))
-            else:
-                arguments.append(f"    {name}: {self._brief(name)}")
-                arguments.extend(self._option_lines(name))
+                continue
+            documented = self.options_name if name == OPTIONS_PARAMETER else name
+            arguments.append(f"    {name}: {self._brief(documented)}")
+            arguments.extend(self._option_lines(documented))
         if arguments:
             lines.extend(["", "Args:", *arguments])
 
@@ -254,7 +252,7 @@ class ExtensionTool:
         """
         arguments = dict(published)
         connection_id = arguments.pop(CONNECTION_ID_PARAMETER, None)
-        options = arguments.pop(OPTIONS_PARAMETER, None) if self.options_name else None
+        options = arguments.pop(OPTIONS_PARAMETER, None)
         if options:
             clashing = sorted(set(options) & set(arguments))
             if clashing:
@@ -311,12 +309,29 @@ def available_groups() -> dict:
         ``{"orders": ["orders.listOpen"]}``.
     """
     groups = {}
-    for tool in extension_tools():
-        if tool.group in _RESERVED_GROUPS:
-            continue
-        groups.setdefault(tool.group, []).append(tool.source)
+    for definition in _registry():
+        mcp = getattr(definition, "mcp", None)
+        if mcp and mcp["group"] not in _RESERVED_GROUPS:
+            groups.setdefault(mcp["group"], []).append(
+                definition.fully_qualified_name or definition.name
+            )
 
     return {group: sorted(sources) for group, sources in sorted(groups.items())}
+
+
+def extension_groups_in(function_groups) -> list:
+    """The groups of a server's function groups that are not built-in ones.
+
+    Args:
+        function_groups: The groups a server serves.
+
+    Returns:
+        list: Those that are extension groups, in the order given.
+    """
+    return [
+        group for group in function_groups
+        if group not in general.SUPPORTED_FUNCTION_GROUPS
+    ]
 
 
 def check_group_name(group) -> str:
@@ -343,8 +358,9 @@ def check_group_name(group) -> str:
 def _plain(value):
     """A function's result as JSON values: what a tool can return.
 
-    Shell results (a ``run_sql`` result) become their rows, as objects;
-    datetimes and decimals their text; anything else unknown its ``str``.
+    A shell result (of ``run_sql``) becomes the rows of its result set, as
+    ``db.execute_sql`` returns them; datetimes and decimals become their
+    text, anything else unknown its ``str``.
     """
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
@@ -356,12 +372,12 @@ def _plain(value):
         return value.isoformat()
     if isinstance(value, decimal.Decimal):
         return str(value)
-    if hasattr(value, "fetch_all") and hasattr(value, "get_column_names"):
-        columns = list(value.get_column_names())
-        return [
-            {column: _plain(row[index]) for index, column in enumerate(columns)}
-            for row in value.fetch_all()
-        ]
+    if hasattr(value, "fetch_all") and hasattr(value, "get_columns"):
+        # Read as db.execute_sql reads a result set: the same labels and the
+        # same text for binary, date and time values
+        from mcp_plugin.lib import db_functions
+
+        return db_functions._read_result_set(value)["rows"]
     if hasattr(value, "keys") and hasattr(value, "__getitem__"):
         # The shell's own Dict
         return {str(key): _plain(value[key]) for key in value.keys()}
@@ -372,17 +388,20 @@ def _plain(value):
     return str(value)
 
 
-def _make_tool_function(tool, run):
+def _make_tool_function(tool, description, run):
     """Builds the function the SDK registers: the tool's published signature.
 
-    The SDK builds a tool's schema from its function's signature and type
-    hints, and calls it with keyword arguments. So the function is written
-    out, every published parameter keyword-only - the order of required and
-    optional ones then does not matter - and ``ctx`` typed as the SDK's
-    Context so the SDK fills it in.
+    The SDK builds a tool's schema from its function's signature and calls it
+    with keyword arguments, so the function takes ``**arguments`` and states
+    the published parameters in its ``__signature__``, as
+    :func:`mcp_plugin.lib.tool_registrar.register_with_gui_argument` does:
+    every one keyword-only, so the order of required and optional ones does
+    not matter, after ``ctx``, typed as the SDK's Context so the SDK fills it
+    in.
 
     Args:
         tool (ExtensionTool): The tool.
+        description (str): Its description.
         run: ``async run(ctx, arguments)``, called with the published
             arguments as a dict.
 
@@ -391,32 +410,25 @@ def _make_tool_function(tool, run):
     """
     from mcp.server.mcpserver import Context
 
-    namespace = {"_Context": Context, "_run": run}
-    declared = []
-    for index, (name, annotation, default) in enumerate(tool.parameters):
-        namespace[f"_type{index}"] = annotation
-        if default is inspect.Parameter.empty:
-            declared.append(f"{name}: _type{index}")
-        else:
-            namespace[f"_default{index}"] = default
-            declared.append(f"{name}: _type{index} = _default{index}")
+    async def function(ctx: Context, **arguments):
+        return await run(ctx, arguments)
 
-    function_name = f"{tool.group}__{tool.name}"
-    parameters = ", ".join([f"{CONTEXT_PARAMETER}: _Context", *(["*"] if declared else []), *declared])
-    collected = ", ".join(f"{name!r}: {name}" for name, _a, _d in tool.parameters)
-    source = (
-        f"async def {function_name}({parameters}):\n"
-        f"    return await _run({CONTEXT_PARAMETER}, {{{collected}}})\n"
-    )
-    exec(source, namespace)  # noqa: S102 - names checked: identifiers only
-
-    function = namespace[function_name]
-    function.__doc__ = tool.description()
+    function.__name__ = function.__qualname__ = f"{tool.group}__{tool.name}"
+    function.__doc__ = description
+    function.__signature__ = inspect.Signature([
+        inspect.Parameter(CONTEXT_PARAMETER, inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                          annotation=Context),
+        *(
+            inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY,
+                              annotation=annotation, default=default)
+            for name, annotation, default in tool.parameters
+        ),
+    ])
 
     return function
 
 
-def register_extension_tools(server, groups, function_groups=()) -> bool:
+def register_extension_tools(server, function_groups) -> bool:
     """Registers the tools of the served extension groups.
 
     A tool is left out, with a line in the log saying why, when its group is
@@ -427,22 +439,20 @@ def register_extension_tools(server, groups, function_groups=()) -> bool:
 
     Args:
         server: The MCPServer.
-        groups: The extension groups to serve.
-        function_groups: Every group the server serves, the db group among
-            them or not.
+        function_groups: Every group the server serves: the extension groups
+            among them are served, and the db group decides about the tools
+            that work on a connection.
 
     Returns:
         bool: Whether a tool that starts tasks was registered, so the task
         tools are needed.
     """
-    import anyio.to_thread
     from mcp.types import ToolAnnotations
 
-    from mcp_plugin.lib import db_functions, tasks
     from mcp_plugin.lib.tool_registrar import tool_registrar
 
     register = tool_registrar(server)
-    groups = set(groups)
+    groups = set(extension_groups_in(function_groups))
     serves_db = general.FUNCTION_GROUP_DB in function_groups
     registered = {}
     starts_tasks = False
@@ -477,9 +487,7 @@ def register_extension_tools(server, groups, function_groups=()) -> bool:
                 f"at {MAX_DESCRIPTION_LENGTH}"
             )
 
-        function = _make_tool_function(
-            tool, _runner(tool, anyio.to_thread, db_functions, tasks)
-        )
+        function = _make_tool_function(tool, description, _runner(tool))
         annotations = None
         if tool.mcp["readOnly"] or tool.mcp["destructive"]:
             annotations = ToolAnnotations(
@@ -496,9 +504,19 @@ def register_extension_tools(server, groups, function_groups=()) -> bool:
     return starts_tasks
 
 
-def _runner(tool, to_thread, db_functions, tasks):
+def _call(tool, arguments, session=None):
+    """Calls a tool's function, with the session where it takes one."""
+    if session is not None:
+        arguments = {**arguments, SESSION_PARAMETER: session}
+
+    return _plain(tool.definition.function(**arguments))
+
+
+def _runner(tool):
     """Returns ``async run(ctx, arguments)``, which carries out a call."""
-    function = tool.definition.function
+    import anyio.to_thread
+
+    from mcp_plugin.lib import db_functions
 
     async def run(ctx, published):
         # Awaited before any session is taken: asking the user to trust a
@@ -510,31 +528,31 @@ def _runner(tool, to_thread, db_functions, tasks):
         connection_id, arguments = tool.arguments(published)
 
         if tool.mcp["task"]:
-            return await _start_task(
-                tool, function, client, connection_id, arguments,
-                to_thread, db_functions, tasks,
-            )
+            return await _start_task(tool, client, connection_id, arguments)
 
         def call():
             if not tool.takes_session:
-                return _plain(function(**arguments))
+                return _call(tool, arguments)
             with db_functions.use_session(connection_id, client) as session:
-                return _plain(function(**arguments, **{SESSION_PARAMETER: session}))
+                return _call(tool, arguments, session)
 
-        return await to_thread.run_sync(call)
+        return await anyio.to_thread.run_sync(call)
 
     return run
 
 
-async def _start_task(tool, function, client, connection_id, arguments,
-                      to_thread, db_functions, tasks):
+async def _start_task(tool, client, connection_id, arguments):
     """Starts a tool's function as a background task; returns its id."""
+    import anyio.to_thread
+
+    from mcp_plugin.lib import db_functions, tasks
+
     open_session = None
     if tool.takes_session:
         # Resolved before the task starts, so a wrong connection fails the
         # call itself. On a worker thread: dropping an expired connection
         # waits for it.
-        open_session = await to_thread.run_sync(
+        open_session = await anyio.to_thread.run_sync(
             db_functions.session_opener, connection_id, client
         )
 
@@ -547,14 +565,13 @@ async def _start_task(tool, function, client, connection_id, arguments,
     )
 
     def work(task):
-        kwargs = dict(arguments)
         if tool.takes_task:
-            kwargs[TASK_PARAMETER] = task
+            arguments[TASK_PARAMETER] = task
         if open_session is None:
-            return _plain(function(**kwargs))
+            return _call(tool, arguments)
         session = open_session()
         try:
-            return _plain(function(**kwargs, **{SESSION_PARAMETER: session}))
+            return _call(tool, arguments, session)
         finally:
             session.close()
 

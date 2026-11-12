@@ -231,6 +231,15 @@ def _restore_bytes(path, data) -> None:
         content.write(data)
 
 
+@pytest.fixture
+def saved_settings():
+    """Puts settings.json back exactly as the test found it, every setting."""
+    path = config.get_settings_file_path()
+    before = _read_bytes(path)
+    yield
+    _restore_bytes(path, before)
+
+
 def _generic_oauth_secrets() -> set:
     """Returns the OAuth secrets in the generic group: client secrets and keys."""
     return {

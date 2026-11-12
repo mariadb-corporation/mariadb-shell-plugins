@@ -1506,7 +1506,7 @@ def set_extension_groups(groups) -> list:
     """Persists the extension groups served by default; empty clears them.
 
     Args:
-        groups: The group names, as a list or a comma-separated string.
+        groups (list): The group names.
 
     Returns:
         list: The groups stored, each once, in the order given.
@@ -1516,12 +1516,8 @@ def set_extension_groups(groups) -> list:
     """
     from mcp_plugin.lib import extension_functions
 
-    if isinstance(groups, str):
-        groups = groups.split(",")
     stored = []
-    for group in groups or []:
-        if not str(group).strip():
-            continue
+    for group in groups:
         try:
             group = extension_functions.check_group_name(group)
         except ValueError as e:

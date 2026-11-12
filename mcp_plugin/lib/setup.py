@@ -212,10 +212,7 @@ def _extension_groups_menu_entries() -> list:
     Only where a loaded plugin offers one, or the setting names one: on a
     machine without such a plugin the entry would choose among nothing.
     """
-    # Imported here: it reads the shell's plugin registry.
-    from mcp_plugin.lib import extension_functions
-
-    if not extension_functions.available_groups() and not config.get_extension_groups():
+    if not setup_cli.extension_group_rows():
         return []
 
     return [("Switch an extension group on or off", _toggle_extension_group)]
@@ -223,23 +220,16 @@ def _extension_groups_menu_entries() -> list:
 
 def _toggle_extension_group() -> None:
     """Prompts for an extension group, and switches whether it is served by default."""
-    from mcp_plugin.lib import extension_functions
-
-    available = extension_functions.available_groups()
-    served = config.get_extension_groups()
-    groups = sorted(set(available) | set(served))
-    labels = [
-        f"{group} ({'on' if group in served else 'off'}): "
-        + (", ".join(available.get(group, [])) or "no loaded plugin offers it")
-        for group in groups
-    ]
+    rows = setup_cli.extension_group_rows()
     index = prompts.select_or_cancel(
-        "Select the extension group to switch on or off", labels
+        "Select the extension group to switch on or off",
+        [f"{group} ({'on' if on else 'off'}): {offered}" for group, on, offered in rows],
     )
     if index < 0:
         return
 
-    group = groups[index]
+    group = rows[index][0]
+    served = config.get_extension_groups()
     if group in served:
         served.remove(group)
         state = "no longer served"
