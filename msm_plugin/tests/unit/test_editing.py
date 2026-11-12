@@ -57,6 +57,11 @@ needs_outline_objects = pytest.mark.skipif(
     EDIT_LSP is None or not lsp.edits_take_outline_objects(EDIT_LSP),
     reason="no mariadb-lsp binary whose edits take the outline's objects back (lsp-server #48)",
 )
+# msm refuses to add an object with a binary that cannot take its placement
+needs_placement = pytest.mark.skipif(
+    EDIT_LSP is None or not lsp.places_statements(EDIT_LSP),
+    reason="no mariadb-lsp binary that takes msm's placement of new objects (lsp-server #49)",
+)
 
 
 def needs_edit_ops(*ops):
@@ -877,6 +882,7 @@ def foreign_keys(column, what: str = "CONSTRAINT_NAME") -> list:
 
 
 @needs_edit_lsp
+@needs_placement
 def test_structural_edits_reach_a_deployed_schema_through_the_next_release(deployed):
     path, column = deployed
     result = editing.edit_schema(path, STRUCTURAL_EDITS, base_hash(path), lsp_path=EDIT_LSP)
@@ -932,6 +938,7 @@ def test_structural_edits_reach_a_deployed_schema_through_the_next_release(deplo
 
 
 @needs_edit_lsp
+@needs_placement
 def test_added_views_and_routines_can_be_created_again(tmp_path):
     path = real_project(tmp_path)
     editing.edit_schema(path, [
@@ -948,6 +955,7 @@ def test_added_views_and_routines_can_be_created_again(tmp_path):
 
 @needs_edit_ops("add_sequence", "rename_sequence", "drop_sequence", "add_trigger",
                 "rename_trigger", "drop_trigger", "add_event", "rename_event", "drop_event")
+@needs_placement
 def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
     path, column = deployed
 
@@ -1030,6 +1038,7 @@ def test_sequences_triggers_and_events_reach_a_deployed_schema(deployed):
 
 
 @needs_edit_lsp
+@needs_placement
 def test_a_first_view_goes_into_section_150(tmp_path):
     path = real_project(tmp_path)
     editing.edit_schema(path, [
@@ -1042,6 +1051,7 @@ def test_a_first_view_goes_into_section_150(tmp_path):
 
 
 @needs_edit_lsp
+@needs_placement
 def test_the_template_examples_go_with_a_sections_first_statement(tmp_path):
     from msm_plugin.lib.management import create_schema_project_folder
 
@@ -1074,6 +1084,7 @@ def test_the_template_examples_go_with_a_sections_first_statement(tmp_path):
 
 
 @needs_edit_lsp
+@needs_placement
 def test_a_first_procedure_keeps_its_delimiters_and_deploys(tmp_path, sandbox_session):
     """Section 150's example goes with its DELIMITER pair; the procedure the
     edit adds brings its own, so the script still runs."""
