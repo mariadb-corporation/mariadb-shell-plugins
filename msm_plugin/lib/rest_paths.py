@@ -29,14 +29,19 @@ _QUOTES = ("`", "'", '"')
 def path_key(path: str) -> str:
     """A REST path as the server compares it: unquoted, case ignored, and a
     service's developers (`mike,anna@/notes`) in order, as the shell sorts
-    them."""
-    if len(path) >= 2 and path[0] == path[-1] and path[0] in _QUOTES:
-        path = path[1:-1]
-    path = path.lower()
+    them, however they are spaced or quoted."""
+    path = _unquoted(path).lower()
     developers, at, rest = path.partition("@")
     if at and "/" not in developers:
-        return ",".join(sorted(developers.split(","))) + at + rest
+        names = (_unquoted(name.strip()) for name in developers.split(","))
+        return ",".join(sorted(names)) + at + rest
     return path
+
+
+def _unquoted(name: str) -> str:
+    if len(name) >= 2 and name[0] == name[-1] and name[0] in _QUOTES:
+        return name[1:-1]
+    return name
 
 
 def object_key(service: str, schema: str, rest_object: str) -> tuple:

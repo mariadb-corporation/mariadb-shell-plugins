@@ -276,6 +276,91 @@ def add_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
     )
 
 
+@plugin_function("msm.setRestStatements", shell=True, cli=True, web=True)
+def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
+    """Writes REST services, schemas and objects into MSM Section 180 of a schema project
+
+    Each statement is one CREATE REST SERVICE, SCHEMA, VIEW, PROCEDURE or FUNCTION; a schema
+    names its service (ON SERVICE /svc), an object its service and schema (ON SERVICE /svc
+    SCHEMA /schema). msm decides where each goes and writes it as CREATE OR REPLACE, as the
+    section runs on every deployment: an item the section creates already is replaced where
+    it stands (its later ALTERs go, but those that only link or unlink auth apps), a new one
+    goes after the statements of its service or schema, in the file they are in. The result
+    is checked with the MariaDB SQL language server's binary mariadb-lsp: nothing but the
+    items given may change. The schema snapshot is made again. Everything is written, or
+    nothing.
+
+    On the command line give the statements as a JSON file with --statementsFile.
+
+    Args:
+        statements (list): The CREATE statements, one item each; a new schema before its
+            objects.
+        base_hash (str): The source_hash of the schema snapshot the caller knows, as for
+            msm.editSchema.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        statements_file (str): A JSON file holding the statements, instead of statements.
+        replaces (dict): {kind: "object", service, schema, object}: the REST object the
+            statement renames. Its statements go, and the renamed one takes its place.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        What msm.editSchema returns (rows, files, migration, migration_file, notes), and
+        statements: for each one written its kind, service, schema, object, file, line (1-based)
+        and whether it replaced one.
+    """
+    statements = _json_argument(statements, kwargs, "statements", "statements")
+    if base_hash is None:
+        raise ValueError("No base_hash given: the source_hash of the snapshot the caller knows.")
+    if hasattr(statements, "__iter__") and not isinstance(statements, str):
+        statements = list(statements)
+    replaces = kwargs.get("replaces")
+    return lib.rest_editing.set_rest_statements(
+        _project(kwargs), statements, base_hash,
+        replaces=dict(replaces) if replaces is not None else None,
+        lsp_path=kwargs.get("lsp_path"),
+    )
+
+
+@plugin_function("msm.dropRest", shell=True, cli=True, web=True)
+def drop_rest(kind: str, service: str, base_hash: str, **kwargs) -> dict:
+    """Removes a REST service, schema or object from MSM Section 180 of a schema project
+
+    Every statement of it and of what is on it goes, with the comments right above each; a USE
+    REST SERVICE s SCHEMA p of a dropped schema keeps the service in use. No DROP is written,
+    as the next release's update script drops what the release no longer defines (Section 280).
+    The result is checked with mariadb-lsp: nothing but the item may change. The schema
+    snapshot is made again. Everything is written, or nothing.
+
+    Args:
+        kind (str): service, schema or object.
+        service (str): The service's path as Section 180 writes it, e.g. /svc or mike,anna@/svc.
+        base_hash (str): The source_hash of the schema snapshot the caller knows, as for
+            msm.editSchema.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema (str): The REST schema's path, for a schema or an object.
+        object (str): The REST object's path, for an object.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        What msm.editSchema returns (rows, files, migration, migration_file, notes), and
+        removed: the file and line (1-based, before the change) of each statement removed or
+        changed. A note says where the section only names the item: the item itself stays.
+    """
+    return lib.rest_editing.drop_rest(
+        _project(kwargs), kind, service, base_hash,
+        schema=kwargs.get("schema"), rest_object=kwargs.get("object"),
+        lsp_path=kwargs.get("lsp_path"),
+    )
+
+
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)
 def remove_schema_diagram(name: str, **kwargs) -> list:
     """Removes a diagram from a schema project

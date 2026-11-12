@@ -852,6 +852,109 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
+    @tool(name="msm.set_rest_statements")
+    async def set_rest_statements(
+        ctx: Context,
+        statements: list[str],
+        base_hash: str,
+        replaces: Optional[dict] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Writes REST services, schemas and objects into MSM Section 180 of a schema project.
+
+        Use this, not msm.set_section_sql_content, to add or change a REST
+        service, schema or object: msm decides where each statement goes and
+        in what form. Each statement is one CREATE REST SERVICE, SCHEMA, VIEW,
+        PROCEDURE or FUNCTION; a schema names its service (ON SERVICE /svc),
+        an object its service and schema (ON SERVICE /svc SCHEMA /schema). It
+        is written as CREATE OR REPLACE, as the section runs on every
+        deployment (IF NOT EXISTS is refused). An item the section creates
+        already is replaced where it stands (its later ALTERs go, but those
+        that only link or unlink auth apps); a new one goes after the
+        statements of its service or schema. The result is checked: nothing
+        but the items given may change. The snapshot is made again.
+        Everything is written, or nothing.
+
+        Args:
+            statements: The CREATE statements, one item each; a new schema
+                before its objects.
+            base_hash: The source_hash of the snapshot the caller knows (as
+                for msm.edit_schema).
+            replaces: {kind: "object", service, schema, object}: the REST
+                object the one statement renames; its statements go, and the
+                renamed one takes its place. A service or schema cannot be
+                renamed this way.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.edit_schema returns (rows, files, migration,
+            migration_file, notes), and statements: [{kind, service, schema,
+            object, file, line (1-based), replaced}].
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.set_rest_statements,
+            statements,
+            base_hash,
+            **_kwargs(replaces=replaces, lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
+
+    @tool(name="msm.drop_rest")
+    async def drop_rest(
+        ctx: Context,
+        kind: str,
+        service: str,
+        base_hash: str,
+        schema: Optional[str] = None,
+        object: Optional[str] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Removes a REST service, schema or object from MSM Section 180 of a schema project.
+
+        Every statement of it and of what is on it goes, with the comments
+        right above each; a `USE REST SERVICE s SCHEMA p` of a dropped schema
+        keeps the service in use. No DROP is written: the next release's
+        update script drops what the release no longer defines. The result
+        is checked: nothing but the item may change. The snapshot is made
+        again. Everything is written, or nothing.
+
+        Args:
+            kind: service, schema or object.
+            service: The service's path as Section 180 writes it (/svc,
+                mike,anna@/svc).
+            base_hash: The source_hash of the snapshot the caller knows (as
+                for msm.edit_schema).
+            schema: The REST schema's path, for a schema or an object.
+            object: The REST object's path, for an object.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.edit_schema returns (rows, files, migration,
+            migration_file, notes; a note says where Section 180 only names
+            the item, which then stays), and removed: [{file, line (1-based,
+            before the change)}].
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.drop_rest,
+            kind,
+            service,
+            base_hash,
+            **_kwargs(schema=schema, object=object, lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
+
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(
         ctx: Context,

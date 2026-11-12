@@ -72,6 +72,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   around `run_sync`. `lsp_path` is only `mcp setup --lspPath` (`config.get_lsp_path()`);
   without it msm searches itself (shell folder, PATH, ~/.local/bin), so no `--version`
   probe on the event loop. Tests: the "schema diagrams" block of `test_msm.py`.
+- **REST definition tools:** `msm.set_rest_statements(statements, base_hash, replaces?)`
+  and `msm.drop_rest(kind, service, base_hash, schema?, object?)` wrap
+  `msm_plugin.modeling.set_rest_statements` / `drop_rest` through `_in_project` with
+  `lsp_path`, rows returned with pictures elided like `msm.edit_schema`. msm decides
+  where each statement goes in Section 180 (see msm_plugin's PROJECT_CONTEXT, "Changing
+  the REST definition"), so agents use these, not `msm.set_section_sql_content`, for
+  REST items. They need a mariadb-lsp whose outline has `rest_statements`; the test
+  (`test_rest_items_are_set_and_dropped_through_the_tools`) patches such a binary
+  (`MSM_TEST_LSP`, else the one msm finds) into `config.get_lsp_path` and is skipped
+  without one.
 - **MCP access per project (user):** every entry carries `mcpAccess`
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and

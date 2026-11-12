@@ -43,7 +43,7 @@ written puts every file back.
 import json
 import os
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, source, statements
 from msm_plugin.lib import sections as sections_lib
@@ -115,24 +115,37 @@ def edit_spans(text: str, edits: list) -> list:
     Raises:
         ValueError: For a position the text lacks, or edits that overlap.
     """
-    line_starts = [0] + [match.end() for match in re.finditer("\n", text)]
-    # By position only, and stable: inserts at one position keep the order
-    # the server gave them in, as LSP has it.
-    spans = sorted(
-        (
+    starts = line_starts(text)
+    return checked_spans(
+        [
             (
-                _offset(text, line_starts, edit["range"]["start"]),
-                _offset(text, line_starts, edit["range"]["end"]),
+                _offset(text, starts, edit["range"]["start"]),
+                _offset(text, starts, edit["range"]["end"]),
                 edit["new_text"],
             )
             for edit in edits
-        ),
-        key=lambda span: span[:2],
+        ],
+        "The language server's text edits overlap.",
     )
+
+
+def line_starts(text: str) -> list:
+    """The index in text where each line starts, for _offset."""
+    return [0] + [match.end() for match in re.finditer("\n", text)]
+
+
+def checked_spans(spans: list, overlap: str) -> list:
+    """(start, end, new_text) spans in order, refused with the message
+    overlap where two overlap.
+
+    By position only, and stable: inserts at one position keep the order
+    they were given in, as LSP has it.
+    """
+    spans = sorted(spans, key=lambda span: span[:2])
     at = 0
     for start, end, _ in spans:
         if start < at or end < start:
-            raise ValueError("The language server's text edits overlap.")
+            raise ValueError(overlap)
         at = end
     return spans
 
@@ -498,6 +511,94 @@ def _edited_sections(project, starts: list, includes: set) -> set:
     }
 
 
+def check_base_hash(project, base_hash: str) -> None:
+    """Refuses a change made against another snapshot than the project's.
+
+    Checked against the snapshot the client could read, not the script's
+    hash: a release moves the version of Section 910, which the snapshot
+    does not follow until it is made again.
+
+    Raises:
+        StaleSchemaError: Where the project has no snapshot, or another one.
+    """
+    snapshot = modeling._schema_row(modeling._rows(project))
+    stored = snapshot["document"].get("source_hash") if snapshot else None
+    if stored is None:
+        raise StaleSchemaError(
+            "The project has no schema snapshot yet: make it with "
+            "msm.updateSchemaDefinition, read the diagrams and redo the edits."
+        )
+    if base_hash != stored:
+        raise StaleSchemaError(
+            "The schema changed since the snapshot the edits were made against "
+            f"(`{base_hash}`, now `{stored}`): read the diagrams again and redo them."
+        )
+
+
+def write_texts(
+    project, texts: dict, lsp_path: str = None, outline: dict = None,
+    follow_rows: Callable[[list], None] = None, check: Callable = None,
+) -> tuple:
+    """Writes new texts of a project's files and makes the snapshot again:
+    everything, or nothing.
+
+    Args:
+        project: The project the texts were worked out from.
+        texts: {path: (old, new)}; the development script's old text is
+            the completed one (project.script), not the file.
+        lsp_path: The mariadb-lsp binary or its folder.
+        outline: The binary's outline of the files as they will be written
+            (Section 160 blanked, as modeling._outline_input gives it); None
+            has the binary run.
+        follow_rows: Changes the diagrams VIEW's rows before the snapshot
+            is put in them (diagrams following renamed objects).
+        check: Called with the project as written, before the snapshot is
+            made; returns the outline to make it from, or None. An exception
+            puts every file back.
+
+    Returns:
+        (the rows of the diagrams VIEW afterwards, the files written, the
+        outline the snapshot was made from: the one given or check's, else
+        None).
+    """
+    # The files as they are on disk, to put back.
+    originals = {path: sections_lib.read_if_exists(path) for path in texts}
+    originals[project.dev_file] = sections_lib.read_if_exists(project.dev_file)
+    originals[_diagrams_breakout_path(project)] = sections_lib.read_if_exists(
+        _diagrams_breakout_path(project)
+    )
+    for path in project.files:
+        originals.setdefault(path, sections_lib.read_if_exists(path))
+
+    written, touched = [], []
+    try:
+        for path, (old, new) in texts.items():
+            touched.append(path)
+            if sections_lib.write_if_changed(path, new, old):
+                written.append(path)
+        project = modeling._Project.load(project.path)
+        if check is not None:
+            outline = check(project)
+        rows = modeling._rows(project)
+        if follow_rows is not None:
+            follow_rows(rows)
+        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, outline)
+        # _write may write the script and the VIEW's breakout file.
+        touched += [path for path in originals if path not in touched]
+        written += [path for path in modeling._write(project, rows) if path not in written]
+    except BaseException:
+        for path in touched:
+            old = originals.get(path)
+            if old is None:
+                if os.path.exists(path):
+                    os.remove(path)
+            elif sections_lib.read_if_exists(path) != old:
+                with open(path, "w") as f:
+                    f.write(old)
+        raise
+    return rows, written, outline
+
+
 def _check_request(edits) -> None:
     if not isinstance(edits, list) or not edits:
         raise ValueError("No edits given: pass a list of edits, each with its `op`.")
@@ -534,25 +635,8 @@ def edit_schema(
     """
     _check_request(edits)
     project = modeling._Project.load(schema_project_path)
-    # Against the snapshot the client could read, not the script's hash: a
-    # release moves the version of Section 910, which the snapshot does not
-    # follow until it is made again. The binary refuses names that went.
-    snapshot = next(
-        (row["document"] for row in modeling._rows(project)
-         if row["format"] == diagrams.SCHEMA_FORMAT),
-        {},
-    )
-    stored = snapshot.get("source_hash")
-    if stored is None:
-        raise StaleSchemaError(
-            "The project has no schema snapshot yet: make it with "
-            "msm.updateSchemaDefinition, read the diagrams and redo the edits."
-        )
-    if base_hash != stored:
-        raise StaleSchemaError(
-            "The schema changed since the snapshot the edits were made against "
-            f"(`{base_hash}`, now `{stored}`): read the diagrams again and redo them."
-        )
+    # The binary refuses names that went.
+    check_base_hash(project, base_hash)
 
     binary = lsp.require_lsp(lsp_path)
     supported = lsp.edit_ops(binary)
@@ -640,46 +724,16 @@ def edit_schema(
     if new_settings is not None:
         texts[settings_path] = (old_settings, new_settings)
 
-    # The files as they are on disk, to put back: the development script's
-    # old text above is the completed one (sections msm adds), not the file.
-    originals = {path: old if path == settings_path else sections_lib.read_if_exists(path)
-                 for path, (old, _) in texts.items()}
-    originals[project.dev_file] = sections_lib.read_if_exists(project.dev_file)
-    originals[_diagrams_breakout_path(project)] = sections_lib.read_if_exists(
-        _diagrams_breakout_path(project)
-    )
-    for path in project.files:
-        originals.setdefault(path, sections_lib.read_if_exists(path))
-
-    written, touched = [], []
-    try:
-        for path, (old, new) in texts.items():
-            touched.append(path)
-            if sections_lib.write_if_changed(path, new, old):
-                written.append(path)
-        project = modeling._Project.load(schema_project_path)
-        rows = modeling._rows(project)
+    def follow_renames(rows):
         for row in rows:
             if modeling._is_diagram(row):
                 for edit in edits:
                     rename_in_diagram(row["document"], edit)
-        # The binary's outline of the texts it edited is the outline of the
-        # files as now written (Section 160 blanked as in the request); an
-        # older answer without it has the binary run again.
-        _, rows, _ = modeling._replace_snapshot(project, rows, lsp_path, outline)
-        # _write may write the script and the VIEW's breakout file.
-        touched += [path for path in originals if path not in touched]
-        written += [path for path in modeling._write(project, rows) if path not in written]
-    except BaseException:
-        for path in touched:
-            old = originals.get(path)
-            if old is None:
-                if os.path.exists(path):
-                    os.remove(path)
-            elif sections_lib.read_if_exists(path) != old:
-                with open(path, "w") as f:
-                    f.write(old)
-        raise
+
+    # The binary's outline of the texts it edited is the outline of the
+    # files as written (Section 160 blanked as in the request); an older
+    # answer without it has the binary run again.
+    rows, written, _ = write_texts(project, texts, lsp_path, outline, follow_renames)
 
     return {
         "rows": rows,

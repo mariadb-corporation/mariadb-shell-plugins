@@ -141,7 +141,7 @@ def definition(outlined: dict, sql: Optional[str] = None) -> tuple:
         path}}}}}}, warnings)
     """
     services, warnings = {}, []
-    line_starts = [0] + [m.end() for m in re.finditer("\n", sql)] if sql else None
+    line_starts = editing.line_starts(sql) if sql else None
     for note in outlined.get("notes", []):
         if note.get("kind") in _UNRESOLVED_NOTES:
             warnings.append(_line(note) + str(note.get("message", "")))
