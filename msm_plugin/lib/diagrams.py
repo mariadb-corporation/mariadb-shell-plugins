@@ -612,7 +612,10 @@ def is_upright(figure: dict) -> bool:
 def footprint(figure: dict) -> tuple:
     """The (width, height) a figure covers on the page: an upright card
     covers its depth."""
-    width, height = figure.get("width", 0), figure.get("height", 0)
+    width, height = (
+        value if is_number(value) else 0
+        for value in (figure.get("width"), figure.get("height"))
+    )
     if is_upright(figure):
         depth = figure.get("depth")
         height = depth if is_number(depth) else UPRIGHT_DEPTH

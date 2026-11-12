@@ -895,26 +895,24 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         elif placed:
             staying.append(figure)
 
+    def extent(left, top, size):
+        return (left, top, left + size[0], top + size[1])
+
     # What stays, in diagram coordinates.
     boxes = []
     for figure in staying:
         layer = layer_of(figure)
         left = figure["left"] + (layer.get("left", 0) if layer else 0)
         top = figure["top"] + (layer.get("top", 0) if layer else 0)
-        width, height = diagrams.footprint(figure)
-        boxes.append((left, top, left + width, top + height))
+        boxes.append(extent(left, top, diagrams.footprint(figure)))
     for layer in layers.values():
         if all(diagrams.is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
-            boxes.append(
-                (layer["left"], layer["top"], layer["left"] + layer["width"],
-                 layer["top"] + layer["height"])
-            )
+            boxes.append(extent(layer["left"], layer["top"], (layer["width"], layer["height"])))
 
     if moving:
         sizes = {}
         for figure, objects in moving:
             _size_figure(figure, objects)
-            # Laid out by what it covers: an upright card its depth
             sizes[figure["id"]] = diagrams.footprint(figure)
 
         ids = set(sizes)
@@ -933,10 +931,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
             left, top = positions[figure["id"]]
             figure["left"] = float(origin_left + left)
             figure["top"] = float(origin_top + top)
-            width, height = sizes[figure["id"]]
-            boxes.append(
-                (figure["left"], figure["top"], figure["left"] + width, figure["top"] + height)
-            )
+            boxes.append(extent(figure["left"], figure["top"], sizes[figure["id"]]))
 
     if boxes:
         right = max(box[2] for box in boxes) + layout.MARGIN
