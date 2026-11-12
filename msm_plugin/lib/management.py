@@ -1595,6 +1595,24 @@ def prepare_release(
             f"The file {schema_version_file_path} already exists. Please explicitly allow to replace existing files."
         )
 
+    # The release the update script goes from; None where it has none
+    previous_version = (
+        "%d.%d.%d" % tuple(last_released_version) if last_released_version is not None else None
+    )
+    if previous_version == version:
+        previous_version = None
+
+    # The REST endpoints the previous release's Section 180 created and this
+    # one's no longer does, for the update script's Section 280. Worked out
+    # among the refusals: it may need a newer mariadb-lsp.
+    from msm_plugin.lib import rest_removal
+
+    rest_removals = None
+    if previous_version is not None:
+        rest_removals = rest_removal.release_removals_of_project(
+            schema_project_path, schema_file_name, previous_version, lsp_path=lsp_path
+        )
+
     # The release is a change applied to the project, after the refusals
     # above: they leave the development files as they are.
     if update_copyright_years(schema_project_path):
@@ -1675,43 +1693,45 @@ def prepare_release(
     files_for_release.append(schema_version_file_path)
 
     # Check if update script is needed and if so, write it out
-    if last_released_version is not None:
-        last_released_version_str = "%d.%d.%d" % tuple(last_released_version)
-        if last_released_version_str != version:
-            schema_update_file_path = os.path.join(
-                schema_project_path,
-                "releases",
-                "updates",
-                f"{schema_file_name}_{last_released_version_str}_to_{version}.sql",
-            )
-            copy_template_file_and_substitute(
-                source_file_path=os.path.join(
-                    template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"
+    if previous_version is not None:
+        schema_update_file_path = os.path.join(
+            schema_project_path,
+            "releases",
+            "updates",
+            f"{schema_file_name}_{previous_version}_to_{version}.sql",
+        )
+        copy_template_file_and_substitute(
+            source_file_path=os.path.join(
+                template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"
+            ),
+            target_file_path=schema_update_file_path,
+            substitutions={
+                "license": get_license_text(project_settings=project_settings),
+                "schema_name": schema_name,
+                "schema_identifier": get_schema_identifier(schema_name),
+                "version_from": previous_version,
+                "version_to": version,
+                "version_comma_str": ", ".join(
+                    str(number)
+                    for number in lib.core.convert_version_str_to_list(version)
                 ),
-                target_file_path=schema_update_file_path,
-                substitutions={
-                    "license": get_license_text(project_settings=project_settings),
-                    "schema_name": schema_name,
-                    "schema_identifier": get_schema_identifier(schema_name),
-                    "version_from": last_released_version_str,
-                    "version_to": version,
-                    "version_comma_str": ", ".join(
-                        str(number)
-                        for number in lib.core.convert_version_str_to_list(version)
-                    ),
-                },
-            )
-            files_for_release.append(schema_update_file_path)
+            },
+        )
+        files_for_release.append(schema_update_file_path)
 
-            # The changes msm.editSchema kept for this release go into the
-            # update script's sections, and the pending script starts over.
-            from msm_plugin.lib import editing
+        # The changes msm.editSchema kept for this release go into the
+        # update script's sections with the REST removals, and the pending
+        # script starts over.
+        from msm_plugin.lib import editing
 
-            pending_path = editing.move_pending_update(
-                schema_project_path, project_settings, schema_update_file_path
-            )
-            if pending_path:
-                files_for_release.append(pending_path)
+        pending_path = editing.move_pending_update(
+            schema_project_path,
+            project_settings,
+            schema_update_file_path,
+            bodies={rest_removal.REST_REMOVALS_SECTION_ID: rest_removals},
+        )
+        if pending_path:
+            files_for_release.append(pending_path)
 
     # Update the version of the development schema file store in section
     # MSM Section 910: Database Schema Version
@@ -1726,14 +1746,24 @@ def prepare_release(
 
 @changes_project
 def generate_deployment_script(
-    schema_project_path: str, version: str, overwrite_existing: bool = False
+    schema_project_path: str,
+    version: str,
+    overwrite_existing: bool = False,
+    lsp_path: str = None,
 ) -> str:
     """Generate the deployment script for a release
+
+    The REST endpoints the update scripts remove (their Section 280) are
+    dropped before the version's Section 180 creates its REST definition; a
+    drop of what the version defines again is commented out, so it keeps its
+    id. Telling which needs the MariaDB SQL language server's binary,
+    mariadb-lsp, where both sections have a statement.
 
     Args:
         schema_project_path: The path to the schema project folder.
         version: The version to generate the deployment script for.
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
+        lsp_path: The mariadb-lsp binary or its folder, instead of searching.
 
     Returns:
         The file name path of the generated script
@@ -1810,6 +1840,18 @@ def generate_deployment_script(
     if len(released_versions) == 1:
         shutil.copyfile(version_file_path, deployment_file_path)
         return deployment_file_path
+
+    # An update script's REST removals keep what this version defines again
+    from msm_plugin.lib import rest_removal
+
+    rest_removal.keep_redefined(
+        [update["sections"] for update in updatable_versions_sections.values()],
+        target_version_sections.get(rest_removal.REST_DEFINITION_SECTION_ID, {}).get(
+            "sql_content"
+        ),
+        version,
+        lsp_path=lsp_path,
+    )
 
     # Prepare the schema version template file
     template_folder = os.path.join(Path(__file__).parent.parent, "templates")

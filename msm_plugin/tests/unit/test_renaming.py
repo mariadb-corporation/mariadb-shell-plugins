@@ -33,19 +33,10 @@ import pytest
 from msm_plugin import management as msm
 from msm_plugin.lib import core, lsp, management, modeling, projects, renaming
 from msm_plugin.lib.management import create_schema_project_folder
+from msm_plugin.tests.unit import helpers
 
 
-def _find_rename_lsp():
-    given = os.environ.get("MSM_TEST_LSP")
-    candidates = [given] if given else lsp._candidates(None)
-    for candidate in candidates:
-        binary = lsp.find_lsp(candidate)
-        if binary is not None and renaming.RENAME_OP in lsp.edit_ops(binary):
-            return binary
-    return None
-
-
-LSP = _find_rename_lsp()
+LSP = helpers.find_test_lsp(lambda binary: renaming.RENAME_OP in lsp.edit_ops(binary))
 needs_rename_lsp = pytest.mark.skipif(
     LSP is None, reason="no mariadb-lsp binary with the edit op rename_schema"
 )

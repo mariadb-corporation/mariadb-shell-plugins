@@ -113,6 +113,23 @@ ALTER TABLE `my_table`
 
 
 -- #############################################################################
+-- MSM Section 280: Removal of REST Endpoints
+-- -----------------------------------------------------------------------------
+-- The DROP ... IF EXISTS of every REST service, schema and object, and the
+-- REMOVE AUTH APP ... IF EXISTS of every auth app link, that the previous
+-- version's Section 180 created and this version's no longer does. msm fills
+-- it when the release is prepared; it can be edited. Every deployment of this
+-- or a later version runs this section, a fresh install too, before Section
+-- 180 creates the deployed version's REST definition; a statement that drops
+-- what that version defines again is commented out there, so its endpoints
+-- keep their ids. If there are no changes required, this section can be
+-- skipped.
+-- #############################################################################
+
+-- Drop the removed REST endpoints here.
+
+
+-- #############################################################################
 -- MSM Section 290: Removal of Update Helpers
 -- -----------------------------------------------------------------------------
 -- Removal of optional helper PROCEDUREs and FUNCTIONs that are called during

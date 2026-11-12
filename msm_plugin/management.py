@@ -423,6 +423,9 @@ def prepare_release(**kwargs) -> list[str]:
         lsp_path (str): The MariaDB SQL language server's binary, mariadb-lsp, or its folder.
             By default it is looked for next to the shell, on the PATH and in ~/.local/bin.
             A release makes the schema snapshot of its diagrams again and fails without it.
+            It also works out the update script's Section 280: a DROP ... IF EXISTS of every
+            REST service, schema and object, and a REMOVE AUTH APP ... IF EXISTS of every auth
+            app link, the previous release's Section 180 created and this one's no longer does.
 
     Returns:
         The list of generated files
@@ -610,6 +613,10 @@ def generate_deployment_script(**kwargs) -> str:
         schema_project_path (str): The path to the schema project.
         version (str): The new version to create the deployment script for.
         overwrite_existing (bool): Whether existing files should be overwritten. Defaults to False.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin. It is needed where an update script
+            removes REST endpoints (its Section 280) and the version has a Section 180: a
+            removal of what the version defines again is commented out, so it keeps its id.
 
     Returns:
         The file name of the development script
@@ -642,6 +649,7 @@ def generate_deployment_script(**kwargs) -> str:
         schema_project_path=schema_project_path,
         version=version,
         overwrite_existing=overwrite_existing,
+        lsp_path=kwargs.get("lsp_path"),
     )
 
     if lib.core.get_interactive_default():
