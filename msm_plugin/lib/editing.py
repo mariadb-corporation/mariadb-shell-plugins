@@ -819,7 +819,7 @@ _CHECK_OPTION = re.compile(r"\s+WITH\s+(?:CASCADED\s+|LOCAL\s+)?CHECK\s+OPTION\s
 
 
 def get_object_templates() -> dict:
-    """msm's templates of the objects add_schema_object adds.
+    """msm's templates of the objects a client adds with set_schema_statements.
 
     Returns:
         {templates: {view, procedure, function, trigger, event, sequence:
@@ -838,28 +838,6 @@ def _object_name_problem(name) -> Optional[str]:
     if len(name) > 64 or name.endswith(" ") or "\0" in name or "`" in name:
         return f"`{name}` cannot be a name: at most 64 characters, no backtick, no NUL, no space at its end."
     return None
-
-
-def _filled_template(kind: str, name: str, template, table, schema: str) -> str:
-    """The template (msm's for None) filled; refused for a placeholder the
-    kind does not take, or one without a value."""
-    from string import Template
-
-    text = OBJECT_TEMPLATES[kind] if template is None else template
-    if not isinstance(text, str) or not text.strip():
-        raise ValueError(f"The template of a {kind} must be its CREATE statement.")
-    template_object = Template(text)
-    if not template_object.is_valid():
-        raise ValueError(f"The template of a {kind} has a $ that is no placeholder: write $$ for one.")
-    unknown = sorted(set(template_object.get_identifiers()) - set(OBJECT_PLACEHOLDERS[kind]))
-    if unknown:
-        raise ValueError(
-            f"The template of a {kind} uses the placeholder ${{{unknown[0]}}}; it takes "
-            + ", ".join(f"${{{p}}}" for p in OBJECT_PLACEHOLDERS[kind]) + "."
-        )
-    return template_object.substitute(
-        name=name, schema=schema, table=table
-    ).strip().rstrip(";").rstrip()
 
 
 STATEMENT_KINDS = ("table", "sequence", "view", "procedure", "function", "trigger", "event")
@@ -1012,22 +990,12 @@ def set_schema_statements(
             object, a table or sequence the project has, and what edit_schema
             refuses (a name taken, an unknown table).
     """
-    return _set_statements(schema_project_path, statements, base_hash, expect, lsp_path)
-
-
-def _set_statements(
-    schema_project_path: str, statements, base_hash: str, expect, lsp_path: str,
-    label: str = None, replace: bool = True,
-) -> dict:
-    """set_schema_statements; label names the statement in a message
-    (Statement n by default), and without replace an object the project
-    has is left to the add op to refuse."""
     if not isinstance(statements, list) or not statements:
         raise ValueError("No statements given: pass a list of CREATE statements.")
     expect = _check_expect(expect, len(statements))
 
     def where(index):
-        return label or f"Statement {index + 1}"
+        return f"Statement {index + 1}"
 
     project = modeling._Project.load(schema_project_path)
     rows = check_base_hash(project, base_hash)
@@ -1044,7 +1012,7 @@ def _set_statements(
     edits, entries = [], []
     for index, (kind, item) in enumerate(read):
         name = item.get("name")
-        existing = _snapshot_object(snapshot, kind, name) if replace else None
+        existing = _snapshot_object(snapshot, kind, name)
         object_type = _object_type(kind)
         # A replace never renames, not even the case: the project's spelling stays
         entry = {"kind": kind, "name": existing["name"] if existing else name,
@@ -1120,63 +1088,3 @@ def drop_schema_object(
     if object_type == "routine":
         edit["kind"] = kind
     return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
-
-
-def add_schema_object(
-    schema_project_path: str,
-    kind: str,
-    name: str,
-    base_hash: str,
-    template: str = None,
-    table: str = None,
-    lsp_path: str = None,
-) -> dict:
-    """Adds a view, procedure, function, trigger, event or sequence to a
-    project from a template: msm's (get_object_templates) or the caller's,
-    the CREATE statement a user would write, filled with string.Template.
-
-    The filled template is read by mariadb-lsp and added by edit_schema's
-    add_view, add_routine, add_trigger, add_event or add_sequence: where msm
-    keeps the kind (a sequence in Section 140 before the first table, the
-    others in Section 150), written to run again, into the section's
-    breakout file where it has one, kept for the next update script, the
-    snapshot made again.
-
-    Args:
-        schema_project_path: The project folder.
-        kind: view, procedure, function, trigger, event or sequence.
-        name: The new object's name.
-        base_hash: The source_hash of the snapshot the caller knows, as for
-            edit_schema.
-        template: The CREATE statement to fill; None for msm's.
-        table: A trigger's table.
-        lsp_path: The mariadb-lsp binary or its folder.
-
-    Returns:
-        edit_schema's result, and file and line (1-based) where the new
-        statement starts.
-
-    Raises:
-        ValueError: For an unknown kind, a bad name, a trigger without a
-            table, a placeholder the kind does not take, a template that is
-            not one CREATE of the kind, and what edit_schema refuses (a name
-            taken, an unknown table, a stale base_hash).
-    """
-    _check_kind_and_name(kind, name, OBJECT_TEMPLATES)
-    if kind == "trigger" and not table:
-        raise ValueError("A trigger needs its table.")
-    if kind == "trigger":
-        # Filled into the template's `${table}` as the name is
-        problem = _object_name_problem(table)
-        if problem:
-            raise ValueError(problem)
-    sql = _filled_template(
-        kind, name, template, table, management.get_schema_name(schema_project_path)
-    )
-    result = _set_statements(
-        schema_project_path, [sql], base_hash,
-        [{"kind": kind, "name": name, "table": table}], lsp_path,
-        label=f"The template of a {kind}", replace=False,
-    )
-    (entry,) = result.pop("statements")
-    return {**result, "file": entry["file"], "line": entry["line"]}
