@@ -361,6 +361,18 @@ def dropped_kind(sql: str) -> Optional[str]:
     return match.group("kind").upper() if match else None
 
 
+_DROP_IF_EXISTS_NAME = re.compile(rf"\s*IF\s+EXISTS\s+(?P<name>{_NAME})\s*$", re.IGNORECASE)
+
+
+def dropped_if_exists(sql: str) -> Optional[tuple]:
+    """(kind, name unquoted) of a DROP ... IF EXISTS of one object named
+    unqualified, as dropped_kind gives the kind; None for another statement."""
+    stripped = strip_statement(sql)
+    match = _DROP_ANY.match(stripped)
+    rest = match and _DROP_IF_EXISTS_NAME.match(stripped, match.end())
+    return (match.group("kind").upper(), _unquote(rest.group("name"))) if rest else None
+
+
 def object_kind(sql: str) -> Optional[str]:
     """What a statement of a development script is about, as its sections group them.
 
