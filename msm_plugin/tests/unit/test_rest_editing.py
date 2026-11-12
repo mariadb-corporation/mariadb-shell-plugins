@@ -106,7 +106,7 @@ def set_statements(path, *statements, **kwargs):
 
 
 def drop(path, kind, service, schema=None, rest_object=None):
-    return rest_editing.drop_rest(path, kind, service, base_hash(path), schema=schema,
+    return rest_editing.drop_rest_object(path, kind, service, base_hash(path), schema=schema,
                                   rest_object=rest_object, lsp_path=LSP)
 
 
@@ -306,7 +306,7 @@ def test_a_new_object_goes_into_the_breakout_file_its_schema_is_in(tmp_path):
 
 
 # -----------------------------------------------------------------------------
-# drop_rest
+# drop_rest_object
 
 
 def test_an_object_is_dropped_with_its_comments(project):

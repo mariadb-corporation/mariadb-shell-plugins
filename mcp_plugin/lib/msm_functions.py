@@ -905,8 +905,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
-    @tool(name="msm.drop_rest")
-    async def drop_rest(
+    @tool(name="msm.drop_rest_object")
+    async def drop_rest_object(
         ctx: Context,
         kind: str,
         service: str,
@@ -946,7 +946,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         result = await _in_project(
             ctx,
             schema_project_path,
-            msm_modeling.drop_rest,
+            msm_modeling.drop_rest_object,
             kind,
             service,
             base_hash,

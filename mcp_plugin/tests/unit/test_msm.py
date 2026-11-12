@@ -1197,11 +1197,12 @@ def test_rest_items_are_set_and_dropped_through_the_tools(
         assert "CREATE OR REPLACE REST VIEW /customer ON SERVICE /svc SCHEMA /shop" in f.read()
 
     base = result["rows"][0]["document"]["source_hash"]
-    result = _call(tools, "msm.drop_rest", "object", "/svc", base, schema="/shop",
+    result = _call(tools, "msm.drop_rest_object", "object", "/svc", base, schema="/shop",
                    object="/customer", schema_project_path=path)
     assert len(result["removed"]) == 1
     with open(script) as f:
         assert "REST VIEW /customer" not in f.read()
+
 
 
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(

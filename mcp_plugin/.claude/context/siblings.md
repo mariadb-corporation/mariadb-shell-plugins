@@ -73,8 +73,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   without it msm searches itself (shell folder, PATH, ~/.local/bin), so no `--version`
   probe on the event loop. Tests: the "schema diagrams" block of `test_msm.py`.
 - **REST definition tools:** `msm.set_rest_statements(statements, base_hash, replaces?)`
-  and `msm.drop_rest(kind, service, base_hash, schema?, object?)` wrap
-  `msm_plugin.modeling.set_rest_statements` / `drop_rest` through `_in_project` with
+  and `msm.drop_rest_object(kind, service, base_hash, schema?, object?)` wrap
+  `msm_plugin.modeling.set_rest_statements` / `drop_rest_object` through `_in_project` with
   `lsp_path`, rows returned with pictures elided like `msm.edit_schema`. msm decides
   where each statement goes in Section 180 (see msm_plugin's PROJECT_CONTEXT, "Changing
   the REST definition"), so agents use these, not `msm.set_section_sql_content`, for
