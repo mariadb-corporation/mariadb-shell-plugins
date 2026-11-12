@@ -344,8 +344,9 @@ def _build_schema_definition(
     # Expanded first, so every include is checked before the binary reads it.
     hash_value = _source_hash(project, hashed)
 
+    binary = lsp.find_lsp(lsp_path) if outline else lsp.require_lsp(lsp_path)
     if not outline:
-        outline = lsp.outline(lsp.require_lsp(lsp_path), script, project.development)
+        outline = lsp.outline(binary, script, project.development)
     files = [script_name] + [
         os.path.relpath(include["file"], project.development).replace(os.sep, "/")
         for include in outline.get("includes", [])
@@ -365,7 +366,10 @@ def _build_schema_definition(
         )
 
     schema_name = management.get_effective_schema_name(project.settings)
-    return diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
+    document = diagrams.schema_document_from_outline(outline, schema_name, files, hash_value)
+    # Whether its REST part tells what Section 180 creates (rest_objects)
+    document[diagrams.REST_OUTLINE_MEMBER] = binary is not None and lsp.outlines_rest(binary)
+    return document
 
 
 def build_schema_definition(schema_project_path: str, lsp_path: str = None) -> dict:
@@ -839,10 +843,6 @@ def _add_connections(diagram: dict, tables: dict, schema_name: str, taken: set) 
     return added
 
 
-def _is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def _size_figure(figure: dict, objects, grow: bool = False) -> None:
     """Gives a figure the size its card needs for what it shows (see
     diagrams.figure_objects): the width where it has none, the height
@@ -854,9 +854,9 @@ def _size_figure(figure: dict, objects, grow: bool = False) -> None:
         title, kind.rows(objects), kind.sections(objects, figure), figure
     )
     manual = figure.get("manualSizing") is True
-    if not _is_number(figure.get("width")) or (grow and not manual and figure["width"] < width):
+    if not diagrams.is_number(figure.get("width")) or (grow and not manual and figure["width"] < width):
         figure["width"] = width
-    if not (manual and _is_number(figure.get("height"))):
+    if not (manual and diagrams.is_number(figure.get("height"))):
         figure["height"] = height
 
 
@@ -888,7 +888,7 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
     moving = []  # (figure, what it shows)
     staying = []
     for figure in diagram["figures"]:
-        placed = _is_number(figure.get("left")) and _is_number(figure.get("top"))
+        placed = diagrams.is_number(figure.get("left")) and diagrams.is_number(figure.get("top"))
         objects = diagrams.figure_objects(figure, catalog)
         if objects is not None and layer_of(figure) is None and not (keep_placed and placed):
             moving.append((figure, objects))
@@ -901,9 +901,10 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         layer = layer_of(figure)
         left = figure["left"] + (layer.get("left", 0) if layer else 0)
         top = figure["top"] + (layer.get("top", 0) if layer else 0)
-        boxes.append((left, top, left + figure.get("width", 0), top + figure.get("height", 0)))
+        width, height = diagrams.footprint(figure)
+        boxes.append((left, top, left + width, top + height))
     for layer in layers.values():
-        if all(_is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
+        if all(diagrams.is_number(layer.get(key)) for key in ("left", "top", "width", "height")):
             boxes.append(
                 (layer["left"], layer["top"], layer["left"] + layer["width"],
                  layer["top"] + layer["height"])
@@ -940,8 +941,8 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         right = max(box[2] for box in boxes) + layout.MARGIN
         bottom = max(box[3] for box in boxes) + layout.MARGIN
         width, height = diagram.get("width"), diagram.get("height")
-        diagram["width"] = float(max(right, width if _is_number(width) else 0))
-        diagram["height"] = float(max(bottom, height if _is_number(height) else 0))
+        diagram["width"] = float(max(right, width if diagrams.is_number(width) else 0))
+        diagram["height"] = float(max(bottom, height if diagrams.is_number(height) else 0))
     return [diagrams.figure_object_name(figure) for figure, _ in moving]
 
 

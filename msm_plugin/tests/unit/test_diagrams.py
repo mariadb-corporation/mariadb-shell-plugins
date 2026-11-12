@@ -30,7 +30,7 @@ import re
 import pytest
 
 from msm_plugin.tests.unit import helpers
-from msm_plugin.lib import diagrams, lsp, management, modeling, sections, source
+from msm_plugin.lib import diagrams, layout, lsp, management, modeling, sections, source
 from msm_plugin.lib.management import create_schema_project_folder
 
 LSP = lsp.find_lsp()
@@ -398,6 +398,78 @@ def test_reconcile_keeps_views_routines_notes_and_images_the_schema_allows():
     assert not diagrams.reconcile_diagram(document, schema)
 
 
+def rest_figure(figure_id, service, schema, rest_object, **members):
+    return {
+        "id": figure_id, "type": diagrams.REST_OBJECT_FIGURE, "name": rest_object,
+        "restService": service, "restSchema": schema, "restObject": rest_object, **members,
+    }
+
+
+REST_PART = {"services": [{
+    "path": "mike,anna@/notes", "declared": True,
+    "schemas": [{"path": "/app", "declared": True, "objects": [{"kind": "view", "path": "/note"}]}],
+}]}
+
+
+def test_reconcile_keeps_the_rest_objects_section_180_creates():
+    schema = {"tables": [], "rest": REST_PART, diagrams.REST_OUTLINE_MEMBER: True}
+    document = diagram("D", tables=())
+    document["figures"] = [
+        # Paths compared as the server does: case ignored, quotes left out
+        rest_figure("kept", "MIKE,anna@/Notes", "`/app`", "/NOTE"),
+        rest_figure("gone", "mike,anna@/notes", "/app", "/gone"),
+        rest_figure("other service", "mike@/notes", "/app", "/note"),
+        # The shell sorts a service's developers
+        rest_figure("developers", "anna,mike@/notes", "/app", "/note"),
+    ]
+    assert diagrams.reconcile_diagram(document, schema)
+    assert [f["id"] for f in document["figures"]] == ["kept", "developers"]
+    assert not diagrams.reconcile_diagram(document, schema)
+
+    # Without Section 180's REST, none is left
+    assert diagrams.reconcile_diagram(
+        document, {"tables": [], "rest": {}, diagrams.REST_OUTLINE_MEMBER: True}
+    )
+    assert document["figures"] == []
+
+
+def test_reconcile_keeps_rest_figures_where_the_snapshot_cannot_tell():
+    # A snapshot of a mariadb-lsp without the REST outline features, one with
+    # no REST part at all, or one made before msm recorded which it was
+    document = diagram("D", tables=())
+    document["figures"] = [rest_figure("r", "/notes", "/app", "/note")]
+    for schema in (
+        {"tables": [], "rest": REST_PART, diagrams.REST_OUTLINE_MEMBER: False},
+        {"tables": [], "rest": {}, diagrams.REST_OUTLINE_MEMBER: False},
+        {"tables": [], "rest": {"services": [{"path": "/notes", "schemas": None}]}},
+    ):
+        assert not diagrams.reconcile_diagram(document, schema)
+        assert [f["id"] for f in document["figures"]] == ["r"]
+    # A REST part with null lists
+    assert diagrams.rest_objects(
+        {"rest": {"services": [{"path": "/n", "schemas": None}]}, diagrams.REST_OUTLINE_MEMBER: True}
+    ) == set()
+
+
+def test_a_rest_figure_covers_its_depth_and_stays_in_place():
+    standing = rest_figure("r", "/s", "/a", "/o", left=40, top=40, width=220, height=160,
+                           depth=24)
+    assert diagrams.footprint(standing) == (220, 24)
+    assert diagrams.footprint({**standing, "depth": None}) == (220, diagrams.REST_OBJECT_DEPTH)
+    assert diagrams.footprint({"width": 100, "height": 80}) == (100, 80)
+
+    document = diagram("D", tables=())
+    document["figures"] = [
+        dict(standing),
+        {"id": "t", "type": "TableFigure", "name": "t", "table": "t"},
+    ]
+    catalog = diagrams.catalog({"tables": [{"name": "t", "columns": []}]})
+    assert modeling._place(document, catalog, keep_placed=False) == ["t"]
+    assert document["figures"][0] == standing
+    # Below the card's footprint, not below how high it stands
+    assert document["figures"][1]["top"] == 40 + 24 + layout.ROW_GAP
+
+
 def test_reconcile_keeps_the_events_and_sequences_the_schema_has():
     schema = {"tables": [], "events": [{"name": "nightly"}], "sequences": [{"name": "S"}]}
     document = diagram("D", tables=())
@@ -713,6 +785,38 @@ def test_dropped_tables_leave_the_diagrams(project):
     assert result["changed_diagrams"] == ["Main"]
     figures = modeling.get_diagram_rows(project, "Main")[1]["document"]["figures"]
     assert [figure["table"] for figure in figures] == ["customer"]
+
+
+@needs_lsp
+def test_a_rest_object_section_180_drops_leaves_the_diagrams(project):
+    if not lsp.outlines_rest(LSP):
+        pytest.skip("a mariadb-lsp without the REST outline features")
+    dev_file = management.get_schema_development_file_path(project)
+    rest = (
+        "CREATE OR REPLACE REST SERVICE /notes;\n"
+        "CREATE OR REPLACE REST SCHEMA /app ON SERVICE /notes FROM `shop`;\n"
+        "CREATE OR REPLACE REST VIEW /customer ON SERVICE /notes SCHEMA /app AS `customer`;\n"
+    )
+    orders = "CREATE OR REPLACE REST VIEW /orders ON SERVICE /notes SCHEMA /app AS `orders`;\n"
+    management.set_section_sql_content("180", "\n" + rest + orders, dev_file)
+    document = diagram(tables=("customer",))
+    document["figures"] += [
+        rest_figure("c", "/notes", "/app", "/customer", left=0, top=300, width=220,
+                    height=160, depth=20),
+        rest_figure("o", "/notes", "/app", "/orders", left=240, top=300, width=220,
+                    height=160, depth=20),
+    ]
+    modeling.set_diagram(project, document)
+    kept = modeling.get_diagram_rows(project, "Main")[-1]["document"]["figures"]
+    assert [figure["id"] for figure in kept][-2:] == ["c", "o"]
+    assert kept[-1] == document["figures"][-1]  # kept as it was sent
+
+    management.set_section_sql_content("180", "\n" + rest, dev_file)
+    result = modeling.update_schema_definition(project)
+    assert modeling.read_diagram_rows(project)[0]["document"][diagrams.REST_OUTLINE_MEMBER]
+    assert result["changed_diagrams"] == ["Main"]
+    figures = modeling.get_diagram_rows(project, "Main")[-1]["document"]["figures"]
+    assert [figure["id"] for figure in figures if figure["type"] == "RestObjectFigure"] == ["c"]
 
 
 @needs_lsp

@@ -44,6 +44,8 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from msm_plugin.lib import rest_paths
+
 DIAGRAMS_VIEW = "msm_schema_diagrams"
 SCHEMA_FORMAT = "msm-schema/1"
 DIAGRAM_FORMAT = "msm-diagram/1"
@@ -434,6 +436,13 @@ SEQUENCE_FIGURE = "SequenceFigure"
 # are, the schema has no say in them.
 NOTE_FIGURE = "NoteFigure"
 IMAGE_FIGURE = "ImageFigure"
+# A REST object Section 180 creates, keyed by restService, restSchema and
+# restObject (the paths as Section 180 writes them). Its card stands upright
+# on the page: `height` is how high it stands, `depth` how deep it covers
+# the page (REST_OBJECT_DEPTH where it is missing). The schema snapshot's
+# `rest` tells whether the object is still there.
+REST_OBJECT_FIGURE = "RestObjectFigure"
+REST_OBJECT_DEPTH = 20
 
 # The member of a table in catalog() listing its triggers, for the card.
 TABLE_TRIGGERS = "triggers"
@@ -581,6 +590,52 @@ def figure_kind(figure: dict) -> Optional[FigureKind]:
     """The kind of a figure that shows snapshot objects; None for a note, an
     image or a type msm does not know."""
     return FIGURE_KINDS.get(figure_type(figure))
+
+
+def is_number(value) -> bool:
+    """Whether a document's value is a number (a bool is none)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def footprint(figure: dict) -> tuple:
+    """The (width, height) a figure covers on the page: a REST object
+    figure's card covers its depth, as it stands upright."""
+    width, height = figure.get("width", 0), figure.get("height", 0)
+    if figure_type(figure) == REST_OBJECT_FIGURE:
+        depth = figure.get("depth")
+        height = depth if is_number(depth) else REST_OBJECT_DEPTH
+    return width, height
+
+
+# The snapshot's member saying whether the mariadb-lsp that made it outlines
+# the REST definition as msm needs (lsp.outlines_rest)
+REST_OUTLINE_MEMBER = "rest_outline"
+
+
+def rest_objects(schema_document: dict) -> Optional[set]:
+    """The rest_paths.object_key()s of the REST objects the snapshot's Section
+    180 creates; None where its REST part cannot tell: a snapshot made
+    without a mariadb-lsp that outlines REST as msm needs (REST_OUTLINE_MEMBER
+    not true), whose REST part can be empty or put an object under the wrong
+    schema."""
+    if schema_document.get(REST_OUTLINE_MEMBER) is not True:
+        return None
+    return {
+        rest_paths.object_key(
+            service.get("path") or "", schema.get("path") or "", item.get("path") or ""
+        )
+        for service in (schema_document.get("rest") or {}).get("services") or []
+        for schema in service.get("schemas") or []
+        for item in schema.get("objects") or []
+    }
+
+
+def figure_rest_object_key(figure: dict) -> tuple:
+    """The rest_paths.object_key() of the REST object a figure shows."""
+    return rest_paths.object_key(*(
+        value if isinstance(value := figure.get(member), str) else ""
+        for member in ("restService", "restSchema", "restObject")
+    ))
 
 
 def is_table_figure(figure: dict) -> bool:
@@ -758,9 +813,10 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
 
     A table figure shows a table, a view figure a view, a sequence figure a
     sequence, and a group figure lists routines or events, losing the ones
-    the schema no longer has and going with the last of them. Figures of
-    other types are left alone. New objects are not added: placing them is
-    up to the user or the layout.
+    the schema no longer has and going with the last of them. A REST object
+    figure goes with its object, where the snapshot's REST part can tell
+    (rest_objects). Figures of other types are left alone. New objects are
+    not added: placing them is up to the user or the layout.
 
     A connection draws a foreign key of the table of its start figure (the
     child) that references the table of its end figure (the parent). It is
@@ -786,7 +842,12 @@ def reconcile_diagram(diagram: dict, schema_document: dict) -> bool:
 
     changed = False
     kept_figures = []
+    rest = rest_objects(schema_document)
     for figure in figures:
+        if figure_type(figure) == REST_OBJECT_FIGURE:
+            if rest is None or figure_rest_object_key(figure) in rest:
+                kept_figures.append(figure)
+            continue
         kind = figure_kind(figure)
         if kind is not None and kind.many:
             shown = [

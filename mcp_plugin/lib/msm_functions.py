@@ -702,7 +702,12 @@ def register_msm_tools(server, function_groups=()) -> None:
                 "SequenceFigure" sequence, "RoutineGroupFigure" routines
                 (names), "EventGroupFigure" events (names), "NoteFigure" text,
                 "ImageFigure" image (a data URL; left out, the figure keeps
-                the picture stored under its id).
+                the picture stored under its id), "RestObjectFigure"
+                restService, restSchema, restObject (the paths as Section
+                180 writes them) and depth (its upright card covers width x
+                depth of the page; height is how high it stands). A REST
+                object figure is never laid out, and is dropped once Section
+                180 no longer creates its object.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
