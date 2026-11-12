@@ -437,12 +437,15 @@ SEQUENCE_FIGURE = "SequenceFigure"
 NOTE_FIGURE = "NoteFigure"
 IMAGE_FIGURE = "ImageFigure"
 # A REST object Section 180 creates, keyed by restService, restSchema and
-# restObject (the paths as Section 180 writes them). Its card stands upright
-# on the page: `height` is how high it stands, `depth` how deep it covers
-# the page (REST_OBJECT_DEPTH where it is missing). The schema snapshot's
+# restObject (the paths as Section 180 writes them). The schema snapshot's
 # `rest` tells whether the object is still there.
 REST_OBJECT_FIGURE = "RestObjectFigure"
-REST_OBJECT_DEPTH = 20
+# A card figure stands upright on the page where its `upright` is true, or
+# missing for a REST object figure; any other lies flat. An upright card
+# covers width x `depth` of the page (UPRIGHT_DEPTH where `depth` is
+# missing), and its `height` is how high it stands. Agreed with the VS Code
+# extension, which draws it.
+UPRIGHT_DEPTH = 20
 
 # The member of a table in catalog() listing its triggers, for the card.
 TABLE_TRIGGERS = "triggers"
@@ -597,13 +600,22 @@ def is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def is_upright(figure: dict) -> bool:
+    """Whether a figure's card stands upright on the page: its `upright`,
+    else its kind's default (a REST object stands, the others lie flat)."""
+    upright = figure.get("upright")
+    if isinstance(upright, bool):
+        return upright
+    return figure_type(figure) == REST_OBJECT_FIGURE
+
+
 def footprint(figure: dict) -> tuple:
-    """The (width, height) a figure covers on the page: a REST object
-    figure's card covers its depth, as it stands upright."""
+    """The (width, height) a figure covers on the page: an upright card
+    covers its depth."""
     width, height = figure.get("width", 0), figure.get("height", 0)
-    if figure_type(figure) == REST_OBJECT_FIGURE:
+    if is_upright(figure):
         depth = figure.get("depth")
-        height = depth if is_number(depth) else REST_OBJECT_DEPTH
+        height = depth if is_number(depth) else UPRIGHT_DEPTH
     return width, height
 
 

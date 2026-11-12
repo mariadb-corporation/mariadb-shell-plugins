@@ -704,10 +704,12 @@ def register_msm_tools(server, function_groups=()) -> None:
                 "ImageFigure" image (a data URL; left out, the figure keeps
                 the picture stored under its id), "RestObjectFigure"
                 restService, restSchema, restObject (the paths as Section
-                180 writes them) and depth (its upright card covers width x
-                depth of the page; height is how high it stands). A REST
-                object figure is never laid out, and is dropped once Section
-                180 no longer creates its object.
+                180 writes them); it is never laid out, and is dropped once
+                Section 180 no longer creates its object. Any card figure may
+                have upright (true: the card stands on the page, covering
+                width x depth of it, depth 20 by default, and height is how
+                high it stands; false: it lies flat, covering width x height).
+                Without it, a REST object figure stands and the others lie.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 

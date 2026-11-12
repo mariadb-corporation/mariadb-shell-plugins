@@ -455,7 +455,7 @@ def test_a_rest_figure_covers_its_depth_and_stays_in_place():
     standing = rest_figure("r", "/s", "/a", "/o", left=40, top=40, width=220, height=160,
                            depth=24)
     assert diagrams.footprint(standing) == (220, 24)
-    assert diagrams.footprint({**standing, "depth": None}) == (220, diagrams.REST_OBJECT_DEPTH)
+    assert diagrams.footprint({**standing, "depth": None}) == (220, diagrams.UPRIGHT_DEPTH)
     assert diagrams.footprint({"width": 100, "height": 80}) == (100, 80)
 
     document = diagram("D", tables=())
@@ -785,6 +785,44 @@ def test_dropped_tables_leave_the_diagrams(project):
     assert result["changed_diagrams"] == ["Main"]
     figures = modeling.get_diagram_rows(project, "Main")[1]["document"]["figures"]
     assert [figure["table"] for figure in figures] == ["customer"]
+
+
+def test_any_card_can_stand_or_lie():
+    table = {"type": "TableFigure", "width": 200, "height": 120}
+    rest = rest_figure("r", "/s", "/a", "/o", width=220, height=160)
+    # By kind where `upright` is missing: a REST object stands, a table lies
+    assert diagrams.footprint(table) == (200, 120)
+    assert diagrams.footprint(rest) == (220, diagrams.UPRIGHT_DEPTH)
+    # Either way round where it is set
+    assert diagrams.footprint({**table, "upright": True, "depth": 24}) == (200, 24)
+    assert diagrams.footprint({**rest, "upright": False}) == (220, 160)
+    assert diagrams.footprint({**table, "upright": "yes"}) == (200, 120)
+
+
+def test_an_upright_table_is_laid_out_by_its_footprint(monkeypatch):
+    document = diagram("D", tables=())
+    document["figures"] = [
+        {"id": "up", "type": "TableFigure", "name": "a", "table": "a", "upright": True},
+        {"id": "flat", "type": "TableFigure", "name": "b", "table": "b"},
+    ]
+    catalog = diagrams.catalog({"tables": [
+        {"name": "a", "columns": [{"name": "id", "type": "INT"}]},
+        {"name": "b", "columns": [{"name": "id", "type": "INT"}]},
+    ]})
+    seen = {}
+    real = layout.layout
+
+    def recording(nodes, sizes, edges):
+        seen.update(sizes)
+        return real(nodes, sizes, edges)
+
+    monkeypatch.setattr(layout, "layout", recording)
+    assert sorted(modeling._place(document, catalog, keep_placed=False)) == ["a", "b"]
+    up, flat = document["figures"]
+    # Sized as a card, laid out by what it covers
+    assert up["height"] == flat["height"] > diagrams.UPRIGHT_DEPTH
+    assert seen == {"up": (up["width"], diagrams.UPRIGHT_DEPTH),
+                    "flat": (flat["width"], flat["height"])}
 
 
 @needs_lsp

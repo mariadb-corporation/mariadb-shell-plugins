@@ -914,7 +914,8 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
         sizes = {}
         for figure, objects in moving:
             _size_figure(figure, objects)
-            sizes[figure["id"]] = (figure["width"], figure["height"])
+            # Laid out by what it covers: an upright card its depth
+            sizes[figure["id"]] = diagrams.footprint(figure)
 
         ids = set(sizes)
         edges = [
@@ -932,9 +933,9 @@ def _place(diagram: dict, catalog: dict, keep_placed: bool) -> list:
             left, top = positions[figure["id"]]
             figure["left"] = float(origin_left + left)
             figure["top"] = float(origin_top + top)
+            width, height = sizes[figure["id"]]
             boxes.append(
-                (figure["left"], figure["top"], figure["left"] + figure["width"],
-                 figure["top"] + figure["height"])
+                (figure["left"], figure["top"], figure["left"] + width, figure["top"] + height)
             )
 
     if boxes:
