@@ -300,7 +300,6 @@ Management (`msm`) plugin:
 | `msm.deploy_schema` | `deploy_schema` |
 | `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
 | `msm.get_object_templates` | `get_object_templates` (`msm_plugin/modeling.py`) |
-| `msm.add_schema_object` | `add_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.set_schema_statements` | `set_schema_statements` (`msm_plugin/modeling.py`) |
 | `msm.drop_schema_object` | `drop_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.set_rest_statements` | `set_rest_statements` (`msm_plugin/modeling.py`) |
