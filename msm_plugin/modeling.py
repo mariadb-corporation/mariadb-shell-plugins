@@ -204,6 +204,7 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
             set_primary_key, add_foreign_key, drop_foreign_key, add_view, drop_view,
             add_routine, drop_routine, with their members as the language server's
             docs/edit-format.md gives them (modify_column takes new_column, the whole column).
+            An add op gives no at or form: msm puts a new object next to those of its kind.
         base_hash (str): The source_hash of the schema snapshot the edits were made against. They
             are refused when the project's snapshot was made again since.
         **kwargs: Additional options.

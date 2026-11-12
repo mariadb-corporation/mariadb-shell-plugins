@@ -103,6 +103,30 @@ class Segment:
     indent: int = 0
 
 
+def line_starts(text: str) -> list:
+    """The index in text where each line starts, for position_offset."""
+    return [0] + [match.end() for match in re.finditer("\n", text)]
+
+
+def position_offset(text: str, starts: list, position: dict) -> int:
+    """The index in text of an LSP position (0-based line, UTF-16
+    character), starts being its line_starts."""
+    line, character = position["line"], position["character"]
+    if not 0 <= line < len(starts):
+        raise ValueError(f"The language server named line {line + 1}, which the file lacks.")
+    index = starts[line]
+    units = 0
+    while units < character and index < len(text) and text[index] != "\n":
+        units += 2 if ord(text[index]) > 0xFFFF else 1
+        index += 1
+    if units != character:
+        raise ValueError(
+            f"The language server named character {character} of line {line + 1}, "
+            "which the line lacks."
+        )
+    return index
+
+
 def get_source_slice_offset(content: str, bound: str, is_end: bool) -> int | None:
     """Returns the character offset a bound of a SOURCE slice stands for
 

@@ -45,7 +45,7 @@ import os
 import re
 from typing import Callable, Optional
 
-from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, source, statements
+from msm_plugin.lib import diagrams, lsp, management, modeling, online_alter, placement, source, statements
 from msm_plugin.lib import sections as sections_lib
 from msm_plugin.lib.project_changes import changes_project
 
@@ -90,22 +90,9 @@ class StaleSchemaError(ValueError):
 # Text edits
 
 
-def _offset(text: str, line_starts: list, position: dict) -> int:
-    """The index in text of an LSP position (0-based line, UTF-16 character)."""
-    line, character = position["line"], position["character"]
-    if not 0 <= line < len(line_starts):
-        raise ValueError(f"The language server named line {line + 1}, which the file lacks.")
-    index = line_starts[line]
-    units = 0
-    while units < character and index < len(text) and text[index] != "\n":
-        units += 2 if ord(text[index]) > 0xFFFF else 1
-        index += 1
-    if units != character:
-        raise ValueError(
-            f"The language server named character {character} of line {line + 1}, "
-            "which the line lacks."
-        )
-    return index
+# Positions in a text, kept here under their old names for their callers
+_offset = source.position_offset
+line_starts = source.line_starts
 
 
 def edit_spans(text: str, edits: list) -> list:
@@ -127,11 +114,6 @@ def edit_spans(text: str, edits: list) -> list:
         ],
         "The language server's text edits overlap.",
     )
-
-
-def line_starts(text: str) -> list:
-    """The index in text where each line starts, for _offset."""
-    return [0] + [match.end() for match in re.finditer("\n", text)]
 
 
 def checked_spans(spans: list, overlap: str) -> list:
@@ -639,7 +621,9 @@ def edit_schema(
 
     Args:
         schema_project_path: The project folder.
-        edits: The edits, each {op, ...} (lsp-server docs/edit-format.md).
+        edits: The edits, each {op, ...} (lsp-server docs/edit-format.md),
+            without `at` and `form`: msm says where a new object's
+            statement goes (lib/placement.py).
         base_hash: The source_hash of the snapshot the edits were made
             against; the edits are refused where the project's snapshot is
             another one, made again since.
@@ -655,7 +639,10 @@ def edit_schema(
 
     Raises:
         StaleSchemaError: Where the snapshot is no longer base_hash's.
-        ValueError: For a request the binary refuses, naming the edit.
+        LspError: For an add op where the binary cannot take msm's
+            placement (before lsp-server #49).
+        ValueError: For a request the binary refuses, naming the edit, and
+            for an edit that gives `at` or `form`.
     """
     _check_request(edits)
     project = modeling._Project.load(schema_project_path)
@@ -682,6 +669,8 @@ def _edit(project, edits: list, lsp_path: str = None) -> dict:
             + ", ".join(f"`{op}`" for op in unsupported)
             + f" yet; it does {', '.join(sorted(supported))}. A newer MariaDB Shell may."
         )
+    # Refused before anything is written, the copyright years included
+    placement.check_request(binary, edits)
     # After base_hash was checked: moving the years along gives the snapshot
     # the hash of the script with the new notices. Not undone where the edit
     # fails, as it is a change of its own.
@@ -689,7 +678,10 @@ def _edit(project, edits: list, lsp_path: str = None) -> dict:
         project = modeling._Project.load(schema_project_path)
     script, _ = modeling._outline_input(project)
     schema_name = management.get_effective_schema_name(project.settings)
-    request = {"format": lsp.EDIT_FORMAT, "schema": schema_name, "edits": edits}
+    # msm says where each new object's statement goes, from an outline of
+    # the script as sent (the years moved)
+    request = {"format": lsp.EDIT_FORMAT, "schema": schema_name,
+               "edits": placement.placed(project, binary, script, edits, schema_name)}
     # One ALTER TABLE per table where the binary can: each one is an online
     # ALTER TABLE of its own in a deployment, maybe a table copy of its own
     if lsp.merges_alters(binary):
@@ -957,7 +949,8 @@ def set_schema_statements(
     edit_schema: an object the project lacks is added (add_table,
     add_sequence, add_view, add_routine, add_trigger, add_event: a table or
     sequence in Section 140, the others in Section 150, written to run
-    again, into a breakout file where the section has one). A view,
+    again, next to the objects of its kind, in a breakout file too:
+    lib/placement.py). A view,
     routine, trigger or event the project has is replaced where it stands
     (replace_*), the form it is written in kept; one whose definition is
     the snapshot's already is left as it is. A table or sequence the
@@ -1033,7 +1026,12 @@ def set_schema_statements(
         op = "replace" if existing is not None else "add"
         edits.append({"op": f"{op}_{object_type}", object_type: item})
 
-    result = _edit(project, edits, lsp_path)
+    # Sent in the order the kinds run (a function before the view that
+    # calls it, a sequence before the table whose default takes from it),
+    # as adds at one place keep the request's order; statements of one kind
+    # keep theirs. The binary's indexes are taken back to the statements'.
+    order = sorted(range(len(edits)), key=lambda index: placement.run_rank(edits[index]["op"]))
+    result = _renumbered(_edit(project, [edits[index] for index in order], lsp_path), order)
     # A replace that changes nothing writes nothing, and the binary says so
     for note in result.get("notes", []):
         if note.get("kind") == "unchanged" and isinstance(note.get("edit"), int):
@@ -1044,6 +1042,16 @@ def set_schema_statements(
             project.development, snapshot, entry["kind"], entry["name"]
         )
     return {**result, "statements": entries}
+
+
+def _renumbered(result: dict, order: list) -> dict:
+    """edit_schema's result for edits sent in that order (order[sent] =
+    the index given), its notes' edit indexes the given ones."""
+    notes = [
+        {**note, "edit": order[note["edit"]]} if isinstance(note.get("edit"), int) else note
+        for note in result.get("notes", [])
+    ]
+    return {**result, "notes": notes}
 
 
 @changes_project

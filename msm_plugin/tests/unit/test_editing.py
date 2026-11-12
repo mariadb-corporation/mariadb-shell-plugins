@@ -1057,7 +1057,9 @@ def test_the_template_examples_go_with_a_sections_first_statement(tmp_path):
         "name": "t", "columns": [{"name": "id", "type": "INT"}]}}],
         base_hash(path), lsp_path=EDIT_LSP)
     tables, objects = bodies()
-    assert "CREATE TABLE `t`" in tables and "ToDo" not in tables and "my_table" not in tables
+    # Quoted as the statements around it are
+    assert re.search(r"CREATE TABLE `?t`? \(", tables), tables
+    assert "ToDo" not in tables and "my_table" not in tables
     assert "-- ToDo:" in objects  # no statement there yet
     # The snapshot is that of the script as written, without the example
     assert result["rows"][0]["document"] == fresh_snapshot(path)
@@ -1065,7 +1067,8 @@ def test_the_template_examples_go_with_a_sections_first_statement(tmp_path):
     result = editing.edit_schema(path, [{"op": "add_view", "view": {
         "name": "v", "definition": "SELECT `id` FROM `t`"}}], base_hash(path), lsp_path=EDIT_LSP)
     tables, objects = bodies()
-    assert "CREATE OR REPLACE VIEW `v`" in objects and "ToDo" not in objects
+    assert re.search(r"CREATE OR REPLACE VIEW `?v`? AS", objects), objects
+    assert "ToDo" not in objects
     assert "DELIMITER" not in objects
     assert result["rows"][0]["document"] == fresh_snapshot(path)
 
@@ -1090,8 +1093,11 @@ def test_a_first_procedure_keeps_its_delimiters_and_deploys(tmp_path, sandbox_se
     objects = management.get_file_sections(
         management.get_schema_development_file_path(path))["150"]["sql_content"]
     assert "ToDo" not in objects and objects.count("DELIMITER %%") == 1
-    assert objects.index("DELIMITER %%") < objects.index("CREATE PROCEDURE `count_t`") < (
-        objects.index("DELIMITER ;"))
+    # msm writes a first routine CREATE OR REPLACE; the binary quotes as the
+    # statements around it do
+    procedure = re.search(r"CREATE OR REPLACE PROCEDURE `?count_t`?", objects)
+    assert procedure is not None, objects
+    assert objects.index("DELIMITER %%") < procedure.start() < objects.index("DELIMITER ;")
 
     sandbox_session.run_sql(f"DROP SCHEMA IF EXISTS `{DEPLOYED_SCHEMA}`")
     try:
