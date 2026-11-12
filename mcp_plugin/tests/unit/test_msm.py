@@ -1211,8 +1211,10 @@ def test_rest_items_are_set_and_dropped_through_the_tools(
 
 
 def _schema_statements_lsp():
-    """A mariadb-lsp with the add_view and drop_view edit ops, or None."""
-    return _test_lsp(lambda binary: {"add_view", "drop_view"} <= msm_lsp.edit_ops(binary))
+    """A mariadb-lsp with the add_view and drop_view edit ops whose edits take the
+    outline's objects back (lsp-server #48), or None."""
+    return _test_lsp(lambda binary: {"add_view", "drop_view"} <= msm_lsp.edit_ops(binary)
+                     and msm_lsp.edits_take_outline_objects(binary))
 
 
 @pytest.mark.skipif(_schema_statements_lsp() is None,

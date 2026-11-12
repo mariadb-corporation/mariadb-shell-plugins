@@ -323,6 +323,33 @@ def outlines_view_reads(binary: str) -> bool:
     return _answers[key]
 
 
+def edits_take_outline_objects(binary: str) -> bool:
+    """Whether the binary's edit ops take objects as its outline writes
+    them (lsp-server #48): a table's indexes with both `columns` and
+    `key_parts`, a view's `definition` with its CHECK OPTION, and a
+    replace_* of an unchanged object answered with an `unchanged` note.
+    Asked once per build, by sending an outlined table with an index back
+    through add_table, which an older binary refuses."""
+    key = _answer_key(binary, ("edit-outline-objects",))
+    if key not in _answers:
+        try:
+            outlined = outline(binary, "CREATE TABLE t (id INT, KEY k (id));\n")
+            table = next(t for schema in outlined.get("schemas", []) for t in schema.get("tables", []))
+            table = {**table, "name": "u"}
+            with tempfile.TemporaryDirectory() as folder:
+                edit(binary, "CREATE TABLE t (id INT);\n", folder, {
+                    "format": EDIT_FORMAT, "schema": None,
+                    "edits": [{"op": "add_table", "table": table}],
+                })
+        except LspError:
+            _answers[key] = False
+        except (ValueError, OSError, StopIteration):
+            return False  # not kept: tried again next time
+        else:
+            _answers[key] = True
+    return _answers[key]
+
+
 def outline_features(binary: str) -> frozenset:
     """What `outline --features` lists (lsp-server #39); none for an older
     binary, which exits 2 on the option.
