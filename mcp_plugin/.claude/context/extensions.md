@@ -11,22 +11,32 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
 
 ## Architecture / key decisions
 
-- **Declared in the shell, not here** (user decision). mariadb-shell's
-  `registrar.py`: `plugin_function(..., mcp=None)` -> `FunctionData.mcp`, checked
-  and completed by `_mcp_definition` at load: keys `group` (required),
-  `name` (default `_python_name` of the FQN's last part), `readOnly`,
-  `destructive`, `task`, `gui` (bools), `paths` (named parameters, not
-  `session`, nor `task` in a task tool - as the server fills them in).
-  `mcp=True` is refused. Built-in group names are NOT checked there but by the
-  server, at start (the docs say so). A mistake fails the function's
-  registration like a docstring mistake does. Shell test:
-  `plugin_decorator_norecord.py`, the three `MCP` chunks.
+- **Declared in the shell, checked here** (user decisions: the declaration on
+  `@plugin_function`; then, after the simplify review, the rules moved here).
+  mariadb-shell's `registrar.py`: `plugin_function(..., mcp=None)` ->
+  `FunctionData.mcp`, stored AS GIVEN like `web=`; `_mcp_definition` only
+  refuses a non-dict (`mcp=True`). This plugin owns the meaning, so a new
+  option needs no shell release: `check_definition` (keys `group` required, not
+  a built-in group; `name` default `_snake_case` of the FQN's last part;
+  `readOnly`, `destructive`, `task`, `gui` bools; `paths` a list) and
+  `ExtensionTool._read_signature` (each path a PUBLISHED parameter - so not
+  `session`, nor `task` in a task tool). A broken definition is logged at every
+  server build (`server: the MCP tool of <FQN> is not served: <why>`) and left
+  out of `available_groups()`; a typo shows at server start, not plugin load
+  (the accepted trade-off). Shell test: `plugin_decorator_norecord.py`, the
+  `MCP` chunks (stored as given, MCP-only not in the shell, a non-dict).
+- **Task tools follow what was registered**: `tool_registrar`'s `tool(...,
+  starts_tasks=True)` marks the server (`tool_registrar.starts_tasks`), and
+  `build_mcp_server` adds `task.*` when one was; extension task tools pass
+  `starts_tasks=tool.mcp["task"]`. Replaced `general.TASK_FUNCTION_GROUPS` /
+  `serves_tasks` (see dba.md).
 - **Discovery** (`lib/extension_functions.py`): `registrar.get_registry()` read
   when a server is built; `getattr(definition, "mcp", None)` so an older shell
   reads as none. `_registry()` is the one seam the tests patch.
 - **Group names**: the user's choice, `mcp={"group": ...}`. A built-in group or
   `task` is never an extension group (`_RESERVED_GROUPS`): left out of
-  `available_groups()`, refused by `check_group_name`, logged at build.
+  `available_groups()`, refused by `check_group_name` (which
+  `check_definition` uses), logged at build.
 - **Switching on: all three ways** (user decision): `--functionGroups` names one
   for a run (an unknown name is an error listing the groups offered);
   `settings.json` `extensionGroups` is served when no groups are named
@@ -61,8 +71,7 @@ the tasks in [util.md](util.md) and [dba.md](dba.md).
 - **Tasks**: `tasks.create(group, name, tool_name, client, 4, {"tool",
   "connection_id"})`; `session_opener` resolved before the task starts (a wrong
   connection fails the call), a fresh session per task, closed in `finally`.
-  `register_extension_tools` returns whether a task tool was served, and
-  `build_mcp_server` then registers the `task.*` tools too.
+  Registered with `starts_tasks=True`, so the `task.*` tools come with it.
 - **Results** go through `_plain`: a run_sql result -> its rows exactly as
   `db.execute_sql` reads them (`db_functions._read_result_set`), the shell's
   Dict/List, dates (isoformat), Decimals (str), anything else `str`.

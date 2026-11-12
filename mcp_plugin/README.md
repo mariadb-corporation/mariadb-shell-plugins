@@ -797,10 +797,12 @@ column in it, so `sql.check` reports an error in a section where it is.
 ### Background tasks (`task`)
 
 The tools that start a background task - the `util` tools, `dba.create_vendor_object`,
-`dba.update_vendor_object` and `dba.delete_vendor_object`, and `msm.online_alter_table` -
-return its `task_id` at once. Three tools follow the
-tasks, whichever group started them. They are served with the `util` or the `dba` group,
-or with `msm` and `db` together, not as a group of their own.
+`dba.update_vendor_object` and `dba.delete_vendor_object`, `msm.online_alter_table`,
+`msm.import_live_schema`, and the task tools of
+[extension groups](#tools-of-other-shell-plugins-extension-groups) - return its
+`task_id` at once. Three tools follow the tasks, whichever group started them. They are
+served whenever one of those tools is, not as a group of their own: so not to an agent
+that only has the `dba` tools that read.
 
 | MCP tool | Description |
 | --- | --- |
@@ -896,7 +898,8 @@ one `options` object. Two parameters are filled in by the server rather than pub
 The other keys of `mcp`: `name` (default: the function name in snake_case), `readOnly`
 and `destructive` (the tool's annotations), `paths` (parameters holding file paths,
 checked against the allowed paths like the `msm` tools' paths) and `gui` (served with
-`--gui` only). The shell checks them when the plugin loads. A plugin's `mysqlsh.Error`
+`--gui` only). The server checks them when it starts: a tool whose definition has a
+mistake is not served, and the log says why. A plugin's `mysqlsh.Error`
 reaches the agent with its message, and a `run_sql()` result as its rows.
 
 **Installing a plugin gives agents no new tools.** An extension group is served only

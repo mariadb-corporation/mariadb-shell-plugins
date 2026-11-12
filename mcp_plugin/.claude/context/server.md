@@ -141,8 +141,8 @@ session machinery the db tools sit on is in
 
 - **dba group and task tools:** `general.FUNCTION_GROUP_DBA`; the
   `task.*` tools are registered once after the group loop when
-  `general.serves_tasks(groups)`: util or dba served, or msm and db together
-  (`msm.online_alter_table` starts tasks); a server-instructions rule against
+  `tool_registrar.starts_tasks(server)`: a tool registered with
+  `starts_tasks=True` (see dba.md); a server-instructions rule against
   asking for vendor API keys. See [dba.md](dba.md).
 
 ## Files that matter

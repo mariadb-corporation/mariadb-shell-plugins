@@ -164,9 +164,22 @@ def _function(mcp_server, name):
 # --- the shell's side: what the registry holds ---------------------------------
 
 
-def test_the_shell_checks_and_completes_the_definition():
+def test_the_shell_stores_the_definition_as_given():
     definition = entry(list_orders, "orders.listOrders", group="orders", readOnly=True)
-    assert definition.mcp == {
+    assert definition.mcp == {"group": "orders", "readOnly": True}
+    # a function that is not offered has none
+    plain = registrar.PluginRegistrar.FunctionData(refuse, fully_qualified_name="orders.refuse")
+    assert plain.mcp is None
+    # the shell checks its shape only
+    with pytest.raises(Exception, match="The mcp argument must be a dictionary"):
+        registrar.PluginRegistrar.FunctionData(
+            refuse, fully_qualified_name="orders.refuse", mcp=True
+        )
+
+
+def test_the_definition_is_checked_and_completed():
+    definition = entry(list_orders, "orders.listOrders", group="orders", readOnly=True)
+    assert extension_functions.check_definition(definition) == {
         "group": "orders",
         "name": "list_orders",
         "readOnly": True,
@@ -175,14 +188,23 @@ def test_the_shell_checks_and_completes_the_definition():
         "gui": False,
         "paths": [],
     }
-    # a function that is not offered has none
-    plain = registrar.PluginRegistrar.FunctionData(refuse, fully_qualified_name="orders.refuse")
-    assert plain.mcp is None
 
-    with pytest.raises(Exception, match="names 'file', which is not a parameter"):
-        entry(export_orders, "orders.export", group="orders", paths=["file"])
-    with pytest.raises(Exception, match="'group' must be lower case"):
-        entry(refuse, "orders.refuse", group="Orders")
+    refused = {
+        "no group": ({}, "names no group"),
+        "a bad group": ({"group": "Orders"}, "'Orders' is not an extension group name"),
+        "a built-in group": ({"group": "db"}, "'db' is a built-in function group"),
+        "a bad name": ({"group": "orders", "name": "list-orders"}, "'name' must be lower case"),
+        "an unknown option": (
+            {"group": "orders", "readonly": True},
+            "unknown mcp option\\(s\\) readonly; the options are group, name, readOnly",
+        ),
+        "a flag that is no bool": ({"group": "orders", "task": "yes"}, "'task' must be true or false"),
+        "paths as a string": ({"group": "orders", "paths": "target"}, "'paths' must be a list"),
+    }
+    for what, (mcp, message) in refused.items():
+        with pytest.raises(ValueError, match=message):
+            extension_functions.check_definition(entry(refuse, "orders.refuse", **mcp))
+            pytest.fail(f"{what} was accepted")
 
 
 def test_the_groups_the_plugins_offer(registry):
@@ -190,8 +212,9 @@ def test_the_groups_the_plugins_offer(registry):
         entry(list_orders, "orders.listOrders", group="orders"),
         entry(export_orders, "orders.exportOrders", group="orders"),
         entry(refuse, "files.refuse", group="files"),
-        # a built-in group is never an extension group
+        # a built-in group is never an extension group, nor a broken definition
         entry(refuse, "sneaky.refuse", group="db"),
+        entry(refuse, "broken.refuse", group="orders", readonly=True),
         registrar.PluginRegistrar.FunctionData(refuse, fully_qualified_name="x.refuse"),
     ]
 
@@ -277,10 +300,14 @@ def test_tools_that_cannot_be_served_are_left_out(registry, logged):
         entry(refuse, "other.refuse", group="orders", name="refuse"),
         entry(clashing, "orders.clashing", group="orders"),
         entry(refuse, "sneaky.refuse", group="db"),
+        entry(export_orders, "orders.exportOrders", group="orders", paths=["file"]),
     ]
     _, tools = _tools(["orders"])
 
     assert [name for name in tools if name.startswith("orders.")] == ["orders.refuse"]
+    assert any(
+        "orders.export_orders" in line and "'paths' names 'file'" in line for line in logged
+    )
     assert (
         "server: extension tool orders.refuse of other.refuse not served: "
         "orders.refuse already offers orders.refuse"
@@ -289,10 +316,10 @@ def test_tools_that_cannot_be_served_are_left_out(registry, logged):
         "orders.clashing" in line and "connection_id is a name the tool cannot publish" in line
         for line in logged
     )
-    # a tool of a built-in group is never served, and the log says why
+    # a definition that breaks a rule is never served, and the log says why
     assert (
-        "server: extension tool db.refuse of sneaky.refuse not served: db is a "
-        "built-in function group"
+        "server: the MCP tool of sneaky.refuse is not served: 'db' is a "
+        "built-in function group, not an extension group."
     ) in logged
 
 
@@ -447,6 +474,20 @@ def test_a_task_tool_runs_as_a_background_task(registry, monkeypatch, no_tasks):
         assert task.snapshot()["result"] == {"checksum": "checksum", "rounds": 3}
         # its own session, closed when it ends
         assert stubbed.opened[-1].closed
+
+
+def test_the_task_tools_come_with_a_tool_that_starts_tasks(registry):
+    """Decided by what was registered, not by which groups are named."""
+    assert "task.get" not in _tools(["db"])[1]
+    # util registers nothing without db, so nothing starts a task
+    assert "task.get" not in _tools(["util"])[1]
+    assert "task.get" in _tools(["db", "util"])[1]
+
+    registry[:] = [entry(refuse, "orders.refuse", group="orders")]
+    assert "task.get" not in _tools(["orders"])[1]
+    registry[:] = [entry(checksum, "orders.checksum", group="orders", task=True)]
+    assert "task.get" not in _tools(["orders"])[1]  # needs db, so not served
+    assert "task.get" in _tools(["db", "orders"])[1]
 
 
 def test_a_task_tool_can_be_cancelled(registry, monkeypatch, no_tasks):

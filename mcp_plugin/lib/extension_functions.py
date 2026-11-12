@@ -23,10 +23,12 @@ Any shell plugin can offer a function as an MCP tool where it defines it::
 
 The shell keeps every ``@plugin_function`` in its registry
 (``mysqlsh.plugin_manager.registrar.get_registry()``), with the ``mcp``
-definition checked and its defaults filled in. This module reads the
-registry when the server is built - every plugin is loaded by then - and
-registers each function of a served extension group as the tool
-``<group>.<name>``. The plugin imports neither this plugin nor the MCP SDK.
+definition as the plugin gave it: the shell only checks that it is a
+dictionary. This module reads the registry when the server is built - every
+plugin is loaded by then -, checks each definition and fills in its defaults
+(:func:`check_definition`), and registers each function of a served
+extension group as the tool ``<group>.<name>``. A definition that breaks a
+rule is logged and not served. The plugin imports neither this plugin nor the MCP SDK.
 
 What a tool is published with comes from the function's signature and its
 docstring, as the shell parsed it: the parameters, typed from their
@@ -81,8 +83,13 @@ OPTIONS_PARAMETER = "options"
 # How many tasks of one extension group a client may have running at once
 MAX_RUNNING_EXTENSION_TASKS = 4
 
-# A group or tool name, as the shell checks it
+# A group or tool name
 _NAME = re.compile("^[a-z][a-z0-9_]*$")
+
+# The keys of a definition, mcp={...}: the flags are true or false, false by
+# default
+_FLAGS = ("readOnly", "destructive", "task", "gui")
+_KEYS = ("group", "name", *_FLAGS, "paths")
 
 # The groups no extension may use: the built-in ones, and the task tools'
 _RESERVED_GROUPS = (*general.SUPPORTED_FUNCTION_GROUPS, "task")
@@ -124,9 +131,9 @@ class ExtensionTool:
         problem (str): Why the function cannot be a tool, or None.
     """
 
-    def __init__(self, definition):
+    def __init__(self, definition, mcp):
         self.definition = definition
-        self.mcp = definition.mcp
+        self.mcp = mcp
         self.group = self.mcp["group"]
         self.name = self.mcp["name"]
         self.tool_name = f"{self.group}.{self.name}"
@@ -148,7 +155,7 @@ class ExtensionTool:
     @property
     def source(self) -> str:
         """The function as the shell names it, e.g. ``orders.listOpen``."""
-        return self.definition.fully_qualified_name or self.definition.name
+        return _source(self.definition)
 
     def _read_signature(self) -> None:
         """Sorts the function's parameters into published and filled in."""
@@ -178,6 +185,14 @@ class ExtensionTool:
             published.append(
                 (name, self._annotation(name, parameter.default), parameter.default)
             )
+
+        named = {name for name, _annotation, _default in published}
+        for path in self.mcp["paths"]:
+            if path not in named:
+                raise ValueError(
+                    f"its mcp option 'paths' names {path!r}, which is not a "
+                    "parameter the tool publishes"
+                )
 
         if self.takes_session:
             published.insert(0, (CONNECTION_ID_PARAMETER, str, inspect.Parameter.empty))
@@ -282,12 +297,91 @@ def _registry() -> list:
     return list(registrar.get_registry())
 
 
-def extension_tools(groups=None) -> list:
-    """The functions the loaded plugins offer as MCP tools.
+def _snake_case(name) -> str:
+    """The snake_case form of a camelCase name, as the shell's Python names."""
+    return "_".join(part.lower() for part in re.split("([A-Z][a-z0-9_]*)", name) if part)
 
-    A shell without the mcp argument has no ``mcp`` attribute on its
-    entries, which reads as none offered. A tool of a built-in group, or a
-    second function of the same tool name, is still in the list: both are
+
+def check_definition(definition) -> dict:
+    """Checks a registry entry's mcp definition, and fills in its defaults.
+
+    The shell stores ``mcp=`` as the plugin gave it, as it does ``web=``:
+    what it means is this plugin's to say, so a new option needs no new
+    shell. A definition that breaks a rule here is reported when a server is
+    built, and its function not served.
+
+    Args:
+        definition: The shell's FunctionData, with an mcp definition.
+
+    Returns:
+        dict: Every key of _KEYS.
+
+    Raises:
+        ValueError: Saying what is wrong with the definition.
+    """
+    mcp = definition.mcp
+    if not isinstance(mcp, dict):
+        raise ValueError("its mcp argument is not a dictionary")
+
+    unknown = sorted(set(mcp) - set(_KEYS))
+    if unknown:
+        raise ValueError(
+            f"unknown mcp option(s) {', '.join(unknown)}; the options are "
+            f"{', '.join(_KEYS)}"
+        )
+
+    if "group" not in mcp:
+        raise ValueError("its mcp argument names no group, as mcp={'group': ...}")
+    checked = {
+        "group": check_group_name(mcp["group"]),
+        "name": mcp.get("name", _snake_case(definition.name)),
+    }
+    if not isinstance(checked["name"], str) or not _NAME.match(checked["name"]):
+        raise ValueError(
+            f"its mcp option 'name' must be lower case letters, digits and "
+            f"underscores, starting with a letter, not {checked['name']!r}"
+        )
+    for flag in _FLAGS:
+        value = mcp.get(flag, False)
+        if not isinstance(value, bool):
+            raise ValueError(f"its mcp option '{flag}' must be true or false, not {value!r}")
+        checked[flag] = value
+
+    paths = mcp.get("paths", [])
+    if not isinstance(paths, (list, tuple)) or not all(isinstance(p, str) for p in paths):
+        raise ValueError("its mcp option 'paths' must be a list of parameter names")
+    checked["paths"] = list(paths)
+
+    return checked
+
+
+def _offered():
+    """Each registry entry offering an MCP tool, checked.
+
+    Yields:
+        ``(definition, mcp, problem)``: the checked definition and None, or
+        None and what is wrong with it. A shell without the mcp argument has
+        no ``mcp`` attribute on its entries, which reads as none offered.
+    """
+    for definition in _registry():
+        if getattr(definition, "mcp", None) is None:
+            continue
+        try:
+            yield definition, check_definition(definition), None
+        except ValueError as e:
+            yield definition, None, str(e)
+
+
+def _source(definition) -> str:
+    """A registry entry's function as the shell names it."""
+    return definition.fully_qualified_name or definition.name
+
+
+def extension_tools(groups=None) -> list:
+    """The functions the loaded plugins offer as MCP tools, with a valid
+    definition (see :func:`check_definition`).
+
+    A second function of the same tool name is still in the list: it is
     reported when the server is built (see :func:`register_extension_tools`).
 
     Args:
@@ -297,10 +391,9 @@ def extension_tools(groups=None) -> list:
         list: :class:`ExtensionTool` objects, in registration order.
     """
     return [
-        ExtensionTool(definition)
-        for definition in _registry()
-        if getattr(definition, "mcp", None)
-        and (groups is None or definition.mcp["group"] in groups)
+        ExtensionTool(definition, mcp)
+        for definition, mcp, _problem in _offered()
+        if mcp and (groups is None or mcp["group"] in groups)
     ]
 
 
@@ -308,17 +401,13 @@ def available_groups() -> dict:
     """The extension groups the loaded plugins offer, and their tools.
 
     Returns:
-        dict: Each group a usable name (not a built-in group's), to the
-        sorted names of the functions offering tools in it, e.g.
-        ``{"orders": ["orders.listOpen"]}``.
+        dict: Each group of a valid definition, to the sorted names of the
+        functions offering tools in it, e.g. ``{"orders": ["orders.listOpen"]}``.
     """
     groups = {}
-    for definition in _registry():
-        mcp = getattr(definition, "mcp", None)
-        if mcp and mcp["group"] not in _RESERVED_GROUPS:
-            groups.setdefault(mcp["group"], []).append(
-                definition.fully_qualified_name or definition.name
-            )
+    for definition, mcp, _problem in _offered():
+        if mcp:
+            groups.setdefault(mcp["group"], []).append(_source(definition))
 
     return {group: sorted(sources) for group, sources in sorted(groups.items())}
 
@@ -435,7 +524,7 @@ def _make_tool_function(tool, description, run):
     return function
 
 
-def register_extension_tools(server, function_groups) -> bool:
+def register_extension_tools(server, function_groups) -> None:
     """Registers the tools of the served extension groups.
 
     A tool is left out, with a line in the log saying why, when its group is
@@ -450,29 +539,29 @@ def register_extension_tools(server, function_groups) -> bool:
             among them are served, and the db group decides about the tools
             that work on a connection.
 
+    A task tool is registered with ``starts_tasks``, so the server serves
+    the task tools with it (see :func:`tool_registrar.starts_tasks`).
+
     Returns:
-        bool: Whether a tool that starts tasks was registered, so the task
-        tools are needed.
+        None
     """
     from mcp.types import ToolAnnotations
 
     from mcp_plugin.lib.tool_registrar import tool_registrar
 
     register = tool_registrar(server)
-    groups = set(extension_groups_in(function_groups)) - set(_RESERVED_GROUPS)
+    groups = set(extension_groups_in(function_groups))
     serves_db = general.FUNCTION_GROUP_DB in function_groups
     registered = {}
-    starts_tasks = False
 
-    # A tool of a built-in group is never served, whatever groups are served:
-    # said once, so its plugin's author learns why it is missing.
-    for definition in _registry():
-        mcp = getattr(definition, "mcp", None)
-        if mcp and mcp["group"] in _RESERVED_GROUPS:
+    # A definition that breaks a rule - a built-in group among them - is
+    # never served, whatever groups are served: said every time, so its
+    # plugin's author learns why the tool is missing.
+    for definition, _mcp, problem in _offered():
+        if problem:
             general.log_event(
-                f"server: extension tool {mcp['group']}.{mcp['name']} of "
-                f"{definition.fully_qualified_name or definition.name} not "
-                f"served: {mcp['group']} is a built-in function group"
+                f"server: the MCP tool of {_source(definition)} is not "
+                f"served: {problem}"
             )
 
     for tool in extension_tools(groups):
@@ -508,7 +597,10 @@ def register_extension_tools(server, function_groups) -> bool:
                 destructiveHint=tool.mcp["destructive"] or None,
             )
         try:
-            register(name=tool.tool_name, annotations=annotations)(function)
+            register(
+                name=tool.tool_name, annotations=annotations,
+                starts_tasks=tool.mcp["task"],
+            )(function)
         except Exception as e:  # one plugin's tool must not stop the server
             general.log_event(
                 f"server: extension tool {tool.tool_name} of {tool.source} "
@@ -516,12 +608,10 @@ def register_extension_tools(server, function_groups) -> bool:
             )
             continue
         registered[tool.tool_name] = tool.source
-        starts_tasks = starts_tasks or tool.mcp["task"]
         general.log_event(
             f"server: serving extension tool {tool.tool_name} of {tool.source}"
         )
 
-    return starts_tasks
 
 
 def _call(tool, arguments, session=None):
