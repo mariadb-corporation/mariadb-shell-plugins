@@ -511,17 +511,21 @@ def _edited_sections(project, starts: list, includes: set) -> set:
     }
 
 
-def check_base_hash(project, base_hash: str) -> None:
+def check_base_hash(project, base_hash: str) -> list:
     """Refuses a change made against another snapshot than the project's.
 
     Checked against the snapshot the client could read, not the script's
     hash: a release moves the version of Section 910, which the snapshot
     does not follow until it is made again.
 
+    Returns:
+        The rows of the diagrams VIEW, the snapshot first.
+
     Raises:
         StaleSchemaError: Where the project has no snapshot, or another one.
     """
-    snapshot = modeling._schema_row(modeling._rows(project))
+    rows = modeling._rows(project)
+    snapshot = modeling._schema_row(rows)
     stored = snapshot["document"].get("source_hash") if snapshot else None
     if stored is None:
         raise StaleSchemaError(
@@ -533,6 +537,26 @@ def check_base_hash(project, base_hash: str) -> None:
             "The schema changed since the snapshot the edits were made against "
             f"(`{base_hash}`, now `{stored}`): read the diagrams again and redo them."
         )
+    return rows
+
+
+def edit_result(rows: list, files: list = (), notes: list = (), **members) -> dict:
+    """edit_schema's answer: the rows of the diagrams VIEW, the files
+    written, the update-script statements kept (none) and the notes, and
+    a caller's own members."""
+    return {"rows": rows, "files": list(files), "migration": [], "migration_file": None,
+            "notes": list(notes), **members}
+
+
+def without_place(value, members=("range", "selection_range", "source")):
+    """An outline object (or list, or value) without the members that say
+    where it is written, at every level."""
+    if isinstance(value, dict):
+        return {key: without_place(member, members) for key, member in value.items()
+                if key not in members}
+    if isinstance(value, list):
+        return [without_place(member, members) for member in value]
+    return value
 
 
 def write_texts(
@@ -637,6 +661,12 @@ def edit_schema(
     project = modeling._Project.load(schema_project_path)
     # The binary refuses names that went.
     check_base_hash(project, base_hash)
+    return _edit(project, edits, lsp_path)
+
+
+def _edit(project, edits: list, lsp_path: str = None) -> dict:
+    """edit_schema on a project loaded and checked against base_hash."""
+    schema_project_path = project.path
 
     binary = lsp.require_lsp(lsp_path)
     supported = lsp.edit_ops(binary)
@@ -832,56 +862,264 @@ def _filled_template(kind: str, name: str, template, table, schema: str) -> str:
     ).strip().rstrip(";").rstrip()
 
 
-def _template_object(
-    kind: str, name: str, sql: str, table: str = None, lsp_path: str = None
-) -> dict:
-    """The object a filled template creates, in the outline's shape the edit
-    ops take; refused unless it is one CREATE of that kind and name, named
-    unqualified (an MSM script names its schema in its USE only), and for a
-    trigger on table."""
-    binary = lsp.require_lsp(lsp_path)
+STATEMENT_KINDS = ("table", "sequence", "view", "procedure", "function", "trigger", "event")
+# The kinds a statement replaces where the project has the object: those of
+# Section 150, which every deployment runs again
+REPLACED_KINDS = _NOT_KEPT_CREATES
+
+
+def _read_object(binary: str, sql, where: str, expected: dict = None) -> tuple:
+    """The object one CREATE statement makes, in the outline's shape the
+    edit ops take: (kind, item).
+
+    Refused unless sql is one CREATE of a table, sequence, view, procedure,
+    function, trigger or event, named unqualified (an MSM script names its
+    schema in its USE only), and, with expected {kind, name, table?}, of
+    that kind and name and on that table. Messages start with where.
+    """
+    expected = expected or {}
+    kind_wanted = expected.get("kind")
+    one = f"one CREATE {kind_wanted.upper()} statement" if kind_wanted else (
+        "one CREATE TABLE, SEQUENCE, VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT statement"
+    )
+    if not isinstance(sql, str) or not sql.strip():
+        raise ValueError(f"{where} must be {one}.")
     # In a DELIMITER block of its own, so a body with ; parses; the delimiter
-    # on a line of its own, so a comment ending the template does not hide it
-    script = f"DELIMITER $$\n{sql}\n$$\nDELIMITER ;\n"
-    outlined = lsp.outline(binary, script)
+    # on a line of its own, so a comment ending the statement does not hide it
+    sql = sql.strip().rstrip(";").rstrip()
+    outlined = lsp.outline(binary, f"DELIMITER $$\n{sql}\n$$\nDELIMITER ;\n")
     errors = [note for note in outlined.get("notes", []) if note.get("kind") == "syntax-error"]
-    member = _object_type(kind) + "s"
     found = [
-        (key, item, schema.get("name"))
+        (item.get("kind") if member == "routines" else member[:-1], item, schema.get("name"))
         for schema in outlined.get("schemas", [])
-        for key in diagrams.SCHEMA_OBJECT_KINDS
-        for item in schema.get(key, [])
+        for member in diagrams.SCHEMA_OBJECT_KINDS
+        for item in schema.get(member, [])
     ]
-    wanted = [
-        (item, qualifier) for key, item, qualifier in found
-        if key == member and (_object_type(kind) != "routine" or item.get("kind") == kind)
-    ]
-    if errors or len(found) != 1 or len(wanted) != 1:
-        raise ValueError(
-            f"The template of a {kind} must be one CREATE {kind.upper()} statement"
-            + (f": {errors[0].get('message')}" if errors else ".")
-        )
-    # Sent back as the outline has it: the ops ignore its positions (and a
-    # view's reads)
-    item, qualifier = dict(wanted[0][0]), wanted[0][1]
+    if errors or len(found) != 1 or (kind_wanted and found[0][0] != kind_wanted):
+        raise ValueError(f"{where} must be {one}"
+                         + (f": {errors[0].get('message')}" if errors else "."))
+    kind, item, qualifier = found[0][0], dict(found[0][1]), found[0][2]
     if qualifier is not None:
         raise ValueError(
-            f"The template of a {kind} names the schema `{qualifier}`: an MSM script names its "
-            "objects unqualified, after its USE."
+            f"{where} names the schema `{qualifier}`: an MSM script names its objects "
+            "unqualified, after its USE."
         )
-    if not _is_object(kind, name, item):
-        raise ValueError(
-            f"The template of a {kind} creates `{item.get('name')}`, not `{name}`: name it ${{name}}."
+    name = expected.get("name")
+    if name is not None and not diagrams.same_name(item.get("name") or "", name):
+        raise ValueError(f"{where} creates `{item.get('name')}`, not `{name}`.")
+    table = expected.get("table")
+    if kind == "trigger" and table is not None and not diagrams.same_name(
+        item.get("table") or "", table
+    ):
+        raise ValueError(f"{where} is on `{item.get('table')}`, not on `{table}`.")
+    return kind, item
+
+
+def _snapshot_object(snapshot: dict, kind: str, name: str) -> Optional[dict]:
+    """The snapshot's object of that kind and name, or None."""
+    return next(
+        (item for item in snapshot.get(_object_type(kind) + "s", [])
+         if _is_object(kind, name, item)),
+        None,
+    )
+
+
+def _object_place(development: str, snapshot: dict, kind: str, name: str) -> tuple:
+    """(file, line (1-based)) where the snapshot's object starts; Nones
+    where it has none."""
+    item = _snapshot_object(snapshot, kind, name)
+    if item is None or "range" not in item:
+        return None, None
+    # The snapshot's files are relative to the development folder; an
+    # object's source n is files[n + 1], one without it is in files[0]
+    files = snapshot.get("files", [])
+    source = item.get("source")
+    relative = files[source + 1] if isinstance(source, int) else (files[0] if files else None)
+    file = os.path.normpath(os.path.join(development, relative)) if relative is not None else None
+    return file, item["range"]["start"]["line"] + 1
+
+
+def _check_kind_and_name(kind, name, kinds) -> None:
+    """Refuses a kind not among kinds, and a name no object can have."""
+    if kind not in kinds:
+        raise ValueError(f"Unknown kind `{kind}`; the kinds are {', '.join(kinds)}.")
+    problem = _object_name_problem(name)
+    if problem:
+        raise ValueError(problem)
+
+
+def _check_expect(expect, count: int) -> list:
+    """expect as a list of {kind, name, table?} dicts, one per statement, or Nones."""
+    if expect is None:
+        return [None] * count
+    if not isinstance(expect, list) or len(expect) != count:
+        raise ValueError("expect has to hold one {kind, name, table?} per statement.")
+    checked = []
+    for index, wanted in enumerate(expect):
+        if not hasattr(wanted, "keys") or wanted.get("kind") not in STATEMENT_KINDS:
+            raise ValueError(
+                f"expect {index + 1} has to name its kind: one of {', '.join(STATEMENT_KINDS)}."
+            )
+        problem = _object_name_problem(wanted.get("name"))
+        if problem:
+            raise ValueError(f"expect {index + 1}: {problem}")
+        checked.append(dict(wanted))
+    return checked
+
+
+@changes_project
+def set_schema_statements(
+    schema_project_path: str,
+    statements: list,
+    base_hash: str,
+    expect: list = None,
+    lsp_path: str = None,
+) -> dict:
+    """Puts CREATE statements of schema objects into a project, where msm
+    keeps them.
+
+    Each statement is read by mariadb-lsp and becomes an edit of
+    edit_schema: an object the project lacks is added (add_table,
+    add_sequence, add_view, add_routine, add_trigger, add_event: a table or
+    sequence in Section 140, the others in Section 150, written to run
+    again, into a breakout file where the section has one). A view,
+    routine, trigger or event the project has is replaced where it stands
+    (replace_*), the form it is written in kept; one whose definition is
+    the snapshot's already is left as it is. A table or sequence the
+    project has is refused: msm.editSchema changes its columns, keys and
+    options, which a deployed server needs ALTER statements for. All
+    statements are one edit: everything is written, or nothing.
+
+    Args:
+        schema_project_path: The project folder.
+        statements: The CREATE statements, one object each, named
+            unqualified; the form they are written in does not matter.
+        base_hash: The source_hash of the snapshot the caller knows, as for
+            edit_schema.
+        expect: One {kind, name, table?} per statement: refused unless the
+            statement creates that object (a trigger on that table).
+        lsp_path: The mariadb-lsp binary or its folder.
+
+    Returns:
+        edit_schema's result, and statements: [{kind, name, file, line
+        (1-based), replaced (the project had the object), changed (written;
+        False for an unchanged definition)}].
+
+    Raises:
+        StaleSchemaError: For a stale base_hash.
+        ValueError: For a statement that is not one CREATE of an object
+            named unqualified, one that is not what expect names, two of one
+            object, a table or sequence the project has, and what edit_schema
+            refuses (a name taken, an unknown table).
+    """
+    return _set_statements(schema_project_path, statements, base_hash, expect, lsp_path)
+
+
+def _set_statements(
+    schema_project_path: str, statements, base_hash: str, expect, lsp_path: str,
+    label: str = None, replace: bool = True,
+) -> dict:
+    """set_schema_statements; label names the statement in a message
+    (Statement n by default), and without replace an object the project
+    has is left to the add op to refuse."""
+    if not isinstance(statements, list) or not statements:
+        raise ValueError("No statements given: pass a list of CREATE statements.")
+    expect = _check_expect(expect, len(statements))
+
+    def where(index):
+        return label or f"Statement {index + 1}"
+
+    project = modeling._Project.load(schema_project_path)
+    rows = check_base_hash(project, base_hash)
+    binary = lsp.require_lsp(lsp_path)
+    read = [
+        _read_object(binary, sql, where(index), wanted)
+        for index, (sql, wanted) in enumerate(zip(statements, expect))
+    ]
+    keys = [(kind, (item.get("name") or "").lower()) for kind, item in read]
+    if len(set(keys)) != len(keys):
+        raise ValueError("Two statements create the same object: pass one statement each.")
+
+    snapshot = modeling._schema_row(rows)["document"]
+    edits, entries = [], []
+    for index, (kind, item) in enumerate(read):
+        name = item.get("name")
+        existing = _snapshot_object(snapshot, kind, name) if replace else None
+        object_type = _object_type(kind)
+        # A replace never renames, not even the case: the project's spelling stays
+        entry = {"kind": kind, "name": existing["name"] if existing else name,
+                 "replaced": existing is not None, "changed": True}
+        entries.append(entry)
+        if existing is not None and kind not in REPLACED_KINDS:
+            raise ValueError(
+                f"{where(index)}: the project has the {kind} `{name}` already. Change its "
+                "columns, keys and options with msm.editSchema, which writes the ALTER "
+                "statements a deployed server needs."
+            )
+        if existing is not None:
+            # A replace never renames, not even the case: compared, and sent,
+            # with the project's spelling
+            item["name"] = existing["name"]
+        if existing is not None and without_place(existing) == without_place(item):
+            entry["changed"] = False
+            continue
+        if kind == "view" and item.get("check_option"):
+            # The outline's definition holds it; the op writes it from check_option
+            item["definition"] = _CHECK_OPTION.sub("", item["definition"])
+        if kind == "table":
+            # An index the outline lists with both: the op takes one, and
+            # key_parts has the lengths and order too
+            item["indexes"] = [
+                {key: value for key, value in each.items() if key != "columns"}
+                if "key_parts" in each else each
+                for each in item.get("indexes", [])
+            ]
+        op = "replace" if existing is not None else "add"
+        edits.append({"op": f"{op}_{object_type}", object_type: item})
+
+    if edits:
+        result = _edit(project, edits, lsp_path)
+    else:
+        # As _edit does, the years move before the answer: its snapshot then
+        # has the hash of the script with the new notices, and the mark's
+        # move after it finds nothing left to do
+        if management.update_copyright_years(project.path):
+            rows = modeling._rows(modeling._Project.load(project.path))
+        result = edit_result(rows)
+    snapshot = modeling._schema_row(result["rows"])["document"]
+    for entry in entries:
+        entry["file"], entry["line"] = _object_place(
+            project.development, snapshot, entry["kind"], entry["name"]
         )
-    if kind == "trigger" and not diagrams.same_name(item.get("table") or "", table):
-        raise ValueError(
-            f"The template of the trigger is on `{item.get('table')}`, not on `{table}`: "
-            "name its table ${table}."
-        )
-    if kind == "view" and item.get("check_option"):
-        # The outline's definition holds it; the op writes it from check_option
-        item["definition"] = _CHECK_OPTION.sub("", item["definition"])
-    return item
+    return {**result, "statements": entries}
+
+
+@changes_project
+def drop_schema_object(
+    schema_project_path: str, kind: str, name: str, base_hash: str, lsp_path: str = None
+) -> dict:
+    """Drops a table, sequence, view, procedure, function, trigger or event
+    from a project: edit_schema's drop_table, drop_sequence, drop_view,
+    drop_routine, drop_trigger or drop_event, which remove its statements;
+    once the project has a release, the DROP is kept for the next update
+    script.
+
+    Args:
+        schema_project_path: The project folder.
+        kind: table, sequence, view, procedure, function, trigger or event.
+        name: The object's name.
+        base_hash: The source_hash of the snapshot the caller knows.
+        lsp_path: The mariadb-lsp binary or its folder.
+
+    Returns:
+        edit_schema's result.
+    """
+    _check_kind_and_name(kind, name, STATEMENT_KINDS)
+    object_type = _object_type(kind)
+    edit = {"op": f"drop_{object_type}", object_type: name}
+    if object_type == "routine":
+        edit["kind"] = kind
+    return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
 
 
 def add_schema_object(
@@ -924,11 +1162,7 @@ def add_schema_object(
             not one CREATE of the kind, and what edit_schema refuses (a name
             taken, an unknown table, a stale base_hash).
     """
-    if kind not in OBJECT_TEMPLATES:
-        raise ValueError(f"Unknown kind `{kind}`; the kinds are {', '.join(OBJECT_TEMPLATES)}.")
-    problem = _object_name_problem(name)
-    if problem:
-        raise ValueError(problem)
+    _check_kind_and_name(kind, name, OBJECT_TEMPLATES)
     if kind == "trigger" and not table:
         raise ValueError("A trigger needs its table.")
     if kind == "trigger":
@@ -939,27 +1173,10 @@ def add_schema_object(
     sql = _filled_template(
         kind, name, template, table, management.get_schema_name(schema_project_path)
     )
-    item = _template_object(kind, name, sql, table, lsp_path)
-    object_type = _object_type(kind)
-    result = edit_schema(
-        schema_project_path, [{"op": f"add_{object_type}", object_type: item}], base_hash, lsp_path
+    result = _set_statements(
+        schema_project_path, [sql], base_hash,
+        [{"kind": kind, "name": name, "table": table}], lsp_path,
+        label=f"The template of a {kind}", replace=False,
     )
-
-    snapshot = result["rows"][0]["document"]
-    added = next(
-        (each for each in snapshot.get(object_type + "s", []) if _is_object(kind, name, each)), None
-    )
-    file, line = None, None
-    if added is not None and "range" in added:
-        # The snapshot's files are relative to the development folder; an
-        # object's source n is files[n + 1], one without it is in files[0]
-        files = snapshot.get("files", [])
-        source = added.get("source")
-        relative = files[source + 1] if isinstance(source, int) else (files[0] if files else None)
-        if relative is not None:
-            development = os.path.dirname(
-                management.get_schema_development_file_path(schema_project_path)
-            )
-            file = os.path.normpath(os.path.join(development, relative))
-        line = added["range"]["start"]["line"] + 1
-    return {**result, "file": file, "line": line}
+    (entry,) = result.pop("statements")
+    return {**result, "file": entry["file"], "line": entry["line"]}

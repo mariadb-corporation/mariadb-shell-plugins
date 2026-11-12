@@ -72,6 +72,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   around `run_sync`. `lsp_path` is only `mcp setup --lspPath` (`config.get_lsp_path()`);
   without it msm searches itself (shell folder, PATH, ~/.local/bin), so no `--version`
   probe on the event loop. Tests: the "schema diagrams" block of `test_msm.py`.
+- **Schema statement tools:** `msm.set_schema_statements(statements, base_hash, expect?)`
+  and `msm.drop_schema_object(kind, name, base_hash)` wrap `msm_plugin.modeling`'s
+  functions through `_in_project` with `lsp_path`, rows elided as for `msm.edit_schema`.
+  They are the SQL-in twins of the REST tools below; `msm.add_schema_object` is their
+  older, add-only form. Test: `test_schema_objects_are_set_and_dropped_through_the_tools`
+  (a binary with `add_view`/`drop_view`, patched into `config.get_lsp_path`).
 - **REST definition tools:** `msm.set_rest_statements(statements, base_hash, replaces?)`
   and `msm.drop_rest_object(kind, service, base_hash, schema?, object?)` wrap
   `msm_plugin.modeling.set_rest_statements` / `drop_rest_object` through `_in_project` with

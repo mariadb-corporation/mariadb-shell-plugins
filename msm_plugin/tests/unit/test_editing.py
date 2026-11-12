@@ -1269,3 +1269,143 @@ def test_what_the_edit_refuses_is_refused(project):
     with pytest.raises(editing.StaleSchemaError):
         editing.add_schema_object(project, "view", "v", "sha256:old", lsp_path=EDIT_LSP)
     assert dev_script(project) == before
+
+
+# -----------------------------------------------------------------------------
+# Setting statements of schema objects, dropping them
+
+
+VIEW_SQL = "CREATE VIEW `v_customer` AS SELECT `id` FROM `customer`"
+PROCEDURE_SQL = "CREATE PROCEDURE `p_count`()\nBEGIN\n    SELECT COUNT(*) FROM `orders`;\nEND"
+
+
+def set_statements(path, *statements, **kwargs):
+    return editing.set_schema_statements(path, list(statements), base_hash(path),
+                                         lsp_path=EDIT_LSP, **kwargs)
+
+
+def line_at(entry) -> str:
+    with open(entry["file"]) as f:
+        return f.read().split("\n")[entry["line"] - 1]
+
+
+@needs_edit_ops("add_table", "add_view", "add_routine", "add_trigger", "add_event", "add_sequence")
+def test_new_objects_of_every_kind_are_added(project):
+    result = set_statements(
+        project,
+        "CREATE TABLE `note` (`id` INT NOT NULL, PRIMARY KEY (`id`))",
+        "CREATE SEQUENCE `s_note`",
+        VIEW_SQL,
+        PROCEDURE_SQL,
+        "CREATE FUNCTION `f_one`() RETURNS INT DETERMINISTIC RETURN 1;",
+        "CREATE TRIGGER `tr_orders` BEFORE INSERT ON `orders` FOR EACH ROW SET @x = 1",
+        "CREATE EVENT `e_daily` ON SCHEDULE EVERY 1 DAY DO SELECT 1",
+    )
+    entries = result["statements"]
+    assert [(e["kind"], e["name"]) for e in entries] == [
+        ("table", "note"), ("sequence", "s_note"), ("view", "v_customer"),
+        ("procedure", "p_count"), ("function", "f_one"), ("trigger", "tr_orders"),
+        ("event", "e_daily"),
+    ]
+    assert all(e["replaced"] is False and e["changed"] is True for e in entries)
+    for entry in entries:
+        assert entry["name"] in line_at(entry) or entry["name"] in " ".join(
+            open(entry["file"]).read().split("\n")[entry["line"] - 1:entry["line"] + 1]
+        )
+    script = dev_script(project)
+    section_150 = script.index("\n-- MSM Section 150:")
+    assert script.index("CREATE TABLE `note`") < section_150
+    assert script.index("`v_customer`") > section_150
+
+
+@needs_edit_ops("add_view", "replace_view")
+def test_a_view_there_is_replaced_where_it_stands(project):
+    added = set_statements(project, VIEW_SQL)["statements"][0]
+    # Named in another case: the same view, which keeps the project's spelling
+    result = set_statements(
+        project, "CREATE OR REPLACE VIEW `V_Customer` AS SELECT `id`, 1 AS `one` FROM `customer`"
+    )
+    (entry,) = result["statements"]
+    assert entry["replaced"] is True and entry["changed"] is True
+    assert entry["name"] == "v_customer"
+    assert (entry["file"], entry["line"]) == (added["file"], added["line"])
+    view = next(v for v in result["rows"][0]["document"]["views"] if v["name"] == "v_customer")
+    assert "`one`" in view["definition"]
+    assert dev_script(project).count("`v_customer`") == 1
+
+
+@needs_edit_ops("add_routine", "replace_routine")
+def test_an_unchanged_definition_is_left_as_it_is(project):
+    set_statements(project, PROCEDURE_SQL)
+    before = dev_script(project)
+    snapshot = modeling.read_diagram_rows(project)[0]["document"]
+    routine = next(r for r in snapshot["routines"] if r["name"] == "p_count")
+    # The statement as the project has it, read back from the file
+    with open(management.get_schema_development_file_path(project)) as f:
+        text = f.read()
+    starts = editing.line_starts(text)
+    statement = text[editing._offset(text, starts, routine["range"]["start"]):
+                     editing._offset(text, starts, routine["range"]["end"])]
+    result = set_statements(project, statement)
+    (entry,) = result["statements"]
+    assert entry["replaced"] is True and entry["changed"] is False
+    assert result["files"] == [] and dev_script(project) == before
+
+
+@needs_edit_ops("add_view", "replace_view")
+def test_a_released_project_keeps_nothing_for_a_replaced_view(project):
+    from msm_plugin.management import prepare_release
+
+    set_statements(project, VIEW_SQL)
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.0.1")
+    result = set_statements(
+        project, "CREATE VIEW `v_customer` AS SELECT `id`, 2 AS `two` FROM `customer`"
+    )
+    assert result["statements"][0]["replaced"] is True
+    # Section 150 runs in full on every deployment
+    assert result["migration"] == []
+
+
+@needs_edit_ops("add_view", "add_sequence")
+@pytest.mark.parametrize("statement, expect, message", [
+    ("CREATE TABLE `customer` (`id` INT)", None, "has the table `customer` already"),
+    ("CREATE VIEW `v` AS SELECT 1", [{"kind": "table", "name": "v"}], "one CREATE TABLE statement"),
+    ("CREATE VIEW `v` AS SELECT 1", [{"kind": "view", "name": "w"}], "creates `v`, not `w`"),
+    ("CREATE TRIGGER `t` BEFORE INSERT ON `customer` FOR EACH ROW SET @x = 1",
+     [{"kind": "trigger", "name": "t", "table": "orders"}], "on `customer`, not on `orders`"),
+    ("CREATE VIEW `other`.`v` AS SELECT 1", None, "names the schema `other`"),
+    ("DROP VIEW `v`", None, "must be one CREATE"),
+    ("CREATE VIEW `v` AS SELEC 1", None, "must be one CREATE"),
+    ("", None, "must be one CREATE"),
+])
+def test_what_is_not_the_create_asked_for_is_refused(project, statement, expect, message):
+    before = dev_script(project)
+    with pytest.raises(ValueError, match=message):
+        set_statements(project, statement, expect=expect)
+    assert dev_script(project) == before
+
+
+@needs_edit_ops("add_view")
+def test_one_bad_statement_writes_nothing(project):
+    before = dev_script(project)
+    with pytest.raises(ValueError, match="Statement 2"):
+        set_statements(project, VIEW_SQL, "CREATE VIEW `x` AS SELEC 1")
+    with pytest.raises(ValueError, match="same object"):
+        set_statements(project, VIEW_SQL, VIEW_SQL.replace("`id`", "1"))
+    with pytest.raises(editing.StaleSchemaError):
+        editing.set_schema_statements(project, [VIEW_SQL], "sha256:old", lsp_path=EDIT_LSP)
+    assert dev_script(project) == before
+
+
+@needs_edit_ops("add_view", "drop_view", "add_routine", "drop_routine")
+def test_an_object_is_dropped_by_name(project):
+    set_statements(project, VIEW_SQL, PROCEDURE_SQL)
+    editing.drop_schema_object(project, "view", "v_customer", base_hash(project), lsp_path=EDIT_LSP)
+    result = editing.drop_schema_object(
+        project, "procedure", "p_count", base_hash(project), lsp_path=EDIT_LSP
+    )
+    snapshot = result["rows"][0]["document"]
+    assert "v_customer" not in [v["name"] for v in snapshot["views"]]
+    assert "p_count" not in [r["name"] for r in snapshot["routines"]]
+    with pytest.raises(ValueError, match="Unknown kind `index`"):
+        editing.drop_schema_object(project, "index", "x", base_hash(project), lsp_path=EDIT_LSP)

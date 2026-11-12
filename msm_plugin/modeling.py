@@ -276,6 +276,82 @@ def add_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
     )
 
 
+@plugin_function("msm.setSchemaStatements", shell=True, cli=True, web=True)
+def set_schema_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
+    """Puts CREATE statements of schema objects into a schema project, where msm keeps them
+
+    Each statement is one CREATE TABLE, SEQUENCE, VIEW, PROCEDURE, FUNCTION, TRIGGER or EVENT,
+    named without its schema. It is read by the MariaDB SQL language server's binary
+    mariadb-lsp. An object the project lacks is added (a table or sequence in MSM Section 140,
+    the others in Section 150, written to be run again). A view, routine, trigger or event the
+    project has is replaced where it stands; one whose definition is unchanged is left as it
+    is. A table or sequence the project has is refused, as msm.editSchema changes it. All
+    statements are one edit of msm.editSchema, so everything is written, or nothing.
+
+    On the command line give the statements as a JSON file with --statementsFile.
+
+    Args:
+        statements (list): The CREATE statements, one object each.
+        base_hash (str): The source_hash of the schema snapshot the caller knows, as for
+            msm.editSchema.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        statements_file (str): A JSON file holding the statements, instead of statements.
+        expect (list): One {kind, name, table} per statement. A statement that creates
+            another object (a trigger on another table) is refused before anything is
+            written.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        What msm.editSchema returns (rows, files, migration, migration_file, notes), and
+        statements: for each one its kind, name, file, line (1-based), whether it replaced an
+        object the project had, and whether it changed anything.
+    """
+    statements = _json_argument(statements, kwargs, "statements", "statements")
+    if base_hash is None:
+        raise ValueError("No base_hash given: the source_hash of the snapshot the caller knows.")
+    if hasattr(statements, "__iter__") and not isinstance(statements, str):
+        statements = list(statements)
+    expect = kwargs.get("expect")
+    if expect is not None and hasattr(expect, "__iter__") and not isinstance(expect, str):
+        expect = list(expect)
+    return lib.editing.set_schema_statements(
+        _project(kwargs), statements, base_hash, expect=expect,
+        lsp_path=kwargs.get("lsp_path"),
+    )
+
+
+@plugin_function("msm.dropSchemaObject", shell=True, cli=True, web=True)
+def drop_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
+    """Drops a table, sequence, view, procedure, function, trigger or event from a schema project
+
+    Its statements are removed from the development script, and the files it includes, by
+    msm.editSchema. Once the project has a release, the DROP is kept for the next release's
+    update script.
+
+    Args:
+        kind (str): table, sequence, view, procedure, function, trigger or event.
+        name (str): The object's name.
+        base_hash (str): The source_hash of the schema snapshot the caller knows, as for
+            msm.editSchema.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        What msm.editSchema returns (rows, files, migration, migration_file, notes).
+    """
+    return lib.editing.drop_schema_object(
+        _project(kwargs), kind, name, base_hash, lsp_path=kwargs.get("lsp_path"),
+    )
+
+
 @plugin_function("msm.setRestStatements", shell=True, cli=True, web=True)
 def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
     """Writes REST services, schemas and objects into MSM Section 180 of a schema project

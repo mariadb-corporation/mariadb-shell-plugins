@@ -727,17 +727,19 @@ def register_msm_tools(server, function_groups=()) -> None:
         base_hash: str,
         schema_project_path: Optional[str] = None,
     ) -> dict:
-        """Changes schema objects in the SQL of a schema project.
+        """Changes schema objects in the SQL of a schema project, by structured edits.
 
         The CREATE statements are the source of truth, so tables, columns,
-        indexes, keys, views and routines are changed in the development
-        script and the files it includes (by the MariaDB SQL language
-        server's binary): new tables go into MSM Section 140, views and
-        routines into Section 150, written so it can run again. Diagrams
-        follow renamed objects and the schema snapshot is made again. Once
-        the project has a release, the statements that take a deployed
-        schema along are kept for the next release's update script.
-        Everything is written, or nothing.
+        indexes, keys, views, routines, triggers, events and sequences are
+        changed in the development script and the files it includes (by the
+        MariaDB SQL language server's binary): new tables and sequences go
+        into MSM Section 140, the others into Section 150, written so it can
+        run again. Diagrams follow renamed objects and the schema snapshot
+        is made again. Once the project has a release, the statements that
+        take a deployed schema along are kept for the next release's update
+        script. Everything is written, or nothing. To add or replace objects
+        from SQL, use msm.set_schema_statements; to drop one by name,
+        msm.drop_schema_object.
 
         Args:
             edits: The edits, applied in order (a later one uses the names
@@ -752,12 +754,18 @@ def register_msm_tools(server, function_groups=()) -> None:
                 drop_index (table, and name, kind "primary" or columns),
                 set_primary_key (table, columns), add_foreign_key (table,
                 foreign_key), drop_foreign_key (table, and name or columns),
-                add_view (view), drop_view (view), add_routine (routine),
-                drop_routine (routine, kind). kind is "procedure" or
-                "function", needed when both kinds have the name. Tables,
-                columns, indexes, foreign keys, views and routines are given
-                as msm.get_schema_diagrams' snapshot has them; a member left
-                out takes the snapshot's default, so modify_column needs the
+                add_view (view), replace_view (view), drop_view (view),
+                add_routine (routine), replace_routine (routine),
+                drop_routine (routine, kind), add_trigger (trigger),
+                replace_trigger (trigger), rename_trigger (trigger,
+                new_name), drop_trigger (trigger, table?), add_event
+                (event), replace_event (event), rename_event (event,
+                new_name), drop_event (event), add_sequence (sequence),
+                rename_sequence (sequence, new_name), drop_sequence
+                (sequence). kind is "procedure" or "function", needed when
+                both kinds have the name. Objects are given as
+                msm.get_schema_diagrams' snapshot has them; a member left out
+                takes the snapshot's default, so modify_column needs the
                 column's whole definition. A binary without an op refuses it.
             base_hash: The snapshot's source_hash the edits were made
                 against; refused when the snapshot was made again since.
@@ -808,7 +816,10 @@ def register_msm_tools(server, function_groups=()) -> None:
         table: Optional[str] = None,
         schema_project_path: Optional[str] = None,
     ) -> dict:
-        """Adds a view, procedure, function, trigger, event or sequence to a schema project.
+        """Adds a view, procedure, function, trigger, event or sequence to a schema project, from a template.
+
+        The older form of msm.set_schema_statements, which also replaces
+        objects: fill the template yourself and pass the statement there.
 
         The template (msm's, see msm.get_object_templates, or the one given)
         is filled with the name and read by mariadb-lsp, then added as
@@ -951,6 +962,99 @@ def register_msm_tools(server, function_groups=()) -> None:
             service,
             base_hash,
             **_kwargs(schema=schema, object=object, lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
+
+    @tool(name="msm.set_schema_statements")
+    async def set_schema_statements(
+        ctx: Context,
+        statements: list[str],
+        base_hash: str,
+        expect: Optional[list[dict]] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Puts CREATE statements of schema objects into a schema project, where msm keeps them.
+
+        Use this, not msm.set_section_sql_content, to add or change a table,
+        sequence, view, procedure, function, trigger or event from SQL: msm
+        decides where each statement goes and in what form. Each statement
+        is one CREATE, named without its schema. An object the project lacks
+        is added (a table or sequence in MSM Section 140, the others in
+        Section 150, written to run again). A view, routine, trigger or event
+        the project has is replaced where it stands; an unchanged definition
+        is left as it is. A table or sequence the project has is refused:
+        change its columns, keys and options with msm.edit_schema. All
+        statements are one edit: everything is written, or nothing; the
+        snapshot is made again.
+
+        Args:
+            statements: The CREATE statements, one object each.
+            base_hash: The source_hash of the snapshot the caller knows (as
+                for msm.edit_schema).
+            expect: One {kind, name, table?} per statement (kind: table,
+                sequence, view, procedure, function, trigger or event; table
+                for a trigger). A statement that creates another object is
+                refused before anything is written.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.edit_schema returns (rows, files, migration,
+            migration_file, notes), and statements: [{kind, name, file, line
+            (1-based), replaced, changed}].
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.set_schema_statements,
+            statements,
+            base_hash,
+            **_kwargs(expect=expect, lsp_path=_lsp_path()),
+        )
+        result["rows"] = msm_diagrams.elide_row_images(result["rows"])
+        return result
+
+    @tool(name="msm.drop_schema_object")
+    async def drop_schema_object(
+        ctx: Context,
+        kind: str,
+        name: str,
+        base_hash: str,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Drops a table, sequence, view, procedure, function, trigger or event from a schema project.
+
+        Its statements are removed through msm.edit_schema's drop ops; once
+        the project has a release, the DROP is kept for the next update
+        script. Refused for an object another one needs (a table a foreign
+        key references, a sequence a table uses, a trigger another one
+        follows or precedes).
+
+        Args:
+            kind: table, sequence, view, procedure, function, trigger or event.
+            name: The object's name.
+            base_hash: The source_hash of the snapshot the caller knows (as
+                for msm.edit_schema).
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            What msm.edit_schema returns (rows, files, migration,
+            migration_file, notes).
+        """
+        from msm_plugin.lib import diagrams as msm_diagrams
+
+        result = await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.drop_schema_object,
+            kind,
+            name,
+            base_hash,
+            **_kwargs(lsp_path=_lsp_path()),
         )
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
