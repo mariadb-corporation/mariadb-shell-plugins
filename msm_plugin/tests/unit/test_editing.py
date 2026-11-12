@@ -53,6 +53,12 @@ needs_edit_lsp = pytest.mark.skipif(
 )
 
 
+needs_outline_objects = pytest.mark.skipif(
+    EDIT_LSP is None or not lsp.edits_take_outline_objects(EDIT_LSP),
+    reason="no mariadb-lsp binary whose edits take the outline's objects back (lsp-server #48)",
+)
+
+
 def needs_edit_ops(*ops):
     """Skips a test where the binary lacks one of the ops."""
     return pytest.mark.skipif(
@@ -1190,6 +1196,7 @@ def test_the_object_templates_are_plain_create_statements():
     assert editing.get_object_templates()["templates"]["view"] != "x"
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "add_routine", "add_trigger", "add_event", "add_sequence")
 @pytest.mark.parametrize("kind, name, table, created", [
     ("view", "v_new", None, "VIEW `v_new`"),
@@ -1228,6 +1235,7 @@ def test_msms_templates_filled_are_added(project, kind, name, table, created):
         assert script.index(created) > script.index("MSM Section 150")
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "add_trigger")
 def test_what_the_edit_refuses_is_refused(project):
     before = dev_script(project)
@@ -1262,6 +1270,7 @@ def line_at(entry) -> str:
         return f.read().split("\n")[entry["line"] - 1]
 
 
+@needs_outline_objects
 @needs_edit_ops("add_table", "add_view", "add_routine", "add_trigger", "add_event", "add_sequence")
 def test_new_objects_of_every_kind_are_added(project):
     result = set_statements(
@@ -1291,6 +1300,7 @@ def test_new_objects_of_every_kind_are_added(project):
     assert script.index("`v_customer`") > section_150
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "replace_view")
 def test_a_view_there_is_replaced_where_it_stands(project):
     added = set_statements(project, VIEW_SQL)["statements"][0]
@@ -1307,6 +1317,7 @@ def test_a_view_there_is_replaced_where_it_stands(project):
     assert dev_script(project).count("`v_customer`") == 1
 
 
+@needs_outline_objects
 @needs_edit_ops("add_routine", "replace_routine")
 def test_an_unchanged_definition_is_left_as_it_is(project):
     set_statements(project, PROCEDURE_SQL)
@@ -1325,6 +1336,7 @@ def test_an_unchanged_definition_is_left_as_it_is(project):
     assert result["files"] == [] and dev_script(project) == before
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "replace_view")
 def test_a_released_project_keeps_nothing_for_a_replaced_view(project):
     from msm_plugin.management import prepare_release
@@ -1339,6 +1351,7 @@ def test_a_released_project_keeps_nothing_for_a_replaced_view(project):
     assert result["migration"] == []
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "add_sequence")
 @pytest.mark.parametrize("statement, expect, message", [
     ("CREATE TABLE `customer` (`id` INT)", None, "has the table `customer` already"),
@@ -1358,6 +1371,7 @@ def test_what_is_not_the_create_asked_for_is_refused(project, statement, expect,
     assert dev_script(project) == before
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view")
 def test_one_bad_statement_writes_nothing(project):
     before = dev_script(project)
@@ -1370,6 +1384,7 @@ def test_one_bad_statement_writes_nothing(project):
     assert dev_script(project) == before
 
 
+@needs_outline_objects
 @needs_edit_ops("add_view", "drop_view", "add_routine", "drop_routine")
 def test_an_object_is_dropped_by_name(project):
     set_statements(project, VIEW_SQL, PROCEDURE_SQL)
@@ -1382,3 +1397,29 @@ def test_an_object_is_dropped_by_name(project):
     assert "p_count" not in [r["name"] for r in snapshot["routines"]]
     with pytest.raises(ValueError, match="Unknown kind `index`"):
         editing.drop_schema_object(project, "index", "x", base_hash(project), lsp_path=EDIT_LSP)
+
+
+@needs_outline_objects
+@needs_edit_ops("add_table", "add_view")
+def test_objects_go_back_as_the_outline_writes_them(project):
+    """An index with both columns and key_parts, a view with its CHECK OPTION: as read."""
+    result = set_statements(
+        project,
+        "CREATE TABLE `note` (`id` INT NOT NULL, `body` TEXT, PRIMARY KEY (`id`), "
+        "KEY `ix_body` (`body`(20)))",
+        "CREATE VIEW `v_ids` AS SELECT `id` FROM `customer` WITH LOCAL CHECK OPTION",
+    )
+    snapshot = result["rows"][0]["document"]
+    note = next(t for t in snapshot["tables"] if t["name"] == "note")
+    assert [index["name"] for index in note["indexes"] if index.get("name")] == ["ix_body"]
+    view = next(v for v in snapshot["views"] if v["name"] == "v_ids")
+    assert view["check_option"].lower() == "local"
+    # Written once in the statement (the snapshot in Section 160 has its definition too)
+    assert dev_script(project).count("CHECK OPTION;") == 1
+
+
+def test_a_binary_that_cannot_take_outline_objects_back_is_refused(project, monkeypatch):
+    monkeypatch.setattr(lsp, "require_lsp", lambda path=None: "mariadb-lsp")
+    monkeypatch.setattr(lsp, "edits_take_outline_objects", lambda binary: False)
+    with pytest.raises(lsp.LspError, match="lsp-server #48"):
+        editing.set_schema_statements(project, [VIEW_SQL], base_hash(project))

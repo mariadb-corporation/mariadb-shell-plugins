@@ -815,9 +815,6 @@ def _is_object(kind: str, name: str, item: dict) -> bool:
     )
 
 
-_CHECK_OPTION = re.compile(r"\s+WITH\s+(?:CASCADED\s+|LOCAL\s+)?CHECK\s+OPTION\s*$", re.IGNORECASE)
-
-
 def get_object_templates() -> dict:
     """msm's templates of the objects a client adds with set_schema_statements.
 
@@ -985,6 +982,8 @@ def set_schema_statements(
 
     Raises:
         StaleSchemaError: For a stale base_hash.
+        LspError: For a binary that cannot take the outline's objects back
+            (before lsp-server #48).
         ValueError: For a statement that is not one CREATE of an object
             named unqualified, one that is not what expect names, two of one
             object, a table or sequence the project has, and what edit_schema
@@ -1000,6 +999,12 @@ def set_schema_statements(
     project = modeling._Project.load(schema_project_path)
     rows = check_base_hash(project, base_hash)
     binary = lsp.require_lsp(lsp_path)
+    if not lsp.edits_take_outline_objects(binary):
+        raise lsp.LspError(
+            f"The MariaDB SQL language server's binary `{binary}` cannot take schema objects "
+            "back as its outline writes them (lsp-server #48). Update "
+            f"{lsp.LSP_BINARY_NAME}, or the MariaDB Shell, which comes with it."
+        )
     read = [
         _read_object(binary, sql, where(index), wanted)
         for index, (sql, wanted) in enumerate(zip(statements, expect))
@@ -1024,36 +1029,15 @@ def set_schema_statements(
                 "columns, keys and options with msm.editSchema, which writes the ALTER "
                 "statements a deployed server needs."
             )
-        if existing is not None:
-            # A replace never renames, not even the case: compared, and sent,
-            # with the project's spelling
-            item["name"] = existing["name"]
-        if existing is not None and without_place(existing) == without_place(item):
-            entry["changed"] = False
-            continue
-        if kind == "view" and item.get("check_option"):
-            # The outline's definition holds it; the op writes it from check_option
-            item["definition"] = _CHECK_OPTION.sub("", item["definition"])
-        if kind == "table":
-            # An index the outline lists with both: the op takes one, and
-            # key_parts has the lengths and order too
-            item["indexes"] = [
-                {key: value for key, value in each.items() if key != "columns"}
-                if "key_parts" in each else each
-                for each in item.get("indexes", [])
-            ]
+        # Sent as the outline has it; a replace keeps the script's spelling
         op = "replace" if existing is not None else "add"
         edits.append({"op": f"{op}_{object_type}", object_type: item})
 
-    if edits:
-        result = _edit(project, edits, lsp_path)
-    else:
-        # As _edit does, the years move before the answer: its snapshot then
-        # has the hash of the script with the new notices, and the mark's
-        # move after it finds nothing left to do
-        if management.update_copyright_years(project.path):
-            rows = modeling._rows(modeling._Project.load(project.path))
-        result = edit_result(rows)
+    result = _edit(project, edits, lsp_path)
+    # A replace that changes nothing writes nothing, and the binary says so
+    for note in result.get("notes", []):
+        if note.get("kind") == "unchanged" and isinstance(note.get("edit"), int):
+            entries[note["edit"]]["changed"] = False
     snapshot = modeling._schema_row(result["rows"])["document"]
     for entry in entries:
         entry["file"], entry["line"] = _object_place(
