@@ -734,7 +734,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         changed in the development script and the files it includes (by the
         MariaDB SQL language server's binary): new tables and sequences go
         into MSM Section 140, the others into Section 150, written so it can
-        run again. Diagrams follow renamed objects and the schema snapshot
+        run again, next to the objects of their kind; msm decides where, so
+        an edit gives no `at` or `form`. Diagrams follow renamed objects and the schema snapshot
         is made again. Once the project has a release, the statements that
         take a deployed schema along are kept for the next release's update
         script. Everything is written, or nothing. To add or replace objects

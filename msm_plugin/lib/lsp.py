@@ -308,6 +308,14 @@ def merges_alters(binary: str) -> bool:
     return answer is not None and answer.get("merge_alters") is True
 
 
+def places_statements(binary: str) -> bool:
+    """Whether the binary's add ops take `at` and `form`, so msm says where
+    a new object's statement goes and in what form (lsp-server #49): its
+    ``edit --ops`` says ``"placement": true``."""
+    answer = _ops_answer(binary)
+    return answer is not None and answer.get("placement") is True
+
+
 def outlines_view_reads(binary: str) -> bool:
     """Whether the binary's outline tells what each view reads (its
     ``views[].reads``; lsp-server #36): asked once per build, by outlining a
