@@ -66,13 +66,6 @@ def no_tasks():
 # what the MCP side adds is that a task is its client's.
 
 
-def _finished(task, timeout=5):
-    deadline = time.monotonic() + timeout
-    while task.status not in tasks.FINISHED_STATES and time.monotonic() < deadline:
-        task.wait_for_change(task.version, 0.1)
-    return task.status
-
-
 @pytest.fixture
 def release():
     """An event the running tasks of a test wait on, set when it ends."""
@@ -518,7 +511,7 @@ def _run(function, args, options, monkeypatch, mode, target=None):
     task.start(lambda task: util_process.run(
         task, function, args, options, ("mariadb://u@h:3306", "pw"), target
     ))
-    _finished(task, timeout=30)
+    helpers.finished(task, timeout=30)
     return task.snapshot()
 
 
@@ -595,7 +588,7 @@ def test_a_shell_that_does_not_stop_on_cancel_is_killed(fake_shell, monkeypatch)
     pid = fake_shell()[0]["pid"]
 
     task.cancel()
-    assert _finished(task, timeout=10) == tasks.CANCELLED
+    assert helpers.finished(task, timeout=10) == tasks.CANCELLED
     # the shell itself is gone, not only the watchdog above it
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:

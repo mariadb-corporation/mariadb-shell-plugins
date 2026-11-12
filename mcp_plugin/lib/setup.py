@@ -203,6 +203,46 @@ def _delete_path(mcp_user_id=None) -> None:
     print(f"Allowed path '{path}' deleted{setup_cli._for_user(mcp_user_id)}.")
 
 
+# --- Extension groups -----------------------------------------------------------
+
+
+def _extension_groups_menu_entries() -> list:
+    """The menu's entry for the extension groups, where there is any.
+
+    Only where a loaded plugin offers one, or the setting names one: on a
+    machine without such a plugin the entry would choose among nothing.
+    """
+    if not setup_cli.extension_group_rows():
+        return []
+
+    return [("Switch an extension group on or off", _toggle_extension_group)]
+
+
+def _toggle_extension_group() -> None:
+    """Prompts for an extension group, and switches whether it is served by default."""
+    rows = setup_cli.extension_group_rows()
+    index = prompts.select_or_cancel(
+        "Select the extension group to switch on or off",
+        [f"{group} ({'on' if on else 'off'}): {offered}" for group, on, offered in rows],
+    )
+    if index < 0:
+        return
+
+    group = rows[index][0]
+    served = config.get_extension_groups()
+    if group in served:
+        served.remove(group)
+        state = "no longer served"
+    else:
+        served.append(group)
+        state = "served"
+    config.set_extension_groups(served)
+    print(
+        f"The extension group {group} is {state} by default. A running server "
+        "keeps its groups until it is restarted."
+    )
+
+
 # --- Users (multi-tenant mode) ------------------------------------------------
 
 
@@ -399,6 +439,7 @@ def _menu_entries() -> list:
         ("Delete a connection", _delete_connection),
         ("Add an allowed path", _add_path),
         ("Delete an allowed path", _delete_path),
+        *_extension_groups_menu_entries(),
         *setup_dba.menu_entries(),
     ]
     if setup_migrator.is_supported():

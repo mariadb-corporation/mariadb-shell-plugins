@@ -44,9 +44,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The util tasks are in
   vendor/project, never keys (None without the plugin).
 - **Task tools** (`lib/task_functions.py`): `task.get(task_id, since, wait_ms)`,
   `task.list(task_type)`, `task.cancel(task_id)`, registered in
-  `build_mcp_server` once, when `general.serves_tasks(groups)`: all of
-  one of the sets in `TASK_FUNCTION_GROUPS` is served (`{util}`, `{dba}`,
-  `{msm, db}` for `msm.online_alter_table`) - not a group of their own.
+  `build_mcp_server` once, when a registered tool starts tasks: each such
+  tool is registered with `tool(..., starts_tasks=True)` and
+  `tool_registrar.starts_tasks(server)` says so afterwards (util's tools,
+  dba's create/update/delete - `--gui` only, so an agent with the reading dba
+  tools gets no task tools -, `msm.online_alter_table`,
+  `msm.import_live_schema`, extension task tools) - not a group of their own.
+  `TASK_FUNCTION_GROUPS` / `general.serves_tasks` are gone (2026-11-12).
   There are no `util.*` task
   tools and no aliases for them: the user's call, as the VS Code extension
   has not been released and moves to `task.*` itself.

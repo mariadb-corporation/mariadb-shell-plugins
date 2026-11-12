@@ -17,9 +17,9 @@
 
 ``task.get``, ``task.list`` and ``task.cancel`` follow every task a client
 started, whichever group's tool started it: a dump or load of the util group,
-a create or delete of the dba group. They are registered with the first group
-served that starts tasks (see ``general.serves_tasks``), not as a
-group of their own: a client that can start a task can always follow it.
+a create or delete of the dba group. They are registered once a tool that
+starts tasks is (see ``tool_registrar.starts_tasks``), not as a group of
+their own: a client that can start a task can always follow it.
 """
 # cSpell:ignore mysqlsh mcpserver
 

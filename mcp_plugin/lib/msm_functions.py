@@ -1547,7 +1547,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             # thread - and use_session now refuses to be entered anywhere else.
             return await anyio.to_thread.run_sync(_deploy)
 
-        @tool(name="msm.online_alter_table")
+        @tool(name="msm.online_alter_table", starts_tasks=True)
         async def online_alter_table(
             ctx: Context,
             connection_id: str,
@@ -1805,4 +1805,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             tasks.start(task, work)
             return {"task_id": task.id, "status": task.status}
 
-        _register_with_gui_argument(tool, "msm.import_live_schema", import_live_schema)
+        # It starts a task: the task tools come with it
+        _register_with_gui_argument(
+            lambda **kwargs: tool(starts_tasks=True, **kwargs),
+            "msm.import_live_schema",
+            import_live_schema,
+        )

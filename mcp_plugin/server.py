@@ -63,6 +63,10 @@ def start_server(**options) -> None:
             The "sql" group registers its tools only where the mariadb-lsp
             binary is found (mcp.setup's lspPath, else the PATH, else
             ~/.local/bin).
+            Shell plugins can offer more groups, of their own functions
+            (@plugin_function(mcp={"group": ...})): such an extension group
+            is served when named here, or by default when mcp.setup's
+            extensionGroups lists it. Multi-tenant mode serves none.
         gui (bool): Serve for the MariaDB VS Code extension. The extension is
             a user interface the user drives directly on this machine, not an
             autonomous client, so two things the allow-lists exist to ask such

@@ -326,11 +326,30 @@ def _check_caller(tool_name, signature, call_args, call_kwargs) -> None:
         )
 
 
+# The attribute a server gets once a tool that starts background tasks is
+# registered on it (see tool_registrar and starts_tasks).
+_STARTS_TASKS = "_mcp_plugin_starts_tasks"
+
+
+def starts_tasks(server) -> bool:
+    """Whether a tool that starts background tasks is registered on server.
+
+    Where one is, the task tools that follow the tasks are needed too (see
+    :mod:`mcp_plugin.lib.task_functions`). Decided by what was registered,
+    not by which groups are served: a group registers its task tools only
+    where it can (dba's only with --gui, msm's only with db, util's only with
+    db), and so does a plugin's extension group.
+    """
+    return getattr(server, _STARTS_TASKS, False)
+
+
 def tool_registrar(server):
     """Returns a ``server.tool`` replacement bound to ``server``.
 
     The returned decorator factory forwards every argument to ``server.tool``
-    unchanged, so it accepts whatever that accepts.
+    unchanged, so it accepts whatever that accepts, and one more:
+    ``starts_tasks=True`` for a tool that starts background tasks (see
+    :func:`starts_tasks`).
 
     Args:
         server: The MCPServer the tools are registered on.
@@ -339,7 +358,7 @@ def tool_registrar(server):
         A decorator factory with the same signature as ``server.tool``.
     """
 
-    def mcp_tool(*args: Any, **kwargs: Any):
+    def mcp_tool(*args: Any, starts_tasks: bool = False, **kwargs: Any):
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             from mcp.server.mcpserver.exceptions import ResourceError, ToolError
             from mcp.shared.exceptions import MCPError
@@ -376,7 +395,10 @@ def tool_registrar(server):
             wrapper = (
                 async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
             )
-            return server.tool(*args, **kwargs)(wrapper)
+            registered = server.tool(*args, **kwargs)(wrapper)
+            if starts_tasks:
+                setattr(server, _STARTS_TASKS, True)
+            return registered
 
         return decorator
 

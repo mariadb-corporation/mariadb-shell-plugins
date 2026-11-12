@@ -7,6 +7,8 @@ Model Context Protocol (MCP) server exposing MariaDB AI Plugin capabilities to
 MCP-compatible clients. It registers the global `mcp` object in the shell and serves
 the `db`, `msm`, `sandbox`, `migrator`, `util`, `restd`, `sql` and `dba` tool groups,
 and the `task.*` tools that follow background tasks, over stdio or streamable-http.
+Other shell plugins can add groups of their own, extension groups (see
+[`context/extensions.md`](context/extensions.md)).
 `mcp.setup` additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21), and
 `sandbox.deploy` can be asked for a MariaDB server VERSION, downloading it if the machine
 has none (see [`context/sandbox.md`](context/sandbox.md)). `sandbox.list_instances` lists
@@ -61,6 +63,7 @@ this table with it.
 | [`context/dba.md`](context/dba.md) | The `dba` group (cloud deployments through `dba_plugin`): who gets which tools, the MCP API keys `mcp setup` stores, and the `task.*` tools that follow every background task over the shell's `mysqlsh.task_manager`. |
 | [`context/restd.md`](context/restd.md) | The `restd` group: MariaDB REST Daemon deployments, how `mariadb-restd --setup` and the daemon are driven, the install, and the hooks that make a sandbox's daemon follow it; the TLS proxy mode for shared servers (PR #73). |
 | [`context/sql.md`](context/sql.md) | The `sql` group: `sql.check`, `sql.outline`, `sql.format` over the `mariadb-lsp` binary, offered only where it is found; SOURCE includes checked before the binary reads them; positions made 1-based. |
+| [`context/extensions.md`](context/extensions.md) | Extension groups: MCP tools other shell plugins offer with `@plugin_function(mcp={...})` (the shell's registry), how they are published and called (`session` -> `connection_id`, `task`, `paths`, `**options`), switched on (`--functionGroups`, `extensionGroups`, `mcp setup`), and the test traps. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
 | [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `rest_plugin`: what was changed there, how to run their suites, and their own failures. |

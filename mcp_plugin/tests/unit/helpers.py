@@ -761,10 +761,31 @@ def stub_db_tools(monkeypatch, make_session):
                 "db.execute_sql_script"
             ](context, connection_id, script, **kwargs),
             opened=opened,
+            # For the tools of other groups that work on the connection
+            connection_id=connection_id,
+            context=context,
         )
     finally:
         general.set_active_transport(None)
         db_functions._sessions.clear()
+
+
+def finished(task, timeout=5):
+    """Waits for a background task to end; returns its status.
+
+    Args:
+        task: The shell's task (mysqlsh.task_manager.Task).
+        timeout (float): The most seconds to wait.
+
+    Returns:
+        str: Its status then, which is still running if it did not end.
+    """
+    from mysqlsh import task_manager
+
+    deadline = time.monotonic() + timeout
+    while task.status not in task_manager.FINISHED_STATES and time.monotonic() < deadline:
+        task.wait_for_change(task.version, 0.1)
+    return task.status
 
 
 def write_file(directory, relative_path, text):

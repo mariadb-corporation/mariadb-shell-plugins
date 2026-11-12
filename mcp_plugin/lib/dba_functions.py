@@ -243,7 +243,7 @@ def register_dba_tools(server, function_groups=()) -> None:
 
     from mcp.server.mcpserver import Context
 
-    @tool(name="dba.create_vendor_object")
+    @tool(name="dba.create_vendor_object", starts_tasks=True)
     def create_vendor_object(
         ctx: Context,
         vendor_name: str,
@@ -276,7 +276,7 @@ def register_dba_tools(server, function_groups=()) -> None:
             )
         )
 
-    @tool(name="dba.update_vendor_object")
+    @tool(name="dba.update_vendor_object", starts_tasks=True)
     def update_vendor_object(
         ctx: Context,
         vendor_name: str,
@@ -308,7 +308,7 @@ def register_dba_tools(server, function_groups=()) -> None:
             )
         )
 
-    @tool(name="dba.delete_vendor_object")
+    @tool(name="dba.delete_vendor_object", starts_tasks=True)
     def delete_vendor_object(
         ctx: Context,
         vendor_name: str,

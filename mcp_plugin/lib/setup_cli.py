@@ -74,6 +74,7 @@ ACTION_OPTIONS = (
     "set_default_role",
     "tool_name_separator",
     "lsp_path",
+    "extension_groups",
     "set_dba_api_key",
     "delete_dba_api_key",
 )
@@ -117,7 +118,7 @@ USER_TARGETED_OPTIONS = (
 JSON_ACTION_OPTIONS = ("add_user", "rotate_api_key", "show_api_key")
 
 # The actions that are actions whenever they are given, false or empty too.
-PRESENCE_OPTIONS = ("multi_tenant", "set_default_role", "lsp_path")
+PRESENCE_OPTIONS = ("multi_tenant", "set_default_role", "lsp_path", "extension_groups")
 
 
 def _cli_name(option: str) -> str:
@@ -654,6 +655,37 @@ def _set_lsp_path(options: dict) -> None:
     print("A running server keeps the one it found until it is restarted.")
 
 
+def _set_extension_groups(options: dict) -> None:
+    """Sets the extension groups served by default, as --extensionGroups says.
+
+    And says which of them a loaded plugin offers: a group none does is
+    stored all the same - its plugin may be installed later - but is not
+    served until one does.
+    """
+    # Imported here: it reads the shell's plugin registry, which only the
+    # setup and the server need.
+    from mcp_plugin.lib import extension_functions
+
+    stored = config.set_extension_groups(_as_list(options["extension_groups"]))
+    available = extension_functions.available_groups()
+    if not stored:
+        print("No extension group is served unless --functionGroups names it.")
+    for group in stored:
+        if group in available:
+            print(
+                f"The extension group {group} is served by default: "
+                f"{', '.join(available[group])}."
+            )
+        else:
+            print(
+                f"The extension group {group} is served by default once a "
+                "loaded plugin offers it; none does now."
+            )
+    if tenants.is_multi_tenant():
+        print("A multi-tenant server serves no extension group.")
+    print("A running server keeps its groups until it is restarted.")
+
+
 def _set_tool_name_separator(options: dict) -> None:
     """Sets what separates a tool's group from its name, as --toolNameSeparator says."""
     separator = str(options["tool_name_separator"])
@@ -858,6 +890,7 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
         "multi_tenant": tenants.is_multi_tenant(),
         "tool_name_separator": config.get_tool_name_separator(),
         "lsp_path": config.get_lsp_path(),
+        "extension_groups": _extension_groups(),
         "connections": config.list_connection_uris(),
         "allowed_paths": config.get_allowed_paths(),
         "migrator": {
@@ -891,6 +924,22 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
     return current
 
 
+def _extension_groups() -> dict:
+    """What --show reports about the extension groups.
+
+    Returns:
+        dict: ``served_by_default``, the extensionGroups setting, and
+        ``available``, each group the loaded plugins offer to the functions
+        offering tools in it.
+    """
+    from mcp_plugin.lib import extension_functions
+
+    return {
+        "served_by_default": config.get_extension_groups(),
+        "available": extension_functions.available_groups(),
+    }
+
+
 def _show(options: dict) -> None:
     """Prints the configuration, as JSON when --json was given."""
     current = configuration(
@@ -910,6 +959,7 @@ def _show(options: dict) -> None:
     print(f"Multi-tenant mode: {'on' if current['multi_tenant'] else 'off'}")
     print(f"Tool names:        db{current['tool_name_separator']}list_connections")
     print(f"mariadb-lsp:       {current['lsp_path'] or '(searched: PATH, ~/.local/bin)'}")
+    _print_extension_groups(current["extension_groups"])
     if current["multi_tenant"]:
         print(f"Public URL:        {current['public_url'] or '(none)'}")
         print(f"OAuth mode:        {current['oauth_mode']} (mcp setup-oauth --show)")
@@ -947,6 +997,41 @@ def _show(options: dict) -> None:
     print(f"  Installed releases: {', '.join(tooling['installed_releases']) or 'none'}")
     print(f"  Install path:       {tooling['install_path']}")
     print(f"  Wrapper:            {tooling['wrapper_path']}")
+
+
+def extension_group_rows(groups: dict = None) -> list:
+    """Each extension group offered or set, for a listing.
+
+    Args:
+        groups (dict): What :func:`_extension_groups` returns, or None to
+            read it.
+
+    Returns:
+        list: ``(group, served by default, the functions offering it)`` per
+        group, sorted, the last a text.
+    """
+    groups = groups or _extension_groups()
+    served = groups["served_by_default"]
+    available = groups["available"]
+
+    return [
+        (
+            group,
+            group in served,
+            ", ".join(available.get(group, [])) or "no loaded plugin offers it",
+        )
+        for group in sorted(set(served) | set(available))
+    ]
+
+
+def _print_extension_groups(groups: dict) -> None:
+    """Prints the extension groups part of --show, if there is any."""
+    rows = extension_group_rows(groups)
+    if rows:
+        print("Extension groups:")
+    for group, served, offered in rows:
+        state = "served by default" if served else "served when named"
+        print(f"  {group} ({state}): {offered}")
 
 
 def _print_users(current: dict) -> None:
@@ -1006,6 +1091,8 @@ def apply(options: dict) -> None:
         _set_tool_name_separator(options)
     if "lsp_path" in options:
         _set_lsp_path(options)
+    if "extension_groups" in options:
+        _set_extension_groups(options)
     if options.get("remove_user"):
         _remove_users(options)
     if options.get("add_user"):

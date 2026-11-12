@@ -211,7 +211,7 @@ def register_util_tools(server, function_groups=()) -> None:
 
         return {"task_id": task.id, "status": task.status}
 
-    @tool(name="util.dump_instance")
+    @tool(name="util.dump_instance", starts_tasks=True)
     async def dump_instance(
         ctx: Context,
         connection_id: str,
@@ -241,7 +241,7 @@ def register_util_tools(server, function_groups=()) -> None:
             urls=[output_url], result={"output_url": output_url},
         )
 
-    @tool(name="util.dump_schemas")
+    @tool(name="util.dump_schemas", starts_tasks=True)
     async def dump_schemas(
         ctx: Context,
         connection_id: str,
@@ -272,7 +272,7 @@ def register_util_tools(server, function_groups=()) -> None:
             forbidden=_OUTPUT_URL_PARAMETER,
         )
 
-    @tool(name="util.dump_tables")
+    @tool(name="util.dump_tables", starts_tasks=True)
     async def dump_tables(
         ctx: Context,
         connection_id: str,
@@ -306,7 +306,7 @@ def register_util_tools(server, function_groups=()) -> None:
             forbidden=_OUTPUT_URL_PARAMETER,
         )
 
-    @tool(name="util.export_table")
+    @tool(name="util.export_table", starts_tasks=True)
     async def export_table(
         ctx: Context,
         connection_id: str,
@@ -338,7 +338,7 @@ def register_util_tools(server, function_groups=()) -> None:
             urls=[output_url], result={"output_url": output_url},
         )
 
-    @tool(name="util.load_dump")
+    @tool(name="util.load_dump", starts_tasks=True)
     async def load_dump(
         ctx: Context,
         connection_id: str,
@@ -369,7 +369,7 @@ def register_util_tools(server, function_groups=()) -> None:
             urls=[url], result={"url": url},
         )
 
-    @tool(name="util.import_table")
+    @tool(name="util.import_table", starts_tasks=True)
     async def import_table(
         ctx: Context,
         connection_id: str,
@@ -411,7 +411,7 @@ def register_util_tools(server, function_groups=()) -> None:
             urls=files, result={"urls": files},
         )
 
-    @tool(name="util.copy_instance")
+    @tool(name="util.copy_instance", starts_tasks=True)
     async def copy_instance(
         ctx: Context,
         connection_id: str,
@@ -441,7 +441,7 @@ def register_util_tools(server, function_groups=()) -> None:
             result={"target_connection_id": target_connection_id},
         )
 
-    @tool(name="util.copy_schemas")
+    @tool(name="util.copy_schemas", starts_tasks=True)
     async def copy_schemas(
         ctx: Context,
         connection_id: str,
@@ -473,7 +473,7 @@ def register_util_tools(server, function_groups=()) -> None:
             result={"target_connection_id": target_connection_id},
         )
 
-    @tool(name="util.copy_tables")
+    @tool(name="util.copy_tables", starts_tasks=True)
     async def copy_tables(
         ctx: Context,
         connection_id: str,

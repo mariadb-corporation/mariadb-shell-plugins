@@ -199,6 +199,9 @@ _TOOL_NAME_SEPARATOR_SETTING = "toolNameSeparator"
 # Where the mariadb-lsp binary of the sql group is (see get_lsp_path).
 _LSP_PATH_SETTING = "lspPath"
 
+# The extension groups served by default (see get_extension_groups).
+_EXTENSION_GROUPS_SETTING = "extensionGroups"
+
 # Name of the file inside the plugin data directory that holds the details of
 # the stored connections (see get_connection_details).
 CONNECTIONS_FILE_NAME = "connections.json"
@@ -1480,6 +1483,56 @@ def set_lsp_path(path: str) -> None:
     else:
         settings.pop(_LSP_PATH_SETTING, None)
     save_settings(settings)
+
+
+def get_extension_groups() -> list:
+    """Returns the extension groups a server serves when none are named.
+
+    Extension groups are the MCP tools other shell plugins offer (see
+    :mod:`mcp_plugin.lib.extension_functions`). None is served unless asked
+    for, so installing a plugin alone gives agents no new tools: this list,
+    set with ``mcp setup --extensionGroups``, asks for them for every server
+    started without ``--functionGroups``. A server reads it once, when it
+    starts.
+    """
+    groups = get_settings().get(_EXTENSION_GROUPS_SETTING, [])
+    if not isinstance(groups, list):
+        return []
+
+    return [group for group in groups if isinstance(group, str) and group]
+
+
+def set_extension_groups(groups) -> list:
+    """Persists the extension groups served by default; empty clears them.
+
+    Args:
+        groups (list): The group names.
+
+    Returns:
+        list: The groups stored, each once, in the order given.
+
+    Raises:
+        mysqlsh.Error: If a name is not an extension group name.
+    """
+    from mcp_plugin.lib import extension_functions
+
+    stored = []
+    for group in groups:
+        try:
+            group = extension_functions.check_group_name(group)
+        except ValueError as e:
+            raise mysqlsh.Error(str(e)) from None
+        if group not in stored:
+            stored.append(group)
+
+    settings = get_settings()
+    if stored:
+        settings[_EXTENSION_GROUPS_SETTING] = stored
+    else:
+        settings.pop(_EXTENSION_GROUPS_SETTING, None)
+    save_settings(settings)
+
+    return stored
 
 
 def save_settings(settings: dict) -> None:

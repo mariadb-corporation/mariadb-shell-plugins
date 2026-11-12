@@ -289,8 +289,15 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
 
     tool_registrar.use_tool_name_separator(server, tool_name_separator)
     for group in function_groups:
-        _registrar(group)(server, function_groups)
-    if general.serves_tasks(function_groups):
+        if group in _FUNCTION_GROUP_REGISTRARS:
+            _registrar(group)(server, function_groups)
+    # The groups other shell plugins offer (see extension_functions); start()
+    # has refused any name that is neither one of those nor a built-in group.
+    from mcp_plugin.lib import extension_functions
+
+    extension_functions.register_extension_tools(server, function_groups)
+    # The task tools, once a registered tool of any group starts tasks
+    if tool_registrar.starts_tasks(server):
         from mcp_plugin.lib import task_functions
 
         task_functions.register_task_tools(server)
@@ -348,13 +355,20 @@ def start(
     Returns:
         None
     """
+    from mcp_plugin.lib import extension_functions
+
     multi_tenant = tenants.is_multi_tenant()
+    # The groups the loaded shell plugins offer, read once: every plugin is
+    # loaded before a server starts.
+    extension_groups = extension_functions.available_groups()
     if function_groups is None:
         function_groups = list(
             general.MULTI_TENANT_FUNCTION_GROUPS
             if multi_tenant
             else general.DEFAULT_FUNCTION_GROUPS
         )
+        if not multi_tenant:
+            function_groups += _default_extension_groups(extension_groups)
 
     if transport not in general.SUPPORTED_TRANSPORTS:
         raise mysqlsh.Error(
@@ -369,12 +383,21 @@ def start(
         )
 
     unknown_groups = [
-        group for group in function_groups if group not in _FUNCTION_GROUP_REGISTRARS
+        group
+        for group in function_groups
+        if group not in _FUNCTION_GROUP_REGISTRARS and group not in extension_groups
     ]
     if unknown_groups:
+        offered = (
+            f" The loaded plugins offer the extension group(s): "
+            f"{', '.join(extension_groups)}."
+            if extension_groups
+            else " No loaded plugin offers an extension group."
+        )
         raise mysqlsh.Error(
             f"Unknown function group(s): {', '.join(unknown_groups)}. Supported "
             f"function groups are: {', '.join(general.SUPPORTED_FUNCTION_GROUPS)}."
+            + offered
         )
 
     if bool(ssl_certfile) != bool(ssl_keyfile):
@@ -480,6 +503,33 @@ def start(
                 provider.deactivate()
 
 
+def _default_extension_groups(available) -> list:
+    """The extension groups a server serves when no groups were named.
+
+    Those of the ``extensionGroups`` setting (``mcp setup
+    --extensionGroups``) that a loaded plugin offers. One that none does - a
+    plugin removed since - is left out with a line in the log rather than
+    stopping the server, as nobody named it for this run.
+
+    Args:
+        available (dict): The extension groups the loaded plugins offer.
+
+    Returns:
+        list: The groups to serve.
+    """
+    served = []
+    for group in config.get_extension_groups():
+        if group in available:
+            served.append(group)
+        else:
+            general.log_event(
+                f"server: extension group {group} not served: no loaded "
+                "plugin offers it"
+            )
+
+    return served
+
+
 def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
     """Refuses to start a multi-tenant server in a way it cannot serve.
 
@@ -510,19 +560,35 @@ def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
             "user's own editor."
         )
 
+    from mcp_plugin.lib import extension_functions
+
     refused = [
         group
         for group in function_groups
         if group not in general.MULTI_TENANT_FUNCTION_GROUPS
     ]
     if refused:
+        # One message for every group refused, each kind with its reason
+        extensions = extension_functions.extension_groups_in(refused)
+        built_in = [group for group in refused if group not in extensions]
+        reasons = []
+        if built_in:
+            reasons.append(
+                f"The function group(s) {', '.join(built_in)} are not available in "
+                "multi-tenant mode, as they run local servers and long jobs on this "
+                "machine, work on SQL files on the developer's own machine, or use "
+                "the server's own cloud vendor API keys."
+            )
+        if extensions:
+            reasons.append(
+                f"The extension group(s) {', '.join(extensions)} are not available "
+                "in multi-tenant mode: their tools come from other shell plugins, "
+                "which are not written to keep one user's work from another's."
+            )
         raise mysqlsh.Error(
-            f"The function group(s) {', '.join(refused)} are not available in "
-            "multi-tenant mode, as they run local servers and long jobs on this "
-            "machine, work on SQL files on the developer's own machine, or use "
-            "the server's own cloud vendor API keys. "
-            "Available groups: "
-            f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
+            " ".join(reasons)
+            + " Available groups: "
+            + f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
         )
 
     tenants.require_secret_groups()

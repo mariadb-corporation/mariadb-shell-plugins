@@ -112,6 +112,7 @@ nothing else. Run `mariadb-shell -- mcp setup --help` for the generated list.
 | `--dbaProject=<name>` | The project the key of `--setDbaApiKey` or `--deleteDbaApiKey` is for (default `default`). |
 | `--dbaApiKeyEnv=<VARNAME>` | Read the API key from the *named* environment variable. |
 | `--dbaApiKeyStdin` | Read the API key from the first line of stdin. |
+| `--extensionGroups=<list>` | The [extension groups](#tools-of-other-shell-plugins-extension-groups) a server serves when started without `--functionGroups`. Empty serves none. |
 | `--nonInteractive` | Never prompt; a missing password is an error, not a question. |
 | `--show` | Print the configuration and do nothing else. |
 | `--json` | Print what `--show` reports as JSON. Only applies to `--show`. |
@@ -225,7 +226,8 @@ primitives in `lib/setup_prompts.py`).
 
 The tools are grouped into function groups that can be loaded independently via the
 `function_groups` option of `mcp.start_server` (`db`, `msm`, `rest`, `sandbox`, `migrator`,
-`util`, `restd`, `sql`, `dba`; defaults to all):
+`util`, `restd`, `sql`, `dba`; defaults to all), and the
+[extension groups](#tools-of-other-shell-plugins-extension-groups) of other shell plugins:
 
 ```bash
 # expose only the database tools
@@ -795,10 +797,12 @@ column in it, so `sql.check` reports an error in a section where it is.
 ### Background tasks (`task`)
 
 The tools that start a background task - the `util` tools, `dba.create_vendor_object`,
-`dba.update_vendor_object` and `dba.delete_vendor_object`, and `msm.online_alter_table` -
-return its `task_id` at once. Three tools follow the
-tasks, whichever group started them. They are served with the `util` or the `dba` group,
-or with `msm` and `db` together, not as a group of their own.
+`dba.update_vendor_object` and `dba.delete_vendor_object`, `msm.online_alter_table`,
+`msm.import_live_schema`, and the task tools of
+[extension groups](#tools-of-other-shell-plugins-extension-groups) - return its
+`task_id` at once. Three tools follow the tasks, whichever group started them. They are
+served whenever one of those tools is, not as a group of their own: so not to an agent
+that only has the `dba` tools that read.
 
 | MCP tool | Description |
 | --- | --- |
@@ -859,6 +863,63 @@ The VS Code extension (`--gui`) gets every tool and works with its own keys
 (`GUI:DBA_API_KEY:<vendor>:<project>`), which `dba.set_api_key` stores. A multi-tenant
 server does not serve the group: the keys are the server's, so every user would reach the
 same vendor accounts.
+
+### Tools of other shell plugins (extension groups)
+
+Any shell plugin can offer its own functions as tools, in a group of its own, by
+passing `mcp` to `@plugin_function`. The plugin imports neither this plugin nor the MCP
+SDK; the server finds the functions in the shell's plugin registry when it starts.
+
+```python
+@plugin_function("orders.listOpen", mcp={"group": "orders", "readOnly": True})
+def list_open(customer, limit=20, session=None):
+    """Lists a customer's open orders.
+
+    Args:
+        customer (str): The customer number.
+        limit (int): The most orders returned.
+        session (object): The session to use, the shell's own by default.
+    """
+```
+
+This is served as the tool `orders.list_open(connection_id, customer, limit=20)`. What
+it is published with comes from the signature and the docstring; `**options` becomes
+one `options` object. Two parameters are filled in by the server rather than published:
+
+- **`session`**: the tool takes the `connection_id` of a connection opened with
+  `db.connect`, and the function gets that connection's session, with every safeguard a
+  `db` tool has (the client binding, the lock, the idle reopen, the lifetime). Such a
+  tool is served only when the `db` group is.
+- **`task`**: with `"task": True` the function runs as a background task, the tool
+  returns its `task_id` at once, and `task.get` follows it. The function gets the task
+  (`task.progress()`, `task.check_cancelled()`) and a session of its own, closed when
+  it ends; its return value is the task's result.
+
+The other keys of `mcp`: `name` (default: the function name in snake_case), `readOnly`
+and `destructive` (the tool's annotations), `paths` (parameters holding file paths,
+checked against the allowed paths like the `msm` tools' paths) and `gui` (served with
+`--gui` only). The server checks them when it starts: a tool whose definition has a
+mistake is not served, and the log says why. A plugin's `mysqlsh.Error`
+reaches the agent with its message, and a `run_sql()` result as its rows.
+
+**Installing a plugin gives agents no new tools.** An extension group is served only
+when it is asked for:
+
+```bash
+# for one run
+mariadb-shell -- mcp start-server --function-groups=db,orders
+
+# for every server started without --function-groups
+mariadb-shell -- mcp setup --extensionGroups=orders
+mariadb-shell -- mcp setup --show     # lists the groups the loaded plugins offer
+```
+
+The setup menu has an entry to switch a group on or off as well. A group a loaded
+plugin no longer offers is skipped with a line in the log. A tool that cannot be served
+- its group is a built-in one, its name is taken, its parameters cannot be published,
+or it needs the `db` group - is left out with a line in the log saying why, and every
+tool served is logged too (`[mcp] server: serving extension tool ...`). A multi-tenant
+server serves no extension group.
 
 ## Installation
 
