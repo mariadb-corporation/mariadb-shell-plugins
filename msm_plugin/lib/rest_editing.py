@@ -133,21 +133,10 @@ def _in_subtree(key: tuple, root: tuple) -> bool:
     return key == root
 
 
-def _without_place(value):
-    if isinstance(value, dict):
-        return {
-            name: _without_place(member) for name, member in value.items()
-            if name not in _PLACE_MEMBERS
-        }
-    if isinstance(value, list):
-        return [_without_place(member) for member in value]
-    return value
-
-
 def _fingerprint(item: dict):
     """What a deployment makes of an item, without where it is written."""
     node = {name: member for name, member in item["node"].items() if name not in _CHILD_MEMBERS}
-    return item["kind"], _without_place(node)
+    return item["kind"], editing.without_place(node, _PLACE_MEMBERS)
 
 
 def _describe(key: tuple, items: dict) -> str:
@@ -497,8 +486,7 @@ def _move_years(schema_project_path: str, project, binary: str, outlined: dict) 
 
 
 def _answer(rows: list, written: list, notes: list, **members) -> dict:
-    return {"rows": rows, "files": written, "migration": [], "migration_file": None,
-            "notes": notes, **members}
+    return editing.edit_result(rows, written, notes, **members)
 
 
 # -----------------------------------------------------------------------------

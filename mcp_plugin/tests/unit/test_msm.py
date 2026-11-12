@@ -1163,13 +1163,19 @@ def test_schema_edits_go_through_the_tool(project_lists, allowed_temp_dir, monke
         _call(tools, "msm.edit_schema", [rename], base, path)
 
 
+def _test_lsp(capable):
+    """The mariadb-lsp a test runs with (MSM_TEST_LSP, else the one msm finds), where
+    capable says it does what the test needs; else None."""
+    binary = msm_lsp.find_lsp(os.environ.get("MSM_TEST_LSP"))
+    return binary if binary is not None and capable(binary) else None
+
+
 def _rest_statements_lsp():
     """A mariadb-lsp that lists every statement of each REST item (MSM_TEST_LSP, else the
     one msm finds), or None."""
     from msm_plugin.lib import rest_editing
 
-    binary = msm_lsp.find_lsp(os.environ.get("MSM_TEST_LSP"))
-    return binary if binary is not None and rest_editing.lists_statements(binary) else None
+    return _test_lsp(rest_editing.lists_statements)
 
 
 @pytest.mark.skipif(_rest_statements_lsp() is None,
@@ -1203,6 +1209,36 @@ def test_rest_items_are_set_and_dropped_through_the_tools(
     with open(script) as f:
         assert "REST VIEW /customer" not in f.read()
 
+
+def _schema_statements_lsp():
+    """A mariadb-lsp with the add_view and drop_view edit ops, or None."""
+    return _test_lsp(lambda binary: {"add_view", "drop_view"} <= msm_lsp.edit_ops(binary))
+
+
+@pytest.mark.skipif(_schema_statements_lsp() is None,
+                    reason="no mariadb-lsp binary with the add_view and drop_view edit ops")
+def test_schema_objects_are_set_and_dropped_through_the_tools(
+    project_lists, allowed_temp_dir, monkeypatch
+):
+    from mcp_plugin.lib import config
+
+    monkeypatch.setattr(config, "get_lsp_path", _schema_statements_lsp)
+    tools = _msm_tools()
+    path = _diagram_project(tools, allowed_temp_dir)
+    _call(tools, "msm.update_schema_definition", path)
+    base = _call(tools, "msm.get_schema_diagrams", path)[0]["document"]["source_hash"]
+
+    result = _call(tools, "msm.set_schema_statements",
+                   ["CREATE VIEW `v_customer` AS SELECT `id` FROM `customer`"], base,
+                   expect=[{"kind": "view", "name": "v_customer"}], schema_project_path=path)
+    (entry,) = result["statements"]
+    assert (entry["kind"], entry["name"], entry["replaced"]) == ("view", "v_customer", False)
+    assert entry["file"] and entry["line"]
+
+    base = result["rows"][0]["document"]["source_hash"]
+    result = _call(tools, "msm.drop_schema_object", "view", "v_customer", base,
+                   schema_project_path=path)
+    assert "v_customer" not in [v["name"] for v in result["rows"][0]["document"]["views"]]
 
 
 def test_a_diagram_include_outside_the_allowed_paths_is_refused(

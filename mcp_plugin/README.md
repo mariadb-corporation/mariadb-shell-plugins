@@ -301,6 +301,8 @@ Management (`msm`) plugin:
 | `msm.online_alter_table` | `online_alter_table` (as a task; with the db group) |
 | `msm.get_object_templates` | `get_object_templates` (`msm_plugin/modeling.py`) |
 | `msm.add_schema_object` | `add_schema_object` (`msm_plugin/modeling.py`) |
+| `msm.set_schema_statements` | `set_schema_statements` (`msm_plugin/modeling.py`) |
+| `msm.drop_schema_object` | `drop_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.set_rest_statements` | `set_rest_statements` (`msm_plugin/modeling.py`) |
 | `msm.drop_rest_object` | `drop_rest_object` (`msm_plugin/modeling.py`) |
 | `msm.list_live_schema_objects` | `lib/live_schema.list_schema_objects` (with the db group) |
@@ -354,6 +356,9 @@ SQL (the CREATE statements stay the source of truth) through `mariadb-lsp edit`:
 diagrams follow renamed objects, the snapshot is made again, and once the project has
 a release the statements that take a deployed schema along are kept in
 `development/<schema>_update_next.sql` for the next release's update script.
+`msm.set_schema_statements` and `msm.drop_schema_object` do the same for tables, sequences,
+views, routines, triggers and events: SQL in, msm places it (`msm.edit_schema` stays for
+structured edits such as renames and column changes).
 `msm.set_rest_statements` and `msm.drop_rest_object` change the REST definition, MSM Section 180,
 where msm decides the place and the form: a client hands over CREATE REST statements, or
 names the service, schema or object to drop, and never edits the section's text itself.
