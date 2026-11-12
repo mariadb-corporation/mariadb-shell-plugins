@@ -282,13 +282,16 @@ def _registry() -> list:
     return list(registrar.get_registry())
 
 
-def extension_tools() -> list:
+def extension_tools(groups=None) -> list:
     """The functions the loaded plugins offer as MCP tools.
 
     A shell without the mcp argument has no ``mcp`` attribute on its
-    entries, which reads as none offered. A group that is a built-in one is
-    left out here, as is a second function of the same tool name: both are
+    entries, which reads as none offered. A tool of a built-in group, or a
+    second function of the same tool name, is still in the list: both are
     reported when the server is built (see :func:`register_extension_tools`).
+
+    Args:
+        groups: Only the tools of these groups; None for every one.
 
     Returns:
         list: :class:`ExtensionTool` objects, in registration order.
@@ -297,6 +300,7 @@ def extension_tools() -> list:
         ExtensionTool(definition)
         for definition in _registry()
         if getattr(definition, "mcp", None)
+        and (groups is None or definition.mcp["group"] in groups)
     ]
 
 
@@ -360,7 +364,7 @@ def _plain(value):
 
     A shell result (of ``run_sql``) becomes the rows of its result set, as
     ``db.execute_sql`` returns them; datetimes and decimals become their
-    text, anything else unknown its ``str``.
+    text, bytes their hex, anything else unknown its ``str``.
     """
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
@@ -372,6 +376,9 @@ def _plain(value):
         return value.isoformat()
     if isinstance(value, decimal.Decimal):
         return str(value)
+    if isinstance(value, (bytes, bytearray)):
+        # As db.execute_sql gives binary values: hex, not a list of numbers
+        return value.hex()
     if hasattr(value, "fetch_all") and hasattr(value, "get_columns"):
         # Read as db.execute_sql reads a result set: the same labels and the
         # same text for binary, date and time values
@@ -452,19 +459,25 @@ def register_extension_tools(server, function_groups) -> bool:
     from mcp_plugin.lib.tool_registrar import tool_registrar
 
     register = tool_registrar(server)
-    groups = set(extension_groups_in(function_groups))
+    groups = set(extension_groups_in(function_groups)) - set(_RESERVED_GROUPS)
     serves_db = general.FUNCTION_GROUP_DB in function_groups
     registered = {}
     starts_tasks = False
 
-    for tool in extension_tools():
-        if tool.group not in groups:
-            continue
+    # A tool of a built-in group is never served, whatever groups are served:
+    # said once, so its plugin's author learns why it is missing.
+    for definition in _registry():
+        mcp = getattr(definition, "mcp", None)
+        if mcp and mcp["group"] in _RESERVED_GROUPS:
+            general.log_event(
+                f"server: extension tool {mcp['group']}.{mcp['name']} of "
+                f"{definition.fully_qualified_name or definition.name} not "
+                f"served: {mcp['group']} is a built-in function group"
+            )
 
+    for tool in extension_tools(groups):
         refusal = None
-        if tool.group in _RESERVED_GROUPS:
-            refusal = f"{tool.group} is a built-in function group"
-        elif tool.problem:
+        if tool.problem:
             refusal = tool.problem
         elif tool.tool_name in registered:
             refusal = f"{registered[tool.tool_name]} already offers {tool.tool_name}"
@@ -494,7 +507,14 @@ def register_extension_tools(server, function_groups) -> bool:
                 readOnlyHint=tool.mcp["readOnly"] or None,
                 destructiveHint=tool.mcp["destructive"] or None,
             )
-        register(name=tool.tool_name, annotations=annotations)(function)
+        try:
+            register(name=tool.tool_name, annotations=annotations)(function)
+        except Exception as e:  # one plugin's tool must not stop the server
+            general.log_event(
+                f"server: extension tool {tool.tool_name} of {tool.source} "
+                f"not served: {e}"
+            )
+            continue
         registered[tool.tool_name] = tool.source
         starts_tasks = starts_tasks or tool.mcp["task"]
         general.log_event(

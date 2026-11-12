@@ -289,6 +289,11 @@ def test_tools_that_cannot_be_served_are_left_out(registry, logged):
         "orders.clashing" in line and "connection_id is a name the tool cannot publish" in line
         for line in logged
     )
+    # a tool of a built-in group is never served, and the log says why
+    assert (
+        "server: extension tool db.refuse of sneaky.refuse not served: db is a "
+        "built-in function group"
+    ) in logged
 
 
 def test_a_gui_tool_is_not_served_to_an_agent(registry):
@@ -401,6 +406,7 @@ def test_a_result_is_made_json(registry):
             "when": datetime.date(2026, 11, 12),
             "amount": decimal.Decimal("1.50"),
             "rows": (1, 2),
+            "binary": b"\x01\xff",
             "other": object,
         }
 
@@ -409,7 +415,8 @@ def test_a_result_is_made_json(registry):
 
     result = asyncio.run(_function(mcp_server, "orders.values")(None))
     assert result == {
-        "when": "2026-11-12", "amount": "1.50", "rows": [1, 2], "other": str(object),
+        "when": "2026-11-12", "amount": "1.50", "rows": [1, 2], "binary": "01ff",
+        "other": str(object),
     }
     json.dumps(result)
 

@@ -295,9 +295,9 @@ def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     # has refused any name that is neither one of those nor a built-in group.
     from mcp_plugin.lib import extension_functions
 
-    extension_tasks = bool(
-        extension_functions.extension_groups_in(function_groups)
-    ) and extension_functions.register_extension_tools(server, function_groups)
+    extension_tasks = extension_functions.register_extension_tools(
+        server, function_groups
+    )
     if general.serves_tasks(function_groups) or extension_tasks:
         from mcp_plugin.lib import task_functions
 
