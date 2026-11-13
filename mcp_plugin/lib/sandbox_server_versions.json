@@ -4,39 +4,39 @@
         {
             "major": 11,
             "minor": 8,
-            "latestPatch": 9,
+            "latestPatch": 10,
             "patches": [
                 {
-                    "9": [
+                    "10": [
                         {
                             "os": "darwin-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-macos26-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "7fe5f2d35ef0304174671a792bacbd2d11903ea6016e9041d861096ec1bb703b"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-macos26-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "1893a3de8182b1c06cf459af6ed4b7975464f34e84a50ae53b4d8ca76c828a1c"
                         },
                         {
                             "os": "darwin-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-macos15-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "dd252f09005b1bb42372abe611140c144b3bbd2462c8c78f9a93db1d8e0a0179"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-macos15-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "aee23c56f2ee7963b7b0e7d059d81447f9f203055953f258f06516429e09b08d"
                         },
                         {
                             "os": "linux-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "ef8391ad01a35617ce58e09a532fb4a41564022e120d17c71ebd1a5a5f4fb89d"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "6db839d657a9af23b8987ea8bfd0bc9157c0aa0906e25e562daf96f09c8cee5e"
                         },
                         {
                             "os": "linux-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "d117e033b22bcdec52c9e906614c0b5cec2eb0ab97159eca2a89337044760e41"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "eb2d31134cb155fb0935d0f5d9b933e138c66aee4a7d06ee691343d71dbe6212"
                         },
                         {
                             "os": "win32-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-windows-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "00f60d3e68dfafb3ed56a1cbc09a4fec16d4aed2b70733cc95a5e40708c61da9"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-windows-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "d5d0ee680c10a1e4d12d35714cd466c63bd6a390e5eaf1963fdbb00d28a3f139"
                         },
                         {
                             "os": "win32-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-11.8.9-windows-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "2f3d54ddf9f43fde23168b695d46f89c660a7e21580114911f29d9c1ac1e6e75"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-11.8.10-windows-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "0159b27c9dd882c1e8c65528fcc1da348d3e8138e76cd00c41f65e96df329bdf"
                         }
                     ]
                 }
@@ -45,39 +45,39 @@
         {
             "major": 12,
             "minor": 3,
-            "latestPatch": 3,
+            "latestPatch": 4,
             "patches": [
                 {
-                    "3": [
+                    "4": [
                         {
                             "os": "darwin-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-macos26-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "bdc3b89ea22aa6e2944f26dd9cf050b42317380943f62e3198d066b1ed582d50"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-macos26-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "62a785c3b5510f2b87565be817596b1a482d2e22ddbab2688a891284371f438e"
                         },
                         {
                             "os": "darwin-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-macos15-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "ee10b1eb0ccc475a10c462d00151461d98cd12472a46f042ae3a50ef9753f4cb"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-macos15-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "e1313ccdf79454b9e660e0986a10763abfe4897d3a99a2b77604571f55ddd190"
                         },
                         {
                             "os": "linux-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "da0c969d0831529bb9059993cbb0493c6a4b456152c7fe29f1292ce806e97327"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "c4f060ae40d3ad2d63906543c93a3e3e85b6ae8d1bd18d6f1094b160483807fc"
                         },
                         {
                             "os": "linux-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "a788c2a9f771fb3c9349393da67e9f7b0e8375e82dc103a60dd0787d0ac5de24"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "60592691d36fca2dd3614a6b2baff16b5dd471b461e7a9bd5fce635f4d5e64a7"
                         },
                         {
                             "os": "win32-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-windows-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "3e05fee5e905e3d2cd1585963da18a0793c4ced4abdbdc806a44525e8d1a09a1"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-windows-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "6082f83acecf33e0c1be17f536b7b2d6462f1ba032a2259dd6da17ec9a0bdf0b"
                         },
                         {
                             "os": "win32-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-12.3.3-windows-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "b62c3261aa4d5a451ec67d3b12c5962ba2f4088b5247633e5e067b56957d04da"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-12.3.4-windows-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "520bf5ced8cbd0fde63a27f88c109a51808c79041898a057e38212f6301af916"
                         }
                     ]
                 }
@@ -92,33 +92,33 @@
                     "1": [
                         {
                             "os": "darwin-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-macos26-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "edeec34618c49632e8e8b8e8846d510075f96a0abecb789452354e37ea2cb0fc"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-macos26-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "70e223c6cc7e239cb494ff87a49e116b795202bc76c0efcd11f4d527567eda28"
                         },
                         {
                             "os": "darwin-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-macos15-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "1b4021fe0c87a7d0b5292a398026e76ca8c981f9d967afdb138d91c5d4409ea8"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-macos15-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "37eff26e4ee6115a395b037a902d9a99d76ef7b0e03df128c842c266598cbc3a"
                         },
                         {
                             "os": "linux-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "fb9dff2fe8e3a06721b283ede0692f59457d2d4f4bc6f17dd670166aa526197b"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "bee369a442e6e5e1d1b2f2e097aed26c765745e854e2517afa87d3abab53024c"
                         },
                         {
                             "os": "linux-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "c820027a4553f0f3f7917ef1ae6bd219b064dee844f49f560e3e6902ad4c1705"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "830bb7f36b56d72edad45e96e50e49e72030c8d7ce9db9c732fad992b2d4aedf"
                         },
                         {
                             "os": "win32-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-windows-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "dd8237f74b889c8872549718ced4a318254f2b49e0b684dde02d62547bfac2e8"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-windows-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "2c0821df0be659b975d4df9deb7bc82d6eb4b4ce209513838ab5ff9f44acc32c"
                         },
                         {
                             "os": "win32-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.10.0/mariadb-13.1.1-windows-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "5e02e69bddd13665b3ad0f60664da089c5830ce4b8cfd636f68416ff22196850"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-windows-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "10d8413b515c97c5eec9b3e7092fedd2d9402597ae180678365ed620a4caa6f0"
                         }
                     ]
                 }

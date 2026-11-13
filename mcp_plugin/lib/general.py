@@ -28,7 +28,7 @@ from mysqlsh import task_manager
 
 from mcp_plugin.lib.tool_registrar import tool_error
 
-VERSION = "26.11.1"
+VERSION = "26.11.2"
 
 # Default MCP server bind settings
 DEFAULT_HOST = "127.0.0.1"
