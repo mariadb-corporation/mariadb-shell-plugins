@@ -222,7 +222,7 @@ _TARGET = {"user": "tgt", "host": "h", "port": 3307, "password": "secret"}
 
 @pytest.mark.parametrize("name", [
     "host", "port", "user", "password", "socket", "uri", "ssh", "ssh-host",
-    "ssh-password", "auth-method", "oci-config-file", "connect-timeout",
+    "ssh-password", "auth-method", "server-public-key-path", "connect-timeout",
     # every spelling the shell's command line reads as the same name
     "Host", "sslMode", "ssl_mode", "ssl-mode", "authMethod", "sshPassword",
 ])
