@@ -206,7 +206,6 @@ def test_the_archive_finds_every_data_file_by_the_metadata(tmp_path):
 
     orders = next(u for u in archive.units if u.table == "orders")
     assert [c.index for c in orders.chunks] == list(range(10))
-    assert [c.last for c in orders.chunks] == [False] * 9 + [True]
     assert orders.chunks[0].idx_name == "shop@orders@0.tsv.zst.idx"
 
     small = next(u for u in archive.units if u.table == "small")
@@ -360,7 +359,8 @@ def test_a_dump_never_overwrites_a_zip_or_a_left_over_folder(tmp_path):
 @pytest.mark.parametrize("options,message", [
     ({"progressFile": ""}, "progressFile cannot be empty"),
     ({"waitDumpTimeout": 10}, "waitDumpTimeout is set by the tool"),
-    ({"progressFile": 1}, "must be a path"),
+    ({"progressFile": 1}, "must be a local file"),
+    ({"progressFile": "https://example.com/progress.json"}, "must be a local file"),
 ])
 def test_options_a_zip_load_cannot_take_are_refused(tmp_path, options, message):
     zip_path, _ = make_zip(tmp_path, chunk_size=KB, chunks=1)
@@ -565,7 +565,8 @@ def test_a_failed_load_resumes_with_its_progress_file_and_loads_no_chunk_twice(t
     assert len(state.emptied) == len(loaded)
     assert all(os.path.getsize(os.path.join(directory, n)) == 0 for n in state.emptied)
     progress = state.progress_file
-    assert progress == os.path.join(directory, "load-progress.fake.json")
+    assert progress == os.path.join(directory, util_zip.PROGRESS_FILE)
+    assert first.options[0]["progressFile"] == progress
 
     # the next load of the zip is given that progress file
     plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {}, budget_mb=1)
@@ -592,7 +593,7 @@ def test_another_progress_file_for_a_partly_loaded_folder_is_refused(tmp_path):
 
     # resetProgress starts over: the folder is wiped
     plan = util_zip.plan_load(archive, {"resetProgress": True})
-    assert plan.wipe is True and "progressFile" not in plan.options
+    assert plan.wipe is True and plan.state is None
     loader = FakeLoader(units)
     util_zip.load_from_zip(new_task(), plan, loader)
     assert len(loader.loaded) == sum(len(u[3]) for u in units)

@@ -194,7 +194,24 @@ of the zip, stored (not compressed again), Zip64.
 - **The folder's log** `.mcp-zip-load.log` (JSON lines: zip identity,
   extracted, emptied, placeholder, progressFile, poisoned) lets a load of
   the same zip resume. Wiped when the zip changed (path, size, mtime), on
-  `resetProgress: true`, and after a poisoned run.
+  `resetProgress: true`, and after a poisoned run. Records are flushed in
+  batches: a lost one only makes the next load extract a file again.
+- **The progress file is always given** (`plan_load`): the client's, the
+  one the folder's log recorded, or `load-progress.json` in the folder. The
+  extractor reads that path; it never guesses the shell's default name.
+  Loading a partly loaded folder into another server therefore fails with
+  the shell's own mismatch error, even before any chunk was emptied;
+  `resetProgress: true` starts over. A different client `progressFile` for
+  a folder with emptied chunks is refused.
+- **The zip layout**: the dump's files at the top, or all in one folder at
+  the top (Finder, Explorer, `zip -r`), which is stripped
+  (`DumpArchive.prefix`, `member()`); directory entries, `__MACOSX/` and
+  `.DS_Store` are ignored. Refusals of what is no dump start with
+  "Not a dump: ", I/O errors with "Cannot read ".
+- **The tools' wiring**: `start()` takes a `packaging` object
+  (`_ZipDump`, `_ZipLoad` in `util_functions.py`) that names the paths to
+  check, gives the arguments and options the shell runs with, and wraps
+  the run; plain tools pass none.
 - **Filters**: `TableFilter` ports the shell's filters (exact names,
   exclude wins, a schema filter covers its tables, `loadData: false`, and
   identifier parsing as `span_quotable_sql_identifier`). The data of a
@@ -213,7 +230,9 @@ of the zip, stored (not compressed again), Zip64.
   with the same parsing. `kind` is `@.json`'s `origin` (the dump class's
   `name()`: `dumpInstance`, `dumpSchemas`, `dumpTables`). Exact rows and data
   bytes come from `@.done.json` (`tableRows`, `tableDataBytes`, `dataBytes`),
-  estimates from `@.json` otherwise. Names are capped at
+  estimates from `@.json` otherwise. It skips the per-table metadata
+  (`read_tables=False`): data sizes then count every file that is no
+  `.json`/`.sql`. Names are capped at
   `INSPECT_NAMES_LIMIT` per schema, with counts beside them. A dump still
   being written can lack schema metadata files, which are then skipped.
 
@@ -258,8 +277,8 @@ Shell facts this rests on (mariadb-shell source):
   `chunk` (-1 unchunked). It is rewritten once when the loader starts.
 - A progress file given back as `progressFile` is refused for another
   server (`SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH`, raised in
-  `on_dump_begin`, before any data). This is why a folder with emptied
-  chunks is always loaded with its recorded progress file.
+  `on_dump_begin`, before any data). This is why a zip load always passes
+  its progress file explicitly.
 - Filters see the DUMP's schema name: `override_schema` maps the `schema`
   option's target back.
 

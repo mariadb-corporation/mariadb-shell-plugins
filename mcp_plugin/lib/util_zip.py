@@ -66,6 +66,9 @@ ZIP_SUFFIX = ".mariadb.dump.zip"
 # The folder of a load next to its zip keeps this log of what it holds.
 STATE_FILE = ".mcp-zip-load.log"
 
+# The load's progress file in that folder, where the client gives none.
+PROGRESS_FILE = "load-progress.json"
+
 # How long the loader waits for more of the dump: extraction never pauses
 # while the loader has nothing to do, and a failed extractor stops the load,
 # so this only ends a load whose extractor hangs.
@@ -88,7 +91,8 @@ _DONE_METADATA = "@.done.json"
 _PART_SUFFIX = ".part"
 _EXTRACTING_SUFFIX = ".extracting"
 _IDX_SUFFIX = ".idx"
-_PROGRESS_FILE = re.compile(r"^load-progress\..+\.json$")
+# a load's progress file, the shell's (load-progress.<server>.json) or ours
+_PROGRESS_FILE_NAME = re.compile(r"^load-progress(\..+)?\.json$")
 _COPY_BUFFER = 1 << 20
 _MAX_METADATA_BYTES = 64 << 20
 _REPORT_SECONDS = 0.5
@@ -100,6 +104,29 @@ _MESSAGE_INTERRUPTED = "Interrupted by user"
 
 class ZipDumpError(Exception):
     """What a call to a util tool cannot do with a zip, before any task."""
+
+
+_SCHEME_DELIMITER = "://"
+
+
+def local_path(url) -> Optional[str]:
+    """The path on this machine a URL names, or None for a remote one.
+
+    Follows the shell's storage layer (``mysqlshdk/libs/storage``): the scheme
+    is what comes before the first ``://``, a URL without one is a local path,
+    and so is one whose scheme is ``file`` in any case - with the scheme
+    stripped. Every other scheme (an ``https`` PAR, say) is remote.
+    """
+    if not isinstance(url, str):
+        return None
+
+    position = url.find(_SCHEME_DELIMITER)
+    if position < 0:
+        return url
+    if url[:position].lower() == "file":
+        return url[position + len(_SCHEME_DELIMITER):]
+
+    return None
 
 
 def is_zip_url(url) -> bool:
@@ -127,7 +154,6 @@ def _format_bytes(count: int) -> str:
         if value < 1024 or unit == "TB":
             return f"{int(value)} bytes" if unit == "bytes" else f"{value:.1f} {unit}"
         value /= 1024
-    return f"{count} bytes"
 
 
 def _interrupted(task) -> bool:
@@ -417,19 +443,29 @@ class DataUnit:
 class DataChunk:
     """A data file of a dump, with its ``.idx`` file where it has one."""
 
-    __slots__ = ("name", "idx_name", "size", "unit", "index", "last")
+    __slots__ = ("name", "idx_name", "size", "unit", "index")
 
-    def __init__(self, name, unit, index, last, size):
+    def __init__(self, name, unit, index, size):
         self.name = name
         self.idx_name = None
         self.size = size
         self.unit = unit
         # as the progress file has it: -1 for a table that is not chunked
         self.index = index
-        self.last = last
 
     def names(self) -> tuple:
         return (self.idx_name, self.name) if self.idx_name else (self.name,)
+
+
+def _ignored(name: str) -> bool:
+    """Whether a file beside a dump's own is never part of it.
+
+    An earlier load's progress file or log, or a file being extracted or
+    dumped.
+    """
+    return bool(_PROGRESS_FILE_NAME.match(name)) or name == STATE_FILE or name.endswith(
+        (_EXTRACTING_SUFFIX, ".dumping")
+    )
 
 
 def _not_a_dump(message: str) -> ZipDumpError:
@@ -531,9 +567,12 @@ class DumpArchive:
     metadata, and no data.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, read_tables: bool = True):
         self.path = os.path.abspath(path)
         self.format = "zip"
+        # whether each table's metadata is read, which finds the data files
+        # by name; without it, data files are told from metadata by suffix
+        self.read_tables = read_tables
         self.size = 0
         self.mtime_ns = 0
         # every entry, by name: its size
@@ -556,9 +595,18 @@ class DumpArchive:
     def identity(self) -> dict:
         return {"path": self.path, "size": self.size, "mtime_ns": self.mtime_ns}
 
+    def _data_files(self):
+        """The sizes of the data files (index files with them, where found)."""
+        if self.read_tables:
+            return [chunk.size for chunk in self.chunks.values()]
+        return [
+            size for name, size in self.entries.items()
+            if not _ignored(name) and not name.endswith((".json", ".sql"))
+        ]
+
     @property
     def data_bytes(self) -> int:
-        return sum(chunk.size for chunk in self.chunks.values())
+        return sum(self._data_files())
 
     @property
     def metadata_bytes(self) -> int:
@@ -571,22 +619,23 @@ class DumpArchive:
 
     @property
     def largest_chunk(self) -> int:
-        return max((chunk.size for chunk in self.chunks.values()), default=0)
+        return max(self._data_files(), default=0)
 
     @classmethod
-    def open(cls, path: str, require_complete: bool = True) -> "DumpArchive":
+    def open(cls, path: str, require_complete: bool = True, read_tables: bool = True) -> "DumpArchive":
         """Reads and checks a zip of a dump.
 
         Args:
             path (str): The zip.
             require_complete (bool): Whether a dump without @.done.json is
                 refused, as a load refuses it.
+            read_tables (bool): Whether each table's metadata is read.
 
         Raises:
             ZipDumpError: It is no zip, or no (complete) dump made by the
                 util tools, or holds what no dump holds.
         """
-        archive = cls(path)
+        archive = cls(path, read_tables)
         try:
             stat = os.stat(archive.path)
         except OSError as error:
@@ -615,13 +664,13 @@ class DumpArchive:
         return self.prefix + name
 
     @classmethod
-    def open_folder(cls, path: str) -> "DumpArchive":
+    def open_folder(cls, path: str, read_tables: bool = True) -> "DumpArchive":
         """Reads a dump's folder, complete or not.
 
         Raises:
             ZipDumpError: It holds no dump.
         """
-        archive = cls(path)
+        archive = cls(path, read_tables)
         archive.format = "folder"
         try:
             with os.scandir(archive.path) as listing:
@@ -635,7 +684,7 @@ class DumpArchive:
         return archive
 
     def _read(self, files, require_complete: bool) -> None:
-        where = "zip" if self.format == "zip" else "folder"
+        where = self.format
         if _ROOT_METADATA not in self.entries:
             raise _not_a_dump(
                 f"the {where} holds no {_ROOT_METADATA}, so it is no dump made "
@@ -661,7 +710,14 @@ class DumpArchive:
             self.schemas.append(schema)
             self._read_schema(files, schema, schema_basenames.get(schema, schema))
 
-        self._find_chunks()
+        if self.read_tables:
+            self._find_chunks()
+        else:
+            for name in self.entries:
+                if _ignored(name):
+                    self.ignored.append(name)
+                elif name != _DONE_METADATA and name.endswith((".json", ".sql")):
+                    self.metadata.append(name)
 
     def _json(self, files, name: str) -> dict:
         if self.entries[name] > _MAX_METADATA_BYTES:
@@ -683,7 +739,7 @@ class DumpArchive:
             raise _not_a_dump(f"the dump holds no {name}, the metadata of schema `{schema}`.")
         metadata = self._json(files, name)
         self.schema_metadata[schema] = metadata
-        if metadata.get("includesData", True) is False:
+        if not self.read_tables or metadata.get("includesData", True) is False:
             return
 
         table_basenames = metadata.get("basenames") or {}
@@ -709,18 +765,18 @@ class DumpArchive:
                 self.units.append(DataUnit(schema, table, "", table_basename, extension, chunked))
 
     def _chunk_of(self, name: str, chunked: dict):
-        """The unit, index and last flag of a chunked table's data file."""
+        """The unit and index of a chunked table's data file.
+
+        ``<basename>@<N>.<ext>``, the last chunk ``<basename>@@<N>.<ext>``.
+        """
         position = name.find("@")
         while position >= 0:
             unit = chunked.get(name[:position])
             if unit is not None:
-                rest = name[position + 1:]
-                last = rest.startswith("@")
-                if last:
-                    rest = rest[1:]
+                rest = name[position + 1:].removeprefix("@")
                 match = re.fullmatch(r"(\d+)\." + re.escape(unit.extension), rest)
                 if match:
-                    return unit, int(match.group(1)), last
+                    return unit, int(match.group(1))
             position = name.find("@", position + 1)
         return None
 
@@ -737,22 +793,20 @@ class DumpArchive:
         for name, size in self.entries.items():
             if name.endswith(_IDX_SUFFIX) or name == _DONE_METADATA:
                 continue
-            if _PROGRESS_FILE.match(name) or name == STATE_FILE or name.endswith(
-                (_EXTRACTING_SUFFIX, ".dumping")
-            ):
+            if _ignored(name):
                 self.ignored.append(name)
                 continue
 
             unit = unchunked.get(name)
             if unit is not None:
-                chunk = DataChunk(name, unit, -1, True, size)
+                chunk = DataChunk(name, unit, -1, size)
             else:
-                found = self._chunk_of(name, chunked) if chunked else None
+                found = self._chunk_of(name, chunked)
                 if found is None:
                     others.append(name)
                     continue
-                unit, index, last = found
-                chunk = DataChunk(name, unit, index, last, size)
+                unit, index = found
+                chunk = DataChunk(name, unit, index, size)
 
             unit.chunks.append(chunk)
             self.chunks[name] = chunk
@@ -797,9 +851,8 @@ def disk_needed(archive: "DumpArchive", budget: int) -> int:
 INSPECT_NAMES_LIMIT = 100
 
 
-def _names(metadata: dict, key: str, limit: Optional[int]) -> list:
-    names = [n for n in (metadata.get(key) or []) if isinstance(n, str)]
-    return names if limit is None else names[:limit]
+def _names(metadata: dict, key: str) -> list:
+    return [n for n in (metadata.get(key) or []) if isinstance(n, str)]
 
 
 def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
@@ -823,9 +876,9 @@ def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
     """
     path = os.path.abspath(path)
     if os.path.isdir(path):
-        archive = DumpArchive.open_folder(path)
+        archive = DumpArchive.open_folder(path, read_tables=False)
     elif os.path.isfile(path):
-        archive = DumpArchive.open(path, require_complete=False)
+        archive = DumpArchive.open(path, require_complete=False, read_tables=False)
     else:
         raise ZipDumpError(f"Cannot read {path}: it does not exist.")
 
@@ -833,7 +886,7 @@ def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
         raise ZipDumpError(f"The dump holds no schema `{schema}`.")
     limit = None if schema is not None else INSPECT_NAMES_LIMIT
 
-    root = archive.root or {}
+    root = archive.root
     done = archive.done
     table_rows = (done or {}).get("tableRows") or {}
     table_bytes = (done or {}).get("tableDataBytes") or {}
@@ -845,13 +898,14 @@ def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
         metadata = archive.schema_metadata.get(name) or {}
         entry = {"name": name}
         for key in ("tables", "views", "functions", "procedures", "events"):
-            entry[key[:-1] + "_count"] = len(_names(metadata, key, None))
-            entry[key] = _names(metadata, key, limit)
+            names = _names(metadata, key)
+            entry[key[:-1] + "_count"] = len(names)
+            entry[key] = names[:limit]
         if done is not None:
             entry["rows"] = sum((table_rows.get(name) or {}).values())
             entry["data_bytes"] = sum((table_bytes.get(name) or {}).values())
         schemas.append(entry)
-    all_users = _names(root, "users", None)
+    users = _names(root, "users")
 
     info = {
         "url": archive.path,
@@ -869,8 +923,8 @@ def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
         "options": root.get("options") or {},
         "includes_users": "@.users.sql" in archive.entries,
         # the accounts, as the shell writes them ('user'@'host')
-        "user_count": len(all_users),
-        "users": all_users if limit is None else all_users[:limit],
+        "user_count": len(users),
+        "users": users[:limit],
         "schema_count": len(archive.schemas),
         "schemas": schemas,
         # the data files as they are on disk or in the zip: compressed
@@ -947,13 +1001,18 @@ class LoadPlan:
     work fails the call itself.
     """
 
-    def __init__(self, archive, directory, wipe, options, filters, rename, budget):
+    def __init__(self, archive, directory, wipe, state, options, progress_file, filters, rename, budget):
         self.archive = archive
         self.directory = directory
-        # the folder is from another zip or load, and is started over
+        # the folder holds what is not resumed, and is started over
         self.wipe = wipe
+        # what an earlier load left in the folder, resumed; None where the
+        # folder is new or started over
+        self.state = state
         # the options the shell's load is run with
         self.options = options
+        # the load's progress file, always given to the shell
+        self.progress_file = progress_file
         self.filters = filters
         # the target schema of the schema option, mapped to the dump's
         self.rename = rename
@@ -963,12 +1022,16 @@ class LoadPlan:
 def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
     """Decides how a load of a zip goes, refusing what cannot work.
 
+    The load is always given its progress file: the client's, the one an
+    earlier load of the zip used, or :data:`PROGRESS_FILE` in the folder.
+    The shell refuses a progress file of another server, which keeps a
+    folder whose loaded chunks are emptied from being loaded anywhere else.
+
     Args:
         archive (DumpArchive): The zip.
         options (dict): The load's options, as the client gave them.
         budget_mb (int): The most megabytes of chunks extracted and not yet
-            loaded; by default twice the load's threads times the largest
-            chunk, and 1 GB at the least.
+            loaded; by default :func:`default_budget`.
 
     Raises:
         ZipDumpError: The options or the folder next to the zip do not allow
@@ -984,51 +1047,53 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
             "waitDumpTimeout is set by the tool for a dump in a zip: the zip "
             "is extracted while the dump loads."
         )
+    user_progress = options.get("progressFile")
+    if user_progress is not None:
+        user_progress = local_path(user_progress)
+        if user_progress is None:
+            raise ZipDumpError("progressFile must be a local file for a dump in a zip.")
+        user_progress = os.path.abspath(user_progress)
 
     directory = extraction_directory(archive.path)
-    state = _State.read(directory) if os.path.isdir(directory) else None
-    wipe = False
-
+    state = None
     if os.path.lexists(directory):
         if not os.path.isdir(directory):
             raise ZipDumpError(f"{directory}, where the zip is extracted to, is no folder.")
-        if state is None:
-            if os.listdir(directory):
-                raise ZipDumpError(
-                    f"{directory}, where the zip is extracted to, exists and "
-                    "was not made by the MCP server: move it out of the way."
-                )
-        elif state.zip != archive.identity() or state.poisoned or options.get("resetProgress"):
-            wipe = True
+        state = _State.read(directory)
+        if state is None and os.listdir(directory):
+            raise ZipDumpError(
+                f"{directory}, where the zip is extracted to, exists and was not "
+                "made by the MCP server: move it out of the way."
+            )
 
-    user_progress = options.get("progressFile")
-    if user_progress is not None and not isinstance(user_progress, str):
-        raise ZipDumpError("progressFile must be a path.")
+    # a poisoned folder is started over with every table extracted
+    filters = TableFilter.from_options(options)
+    if state is not None and (
+        state.zip != archive.identity() or state.poisoned or options.get("resetProgress")
+    ):
+        if state.poisoned:
+            filters = None
+        state = None
+    # the folder is wiped where it holds anything and is not resumed
+    wipe = state is None and os.path.isdir(directory) and bool(os.listdir(directory))
+
+    recorded = state.progress_file if state is not None else None
+    if (
+        user_progress is not None
+        and recorded is not None
+        and state.emptied
+        and user_progress != recorded
+    ):
+        raise ZipDumpError(
+            f"The zip was partly loaded from {directory} already, with the "
+            f"progress file {recorded}: give that one as progressFile, or "
+            "resetProgress: true to start the load over."
+        )
+    progress_file = user_progress or recorded or os.path.join(directory, PROGRESS_FILE)
 
     run_options = dict(options)
     run_options["waitDumpTimeout"] = WAIT_DUMP_TIMEOUT_SECONDS
-
-    if state is not None and not wipe:
-        recorded = state.progress_file
-        if user_progress is None:
-            if recorded is not None:
-                run_options["progressFile"] = recorded
-        elif (
-            state.emptied
-            and recorded is not None
-            and os.path.abspath(user_progress) != os.path.abspath(recorded)
-        ):
-            raise ZipDumpError(
-                f"The zip was partly loaded from {directory} already, with "
-                f"the progress file {recorded}: give that one as progressFile, "
-                "or resetProgress: true to start the load over."
-            )
-
-    if wipe and state is not None and state.poisoned:
-        # extract every table this time
-        filters = None
-    else:
-        filters = TableFilter.from_options(options)
+    run_options["progressFile"] = progress_file
 
     rename = {}
     target_schema = options.get("schema")
@@ -1042,25 +1107,28 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
     else:
         budget = default_budget(archive, options.get("threads", DEFAULT_LOAD_THREADS))
 
-    parent = os.path.dirname(directory)
     needed = disk_needed(archive, budget)
-    free = shutil.disk_usage(parent).free
-    if not wipe and state is not None:
+    if state is not None:
         # what is extracted already is on the disk
         needed = max(0, needed - sum(
             archive.entries.get(name, 0) for name in state.extracted - state.emptied
         ))
+    free = shutil.disk_usage(os.path.dirname(directory)).free
     if free < needed:
         raise ZipDumpError(
             f"Extracting the zip next to it needs {_format_bytes(needed)} free on "
             f"its disk, which has {_format_bytes(free)}."
         )
 
-    return LoadPlan(archive, directory, wipe, run_options, filters, rename, budget)
+    return LoadPlan(
+        archive, directory, wipe, state, run_options, progress_file, filters, rename, budget
+    )
 
 
 _active_lock = threading.Lock()
 _active = set()
+
+_EXTRACT_STAGE = "Extracting the dump"
 
 
 class Extractor:
@@ -1076,7 +1144,6 @@ class Extractor:
         self.plan = plan
         self.archive = plan.archive
         self.directory = plan.directory
-        self.error = None
         self.finished = False
         # whether this load holds the folder in the registry of loads
         self._claimed = False
@@ -1092,16 +1159,15 @@ class Extractor:
         self._peak_bytes = 0
         self._extracted_bytes = 0
         self._to_empty = set()
-        self._started = set()
         self._by_key = {}
-        self._progress_path = None
+        self._units_by_key = {}
         self._progress_offset = 0
         self._progress_rest = b""
         self._progress_size = -1
+        self._polled = 0.0
         self._last_progress = time.monotonic()
         self._full_since = None
         self._uncapped = False
-        self._stage = "Extracting the dump"
         self._stage_started = None
         # progress lines before this (with a margin for clock steps) are an
         # earlier load's
@@ -1113,8 +1179,13 @@ class Extractor:
         return os.path.join(self.directory, name)
 
     def _record(self, **record) -> None:
+        """Logs what the folder holds; flushed in batches.
+
+        A record lost to a crash only makes the next load extract a file
+        again: an emptied chunk whose record is lost is extracted again, and
+        emptied again by the progress file.
+        """
         self._log.write(json.dumps(record, ensure_ascii=False) + "\n")
-        self._log.flush()
 
     def prepare(self) -> None:
         """Readies the folder and extracts the metadata.
@@ -1129,60 +1200,64 @@ class Extractor:
             _active.add(self.directory)
             self._claimed = True
 
-        self.task.stage_started(self._stage)
+        self.task.stage_started(_EXTRACT_STAGE)
         self._stage_started = time.monotonic()
 
         if self.plan.wipe:
             shutil.rmtree(self.directory)
         os.makedirs(self.directory, exist_ok=True)
 
-        state = _State.read(self.directory)
         self._log = open(self._path(STATE_FILE), "a", encoding="utf-8")
+        state = self.plan.state
         if state is None:
             state = _State()
             state.zip = self.archive.identity()
             self._record(zip=state.zip)
         self._state = state
-        self._progress_path = state.progress_file
+        if state.progress_file != self.plan.progress_file:
+            state.progress_file = self.plan.progress_file
+            self._record(progressFile=state.progress_file)
 
-        for name in os.listdir(self.directory):
-            if name.endswith(_EXTRACTING_SUFFIX):
-                os.remove(self._path(name))
+        on_disk = {}
+        with os.scandir(self.directory) as listing:
+            for entry in listing:
+                if entry.name.endswith(_EXTRACTING_SUFFIX):
+                    os.remove(entry.path)
+                elif entry.is_file():
+                    on_disk[entry.name] = entry.stat().st_size
 
         self._zip = zipfile.ZipFile(self.archive.path)
 
-        for chunk in self.archive.chunks.values():
-            unit = chunk.unit
-            self._by_key[(unit.schema, unit.table, unit.partition, chunk.index)] = chunk
+        for unit in self.archive.units:
+            self._units_by_key[(unit.schema, unit.table, unit.partition)] = unit
+            for chunk in unit.chunks:
+                self._by_key[(unit.schema, unit.table, unit.partition, chunk.index)] = chunk
 
-        self._check_extracted()
+        self._check_extracted(on_disk)
 
         for name in self.archive.metadata:
             if name not in state.extracted:
                 self._extract(name)
 
-        self._make_placeholders()
+        self._make_placeholders(on_disk)
+        self._log.flush()
 
-    def _check_extracted(self) -> None:
+    def _check_extracted(self, on_disk: dict) -> None:
         """Forgets what an earlier load extracted and is no longer there."""
         state = self._state
-        for name in list(state.extracted):
-            if name in state.emptied:
-                continue
-            path = self._path(name)
-            expected = self.archive.entries.get(name)
-            if expected is None or not os.path.isfile(path) or os.path.getsize(path) != expected:
+        for name in list(state.extracted - state.emptied):
+            if on_disk.get(name) != self.archive.entries.get(name):
                 state.extracted.discard(name)
         for name in state.emptied | state.placeholders:
-            path = self._path(name)
-            if not os.path.exists(path):
-                open(path, "wb").close()
+            if name not in on_disk:
+                open(self._path(name), "wb").close()
+                on_disk[name] = 0
 
     def _included(self, unit: DataUnit) -> bool:
         filters = self.plan.filters
         return filters is None or filters.table_included(unit.schema, unit.table)
 
-    def _make_placeholders(self) -> None:
+    def _make_placeholders(self, on_disk: dict) -> None:
         """Empty data files for the tables the load leaves out.
 
         A placeholder an earlier load made for a table this one loads is
@@ -1202,31 +1277,23 @@ class Extractor:
                 if chunk.name in state.placeholders:
                     continue
                 for name in chunk.names():
-                    path = self._path(name)
-                    if os.path.exists(path):
-                        os.remove(path)
+                    if name in on_disk:
+                        os.remove(self._path(name))
                     state.extracted.discard(name)
                 open(self._path(chunk.name), "wb").close()
                 state.placeholders.add(chunk.name)
                 self._record(placeholder=chunk.name)
 
-    def _extract(self, name: str) -> int:
+    def _extract(self, name: str) -> None:
         """Extracts one entry under a temporary name, then renames it."""
         target = self._path(name)
         temporary = target + _EXTRACTING_SUFFIX
-        size = 0
         with self._zip.open(self.archive.member(name)) as source, open(temporary, "wb") as file:
-            while True:
-                block = source.read(_COPY_BUFFER)
-                if not block:
-                    break
-                file.write(block)
-                size += len(block)
+            shutil.copyfileobj(source, file, _COPY_BUFFER)
+            self._extracted_bytes += file.tell()
         os.replace(temporary, target)
         self._state.extracted.add(name)
         self._record(extracted=name)
-        self._extracted_bytes += size
-        return size
 
     # --- the thread ------------------------------------------------------
 
@@ -1239,13 +1306,13 @@ class Extractor:
         self._thread.start()
 
     def stop(self) -> None:
-        """Ends the thread, and the folder's use by this load."""
+        """Ends the thread."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join()
-        self.close()
 
     def close(self) -> None:
+        """Ends the folder's use by this load."""
         if self._zip is not None:
             self._zip.close()
             self._zip = None
@@ -1268,35 +1335,35 @@ class Extractor:
             if _DONE_METADATA not in self._state.extracted:
                 self._extract(_DONE_METADATA)
             self.finished = True
-            self._finish_stage()
+            self.task.stage_finished(
+                _EXTRACT_STAGE, seconds=round(time.monotonic() - self._stage_started, 1)
+            )
             while not self._stopping():
                 self._poll()
                 self._stop.wait(POLL_SECONDS)
-            self._poll()
+            self._poll(force=True)
         except Exception as error:  # noqa: BLE001 - reported as the load's failure
             reason = str(error).strip() or error.__class__.__name__
-            self.error = f"Extracting the dump from the zip failed: {reason}"
-            if self._abort is not None:
-                self._abort.request(self.error)
+            self._abort.request(f"Extracting the dump from the zip failed: {reason}")
 
     def _queue(self) -> deque:
-        """The units with chunks still to extract, each with its chunks."""
+        """The units with chunks still to extract, each with its chunks.
+
+        The chunks an earlier load extracted and did not load are pending.
+        """
         state = self._state
         units = deque()
         for unit in self.archive.units:
             if not self._included(unit):
                 continue
-            chunks = deque(
-                chunk for chunk in unit.chunks
-                if chunk.name not in state.emptied
-                and not all(name in state.extracted for name in chunk.names())
-            )
+            chunks = deque()
             for chunk in unit.chunks:
-                if (
-                    chunk.name not in state.emptied
-                    and all(name in state.extracted for name in chunk.names())
-                ):
+                if chunk.name in state.emptied:
+                    continue
+                if all(name in state.extracted for name in chunk.names()):
                     self._pending_chunk(chunk)
+                else:
+                    chunks.append(chunk)
             if chunks:
                 units.append((unit, chunks))
         return units
@@ -1355,31 +1422,22 @@ class Extractor:
 
     # --- the progress file ----------------------------------------------
 
-    def _find_progress_file(self) -> Optional[str]:
-        if self._progress_path is not None:
-            return self._progress_path
+    def _poll(self, force: bool = False) -> None:
+        """Reads what the load added to its progress file, and acts on it.
 
-        user = self.plan.options.get("progressFile")
-        if user:
-            path = user[len("file://"):] if user.lower().startswith("file://") else user
-        else:
-            names = [n for n in os.listdir(self.directory) if _PROGRESS_FILE.match(n)]
-            if not names:
-                return None
-            names.sort(key=lambda n: os.path.getmtime(self._path(n)), reverse=True)
-            path = self._path(names[0])
-
-        self._progress_path = os.path.abspath(path)
-        self._state.progress_file = self._progress_path
-        self._record(progressFile=self._progress_path)
-        return self._progress_path
-
-    def _poll(self) -> None:
-        """Reads what the load added to its progress file, and acts on it."""
-        self._empty_loaded()
-        path = self._find_progress_file()
-        if path is None:
+        At most every :data:`POLL_SECONDS`, unless forced.
+        """
+        now = time.monotonic()
+        if not force and now - self._polled < POLL_SECONDS:
             return
+        self._polled = now
+
+        self._read_progress()
+        self._empty_loaded()
+        self._log.flush()
+
+    def _read_progress(self) -> None:
+        path = self.plan.progress_file
         try:
             size = os.path.getsize(path)
         except OSError:
@@ -1408,26 +1466,20 @@ class Extractor:
             if isinstance(entry, dict):
                 self._on_progress(entry)
 
-        self._empty_loaded()
-
     def _on_progress(self, entry: dict) -> None:
         op = entry.get("op")
         if op not in ("TABLE-DATA", "TABLE-DATA-BULK"):
             return
 
         schema = entry.get("schema")
-        schema = self.plan.rename.get(schema, schema)
-        table = entry.get("table")
-        partition = entry.get("partition") or ""
+        key = (self.plan.rename.get(schema, schema), entry.get("table"), entry.get("partition") or "")
 
         if op == "TABLE-DATA":
-            chunk = self._by_key.get((schema, table, partition, entry.get("chunk")))
+            chunk = self._by_key.get(key + (entry.get("chunk"),))
             chunks = [chunk] if chunk is not None else []
         else:
-            chunks = [
-                c for c in self.archive.chunks.values()
-                if (c.unit.schema, c.unit.table, c.unit.partition) == (schema, table, partition)
-            ]
+            unit = self._units_by_key.get(key)
+            chunks = unit.chunks if unit is not None else []
 
         for chunk in chunks:
             if chunk.name in self._state.placeholders:
@@ -1435,11 +1487,8 @@ class Extractor:
                 if entry.get("timestamp", 0) >= self._since_ms:
                     self._poison(chunk)
                 continue
-            if entry.get("done"):
-                if chunk.name in self._pending:
-                    self._to_empty.add(chunk)
-            else:
-                self._started.add(chunk.name)
+            if entry.get("done") and chunk.name in self._pending:
+                self._to_empty.add(chunk)
 
     def _poison(self, chunk: DataChunk) -> None:
         reason = (
@@ -1451,6 +1500,7 @@ class Extractor:
         )
         self._state.poisoned = reason
         self._record(poisoned=reason)
+        self._log.flush()
         raise RuntimeError(reason)
 
     def _empty_loaded(self) -> None:
@@ -1467,13 +1517,6 @@ class Extractor:
             self._pending_bytes -= chunk.size
             self._state.emptied.add(chunk.name)
             self._record(emptied=chunk.name)
-
-    def _finish_stage(self) -> None:
-        if self._stage_started is not None:
-            self.task.stage_finished(
-                self._stage, seconds=round(time.monotonic() - self._stage_started, 1)
-            )
-            self._stage_started = None
 
     def report(self) -> None:
         """Says what the extraction took on disk."""
@@ -1502,16 +1545,16 @@ def load_from_zip(task, plan: LoadPlan, run_load) -> dict:
     from mcp_plugin.lib.util_process import Abort
 
     extractor = Extractor(task, plan)
+    abort = Abort()
     try:
         extractor.prepare()
-        abort = Abort()
         extractor.start(abort)
         try:
             run_load(plan.directory, plan.options, abort)
         finally:
             extractor.stop()
-        if extractor.error is not None:
-            raise RuntimeError(extractor.error)
+        if abort.reason is not None:
+            raise RuntimeError(abort.reason)
         if not extractor.finished:
             raise RuntimeError("The load completed before the zip was extracted.")
     finally:
