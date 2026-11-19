@@ -468,6 +468,9 @@ class FakeLoader:
                         if key in done:
                             continue
                         if name not in names:
+                            if complete:
+                                # the shell's loader would not wait for it
+                                raise RuntimeError("the dump was complete before its data")
                             break
                         if self.observe:
                             self.observe(directory)
@@ -928,8 +931,74 @@ def test_two_dumps_to_one_zip_at_once_are_refused(tmp_path):
     assert first_started.wait(10)
     with pytest.raises(RuntimeError, match="being written by another task"):
         util_zip.dump_to_zip(new_task(), zip_path, lambda d: None)
+    # and the call itself is refused, without advice to remove the folder
+    with pytest.raises(util_zip.ZipDumpError, match="being written by another task"):
+        util_zip.check_dump_target(zip_path)
     # the refused dump left the first one's folder alone
     assert os.path.isfile(os.path.join(util_zip.dump_directory(zip_path), "@.json"))
     release.set()
     thread.join(30)
     util_zip.DumpArchive.open(zip_path)
+
+
+def test_a_partly_loaded_folder_whose_progress_file_is_gone_starts_over(tmp_path):
+    zip_path, units = make_zip(tmp_path, chunk_size=20 * KB, chunks=6)
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {})
+    with pytest.raises(RuntimeError, match="the loader failed"):
+        util_zip.load_from_zip(new_task(), plan, FakeLoader(units, fail_after=5))
+    assert util_zip._State.read(plan.directory).emptied
+    os.remove(plan.progress_file)
+
+    # nothing says the emptied chunks are loaded any more: all is extracted again
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {})
+    assert plan.wipe is True and plan.state is None
+    loader = FakeLoader(units)
+    util_zip.load_from_zip(new_task(), plan, loader)
+    assert len(loader.loaded) == sum(len(u[3]) for u in units)
+    assert all(size > 0 for _, size in loader.loaded)
+
+
+def test_a_resumed_load_is_not_complete_before_its_data_is_extracted(tmp_path):
+    zip_path, units = make_zip(tmp_path, chunk_size=10 * KB, chunks=3)
+    options = {"excludeTables": ["shop.orders"]}
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), options)
+    filters = util_zip.TableFilter(options)
+
+    def fails_at_the_end(directory, run_options, abort):
+        FakeLoader(units, include=filters.table_included)(directory, run_options, abort)
+        raise RuntimeError("a late failure")
+
+    with pytest.raises(RuntimeError, match="a late failure"):
+        util_zip.load_from_zip(new_task(), plan, fails_at_the_end)
+    assert os.path.isfile(os.path.join(plan.directory, "@.done.json"))
+
+    # the next load takes shop.orders too: @.done.json waits for its chunks
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {})
+    loader = FakeLoader(units)
+    util_zip.load_from_zip(new_task(), plan, loader)
+    orders = [size for key, size in loader.loaded if key[:2] == ("shop", "orders")]
+    assert len(orders) == 3 and all(size > 0 for size in orders)
+
+
+def test_a_dump_that_wrote_nothing_makes_no_zip(tmp_path):
+    zip_path = str(tmp_path / f"dry{util_zip.ZIP_SUFFIX}")
+    task = new_task()
+    result = util_zip.dump_to_zip(task, zip_path, lambda directory: None)
+    assert result == {"output_url": zip_path, "files": 0, "bytes": 0}
+    assert not os.path.exists(zip_path)
+    assert not os.path.exists(util_zip.dump_directory(zip_path))
+    assert "Nothing was dumped" in task.messages[-1]["text"]
+
+
+def test_a_damaged_compressed_metadata_file_is_no_dump(tmp_path):
+    zip_path = str(tmp_path / f"damaged{util_zip.ZIP_SUFFIX}")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("@.json", json.dumps({"schemas": [], "padding": "x" * 5000}))
+        archive.writestr("@.done.json", "{}")
+    with zipfile.ZipFile(zip_path) as zipped:
+        info = zipped.getinfo("@.json")
+    with open(zip_path, "r+b") as file:
+        file.seek(info.header_offset + 30 + len(info.filename))
+        file.write(b"\xff" * 8)
+    with pytest.raises(util_zip.ZipDumpError, match="^Not a dump: .*@.json cannot be read"):
+        util_zip.inspect_dump(zip_path)

@@ -58,6 +58,7 @@ import shutil
 import threading
 import time
 import zipfile
+import zlib
 from collections import deque
 from typing import Callable, Optional
 
@@ -182,6 +183,10 @@ def check_dump_target(zip_path: str) -> None:
     if not os.path.isdir(parent):
         raise ZipDumpError(f"The folder {parent} does not exist.")
 
+    with _active_lock:
+        if dump_directory(zip_path) in _active:
+            raise ZipDumpError(f"{zip_path} is being written by another task already.")
+
     for path, may_be_empty_folder in ((dump_directory(zip_path), True), (zip_path + _PART_SUFFIX, False)):
         if os.path.lexists(path) and not (
             may_be_empty_folder and os.path.isdir(path) and not os.listdir(path)
@@ -294,6 +299,12 @@ def dump_to_zip(task, zip_path: str, run_dump: Callable[[str], None]) -> dict:
         _active.add(directory)
     try:
         run_dump(directory)
+        if not os.path.isfile(os.path.join(directory, _ROOT_METADATA)):
+            # a dry run: nothing was dumped, and an empty zip would be no
+            # dump, and in the way of the next one
+            if task is not None:
+                task.message(f"Nothing was dumped, so {zip_path} was not written.")
+            return {"output_url": zip_path, "files": 0, "bytes": 0}
         files, size = pack(directory, zip_path, task)
     finally:
         shutil.rmtree(directory, ignore_errors=True)
@@ -736,7 +747,7 @@ class DumpArchive:
             raise _not_a_dump(f"the dump's metadata file {name} is too large.")
         try:
             value = json.loads(files.read(name).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError, zipfile.BadZipFile) as error:
+        except (ValueError, UnicodeDecodeError, zipfile.BadZipFile, zlib.error) as error:
             raise _not_a_dump(f"the dump's metadata file {name} cannot be read: {error}.") from error
         if not isinstance(value, dict):
             raise _not_a_dump(f"the dump's metadata file {name} is no JSON object.")
@@ -1086,9 +1097,6 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
         if state.poisoned:
             filters = None
         state = None
-    # the folder is wiped where it holds anything and is not resumed
-    wipe = state is None and os.path.isdir(directory) and bool(os.listdir(directory))
-
     recorded = state.progress_file if state is not None else None
     if (
         user_progress is not None
@@ -1102,6 +1110,13 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
             "resetProgress: true to start the load over."
         )
     progress_file = user_progress or recorded or os.path.join(directory, PROGRESS_FILE)
+    if state is not None and state.emptied and not os.path.isfile(progress_file):
+        # the progress file that says the emptied chunks are loaded is gone:
+        # the loader would load them again, as empty files
+        state = None
+        progress_file = user_progress or os.path.join(directory, PROGRESS_FILE)
+    # the folder is wiped where it holds anything and is not resumed
+    wipe = state is None and os.path.isdir(directory) and bool(os.listdir(directory))
 
     run_options = dict(options)
     run_options["waitDumpTimeout"] = WAIT_DUMP_TIMEOUT_SECONDS
@@ -1255,6 +1270,13 @@ class Extractor:
                 self._extract(name)
 
         self._make_placeholders(on_disk)
+
+        if _DONE_METADATA in on_disk and self._data_to_extract():
+            # left by an earlier load that extracted everything: the loader
+            # takes the dump as complete with it, and would not wait for what
+            # is extracted again; it is extracted last, as ever
+            os.remove(self._path(_DONE_METADATA))
+            state.extracted.discard(_DONE_METADATA)
         self._log.flush()
 
     def _check_extracted(self, on_disk: dict) -> None:
@@ -1267,6 +1289,16 @@ class Extractor:
             if name not in on_disk:
                 open(self._path(name), "wb").close()
                 on_disk[name] = 0
+
+    def _data_to_extract(self) -> bool:
+        """Whether a chunk the load takes is neither extracted nor emptied."""
+        state = self._state
+        return any(
+            chunk.name not in state.emptied
+            and not all(name in state.extracted for name in chunk.names())
+            for unit in self.archive.units if self._included(unit)
+            for chunk in unit.chunks
+        )
 
     def _included(self, unit: DataUnit) -> bool:
         filters = self.plan.filters

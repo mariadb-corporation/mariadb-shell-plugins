@@ -1000,6 +1000,17 @@ def test_stdio_dump_and_load_a_zip(allowed_temp_dir, sandbox):
                     assert await count("mcp_zip_resumed.t") == 300000
                     assert not os.path.exists(util_zip.extraction_directory(zip_path))
 
+                # a dry run dumps nothing, and writes no zip
+                dry = os.path.join(allowed_temp_dir, f"dry{util_zip.ZIP_SUFFIX}")
+                started = payload(await call("util.dump_schemas", {
+                    "connection_id": connection_id, "schemas": ["mcp_zip"],
+                    "output_url": dry, "options": {"dryRun": True},
+                }))
+                state, _ = await follow(started["task_id"])
+                assert state["status"] == "completed", state["error"]
+                assert state["result"] == {"output_url": dry, "files": 0, "bytes": 0}
+                assert not os.path.exists(dry) and not os.path.exists(util_zip.dump_directory(dry))
+
                 # refusals, before any task
                 for name, arguments, message in (
                     ("util.dump_schemas", {"schemas": ["mcp_zip"], "output_url": zip_path}, "already exists"),
