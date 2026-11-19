@@ -747,7 +747,10 @@ def test_a_dump_folder_and_its_zip_tell_the_same(tmp_path):
         shop = info["schemas"][0]
         assert shop["tables"] == ["orders", "parted", "1", "small"] and shop["table_count"] == 4
         assert (shop["rows"], shop["data_bytes"]) == (12, 4500)
-    keys = lambda info: {k: v for k, v in info.items() if k not in ("url", "format", "size_bytes")}
+    assert "disk_needed_bytes" not in folder and zipped["disk_needed_bytes"] > zipped["extracted_bytes"]
+    keys = lambda info: {
+        k: v for k, v in info.items() if k not in ("url", "format", "size_bytes", "disk_needed_bytes")
+    }
     assert keys(folder) == keys(zipped)
 
 
@@ -785,3 +788,83 @@ def test_what_is_no_dump_is_refused(tmp_path, what):
             file.write("text")
     with pytest.raises(util_zip.ZipDumpError, match="does not exist|no @.json|no valid ZIP"):
         util_zip.inspect_dump(path)
+
+
+def test_names_of_routines_events_and_users_are_listed_and_a_schema_uncapped(tmp_path, monkeypatch):
+    monkeypatch.setattr(util_zip, "INSPECT_NAMES_LIMIT", 2)
+    directory = str(tmp_path / "dump")
+    make_dump(directory, chunk_size=KB, chunks=1)
+    with open(os.path.join(directory, "@.json")) as file:
+        root = json.load(file)
+    root["users"] = ["'a'@'%'", "'b'@'localhost'", "'c'@'%'"]
+    _write(directory, "@.json", root)
+    with open(os.path.join(directory, "shop.json")) as file:
+        shop = json.load(file)
+    shop.update({"functions": ["f1"], "procedures": ["p1", "p2", "p3"], "events": ["e1"]})
+    _write(directory, "shop.json", shop)
+
+    info = util_zip.inspect_dump(directory)
+    assert info["users"] == ["'a'@'%'", "'b'@'localhost'"] and info["user_count"] == 3
+    shop = info["schemas"][0]
+    assert (shop["functions"], shop["function_count"]) == (["f1"], 1)
+    assert (shop["procedures"], shop["procedure_count"]) == (["p1", "p2"], 3)
+    assert (shop["events"], shop["event_count"]) == (["e1"], 1)
+
+    one = util_zip.inspect_dump(directory, schema="shop")
+    assert [s["name"] for s in one["schemas"]] == ["shop"]
+    assert one["schemas"][0]["tables"] == ["orders", "parted", "1", "small"]
+    assert one["schemas"][0]["procedures"] == ["p1", "p2", "p3"]
+    assert one["schema_count"] == 2 and len(one["users"]) == 3
+
+    with pytest.raises(util_zip.ZipDumpError, match="holds no schema `nope`"):
+        util_zip.inspect_dump(directory, schema="nope")
+
+
+def _zip_folder(directory, zip_path, folder, junk=True):
+    """Zips a dump's folder as an archiver does: in a folder, with its entries."""
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(folder + "/", b"")
+        for name in sorted(os.listdir(directory)):
+            archive.write(os.path.join(directory, name), f"{folder}/{name}")
+        if junk:
+            archive.writestr(f"{folder}/.DS_Store", b"finder")
+            archive.writestr(f"__MACOSX/{folder}/._@.json", b"resource fork")
+
+
+def test_a_dump_zipped_in_a_folder_by_an_archiver_is_read_and_loaded(tmp_path):
+    directory = str(tmp_path / "dump")
+    units = make_dump(directory, chunk_size=20 * KB, chunks=4)
+    _complete_metadata(directory)
+    expected = util_zip.inspect_dump(directory)
+    zip_path = str(tmp_path / f"zipped{util_zip.ZIP_SUFFIX}")
+    _zip_folder(directory, zip_path, "my-dump")
+
+    archive = util_zip.DumpArchive.open(zip_path)
+    assert archive.prefix == "my-dump/"
+    assert ".DS_Store" not in archive.entries and "@.json" in archive.entries
+    info = util_zip.inspect_dump(zip_path)
+    assert info["schemas"] == expected["schemas"] and info["rows"] == expected["rows"]
+
+    plan = util_zip.plan_load(archive, {})
+    loader = FakeLoader(units)
+    util_zip.load_from_zip(new_task(), plan, loader)
+    assert len(loader.loaded) == sum(len(u[3]) for u in units)
+    assert all(size > 0 for _, size in loader.loaded)
+
+
+def test_a_zip_with_the_dump_spread_over_folders_is_refused(tmp_path):
+    zip_path = str(tmp_path / f"spread{util_zip.ZIP_SUFFIX}")
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("a/@.json", json.dumps({"schemas": []}))
+        archive.writestr("b/@.done.json", "{}")
+    with pytest.raises(util_zip.ZipDumpError, match="^Not a dump: .*one folder there"):
+        util_zip.inspect_dump(zip_path)
+
+
+def test_what_is_no_dump_and_what_cannot_be_read_are_told_apart(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(util_zip.ZipDumpError, match="^Not a dump: "):
+        util_zip.inspect_dump(str(empty))
+    with pytest.raises(util_zip.ZipDumpError, match="^Cannot read "):
+        util_zip.inspect_dump(str(tmp_path / "missing"))

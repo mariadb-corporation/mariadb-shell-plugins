@@ -432,8 +432,51 @@ class DataChunk:
         return (self.idx_name, self.name) if self.idx_name else (self.name,)
 
 
-def _check_entry(info: zipfile.ZipInfo) -> None:
-    name = info.filename
+def _not_a_dump(message: str) -> ZipDumpError:
+    """A refusal of what holds no dump the tools can read (not an I/O error)."""
+    return ZipDumpError("Not a dump: " + message)
+
+
+def _cannot_read(path: str, error: OSError) -> ZipDumpError:
+    return ZipDumpError(f"Cannot read {path}: {error.strerror or error}.")
+
+
+# What a zip made by an archiver holds beside the files it was given.
+_ARCHIVER_FOLDER = "__MACOSX/"
+_ARCHIVER_FILES = (".DS_Store",)
+
+
+def _dump_members(infos: list) -> tuple:
+    """The members of a zip that are the dump's files, and the folder they are in.
+
+    A dump's files are at the top of the zip, as the dump tools write it, or
+    all in one folder at the top, as an archiver zips a dump's folder (Finder,
+    Explorer, ``zip -r``). The folder's own entries, the archiver's
+    ``__MACOSX/`` and ``.DS_Store`` files are no files of the dump.
+
+    Returns:
+        tuple: ``(prefix, [(name, info), ...])``, with ``name`` the file's
+        name in the dump, without the folder.
+    """
+    files = [
+        info for info in infos
+        if not info.filename.endswith("/") and not info.filename.startswith(_ARCHIVER_FOLDER)
+    ]
+    prefix = ""
+    tops = {info.filename.split("/", 1)[0] for info in files if "/" in info.filename}
+    if files and all("/" in info.filename for info in files) and len(tops) == 1:
+        prefix = tops.pop() + "/"
+
+    members = []
+    for info in files:
+        name = info.filename[len(prefix):]
+        if name in _ARCHIVER_FILES:
+            continue
+        members.append((name, info))
+    return prefix, members
+
+
+def _check_entry(name: str, info: zipfile.ZipInfo) -> None:
     if (
         not name
         or "/" in name
@@ -442,30 +485,31 @@ def _check_entry(info: zipfile.ZipInfo) -> None:
         or name in (".", "..")
         or (len(name) > 1 and name[1] == ":")
     ):
-        raise ZipDumpError(
-            f"The zip holds '{name}', which is no file of a dump: a dump's "
-            "files are all at the top of the zip."
+        raise _not_a_dump(
+            f"the zip holds '{info.filename}', which is no file of a dump: a "
+            "dump's files are all at the top of the zip, or all in one folder there."
         )
     if info.flag_bits & 0x1:
-        raise ZipDumpError(f"The zip's entry '{name}' is encrypted.")
+        raise _not_a_dump(f"the zip's entry '{info.filename}' is encrypted.")
     if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-        raise ZipDumpError(
-            f"The zip's entry '{name}' is compressed with a method other than "
-            "store or deflate."
+        raise _not_a_dump(
+            f"the zip's entry '{info.filename}' is compressed with a method other "
+            "than store or deflate."
         )
     mode = (info.external_attr >> 16) & 0o170000
     if mode not in (0, 0o100000):
-        raise ZipDumpError(f"The zip's entry '{name}' is no regular file.")
+        raise _not_a_dump(f"the zip's entry '{info.filename}' is no regular file.")
 
 
 class _ZipFiles:
-    """Reads a dump's files from a zip."""
+    """Reads a dump's files from a zip, by their names in the dump."""
 
-    def __init__(self, zipped: zipfile.ZipFile):
+    def __init__(self, zipped: zipfile.ZipFile, archive: "DumpArchive"):
         self._zipped = zipped
+        self._archive = archive
 
     def read(self, name: str) -> bytes:
-        return self._zipped.read(name)
+        return self._zipped.read(self._archive.member(name))
 
 
 class _FolderFiles:
@@ -494,6 +538,8 @@ class DumpArchive:
         self.mtime_ns = 0
         # every entry, by name: its size
         self.entries = {}
+        # the folder of a zip the dump's files are in, "" at the top
+        self.prefix = ""
         # @.json, @.done.json (None while a dump is not complete), and each
         # schema's <schema>.json
         self.root = None
@@ -516,7 +562,12 @@ class DumpArchive:
 
     @property
     def metadata_bytes(self) -> int:
-        return sum(self.entries[name] for name in self.metadata) + self.entries[_DONE_METADATA]
+        return sum(self.entries[name] for name in self.metadata) + self.entries.get(_DONE_METADATA, 0)
+
+    @property
+    def extracted_bytes(self) -> int:
+        """What the dump's files take on disk, every one extracted."""
+        return sum(size for name, size in self.entries.items() if name not in self.ignored)
 
     @property
     def largest_chunk(self) -> int:
@@ -539,24 +590,29 @@ class DumpArchive:
         try:
             stat = os.stat(archive.path)
         except OSError as error:
-            raise ZipDumpError(f"Cannot read {path}: {error.strerror or error}.") from error
+            raise _cannot_read(path, error) from error
         archive.size = stat.st_size
         archive.mtime_ns = stat.st_mtime_ns
 
         try:
             with zipfile.ZipFile(archive.path) as zipped:
-                for info in zipped.infolist():
-                    _check_entry(info)
-                    if info.filename in archive.entries:
-                        raise ZipDumpError(f"The zip holds '{info.filename}' twice.")
-                    archive.entries[info.filename] = info.file_size
-                archive._read(_ZipFiles(zipped), require_complete)
+                archive.prefix, members = _dump_members(zipped.infolist())
+                for name, info in members:
+                    _check_entry(name, info)
+                    if name in archive.entries:
+                        raise _not_a_dump(f"the zip holds '{info.filename}' twice.")
+                    archive.entries[name] = info.file_size
+                archive._read(_ZipFiles(zipped, archive), require_complete)
         except zipfile.BadZipFile as error:
-            raise ZipDumpError(f"{path} is no valid ZIP file: {error}.") from error
+            raise _not_a_dump(f"{path} is no valid ZIP file: {error}.") from error
         except OSError as error:
-            raise ZipDumpError(f"Cannot read {path}: {error.strerror or error}.") from error
+            raise _cannot_read(path, error) from error
 
         return archive
+
+    def member(self, name: str) -> str:
+        """The name in the zip of one of the dump's files."""
+        return self.prefix + name
 
     @classmethod
     def open_folder(cls, path: str) -> "DumpArchive":
@@ -575,19 +631,19 @@ class DumpArchive:
             archive.size = sum(archive.entries.values())
             archive._read(_FolderFiles(archive.path), require_complete=False)
         except OSError as error:
-            raise ZipDumpError(f"Cannot read {path}: {error.strerror or error}.") from error
+            raise _cannot_read(path, error) from error
         return archive
 
     def _read(self, files, require_complete: bool) -> None:
         where = "zip" if self.format == "zip" else "folder"
         if _ROOT_METADATA not in self.entries:
-            raise ZipDumpError(
-                f"The {where} holds no {_ROOT_METADATA}, so it is no dump made "
+            raise _not_a_dump(
+                f"the {where} holds no {_ROOT_METADATA}, so it is no dump made "
                 "by the util.dump_* tools."
             )
         if require_complete and _DONE_METADATA not in self.entries:
-            raise ZipDumpError(
-                f"The {where} holds no {_DONE_METADATA}, so it is no complete dump "
+            raise _not_a_dump(
+                f"the {where} holds no {_DONE_METADATA}, so it is no complete dump "
                 "made by the util.dump_* tools."
             )
 
@@ -595,8 +651,8 @@ class DumpArchive:
         if _DONE_METADATA in self.entries:
             self.done = self._json(files, _DONE_METADATA)
         if not isinstance(root.get("schemas"), list):
-            raise ZipDumpError(
-                f"The dump in the {where} has a layout the MCP server cannot read; "
+            raise _not_a_dump(
+                f"the dump in the {where} has a layout the MCP server cannot read; "
                 "load it with the shell's util.load_dump."
             )
 
@@ -609,13 +665,13 @@ class DumpArchive:
 
     def _json(self, files, name: str) -> dict:
         if self.entries[name] > _MAX_METADATA_BYTES:
-            raise ZipDumpError(f"The dump's metadata file {name} is too large.")
+            raise _not_a_dump(f"the dump's metadata file {name} is too large.")
         try:
             value = json.loads(files.read(name).decode("utf-8"))
         except (ValueError, UnicodeDecodeError, zipfile.BadZipFile) as error:
-            raise ZipDumpError(f"The dump's metadata file {name} cannot be read: {error}.") from error
+            raise _not_a_dump(f"the dump's metadata file {name} cannot be read: {error}.") from error
         if not isinstance(value, dict):
-            raise ZipDumpError(f"The dump's metadata file {name} is no JSON object.")
+            raise _not_a_dump(f"the dump's metadata file {name} is no JSON object.")
         return value
 
     def _read_schema(self, files, schema: str, basename: str) -> None:
@@ -624,7 +680,7 @@ class DumpArchive:
             if self.done is None:
                 # a dump still being written: its schemas come later
                 return
-            raise ZipDumpError(f"The dump holds no {name}, the metadata of schema `{schema}`.")
+            raise _not_a_dump(f"the dump holds no {name}, the metadata of schema `{schema}`.")
         metadata = self._json(files, name)
         self.schema_metadata[schema] = metadata
         if metadata.get("includesData", True) is False:
@@ -718,31 +774,52 @@ class DumpArchive:
         self.metadata = others
 
 
+def default_budget(archive: "DumpArchive", threads=DEFAULT_LOAD_THREADS) -> int:
+    """The bytes a load of a zip extracts ahead of it, where not given.
+
+    Twice the load's threads times the largest chunk, and
+    :data:`MIN_BUDGET_BYTES` at the least.
+    """
+    if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:
+        threads = DEFAULT_LOAD_THREADS
+    return max(MIN_BUDGET_BYTES, 2 * threads * archive.largest_chunk)
+
+
+def disk_needed(archive: "DumpArchive", budget: int) -> int:
+    """The free disk space a load of a zip needs next to it, with that budget."""
+    return archive.metadata_bytes + min(budget, archive.data_bytes) + _FREE_SPACE_MARGIN
+
+
 # --- what a dump holds -------------------------------------------------------
 
-# The names of a schema's tables and views listed, at the most; the counts
-# are always given.
+# The names of a schema's objects, or of the users, listed at the most; the
+# counts are always given.
 INSPECT_NAMES_LIMIT = 100
 
 
-def _limited(names) -> list:
-    return list(names or [])[:INSPECT_NAMES_LIMIT]
+def _names(metadata: dict, key: str, limit: Optional[int]) -> list:
+    names = [n for n in (metadata.get(key) or []) if isinstance(n, str)]
+    return names if limit is None else names[:limit]
 
 
-def inspect_dump(path: str) -> dict:
+def inspect_dump(path: str, schema: Optional[str] = None) -> dict:
     """What a dump in a folder or a zip holds, from its metadata alone.
 
     Args:
         path (str): The dump's folder, or its zip.
+        schema (str): Only this schema, with every name of its objects; by
+            default every schema, with at most :data:`INSPECT_NAMES_LIMIT`
+            names of each kind of object.
 
     Returns:
         dict: Its kind (the dump utility that made it), whether it is
-        complete, where and when it was made and with which options, and its
-        schemas with their objects; the rows and data sizes are exact for a
-        complete dump (@.done.json) and estimates otherwise.
+        complete, where and when it was made and with which options, its
+        users and its schemas with their objects; the rows and data sizes are
+        exact for a complete dump (@.done.json) and estimates otherwise.
 
     Raises:
-        ZipDumpError: It is no dump, or cannot be read.
+        ZipDumpError: It is no dump ("Not a dump: ..."), cannot be read
+            ("Cannot read ..."), or holds no such schema.
     """
     path = os.path.abspath(path)
     if os.path.isdir(path):
@@ -750,7 +827,11 @@ def inspect_dump(path: str) -> dict:
     elif os.path.isfile(path):
         archive = DumpArchive.open(path, require_complete=False)
     else:
-        raise ZipDumpError(f"{path} does not exist.")
+        raise ZipDumpError(f"Cannot read {path}: it does not exist.")
+
+    if schema is not None and schema not in archive.schemas:
+        raise ZipDumpError(f"The dump holds no schema `{schema}`.")
+    limit = None if schema is not None else INSPECT_NAMES_LIMIT
 
     root = archive.root or {}
     done = archive.done
@@ -758,24 +839,19 @@ def inspect_dump(path: str) -> dict:
     table_bytes = (done or {}).get("tableDataBytes") or {}
 
     schemas = []
-    for schema in archive.schemas:
-        metadata = archive.schema_metadata.get(schema) or {}
-        tables = metadata.get("tables") or []
-        views = metadata.get("views") or []
-        entry = {
-            "name": schema,
-            "table_count": len(tables),
-            "tables": _limited(tables),
-            "view_count": len(views),
-            "views": _limited(views),
-            "functions": len(metadata.get("functions") or []),
-            "procedures": len(metadata.get("procedures") or []),
-            "events": len(metadata.get("events") or []),
-        }
+    for name in archive.schemas:
+        if schema is not None and name != schema:
+            continue
+        metadata = archive.schema_metadata.get(name) or {}
+        entry = {"name": name}
+        for key in ("tables", "views", "functions", "procedures", "events"):
+            entry[key[:-1] + "_count"] = len(_names(metadata, key, None))
+            entry[key] = _names(metadata, key, limit)
         if done is not None:
-            entry["rows"] = sum((table_rows.get(schema) or {}).values())
-            entry["data_bytes"] = sum((table_bytes.get(schema) or {}).values())
+            entry["rows"] = sum((table_rows.get(name) or {}).values())
+            entry["data_bytes"] = sum((table_bytes.get(name) or {}).values())
         schemas.append(entry)
+    all_users = _names(root, "users", None)
 
     info = {
         "url": archive.path,
@@ -792,12 +868,21 @@ def inspect_dump(path: str) -> dict:
         "end": (done or {}).get("end"),
         "options": root.get("options") or {},
         "includes_users": "@.users.sql" in archive.entries,
+        # the accounts, as the shell writes them ('user'@'host')
+        "user_count": len(all_users),
+        "users": all_users if limit is None else all_users[:limit],
         "schema_count": len(archive.schemas),
         "schemas": schemas,
         # the data files as they are on disk or in the zip: compressed
         "data_file_bytes": archive.data_bytes,
         "size_bytes": archive.size,
+        # every file of the dump extracted: for a zip, its stored entries
+        "extracted_bytes": archive.extracted_bytes,
     }
+    if archive.format == "zip":
+        # the free space util.load_dump checks for next to the zip, with the
+        # default budget
+        info["disk_needed_bytes"] = disk_needed(archive, default_budget(archive))
     if done is not None:
         info["rows"] = sum(sum((t or {}).values()) for t in table_rows.values())
         info["data_bytes"] = done.get("dataBytes")
@@ -955,13 +1040,10 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
             raise ZipDumpError("extraction_budget_mb must be a positive number of megabytes.")
         budget = budget_mb << 20
     else:
-        threads = options.get("threads", DEFAULT_LOAD_THREADS)
-        if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:
-            threads = DEFAULT_LOAD_THREADS
-        budget = max(MIN_BUDGET_BYTES, 2 * threads * archive.largest_chunk)
+        budget = default_budget(archive, options.get("threads", DEFAULT_LOAD_THREADS))
 
     parent = os.path.dirname(directory)
-    needed = archive.metadata_bytes + min(budget, archive.data_bytes) + _FREE_SPACE_MARGIN
+    needed = disk_needed(archive, budget)
     free = shutil.disk_usage(parent).free
     if not wipe and state is not None:
         # what is extracted already is on the disk
@@ -1133,7 +1215,7 @@ class Extractor:
         target = self._path(name)
         temporary = target + _EXTRACTING_SUFFIX
         size = 0
-        with self._zip.open(name) as source, open(temporary, "wb") as file:
+        with self._zip.open(self.archive.member(name)) as source, open(temporary, "wb") as file:
             while True:
                 block = source.read(_COPY_BUFFER)
                 if not block:

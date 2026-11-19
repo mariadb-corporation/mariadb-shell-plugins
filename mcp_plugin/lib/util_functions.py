@@ -449,7 +449,7 @@ def register_util_tools(server, function_groups=()) -> None:
         )
 
     @tool(name="util.inspect_dump")
-    async def inspect_dump(ctx: Context, url: str) -> dict:
+    async def inspect_dump(ctx: Context, url: str, schema: Optional[str] = None) -> dict:
         """Tells what a dump holds, from its metadata, without loading it.
 
         Works on a dump's directory and on its .mariadb.dump.zip file alike,
@@ -457,12 +457,14 @@ def register_util_tools(server, function_groups=()) -> None:
 
         Args:
             url: The directory of the dump, or its .mariadb.dump.zip file.
+            schema: Only this schema, with every name of its objects. Without
+                it, at most 100 names of each kind are listed, with counts.
 
         Returns:
             A dict with the dump's kind (dumpInstance, dumpSchemas or
             dumpTables), whether it is complete, the source server, begin and
-            end, the dump's options, whether it includes users, and its
-            schemas with their tables, views and routines; rows and data
+            end, the dump's options, its users, and its schemas with their
+            tables, views, functions, procedures and events; rows and data
             sizes are exact for a complete dump and estimates otherwise. Only
             a dump of a single schema can be loaded into another schema with
             util.load_dump's schema option.
@@ -474,7 +476,7 @@ def register_util_tools(server, function_groups=()) -> None:
 
         def read():
             try:
-                return util_zip.inspect_dump(path)
+                return util_zip.inspect_dump(path, schema)
             except util_zip.ZipDumpError as error:
                 raise tool_error(str(error)) from error
 

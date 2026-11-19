@@ -957,8 +957,9 @@ def test_stdio_dump_and_load_a_zip(allowed_temp_dir, sandbox):
                     zipped.extractall(folder)
                 same = payload(await call("util.inspect_dump", {"url": folder}))
                 assert same["format"] == "folder"
-                assert {k: v for k, v in same.items() if k not in ("url", "format", "size_bytes")} == {
-                    k: v for k, v in info.items() if k not in ("url", "format", "size_bytes")
+                differ = ("url", "format", "size_bytes", "disk_needed_bytes")
+                assert {k: v for k, v in same.items() if k not in differ} == {
+                    k: v for k, v in info.items() if k not in differ
                 }
 
                 # loaded into another schema, a table left out, with a small budget
