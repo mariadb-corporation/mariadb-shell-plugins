@@ -101,6 +101,10 @@ _FREE_SPACE_MARGIN = 64 << 20
 
 _MESSAGE_INTERRUPTED = "Interrupted by user"
 
+# The folders next to zips that a task dumps to or loads from now.
+_active_lock = threading.Lock()
+_active = set()
+
 
 class ZipDumpError(Exception):
     """What a call to a util tool cannot do with a zip, before any task."""
@@ -178,8 +182,10 @@ def check_dump_target(zip_path: str) -> None:
     if not os.path.isdir(parent):
         raise ZipDumpError(f"The folder {parent} does not exist.")
 
-    for path in (dump_directory(zip_path), zip_path + _PART_SUFFIX):
-        if os.path.lexists(path) and not (os.path.isdir(path) and not os.listdir(path)):
+    for path, may_be_empty_folder in ((dump_directory(zip_path), True), (zip_path + _PART_SUFFIX, False)):
+        if os.path.lexists(path) and not (
+            may_be_empty_folder and os.path.isdir(path) and not os.listdir(path)
+        ):
             raise ZipDumpError(
                 f"{path} already exists. It is left over from a dump to "
                 f"{os.path.basename(zip_path)} that did not finish: remove it."
@@ -282,11 +288,17 @@ def dump_to_zip(task, zip_path: str, run_dump: Callable[[str], None]) -> dict:
         dict: The task's result.
     """
     directory = dump_directory(zip_path)
+    with _active_lock:
+        if directory in _active:
+            raise RuntimeError(f"{zip_path} is being written by another task already.")
+        _active.add(directory)
     try:
         run_dump(directory)
         files, size = pack(directory, zip_path, task)
     finally:
         shutil.rmtree(directory, ignore_errors=True)
+        with _active_lock:
+            _active.discard(directory)
 
     if task is not None:
         task.message(f"Packed {files} files into {zip_path} ({_format_bytes(size)}).")
@@ -1114,6 +1126,10 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
             archive.entries.get(name, 0) for name in state.extracted - state.emptied
         ))
     free = shutil.disk_usage(os.path.dirname(directory)).free
+    if wipe:
+        # what the folder holds is removed before anything is extracted
+        with os.scandir(directory) as listing:
+            free += sum(entry.stat().st_size for entry in listing if entry.is_file())
     if free < needed:
         raise ZipDumpError(
             f"Extracting the zip next to it needs {_format_bytes(needed)} free on "
@@ -1124,9 +1140,6 @@ def plan_load(archive: DumpArchive, options: dict, budget_mb=None) -> LoadPlan:
         archive, directory, wipe, state, run_options, progress_file, filters, rename, budget
     )
 
-
-_active_lock = threading.Lock()
-_active = set()
 
 _EXTRACT_STAGE = "Extracting the dump"
 
@@ -1159,6 +1172,8 @@ class Extractor:
         self._peak_bytes = 0
         self._extracted_bytes = 0
         self._to_empty = set()
+        # chunks the progress file says were loaded before they were extracted
+        self._loaded = set()
         self._by_key = {}
         self._units_by_key = {}
         self._progress_offset = 0
@@ -1271,6 +1286,11 @@ class Extractor:
                     continue
                 if included:
                     if chunk.name in state.placeholders:
+                        # the loader would take the empty file for the chunk
+                        # and load nothing of it: gone until it is extracted
+                        if chunk.name in on_disk:
+                            os.remove(self._path(chunk.name))
+                            del on_disk[chunk.name]
                         state.placeholders.discard(chunk.name)
                         state.extracted.discard(chunk.name)
                     continue
@@ -1373,6 +1393,8 @@ class Extractor:
             self._pending.add(chunk.name)
             self._pending_bytes += chunk.size
             self._peak_bytes = max(self._peak_bytes, self._pending_bytes)
+            if chunk.name in self._loaded:
+                self._to_empty.add(chunk)
 
     def _extract_data(self) -> None:
         units = self._queue()
@@ -1487,8 +1509,15 @@ class Extractor:
                 if entry.get("timestamp", 0) >= self._since_ms:
                     self._poison(chunk)
                 continue
-            if entry.get("done") and chunk.name in self._pending:
+            if not entry.get("done"):
+                continue
+            if chunk.name in self._pending:
                 self._to_empty.add(chunk)
+            elif self.plan.state is not None or entry.get("timestamp", 0) >= self._since_ms:
+                # loaded already (an emptied chunk whose record was lost, say):
+                # emptied once it is extracted again; an earlier load's lines
+                # only count where this load resumes it
+                self._loaded.add(chunk.name)
 
     def _poison(self, chunk: DataChunk) -> None:
         reason = (

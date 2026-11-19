@@ -869,3 +869,67 @@ def test_what_is_no_dump_and_what_cannot_be_read_are_told_apart(tmp_path):
         util_zip.inspect_dump(str(empty))
     with pytest.raises(util_zip.ZipDumpError, match="^Cannot read "):
         util_zip.inspect_dump(str(tmp_path / "missing"))
+
+
+def test_a_table_left_out_before_is_loaded_from_its_real_data_now(tmp_path):
+    zip_path, units = make_zip(tmp_path, chunk_size=10 * KB, chunks=3)
+    options = {"excludeTables": ["shop.orders"]}
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), options)
+    filters = util_zip.TableFilter(options)
+    with pytest.raises(RuntimeError, match="the loader failed"):
+        util_zip.load_from_zip(new_task(), plan, FakeLoader(units, include=filters.table_included, fail_after=1))
+
+    # the next load takes shop.orders: never from its empty placeholders
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {})
+    loader = FakeLoader(units)
+    util_zip.load_from_zip(new_task(), plan, loader)
+    orders = [size for key, size in loader.loaded if key[:2] == ("shop", "orders")]
+    assert len(orders) == 3 and all(size > 0 for size in orders)
+
+
+def test_a_loaded_chunk_whose_emptying_was_not_logged_is_emptied_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(util_zip, "STALL_SECONDS", 30)
+    # the chunks loaded first hold more than the budget: kept pending, they
+    # would stall the next load
+    zip_path, units = make_zip(tmp_path, chunk_size=200 * KB, chunks=20)
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {}, budget_mb=1)
+    with pytest.raises(RuntimeError, match="the loader failed"):
+        util_zip.load_from_zip(new_task(), plan, FakeLoader(units, fail_after=8))
+
+    # a crash lost the log's records of the emptied chunks
+    log = os.path.join(plan.directory, util_zip.STATE_FILE)
+    with open(log) as file:
+        kept = [line for line in file if '"emptied"' not in line]
+    with open(log, "w") as file:
+        file.writelines(kept)
+
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {}, budget_mb=1)
+    task = new_task()
+    started = time.monotonic()
+    util_zip.load_from_zip(task, plan, FakeLoader(units))
+    # no chunk stayed pending, so the budget never stalled the load
+    assert time.monotonic() - started < 25
+    assert not any("without waiting for it" in m["text"] for m in task.messages)
+    assert not os.path.exists(plan.directory)
+
+
+def test_two_dumps_to_one_zip_at_once_are_refused(tmp_path):
+    zip_path = str(tmp_path / f"out{util_zip.ZIP_SUFFIX}")
+    first_started = threading.Event()
+    release = threading.Event()
+
+    def slow(directory):
+        make_dump(directory, chunk_size=KB, chunks=1)
+        first_started.set()
+        release.wait(10)
+
+    thread = threading.Thread(target=lambda: util_zip.dump_to_zip(new_task(), zip_path, slow))
+    thread.start()
+    assert first_started.wait(10)
+    with pytest.raises(RuntimeError, match="being written by another task"):
+        util_zip.dump_to_zip(new_task(), zip_path, lambda d: None)
+    # the refused dump left the first one's folder alone
+    assert os.path.isfile(os.path.join(util_zip.dump_directory(zip_path), "@.json"))
+    release.set()
+    thread.join(30)
+    util_zip.DumpArchive.open(zip_path)
