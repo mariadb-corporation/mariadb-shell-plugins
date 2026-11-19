@@ -219,10 +219,13 @@ of the zip, stored (not compressed again), Zip64.
   If the loader starts a placeholder anyway (a wrong port), only lines
   timestamped after this load started count; the load then fails loudly
   ("poisoned"), and the next load extracts every table.
-- **Stall backstop**: if the budget is used up and the progress file has not
-  changed for `STALL_SECONDS` (120), the extractor stops keeping to the
-  budget for the rest of the load and warns. It never empties a chunk that
-  was not loaded.
+- **Stall backstop**: if the budget is used up, the loader has no chunk in
+  progress (a `TABLE-DATA` start line of this load with no end line yet) and
+  the progress file has not changed for `STALL_SECONDS` (120), the extractor
+  stops keeping to the budget for the rest of the load and warns. A loader
+  busy with slow chunks is no stall. The in-progress set is cleared when the
+  loader rewrites the progress file (a restart after a crash). It never
+  empties a chunk that was not loaded.
 
 - **`util.inspect_dump`** (sync, no task, no shell process):
   `util_zip.inspect_dump` reads only metadata, through `DumpArchive`, which

@@ -1197,6 +1197,8 @@ class Extractor:
         self._polled = 0.0
         self._last_progress = time.monotonic()
         self._full_since = None
+        # chunks the loader started in this load and has not finished
+        self._in_progress = set()
         self._uncapped = False
         self._stage_started = None
         # progress lines before this (with a margin for clock steps) are an
@@ -1451,17 +1453,19 @@ class Extractor:
     def _room_for(self, chunk: DataChunk) -> bool:
         """Whether the budget lets the chunk be extracted now.
 
-        A chunk always may when nothing is pending. When the progress file
-        stays unchanged for :data:`STALL_SECONDS` with the budget used up,
-        the loader is not taking what was extracted - the extractor then
-        stops keeping to the budget, so the load never hangs on it.
+        A chunk always may when nothing is pending. When, with the budget
+        used up, the loader has no chunk in progress and its progress file
+        stays unchanged for :data:`STALL_SECONDS`, it is not taking what was
+        extracted - the extractor then stops keeping to the budget, so the
+        load never hangs on it. A loader busy with slow chunks is no stall:
+        the clock starts again while any chunk is in progress.
         """
         if self._uncapped or not self._pending or self._pending_bytes + chunk.size <= self.plan.budget:
             self._full_since = None
             return True
 
         now = time.monotonic()
-        if self._full_since is None:
+        if self._full_since is None or self._in_progress:
             self._full_since = now
         if now - max(self._full_since, self._last_progress) >= STALL_SECONDS:
             self._uncapped = True
@@ -1499,9 +1503,11 @@ class Extractor:
         if size == self._progress_size:
             return
         if size < self._progress_offset:
-            # the loader rewrote it on starting again
+            # the loader rewrote it on starting again: what the earlier run
+            # had in progress ended with it
             self._progress_offset = 0
             self._progress_rest = b""
+            self._in_progress.clear()
         self._progress_size = size
         self._last_progress = time.monotonic()
 
@@ -1542,7 +1548,11 @@ class Extractor:
                     self._poison(chunk)
                 continue
             if not entry.get("done"):
+                # an earlier load's start lines were never finished in this one
+                if op == "TABLE-DATA" and entry.get("timestamp", 0) >= self._since_ms:
+                    self._in_progress.add(chunk.name)
                 continue
+            self._in_progress.discard(chunk.name)
             if chunk.name in self._pending:
                 self._to_empty.add(chunk)
             elif self.plan.state is not None or entry.get("timestamp", 0) >= self._since_ms:

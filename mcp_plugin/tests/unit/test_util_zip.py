@@ -424,13 +424,15 @@ class FakeLoader:
     """
 
     def __init__(self, units, include=None, observe=None, fail_after=None, start_anyway=(),
-                 wait_for_done=False):
+                 wait_for_done=False, chunk_seconds=0):
         self.units = units
         self.include = include or (lambda schema, table: True)
         self.observe = observe
         self.fail_after = fail_after
         self.start_anyway = start_anyway
         self.wait_for_done = wait_for_done
+        # how long loading each chunk takes, between its start and end lines
+        self.chunk_seconds = chunk_seconds
         self.loaded = []
         self.options = []
 
@@ -478,6 +480,8 @@ class FakeLoader:
                         if partition:
                             entry["partition"] = partition
                         log({**entry, "done": False})
+                        if self.chunk_seconds:
+                            time.sleep(self.chunk_seconds)
                         self.loaded.append((key, os.path.getsize(os.path.join(directory, name))))
                         log({**entry, "done": True, "rows": 1})
                         done.add(key)
@@ -1002,3 +1006,19 @@ def test_a_damaged_compressed_metadata_file_is_no_dump(tmp_path):
         file.write(b"\xff" * 8)
     with pytest.raises(util_zip.ZipDumpError, match="^Not a dump: .*@.json cannot be read"):
         util_zip.inspect_dump(zip_path)
+
+
+def test_a_loader_busy_with_slow_chunks_is_no_stall(tmp_path, monkeypatch):
+    monkeypatch.setattr(util_zip, "STALL_SECONDS", 0.3)
+    zip_path, units = make_zip(tmp_path, chunk_size=200 * KB, chunks=4)
+    plan = util_zip.plan_load(util_zip.DumpArchive.open(zip_path), {}, budget_mb=1)
+    peaks = []
+    # every chunk takes three times the stall time to load, with the budget full
+    loader = FakeLoader(units, chunk_seconds=0.9, observe=lambda d: peaks.append(_on_disk(d)))
+    task = new_task()
+
+    util_zip.load_from_zip(task, plan, loader)
+
+    assert len(loader.loaded) == sum(len(u[3]) for u in units)
+    assert not any("without waiting for it" in m["text"] for m in task.messages)
+    assert max(peaks) <= plan.budget + plan.archive.largest_chunk
