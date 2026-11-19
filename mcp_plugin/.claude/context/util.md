@@ -247,8 +247,6 @@ Open points:
   has open is retried there.
 - `dryRun` on a zip loads nothing, so it only gets past the budget through
   the stall backstop (120 s).
-- The extension has nothing for zips yet (a Save dialog filter for
-  `.mariadb.dump.zip`, for example).
 - `load_from_zip` reports no progress of its own: the task's progress is
   the loader's, and the shell knows the dump's total only once
   `@.done.json` arrives, which is last.
@@ -328,3 +326,12 @@ is many times a second), puts each task in the Actions tab with only its
 totals and warnings under it, and writes a log file per task. It still strips
 terminal colour codes from a copy's SRC:/TGT: prefixes; the shell process
 prints none now.
+
+Zip dumps in the extension (its `.claude/context/dump-and-load.md`, "Zip
+dumps and what a load takes"): a Dump to Self-Contained ZIP File option
+appends `.mariadb.dump.zip` to the path, and the suffix alone tells the tools
+it is a zip. Load Dump and Load Table Dump pick a zip or a folder, call
+`util.inspect_dump` on it, and show its objects as boxes; the unticked boxes
+become the load's `exclude*` filters. The dialog refuses an incomplete dump,
+and a table dump loaded from a connection rather than a schema. It passes
+`extraction_budget_mb` as the tool's own argument.
