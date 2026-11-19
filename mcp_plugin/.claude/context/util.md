@@ -55,6 +55,8 @@ whole server down.
   - Without it, a load would go on after a window reload beside the one the
     extension resumes. Where the shell has no Python, the shell runs
     directly, and `atexit` kills it.
+- `lib/util_zip.py`: dumps in a single `.mariadb.dump.zip` file; see the
+  section below.
 - `lib/util_functions.py`: the 12 tools.
   - The nine start tools are async: `require_allowed_path` elicits. They:
     1. refuse `session`/`progressCallback`/`showProgress` in `options`;
@@ -158,7 +160,96 @@ One JSON object per line on stdout:
 - The crashed run's running stages become failed, and its stderr tail (the
   "Warning: Charset id" lines left out) becomes error messages.
 
+## Dumps in a single `.mariadb.dump.zip` file (`lib/util_zip.py`, branch `wip/util-zip-dumps`)
+
+Route A of two (decided 2026-11-19): the zip is made and read in the MCP
+layer; route B, a ZIP storage backend in mariadb-shell
+(`Storage_options::config_for`, a `storage::Config` like copy's
+`Virtual_config`), is a possible later shell feature. The archive format is
+fixed so that route B could read the same zips: the dump's files at the top
+of the zip, stored (not compressed again), Zip64.
+
+- **The switch is the name**: `output_url` / `url` ending in
+  `.mariadb.dump.zip` (`util_zip.is_zip_url`). Local files only; the path
+  checked against the allowed paths is the zip's folder, since the work
+  folders are next to the zip.
+- **Dump**: into `<stem>.tmp` next to the zip, then `pack()` writes
+  `<zip>.part` in the order `@.json`, metadata, data, `@.done.json`, deleting
+  each file once it is in, and renames it. The folder is always removed (a
+  dump never resumes). `check_dump_target` refuses an existing zip and a
+  left-over non-empty `.tmp` / `.part`.
+- **Load**: `plan_load` at call time (refusals are tool errors), then
+  `load_from_zip` in the task: an `Extractor` extracts into `<stem>.extracted`
+  while `util_process.run` loads it with `waitDumpTimeout` (the loader's
+  load-while-dumping mode). `util_process.Abort` lets a failing extractor
+  stop the load with its own reason. Only one load of a zip at a time
+  (in-process registry).
+- **Extraction order and budget**: all metadata before the load starts; then
+  data chunks in turns across tables, each table's in index order, `.idx`
+  before its chunk; `@.done.json` last. The budget (default
+  `max(1 GiB, 2 * threads * largest chunk)`, `extraction_budget_mb`) caps
+  bytes extracted and not yet loaded.
+- **Emptying**: a chunk is truncated to 0 bytes (data and `.idx`) when the
+  progress file has its `TABLE-DATA` line with `done: true`. Not deleted.
+- **The folder's log** `.mcp-zip-load.log` (JSON lines: zip identity,
+  extracted, emptied, placeholder, progressFile, poisoned) lets a load of
+  the same zip resume. Wiped when the zip changed (path, size, mtime), on
+  `resetProgress: true`, and after a poisoned run.
+- **Filters**: `TableFilter` ports the shell's filters (exact names,
+  exclude wins, a schema filter covers its tables, `loadData: false`, and
+  identifier parsing as `span_quotable_sql_identifier`). The data of a
+  left-out table becomes empty placeholder files and is never extracted.
+  If the loader starts a placeholder anyway (a wrong port), only lines
+  timestamped after this load started count; the load then fails loudly
+  ("poisoned"), and the next load extracts every table.
+- **Stall backstop**: if the budget is used up and the progress file has not
+  changed for `STALL_SECONDS` (120), the extractor stops keeping to the
+  budget for the rest of the load and warns. It never empties a chunk that
+  was not loaded.
+
+Shell facts this rests on (mariadb-shell, checked 2026-11-19):
+
+- The loader finds a chunk only by its exact name in the folder listing
+  (`Dump_reader::Table_data_info::rescan_data`), so a file being extracted
+  (`*.extracting`) is invisible until it is renamed. It takes a table's
+  chunks strictly in order (`has_data_available`).
+- `@.done.json` makes the dump complete (`is_dump_complete`). Chunks missing
+  then are not reported, which is why it has to be last.
+- Without `@.done.json`, a chunk's size comes from its `.idx`
+  (`data_size_in_file`); a missing or empty `.idx` gives 0, with no error.
+- On resume, a chunk the progress file marks done is skipped without being
+  opened (`schedule_table_chunk`), but it must still be listed, so an
+  emptied file keeps its name.
+- Checksum verification only queries the server
+  (`Checksum_data::validate`), so emptied chunks don't matter to it.
+- Names: chunk `<basename>@<N>.<ext>`, last chunk `<basename>@@<N>.<ext>`,
+  unchunked `<basename>.<ext>`. The basenames come from `@.json` (schemas),
+  `<schema>.json` (tables) and `<table>.json` (`basenames` of partitions).
+  They can be truncated, so they are never rebuilt from names. `extension`
+  includes the compression (`tsv.zst`).
+- The progress file `load-progress.<server identity>.json` (MariaDB:
+  `hostname-port-server_id`) is in the dump folder by default. It has one
+  JSON object per line; `TABLE-DATA` has `schema` (the TARGET name under
+  the `schema` option), `table`, `partition` (only when partitioned) and
+  `chunk` (-1 unchunked). It is rewritten once when the loader starts.
+- A progress file given back as `progressFile` is refused for another
+  server (`SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH`, raised in
+  `on_dump_begin`, before any data). This is why a folder with emptied
+  chunks is always loaded with its recorded progress file.
+- Filters see the DUMP's schema name: `override_schema` maps the `schema`
+  option's target back.
+
 ## Tests
+
+`tests/unit/test_util_zip.py` (65 with the parametrized cases): the filter
+port, the archive checks and the chunk finding (partitions, digits-only
+table names, unchunked tables), packing, planning, and the streaming load
+against a `FakeLoader` (budget kept, placeholders, resume without loading a
+chunk twice, a wrong filter caught, stall, a CRC error stopping the load, two
+loads at once). `test_util.py::test_stdio_dump_and_load_a_zip` runs end to
+end: a dump to a zip in 128k chunks, a load with a table left out and a 1 MB
+budget, and a load whose shell is SIGKILLed after a chunk was emptied and
+resumed.
 
 `tests/unit/test_util.py` (105 with the parametrized cases):
 

@@ -590,6 +590,27 @@ its `task_id` at once; the client follows the task with the [task tools](#backgr
   `password`, `socket`, `ssl-*`,
   `ssh-*` and the others, in any spelling): the target is the connection named by
   `target_connection_id`, and the options cannot change it.
+- **A dump as a single file:** an `output_url` ending in `.mariadb.dump.zip` makes
+  the dump tools write the dump to a folder next to it (`<name>.mariadb.dump.tmp`),
+  then pack it into the zip, stored without compressing it again (the data files
+  are zstd already), and remove the folder. `util.load_dump` takes such a zip as
+  its `url`:
+  - The zip is extracted to `<name>.mariadb.dump.extracted` next to it **while
+    it loads**: first the metadata, then the data in turns across the tables,
+    and `@.done.json` last.
+  - **At most `extraction_budget_mb` of data that is not loaded yet is on disk
+    at once.** The default is 1024, or twice the load's threads times the
+    largest chunk if that is more. A data file is emptied as soon as the load's
+    progress file says it was loaded, so a load needs the zip plus that budget
+    on disk, not twice the dump.
+  - **The data of tables the load's filters leave out is never extracted**
+    (`includeSchemas`, `excludeSchemas`, `includeTables`, `excludeTables`,
+    `loadData: false`).
+  - **A failed load keeps the folder**, and loading the zip again resumes there.
+    `resetProgress: true` starts over.
+  - The zip must be a local file, as a ZIP made by the dump tools or one with
+    the dump's files at its top. `progressFile: ""` and `waitDumpTimeout` are
+    refused for a zip.
 - **`task.cancel`** interrupts the utility as Ctrl+C would, and ends its process
   if it has not stopped 30 seconds later. A load that is stopped can be resumed by
   loading the same dump again.

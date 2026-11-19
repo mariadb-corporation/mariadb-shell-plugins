@@ -36,7 +36,7 @@ disk, and a dump takes connections and threads from every other user.
 import os
 from typing import Optional, Union
 
-from mcp_plugin.lib import db_functions, general, tasks, util_process
+from mcp_plugin.lib import db_functions, general, tasks, util_process, util_zip
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # The options the tools set themselves, or that only a call in the shell's own
@@ -134,6 +134,27 @@ def _local_paths(urls, options: dict) -> list:
     return paths
 
 
+def _dump_zip_mode(output_url) -> Optional[str]:
+    return "dump" if util_zip.is_zip_url(output_url) else None
+
+
+def _zip_path(url, options: dict) -> str:
+    """The local path of a dump in a zip, refusing a zip it cannot be.
+
+    The zip is written or extracted next to itself, so it is a local file,
+    never a URL or a name in object storage.
+    """
+    path = _local_path(url)
+    if path is None or any(
+        isinstance(options.get(key), str) and options[key] for key in _REMOTE_STORAGE_OPTIONS
+    ):
+        raise tool_error(
+            f"A dump in a {util_zip.ZIP_SUFFIX} file must be a file on this "
+            "machine, not a URL or object storage."
+        )
+    return os.path.abspath(path)
+
+
 def register_util_tools(server, function_groups=()) -> None:
     """Registers the dump, load, copy, export and import tools.
 
@@ -167,18 +188,32 @@ def register_util_tools(server, function_groups=()) -> None:
         target_connection_id: Optional[str] = None,
         result: Optional[dict] = None,
         forbidden: Optional[dict] = None,
+        zip_mode: Optional[str] = None,
+        extraction_budget_mb: Optional[int] = None,
     ) -> dict:
         """Starts a utility as a task, after checking what it is given.
 
         ``forbidden`` names the options this utility refuses beyond
         _RESERVED_OPTIONS, each with the reason it is refused.
+
+        ``zip_mode`` is "dump" or "load" for a dump in a single
+        ``.mariadb.dump.zip`` file, the last of ``args`` (see
+        :mod:`mcp_plugin.lib.util_zip`): the utility then runs on a folder
+        next to the zip, which is in the folder the zip's is, so that one is
+        the path checked.
         """
         options = _options(options)
         # Before the paths, which can ask the user: without a shell to run
         # it in, the call fails whatever they answer.
         executable = util_process.shell_executable()
 
-        for path in _local_paths(urls, options):
+        zip_path = None
+        paths = _local_paths(urls, options)
+        if zip_mode is not None:
+            zip_path = _zip_path(args[-1], options)
+            paths = [os.path.dirname(zip_path)] + _local_paths((), options)
+
+        for path in paths:
             await general.require_allowed_path(ctx, path)
 
         # Read here, while this is still the request's own context.
@@ -189,14 +224,32 @@ def register_util_tools(server, function_groups=()) -> None:
             if target_connection_id is not None:
                 target = db_functions.connection_data(target_connection_id, client)
             source = db_functions.connection_credentials(connection_id, client)
+            plan = None
             # the command line is checked here too, so that what it cannot
             # take fails the call itself
-            util_process.build_command(function, args, options, target, forbidden)
-            return source, target
+            try:
+                if zip_mode == "dump":
+                    util_zip.check_dump_target(zip_path)
+                    util_process.build_command(
+                        function, args[:-1] + [util_zip.dump_directory(zip_path)],
+                        options, target, forbidden,
+                    )
+                elif zip_mode == "load":
+                    plan = util_zip.plan_load(
+                        util_zip.DumpArchive.open(zip_path), options, extraction_budget_mb
+                    )
+                    util_process.build_command(
+                        function, [plan.directory], plan.options, target, forbidden
+                    )
+                else:
+                    util_process.build_command(function, args, options, target, forbidden)
+            except util_zip.ZipDumpError as error:
+                raise tool_error(str(error)) from error
+            return source, target, plan
 
         # Reading the secret store is no work for the loop. Done before the
         # task starts, so that a wrong connection fails the call itself.
-        source, target = await anyio.to_thread.run_sync(prepare)
+        source, target, plan = await anyio.to_thread.run_sync(prepare)
 
         task = tasks.create(
             tasks.TASK_TYPE_UTIL, kind, title, client, tasks.MAX_RUNNING_UTIL_TASKS,
@@ -204,6 +257,17 @@ def register_util_tools(server, function_groups=()) -> None:
         )
 
         def work(task):
+            if zip_mode == "dump":
+                return util_zip.dump_to_zip(task, zip_path, lambda directory: util_process.run(
+                    task, function, args[:-1] + [directory], options, source, target, executable,
+                ))
+            if zip_mode == "load":
+                return util_zip.load_from_zip(task, plan, lambda directory, run_options, abort: (
+                    util_process.run(
+                        task, function, [directory], run_options, source, target, executable,
+                        abort=abort,
+                    )
+                ))
             util_process.run(task, function, args, options, source, target, executable)
             return result
 
@@ -226,8 +290,9 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect, for the server to
                 dump.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_instance, with their camelCase
                 names, e.g. {"threads": 8, "users": false,
                 "excludeSchemas": ["test"]}.
@@ -239,6 +304,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_instance", f"Dump the instance to {output_url}",
             connection_id, "dump_instance", [output_url], options,
             urls=[output_url], result={"output_url": output_url},
+            zip_mode=_dump_zip_mode(output_url),
         )
 
     @tool(name="util.dump_schemas", starts_tasks=True)
@@ -257,8 +323,9 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect.
             schemas: The names of the schemas to dump.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_schemas, with their camelCase
                 names, e.g. {"threads": 8, "ddlOnly": true}.
 
@@ -269,7 +336,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_schemas", f"Dump {', '.join(schemas)} to {output_url}",
             connection_id, "dump_schemas", [schemas, output_url], options,
             urls=[output_url], result={"output_url": output_url},
-            forbidden=_OUTPUT_URL_PARAMETER,
+            forbidden=_OUTPUT_URL_PARAMETER, zip_mode=_dump_zip_mode(output_url),
         )
 
     @tool(name="util.dump_tables", starts_tasks=True)
@@ -291,8 +358,9 @@ def register_util_tools(server, function_groups=()) -> None:
             schema: The schema the tables are in.
             tables: The names of the tables and views to dump. Pass an empty
                 list with {"all": true} in options to dump all of them.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_tables, with their camelCase
                 names, e.g. {"where": {"shop.orders": "id > 1000"}}.
 
@@ -303,7 +371,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_tables", f"Dump tables of {schema} to {output_url}",
             connection_id, "dump_tables", [schema, tables, output_url], options,
             urls=[output_url], result={"output_url": output_url},
-            forbidden=_OUTPUT_URL_PARAMETER,
+            forbidden=_OUTPUT_URL_PARAMETER, zip_mode=_dump_zip_mode(output_url),
         )
 
     @tool(name="util.export_table", starts_tasks=True)
@@ -344,6 +412,7 @@ def register_util_tools(server, function_groups=()) -> None:
         connection_id: str,
         url: str,
         options: Optional[dict] = None,
+        extraction_budget_mb: Optional[int] = None,
     ) -> dict:
         """Starts loading a dump into the server, as a background task.
 
@@ -355,18 +424,28 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect, for the server to
                 load into.
-            url: The directory of the dump.
+            url: The directory of the dump, or its .mariadb.dump.zip file.
+                A zip is extracted next to it while it loads, and its data
+                files are emptied once loaded; a failed load of it resumes
+                where it stopped when started again.
             options: The options of util.load_dump, with their camelCase
                 names, e.g. {"schema": "copy_of_shop", "loadUsers": false,
                 "dropExistingObjects": true}.
+            extraction_budget_mb: For a zip only: the most megabytes of data
+                extracted and not yet loaded at once. By default 1024, or
+                more for large chunks.
 
         Returns:
             A dict with the task_id to follow and the task's status.
         """
+        zip_mode = "load" if util_zip.is_zip_url(url) else None
+        if extraction_budget_mb is not None and zip_mode is None:
+            raise tool_error("extraction_budget_mb is only for a dump in a .mariadb.dump.zip file.")
         return await start(
             ctx, "load_dump", f"Load the dump in {url}",
             connection_id, "load_dump", [url], options,
             urls=[url], result={"url": url},
+            zip_mode=zip_mode, extraction_budget_mb=extraction_budget_mb,
         )
 
     @tool(name="util.import_table", starts_tasks=True)

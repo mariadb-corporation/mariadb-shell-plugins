@@ -266,6 +266,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   iterating; this bit the list_objects assertions AND, one commit later, the deploy
   assertions. It WILL bite again.
 
+- **`mariadbd` is no longer in `/opt/homebrew/bin`** (2026-11-19): put the server the
+  sandbox plugin downloaded on PATH instead, `~/.local/share/mariadb-sandbox-server/13.1.1/bin`,
+  or every sandbox test skips with "No MariaDB/MySQL server binary available".
 - **Run the suite from the mcp_plugin dir with `/opt/homebrew/bin` on PATH.** Two runs this
   session died instantly on `can't open file '.../run_tests.py'` because the cwd was the
   repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.

@@ -681,6 +681,20 @@ def test_util_tools_need_the_db_group():
     assert not TASK_TOOLS & set(helpers.list_tool_names(["db"]))
 
 
+def _wait_for_file_text(path: str, text: str, timeout: float = 30) -> bool:
+    """Waits until a file holds a text."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with open(path, encoding="utf-8") as file:
+                if text in file.read():
+                    return True
+        except OSError:
+            pass
+        time.sleep(0.005)
+    return False
+
+
 def _kill_shell_running(argument: str, timeout: float = 10) -> bool:
     """Kills the shell process whose command line has an argument, at once.
 
@@ -868,6 +882,121 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 await sql("DROP SCHEMA IF EXISTS mcp_util")
                 await sql("DROP SCHEMA IF EXISTS mcp_util_loaded")
                 await sql("DROP SCHEMA IF EXISTS mcp_util_resumed")
+                await call("db.close", {"connection_id": connection_id})
+
+    asyncio.run(_run())
+
+
+def test_stdio_dump_and_load_a_zip(allowed_temp_dir, sandbox):
+    """A dump to a .mariadb.dump.zip file, and loads of it, also one resumed."""
+    pytest.importorskip("mcp")
+
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
+    from mcp_plugin.lib import util_zip
+
+    async def _run():
+        async with helpers.mcp_session(function_groups=["util", "db"]) as call:
+            def payload(result):
+                assert result.is_error is False, helpers.tool_payload(result)
+                return helpers.tool_payload(result)
+
+            async def follow(task_id):
+                since, messages = 0, []
+                for _ in range(600):
+                    state = payload(await call("task.get", {"task_id": task_id, "since": since, "wait_ms": 2000}))
+                    messages += state["messages"]
+                    since = state["next_since"]
+                    if state["status"] in ("completed", "failed", "cancelled"):
+                        return state, messages
+                raise AssertionError("the task did not end")
+
+            async def sql(statement):
+                return payload(await call("db.execute_sql", {"connection_id": connection_id, "sql": statement}))
+
+            async def count(table):
+                rows = helpers.result_set(await sql(f"SELECT COUNT(*) FROM {table}"))["rows"]
+                return rows[0][0] if isinstance(rows[0], list) else list(rows[0].values())[0]
+
+            connection_id = payload(await call("db.connect", {"uri": sandbox.uri}))
+            try:
+                await sql("SET GLOBAL local_infile = 1")
+                for schema in ("mcp_zip", "mcp_zip_loaded", "mcp_zip_resumed"):
+                    await sql(f"DROP SCHEMA IF EXISTS {schema}")
+                await sql("CREATE SCHEMA mcp_zip")
+                await sql("CREATE TABLE mcp_zip.t (id INT PRIMARY KEY AUTO_INCREMENT, v VARCHAR(100))")
+                await sql("INSERT INTO mcp_zip.t (v) SELECT MD5(seq) FROM mcp_zip.seq_1_to_300000")
+                await sql("CREATE TABLE mcp_zip.left_out (id INT PRIMARY KEY)")
+                await sql("INSERT INTO mcp_zip.left_out SELECT seq FROM mcp_zip.seq_1_to_100")
+
+                # a dump to a zip, in many chunks
+                zip_path = os.path.join(allowed_temp_dir, f"shop{util_zip.ZIP_SUFFIX}")
+                started = payload(await call("util.dump_schemas", {
+                    "connection_id": connection_id, "schemas": ["mcp_zip"],
+                    "output_url": zip_path, "options": {"threads": 2, "bytesPerChunk": "128k"},
+                }))
+                state, _ = await follow(started["task_id"])
+                assert state["status"] == "completed", state["error"]
+                assert state["result"]["output_url"] == zip_path and state["result"]["files"] > 20
+                assert os.path.getsize(zip_path) == state["result"]["bytes"]
+                assert not os.path.exists(util_zip.dump_directory(zip_path))
+                assert [s["name"] for s in state["stages"]][-1] == "Packing the dump"
+                archive = util_zip.DumpArchive.open(zip_path)
+                assert len(archive.chunks) > 10
+
+                # loaded into another schema, a table left out, with a small budget
+                started = payload(await call("util.load_dump", {
+                    "connection_id": connection_id, "url": zip_path,
+                    "options": {"schema": "mcp_zip_loaded", "excludeTables": ["mcp_zip.left_out"]},
+                    "extraction_budget_mb": 1,
+                }))
+                state, messages = await follow(started["task_id"])
+                assert state["status"] == "completed", state["error"]
+                assert state["result"] == {"url": zip_path}
+                assert await count("mcp_zip_loaded.t") == 300000
+                tables = helpers.result_set(await sql(
+                    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'mcp_zip_loaded'"
+                ))["rows"]
+                assert "left_out" not in str(tables)
+                assert state["stages"][0]["name"] == "Extracting the dump"
+                assert any(m["text"].startswith("Extracted ") for m in messages)
+                assert not os.path.exists(util_zip.extraction_directory(zip_path))
+
+                # a load whose shell process is killed is resumed, from the folder
+                if os.name != "nt":
+                    started = payload(await call("util.load_dump", {
+                        "connection_id": connection_id, "url": zip_path,
+                        "options": {"schema": "mcp_zip_resumed", "threads": 1},
+                        "extraction_budget_mb": 1,
+                    }))
+                    # once a loaded chunk was emptied: the resumed load must skip it
+                    assert await asyncio.to_thread(
+                        _wait_for_file_text,
+                        os.path.join(util_zip.extraction_directory(zip_path), util_zip.STATE_FILE),
+                        '"emptied"',
+                    )
+                    assert await asyncio.to_thread(_kill_shell_running, "mcp_zip_resumed")
+                    state, messages = await follow(started["task_id"])
+                    assert state["status"] == "completed", state["error"]
+                    assert any("Resuming the load, attempt 2 of 4" in m["text"] for m in messages)
+                    assert await count("mcp_zip_resumed.t") == 300000
+                    assert not os.path.exists(util_zip.extraction_directory(zip_path))
+
+                # refusals, before any task
+                for name, arguments, message in (
+                    ("util.dump_schemas", {"schemas": ["mcp_zip"], "output_url": zip_path}, "already exists"),
+                    ("util.load_dump", {"url": zip_path, "options": {"progressFile": ""}}, "cannot be empty"),
+                    ("util.load_dump", {"url": zip_path, "options": {"waitDumpTimeout": 5}}, "set by the tool"),
+                    ("util.load_dump", {"url": "https://example.com/x" + util_zip.ZIP_SUFFIX}, "file on this machine"),
+                    ("util.load_dump", {"url": os.path.join(allowed_temp_dir, "dir"), "extraction_budget_mb": 5}, "only for a dump"),
+                ):
+                    result = await call(name, {"connection_id": connection_id, **arguments})
+                    assert result.is_error, name
+                    assert message in str(helpers.tool_payload(result)), helpers.tool_payload(result)
+            finally:
+                for schema in ("mcp_zip", "mcp_zip_loaded", "mcp_zip_resumed"):
+                    await sql(f"DROP SCHEMA IF EXISTS {schema}")
                 await call("db.close", {"connection_id": connection_id})
 
     asyncio.run(_run())
