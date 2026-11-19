@@ -266,9 +266,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   iterating; this bit the list_objects assertions AND, one commit later, the deploy
   assertions. It WILL bite again.
 
-- **Run the suite from the mcp_plugin dir with `/opt/homebrew/bin` on PATH.** Two runs this
-  session died instantly on `can't open file '.../run_tests.py'` because the cwd was the
-  repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.
+- **Run the suite from the mcp_plugin dir, with the `bin` directory of a MariaDB server on
+  PATH.** From the repo root it dies at once on `can't open file '.../run_tests.py'`. Without
+  a `mariadbd` on PATH every sandbox test skips with "No MariaDB/MySQL server binary
+  available" (Homebrew no longer provides one). The server a `sandbox.deploy` downloaded
+  works (see [sandbox.md](sandbox.md) for where it goes).
 
 - **A shell with the BUILT-IN `mrs` module** (2026-10-08): it registers the `MRS` SQL
   handler itself. An rest_plugin that still registers one fails to load (`An SQL Handler

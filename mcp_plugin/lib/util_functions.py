@@ -36,7 +36,7 @@ disk, and a dump takes connections and threads from every other user.
 import os
 from typing import Optional, Union
 
-from mcp_plugin.lib import db_functions, general, tasks, util_process
+from mcp_plugin.lib import db_functions, general, tasks, util_process, util_zip
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # The options the tools set themselves, or that only a call in the shell's own
@@ -64,9 +64,6 @@ _LOCAL_FILE_OPTIONS = (
     "azureConfigFile",
 )
 
-_SCHEME_DELIMITER = "://"
-
-
 def _options(options: Optional[dict]) -> dict:
     """The utility options a client gave, refusing the ones set here."""
     options = dict(options or {})
@@ -82,24 +79,20 @@ def _options(options: Optional[dict]) -> dict:
     return options
 
 
-def _local_path(url) -> Optional[str]:
-    """The path on this machine a URL names, or None for a remote one.
+# The path on this machine a URL names, or None for a remote one.
+_local_path = util_zip.local_path
 
-    Follows the shell's storage layer (``mysqlshdk/libs/storage``): the scheme
-    is what comes before the first ``://``, a URL without one is a local path,
-    and so is one whose scheme is ``file`` in any case - with the scheme
-    stripped. Every other scheme (an ``https`` PAR, say) is remote.
+
+def _uses_object_storage(options: dict) -> bool:
+    """Whether an object storage option makes the URLs prefixes in a bucket.
+
+    Only a non-empty name makes a bucket, as in the shell's storage options
+    (``!m_container_name.empty()``): an empty one, or a None that is never
+    passed on, leaves the URL a local path.
     """
-    if not isinstance(url, str):
-        return None
-
-    position = url.find(_SCHEME_DELIMITER)
-    if position < 0:
-        return url
-    if url[:position].lower() == "file":
-        return url[position + len(_SCHEME_DELIMITER):]
-
-    return None
+    return any(
+        isinstance(options.get(key), str) and options[key] for key in _REMOTE_STORAGE_OPTIONS
+    )
 
 
 def _local_paths(urls, options: dict) -> list:
@@ -110,13 +103,7 @@ def _local_paths(urls, options: dict) -> list:
     """
     paths = []
 
-    # Only a non-empty name makes a bucket, as in the shell's storage options
-    # (``!m_container_name.empty()``): an empty one, or a None that is never
-    # passed on, leaves the URL a local path, so it is checked.
-    if not any(
-        isinstance(options.get(key), str) and options[key]
-        for key in _REMOTE_STORAGE_OPTIONS
-    ):
+    if not _uses_object_storage(options):
         for url in urls:
             path = _local_path(url)
             if path is None:
@@ -132,6 +119,70 @@ def _local_paths(urls, options: dict) -> list:
             paths.append(path)
 
     return paths
+
+
+def _zip_path(url, options: dict) -> str:
+    """The local path of a dump in a zip, refusing a zip it cannot be.
+
+    The zip is written or extracted next to itself, so it is a local file,
+    never a URL or a name in object storage.
+    """
+    path = _local_path(url)
+    if path is None or _uses_object_storage(options):
+        raise tool_error(
+            f"A dump in a {util_zip.ZIP_SUFFIX} file must be a file on this "
+            "machine, not a URL or object storage."
+        )
+    return os.path.abspath(path)
+
+
+class _ZipDump:
+    """A dump to a single zip (the last of the arguments): see util_zip.
+
+    The dump runs on a folder next to the zip, so the zip's folder is the
+    path checked.
+    """
+
+    def __init__(self, url, options: Optional[dict]):
+        self.zip_path = _zip_path(url, options or {})
+
+    def paths(self, urls, options: dict) -> list:
+        return [os.path.dirname(self.zip_path)] + _local_paths((), options)
+
+    def prepare(self, args: list, options: dict) -> tuple:
+        """Checks the zip; the arguments and options the utility runs with."""
+        util_zip.check_dump_target(self.zip_path)
+        return args[:-1] + [util_zip.dump_directory(self.zip_path)], options
+
+    def work(self, task, run, args: list, options: dict) -> dict:
+        return util_zip.dump_to_zip(
+            task, self.zip_path, lambda directory: run(args[:-1] + [directory], options)
+        )
+
+
+class _ZipLoad(_ZipDump):
+    """A load of a single zip: see util_zip."""
+
+    def __init__(self, url, options: Optional[dict], budget_mb: Optional[int]):
+        super().__init__(url, options)
+        self.budget_mb = budget_mb
+        self.plan = None
+
+    def prepare(self, args: list, options: dict) -> tuple:
+        self.plan = util_zip.plan_load(
+            util_zip.DumpArchive.open(self.zip_path), options, self.budget_mb
+        )
+        return [self.plan.directory], self.plan.options
+
+    def work(self, task, run, args: list, options: dict) -> dict:
+        return util_zip.load_from_zip(
+            task, self.plan,
+            lambda directory, run_options, abort: run([directory], run_options, abort),
+        )
+
+
+def _dump_packaging(output_url, options: Optional[dict]) -> Optional[_ZipDump]:
+    return _ZipDump(output_url, options) if util_zip.is_zip_url(output_url) else None
 
 
 def register_util_tools(server, function_groups=()) -> None:
@@ -167,18 +218,27 @@ def register_util_tools(server, function_groups=()) -> None:
         target_connection_id: Optional[str] = None,
         result: Optional[dict] = None,
         forbidden: Optional[dict] = None,
+        packaging=None,
     ) -> dict:
         """Starts a utility as a task, after checking what it is given.
 
         ``forbidden`` names the options this utility refuses beyond
         _RESERVED_OPTIONS, each with the reason it is refused.
+
+        ``packaging`` (:class:`_ZipDump`, :class:`_ZipLoad`) runs the utility
+        on a dump in a single zip: it says which paths are checked, gives the
+        arguments and options the utility runs with, and wraps its run.
         """
         options = _options(options)
         # Before the paths, which can ask the user: without a shell to run
         # it in, the call fails whatever they answer.
         executable = util_process.shell_executable()
 
-        for path in _local_paths(urls, options):
+        paths = (
+            packaging.paths(urls, options) if packaging is not None
+            else _local_paths(urls, options)
+        )
+        for path in paths:
             await general.require_allowed_path(ctx, path)
 
         # Read here, while this is still the request's own context.
@@ -189,9 +249,15 @@ def register_util_tools(server, function_groups=()) -> None:
             if target_connection_id is not None:
                 target = db_functions.connection_data(target_connection_id, client)
             source = db_functions.connection_credentials(connection_id, client)
+            run_args, run_options = args, options
             # the command line is checked here too, so that what it cannot
             # take fails the call itself
-            util_process.build_command(function, args, options, target, forbidden)
+            try:
+                if packaging is not None:
+                    run_args, run_options = packaging.prepare(args, options)
+                util_process.build_command(function, run_args, run_options, target, forbidden)
+            except util_zip.ZipDumpError as error:
+                raise tool_error(str(error)) from error
             return source, target
 
         # Reading the secret store is no work for the loop. Done before the
@@ -204,7 +270,15 @@ def register_util_tools(server, function_groups=()) -> None:
         )
 
         def work(task):
-            util_process.run(task, function, args, options, source, target, executable)
+            def run(run_args, run_options, abort=None):
+                util_process.run(
+                    task, function, run_args, run_options, source, target, executable,
+                    abort=abort,
+                )
+
+            if packaging is not None:
+                return packaging.work(task, run, args, options)
+            run(args, options)
             return result
 
         tasks.start(task, work)
@@ -226,8 +300,9 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect, for the server to
                 dump.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_instance, with their camelCase
                 names, e.g. {"threads": 8, "users": false,
                 "excludeSchemas": ["test"]}.
@@ -239,6 +314,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_instance", f"Dump the instance to {output_url}",
             connection_id, "dump_instance", [output_url], options,
             urls=[output_url], result={"output_url": output_url},
+            packaging=_dump_packaging(output_url, options),
         )
 
     @tool(name="util.dump_schemas", starts_tasks=True)
@@ -257,8 +333,9 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect.
             schemas: The names of the schemas to dump.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_schemas, with their camelCase
                 names, e.g. {"threads": 8, "ddlOnly": true}.
 
@@ -269,7 +346,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_schemas", f"Dump {', '.join(schemas)} to {output_url}",
             connection_id, "dump_schemas", [schemas, output_url], options,
             urls=[output_url], result={"output_url": output_url},
-            forbidden=_OUTPUT_URL_PARAMETER,
+            forbidden=_OUTPUT_URL_PARAMETER, packaging=_dump_packaging(output_url, options),
         )
 
     @tool(name="util.dump_tables", starts_tasks=True)
@@ -291,8 +368,9 @@ def register_util_tools(server, function_groups=()) -> None:
             schema: The schema the tables are in.
             tables: The names of the tables and views to dump. Pass an empty
                 list with {"all": true} in options to dump all of them.
-            output_url: The directory to write the dump to. It must not exist
-                or be empty.
+            output_url: The directory to write the dump to, which must not
+                exist or be empty; or a file ending in .mariadb.dump.zip,
+                which must not exist, for the dump as a single ZIP file.
             options: The options of util.dump_tables, with their camelCase
                 names, e.g. {"where": {"shop.orders": "id > 1000"}}.
 
@@ -303,7 +381,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_tables", f"Dump tables of {schema} to {output_url}",
             connection_id, "dump_tables", [schema, tables, output_url], options,
             urls=[output_url], result={"output_url": output_url},
-            forbidden=_OUTPUT_URL_PARAMETER,
+            forbidden=_OUTPUT_URL_PARAMETER, packaging=_dump_packaging(output_url, options),
         )
 
     @tool(name="util.export_table", starts_tasks=True)
@@ -344,6 +422,7 @@ def register_util_tools(server, function_groups=()) -> None:
         connection_id: str,
         url: str,
         options: Optional[dict] = None,
+        extraction_budget_mb: Optional[int] = None,
     ) -> dict:
         """Starts loading a dump into the server, as a background task.
 
@@ -355,19 +434,64 @@ def register_util_tools(server, function_groups=()) -> None:
         Args:
             connection_id: The UUID returned by db.connect, for the server to
                 load into.
-            url: The directory of the dump.
+            url: The directory of the dump, or its .mariadb.dump.zip file.
+                A zip is extracted next to it while it loads, and its data
+                files are emptied once loaded; a failed load of it resumes
+                where it stopped when started again.
             options: The options of util.load_dump, with their camelCase
                 names, e.g. {"schema": "copy_of_shop", "loadUsers": false,
                 "dropExistingObjects": true}.
+            extraction_budget_mb: For a zip only: the most megabytes of data
+                extracted and not yet loaded at once. By default 1024, or
+                more for large chunks.
 
         Returns:
             A dict with the task_id to follow and the task's status.
         """
+        packaging = None
+        if util_zip.is_zip_url(url):
+            packaging = _ZipLoad(url, options, extraction_budget_mb)
+        elif extraction_budget_mb is not None:
+            raise tool_error("extraction_budget_mb is only for a dump in a .mariadb.dump.zip file.")
         return await start(
             ctx, "load_dump", f"Load the dump in {url}",
             connection_id, "load_dump", [url], options,
-            urls=[url], result={"url": url},
+            urls=[url], result={"url": url}, packaging=packaging,
         )
+
+    @tool(name="util.inspect_dump")
+    async def inspect_dump(ctx: Context, url: str, schema: Optional[str] = None) -> dict:
+        """Tells what a dump holds, from its metadata, without loading it.
+
+        Works on a dump's directory and on its .mariadb.dump.zip file alike,
+        also on a dump still being written.
+
+        Args:
+            url: The directory of the dump, or its .mariadb.dump.zip file.
+            schema: Only this schema, with every name of its objects. Without
+                it, at most 100 names of each kind are listed, with counts.
+
+        Returns:
+            A dict with the dump's kind (dumpInstance, dumpSchemas or
+            dumpTables), whether it is complete, the source server, begin and
+            end, the dump's options, its users, and its schemas with their
+            tables, views, functions, procedures and events; rows and data
+            sizes are exact for a complete dump and estimates otherwise. Only
+            a dump of a single schema can be loaded into another schema with
+            util.load_dump's schema option.
+        """
+        path = _local_path(url)
+        if path is None:
+            raise tool_error("util.inspect_dump reads a dump on this machine, not a URL.")
+        await general.require_allowed_path(ctx, path)
+
+        def read():
+            try:
+                return util_zip.inspect_dump(path, schema)
+            except util_zip.ZipDumpError as error:
+                raise tool_error(str(error)) from error
+
+        return await anyio.to_thread.run_sync(read)
 
     @tool(name="util.import_table", starts_tasks=True)
     async def import_table(

@@ -753,6 +753,42 @@ def _resumable(function: str, args: list, options: dict) -> bool:
     return True
 
 
+class Abort:
+    """Lets work running beside a utility stop it, with the reason it fails.
+
+    The ZIP extractor runs beside the load it feeds: when it fails, the load
+    cannot finish, and :func:`run` stops it and fails with the extractor's
+    reason instead of the load's own "Interrupted by user". A crashed run is
+    not started again once an abort was asked for.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stop = None
+        self.reason = None
+
+    def request(self, reason: str) -> None:
+        """Stops the running utility; only the first request counts.
+
+        A second interrupt could make the shell stop without cleaning up.
+        """
+        with self._lock:
+            if self.reason is not None:
+                return
+            self.reason = reason
+            stop = self._stop
+        if stop is not None:
+            stop()
+
+    def attach(self, stop) -> None:
+        """Sets what stops the utility now running, or None between runs."""
+        with self._lock:
+            self._stop = stop
+            requested = self.reason is not None
+        if stop is not None and requested:
+            stop()
+
+
 def run(
     task,
     function: str,
@@ -761,6 +797,7 @@ def run(
     source: tuple,
     target: Optional[dict] = None,
     executable: Optional[str] = None,
+    abort: Optional[Abort] = None,
 ):
     """Runs a utility for a task, in shell processes of its own.
 
@@ -777,6 +814,7 @@ def run(
         target (dict): A copy's target, as connection data with its password.
         executable (str): The shell binary, as :func:`shell_executable`
             found it before the task started; found here where not given.
+        abort (Abort): Lets work running beside the utility stop it.
 
     Returns:
         None, once the utility completed.
@@ -798,6 +836,8 @@ def run(
     for attempt in range(1, attempts + 1):
         if task.cancel_requested:
             raise RuntimeError("Interrupted by user")
+        if abort is not None and abort.reason is not None:
+            raise RuntimeError(abort.reason)
 
         run_options = dict(options)
         if progress_file_read:
@@ -810,6 +850,8 @@ def run(
         )
         parser = OutputParser(task.kind)
         task.set_canceller(process.cancel)
+        if abort is not None:
+            abort.attach(process.cancel)
         try:
             for line in process.lines():
                 for event in parser.feed(line):
@@ -818,6 +860,8 @@ def run(
                     task.on_event(event)
             returncode = process.wait()
         finally:
+            if abort is not None:
+                abort.attach(None)
             task.set_canceller(None)
             process.kill()
 
@@ -834,6 +878,9 @@ def run(
 
         if task.cancel_requested:
             raise RuntimeError(parser.error or "Interrupted by user")
+
+        if abort is not None and abort.reason is not None:
+            raise RuntimeError(abort.reason)
 
         if not _crashed(returncode):
             raise RuntimeError(
