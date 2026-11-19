@@ -34,6 +34,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 
 import pytest
 
@@ -944,6 +945,21 @@ def test_stdio_dump_and_load_a_zip(allowed_temp_dir, sandbox):
                 assert [s["name"] for s in state["stages"]][-1] == "Packing the dump"
                 archive = util_zip.DumpArchive.open(zip_path)
                 assert len(archive.chunks) > 10
+
+                # the zip tells what it holds, as the same dump in a folder does
+                info = payload(await call("util.inspect_dump", {"url": zip_path}))
+                assert info["kind"] == "dumpSchemas" and info["complete"] is True
+                assert info["format"] == "zip" and info["rows"] == 300100
+                assert [s["name"] for s in info["schemas"]] == ["mcp_zip"]
+                assert sorted(info["schemas"][0]["tables"]) == ["left_out", "t"]
+                folder = os.path.join(allowed_temp_dir, "zip_as_folder")
+                with zipfile.ZipFile(zip_path) as zipped:
+                    zipped.extractall(folder)
+                same = payload(await call("util.inspect_dump", {"url": folder}))
+                assert same["format"] == "folder"
+                assert {k: v for k, v in same.items() if k not in ("url", "format", "size_bytes")} == {
+                    k: v for k, v in info.items() if k not in ("url", "format", "size_bytes")
+                }
 
                 # loaded into another schema, a table left out, with a small budget
                 started = payload(await call("util.load_dump", {

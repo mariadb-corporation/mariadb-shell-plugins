@@ -57,7 +57,7 @@ whole server down.
     directly, and `atexit` kills it.
 - `lib/util_zip.py`: dumps in a single `.mariadb.dump.zip` file; see the
   section below.
-- `lib/util_functions.py`: the 12 tools.
+- `lib/util_functions.py`: the 13 tools.
   - The nine start tools are async: `require_allowed_path` elicits. They:
     1. refuse `session`/`progressCallback`/`showProgress` in `options`;
     2. check the local paths (`_local_paths`): every URL with no scheme or a
@@ -160,9 +160,9 @@ One JSON object per line on stdout:
 - The crashed run's running stages become failed, and its stderr tail (the
   "Warning: Charset id" lines left out) becomes error messages.
 
-## Dumps in a single `.mariadb.dump.zip` file (`lib/util_zip.py`, branch `wip/util-zip-dumps`)
+## Dumps in a single `.mariadb.dump.zip` file (`lib/util_zip.py`)
 
-Route A of two (decided 2026-11-19): the zip is made and read in the MCP
+Route A of two (the user's decision): the zip is made and read in the MCP
 layer; route B, a ZIP storage backend in mariadb-shell
 (`Storage_options::config_for`, a `storage::Config` like copy's
 `Virtual_config`), is a possible later shell feature. The archive format is
@@ -207,7 +207,31 @@ of the zip, stored (not compressed again), Zip64.
   budget for the rest of the load and warns. It never empties a chunk that
   was not loaded.
 
-Shell facts this rests on (mariadb-shell, checked 2026-11-19):
+- **`util.inspect_dump`** (sync, no task, no shell process):
+  `util_zip.inspect_dump` reads only metadata, through `DumpArchive`, which
+  reads a folder (`open_folder`) or a zip (`open`, `require_complete=False`)
+  with the same parsing. `kind` is `@.json`'s `origin` (the dump class's
+  `name()`: `dumpInstance`, `dumpSchemas`, `dumpTables`). Exact rows and data
+  bytes come from `@.done.json` (`tableRows`, `tableDataBytes`, `dataBytes`),
+  estimates from `@.json` otherwise. Names are capped at
+  `INSPECT_NAMES_LIMIT` per schema, with counts beside them. A dump still
+  being written can lack schema metadata files, which are then skipped.
+
+Open points:
+
+- Untested: whether a multi-GB Zip64 archive opens by double-click in macOS
+  Archive Utility and Windows Explorer, which the docs must not promise
+  before then. Nothing has run on Windows; emptying a file the loader still
+  has open is retried there.
+- `dryRun` on a zip loads nothing, so it only gets past the budget through
+  the stall backstop (120 s).
+- The extension has nothing for zips yet (a Save dialog filter for
+  `.mariadb.dump.zip`, for example).
+- `load_from_zip` reports no progress of its own: the task's progress is
+  the loader's, and the shell knows the dump's total only once
+  `@.done.json` arrives, which is last.
+
+Shell facts this rests on (mariadb-shell source):
 
 - The loader finds a chunk only by its exact name in the folder listing
   (`Dump_reader::Table_data_info::rescan_data`), so a file being extracted
@@ -241,7 +265,7 @@ Shell facts this rests on (mariadb-shell, checked 2026-11-19):
 
 ## Tests
 
-`tests/unit/test_util_zip.py` (65 with the parametrized cases): the filter
+`tests/unit/test_util_zip.py`: the filter
 port, the archive checks and the chunk finding (partitions, digits-only
 table names, unchunked tables), packing, planning, and the streaming load
 against a `FakeLoader` (budget kept, placeholders, resume without loading a
@@ -251,7 +275,7 @@ end: a dump to a zip in 128k chunks, a load with a table left out and a 1 MB
 budget, and a load whose shell is SIGKILLed after a chunk was emptied and
 resumed.
 
-`tests/unit/test_util.py` (105 with the parametrized cases):
+`tests/unit/test_util.py`:
 
 - the registry on its own: events, since/dropped messages, failure, cancel
   through the canceller (also one asked before it was set), client binding,
@@ -272,11 +296,6 @@ resumed.
   schema, a load whose shell process is SIGKILLed and resumed, export,
   import, a cancelled `maxRate` dump, a copy to the same server failing as a
   task, `task.list`, refusals.
-
-Full suite on 2026-10-12, with a local shell build (mariadb-shell #71 merged
-in): 700 passed, 1 failed, 3 skipped. The failure is
-`test_rest_sql.py::test_rest_configure_metadata` ("Invalid options ...
-substitutions"), which this branch does not touch.
 
 ## The extension's side
 

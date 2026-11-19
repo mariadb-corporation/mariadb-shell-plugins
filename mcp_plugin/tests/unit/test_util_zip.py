@@ -700,3 +700,88 @@ def test_an_abort_reaches_the_utility_running_and_one_started_later():
     abort.attach(lambda: stopped.append("second"))
     assert stopped == ["first", "second"]
     abort.attach(None)
+
+
+# --- what a dump holds -------------------------------------------------------
+
+
+def _complete_metadata(directory):
+    """Adds what the shell writes to @.json and @.done.json of a schema dump."""
+    with open(os.path.join(directory, "@.json")) as file:
+        root = json.load(file)
+    root.update({
+        "origin": "dumpSchemas", "dumper": "mysqlsh Ver 26.11.2", "server": "db1",
+        "serverVersion": "11.8.3-MariaDB", "user": "root", "begin": "2026-11-19 12:00:00",
+        "options": {"threads": 2}, "estimatedRowCount": 99, "estimatedDataSize": 999,
+    })
+    _write(directory, "@.json", root)
+    _write(directory, "@.done.json", {
+        "end": "2026-11-19 12:01:00", "dataBytes": 5000,
+        "tableRows": {"shop": {"orders": 10, "small": 2}, "other": {"t": 3}},
+        "tableDataBytes": {"shop": {"orders": 4000, "small": 500}, "other": {"t": 500}},
+    })
+
+
+def test_a_dump_folder_and_its_zip_tell_the_same(tmp_path):
+    directory = str(tmp_path / "dump")
+    make_dump(directory, chunk_size=KB, chunks=2)
+    _complete_metadata(directory)
+    folder = util_zip.inspect_dump(directory)
+
+    zip_path = str(tmp_path / f"shop{util_zip.ZIP_SUFFIX}")
+    util_zip.pack(directory, zip_path)
+    zipped = util_zip.inspect_dump(zip_path)
+
+    assert folder["format"] == "folder" and zipped["format"] == "zip"
+    assert zipped["size_bytes"] == os.path.getsize(zip_path)
+    for info in (folder, zipped):
+        assert info["kind"] == "dumpSchemas"
+        assert info["complete"] is True
+        assert info["source"] == {"server": "db1", "server_version": "11.8.3-MariaDB", "user": "root"}
+        assert (info["begin"], info["end"]) == ("2026-11-19 12:00:00", "2026-11-19 12:01:00")
+        assert info["options"] == {"threads": 2}
+        assert info["includes_users"] is False
+        assert info["rows"] == 15 and info["data_bytes"] == 5000
+        assert "estimated_rows" not in info
+        assert [s["name"] for s in info["schemas"]] == ["shop", "other"]
+        shop = info["schemas"][0]
+        assert shop["tables"] == ["orders", "parted", "1", "small"] and shop["table_count"] == 4
+        assert (shop["rows"], shop["data_bytes"]) == (12, 4500)
+    keys = lambda info: {k: v for k, v in info.items() if k not in ("url", "format", "size_bytes")}
+    assert keys(folder) == keys(zipped)
+
+
+def test_a_dump_still_being_written_is_told_with_its_estimates(tmp_path):
+    directory = str(tmp_path / "dump")
+    make_dump(directory, chunk_size=KB, chunks=1)
+    _complete_metadata(directory)
+    os.remove(os.path.join(directory, "@.done.json"))
+    os.remove(os.path.join(directory, "other.json"))  # not written yet
+    _write(directory, "@.users.sql", b"-- users")
+
+    info = util_zip.inspect_dump(directory)
+
+    assert info["complete"] is False and info["end"] is None
+    assert (info["estimated_rows"], info["estimated_data_bytes"]) == (99, 999)
+    assert "rows" not in info and "rows" not in info["schemas"][0]
+    assert info["includes_users"] is True
+
+
+def test_a_long_list_of_tables_is_cut_but_counted(tmp_path, monkeypatch):
+    monkeypatch.setattr(util_zip, "INSPECT_NAMES_LIMIT", 2)
+    directory = str(tmp_path / "dump")
+    make_dump(directory, chunk_size=KB, chunks=1)
+    shop = util_zip.inspect_dump(directory)["schemas"][0]
+    assert shop["tables"] == ["orders", "parted"] and shop["table_count"] == 4
+
+
+@pytest.mark.parametrize("what", ["missing", "empty folder", "no zip"])
+def test_what_is_no_dump_is_refused(tmp_path, what):
+    path = str(tmp_path / "x")
+    if what == "empty folder":
+        os.makedirs(path)
+    elif what == "no zip":
+        with open(path, "w") as file:
+            file.write("text")
+    with pytest.raises(util_zip.ZipDumpError, match="does not exist|no @.json|no valid ZIP"):
+        util_zip.inspect_dump(path)

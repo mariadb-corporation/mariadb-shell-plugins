@@ -448,6 +448,38 @@ def register_util_tools(server, function_groups=()) -> None:
             zip_mode=zip_mode, extraction_budget_mb=extraction_budget_mb,
         )
 
+    @tool(name="util.inspect_dump")
+    async def inspect_dump(ctx: Context, url: str) -> dict:
+        """Tells what a dump holds, from its metadata, without loading it.
+
+        Works on a dump's directory and on its .mariadb.dump.zip file alike,
+        also on a dump still being written.
+
+        Args:
+            url: The directory of the dump, or its .mariadb.dump.zip file.
+
+        Returns:
+            A dict with the dump's kind (dumpInstance, dumpSchemas or
+            dumpTables), whether it is complete, the source server, begin and
+            end, the dump's options, whether it includes users, and its
+            schemas with their tables, views and routines; rows and data
+            sizes are exact for a complete dump and estimates otherwise. Only
+            a dump of a single schema can be loaded into another schema with
+            util.load_dump's schema option.
+        """
+        path = _local_path(url)
+        if path is None:
+            raise tool_error("util.inspect_dump reads a dump on this machine, not a URL.")
+        await general.require_allowed_path(ctx, path)
+
+        def read():
+            try:
+                return util_zip.inspect_dump(path)
+            except util_zip.ZipDumpError as error:
+                raise tool_error(str(error)) from error
+
+        return await anyio.to_thread.run_sync(read)
+
     @tool(name="util.import_table", starts_tasks=True)
     async def import_table(
         ctx: Context,

@@ -556,6 +556,7 @@ its `task_id` at once; the client follows the task with the [task tools](#backgr
 | `util.export_table` | `util.export_table` |
 | `util.load_dump` | `util.load_dump` |
 | `util.import_table` | `util.import_table` |
+| `util.inspect_dump` | reads the dump's metadata (no shell utility) |
 | `util.copy_instance` | `util.copy_instance` |
 | `util.copy_schemas` | `util.copy_schemas` |
 | `util.copy_tables` | `util.copy_tables` |
@@ -611,6 +612,16 @@ its `task_id` at once; the client follows the task with the [task tools](#backgr
   - The zip must be a local file, as a ZIP made by the dump tools or one with
     the dump's files at its top. `progressFile: ""` and `waitDumpTimeout` are
     refused for a zip.
+- **`util.inspect_dump`** tells what a dump holds without loading it, the same for a
+  dump's folder and its `.mariadb.dump.zip`, also while it is still being written:
+  - its kind (`dumpInstance`, `dumpSchemas` or `dumpTables`, from `origin` in `@.json`);
+  - whether it is complete, its source server, begin and end, and its options;
+  - whether it includes users;
+  - its schemas, with their tables and views (the first 100 names of each, and
+    their counts) and the counts of routines and events.
+
+  Rows and data sizes are exact for a complete dump (`@.done.json`) and estimates
+  otherwise. It runs at once, not as a task.
 - **`task.cancel`** interrupts the utility as Ctrl+C would, and ends its process
   if it has not stopped 30 seconds later. A load that is stopped can be resumed by
   loading the same dump again.

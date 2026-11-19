@@ -458,19 +458,47 @@ def _check_entry(info: zipfile.ZipInfo) -> None:
         raise ZipDumpError(f"The zip's entry '{name}' is no regular file.")
 
 
-class DumpArchive:
-    """A dump in a zip: its entries checked, and its data files found.
+class _ZipFiles:
+    """Reads a dump's files from a zip."""
 
-    Built by :meth:`open`, which reads the zip's table of contents and the
-    dump's metadata, and nothing else.
+    def __init__(self, zipped: zipfile.ZipFile):
+        self._zipped = zipped
+
+    def read(self, name: str) -> bytes:
+        return self._zipped.read(name)
+
+
+class _FolderFiles:
+    """Reads a dump's files from its folder."""
+
+    def __init__(self, directory: str):
+        self._directory = directory
+
+    def read(self, name: str) -> bytes:
+        with open(os.path.join(self._directory, name), "rb") as file:
+            return file.read()
+
+
+class DumpArchive:
+    """A dump, in a zip or a folder: its metadata read, and its data files found.
+
+    Built by :meth:`open` for a zip, whose entries it checks, or by
+    :meth:`open_folder`; either reads the list of files and the dump's
+    metadata, and no data.
     """
 
     def __init__(self, path: str):
         self.path = os.path.abspath(path)
+        self.format = "zip"
         self.size = 0
         self.mtime_ns = 0
         # every entry, by name: its size
         self.entries = {}
+        # @.json, @.done.json (None while a dump is not complete), and each
+        # schema's <schema>.json
+        self.root = None
+        self.done = None
+        self.schema_metadata = {}
         # entries the load never extracts: an earlier load's progress file
         self.ignored = []
         self.schemas = []
@@ -495,12 +523,17 @@ class DumpArchive:
         return max((chunk.size for chunk in self.chunks.values()), default=0)
 
     @classmethod
-    def open(cls, path: str) -> "DumpArchive":
+    def open(cls, path: str, require_complete: bool = True) -> "DumpArchive":
         """Reads and checks a zip of a dump.
 
+        Args:
+            path (str): The zip.
+            require_complete (bool): Whether a dump without @.done.json is
+                refused, as a load refuses it.
+
         Raises:
-            ZipDumpError: It is no zip, or no complete dump made by the util
-                tools, or holds what no dump holds.
+            ZipDumpError: It is no zip, or no (complete) dump made by the
+                util tools, or holds what no dump holds.
         """
         archive = cls(path)
         try:
@@ -512,7 +545,12 @@ class DumpArchive:
 
         try:
             with zipfile.ZipFile(archive.path) as zipped:
-                archive._read(zipped)
+                for info in zipped.infolist():
+                    _check_entry(info)
+                    if info.filename in archive.entries:
+                        raise ZipDumpError(f"The zip holds '{info.filename}' twice.")
+                    archive.entries[info.filename] = info.file_size
+                archive._read(_ZipFiles(zipped), require_complete)
         except zipfile.BadZipFile as error:
             raise ZipDumpError(f"{path} is no valid ZIP file: {error}.") from error
         except OSError as error:
@@ -520,50 +558,75 @@ class DumpArchive:
 
         return archive
 
-    def _read(self, zipped: zipfile.ZipFile) -> None:
-        for info in zipped.infolist():
-            _check_entry(info)
-            if info.filename in self.entries:
-                raise ZipDumpError(f"The zip holds '{info.filename}' twice.")
-            self.entries[info.filename] = info.file_size
+    @classmethod
+    def open_folder(cls, path: str) -> "DumpArchive":
+        """Reads a dump's folder, complete or not.
 
-        for name in (_ROOT_METADATA, _DONE_METADATA):
-            if name not in self.entries:
-                raise ZipDumpError(
-                    f"The zip holds no {name}, so it is no complete dump made "
-                    "by the util.dump_* tools."
-                )
+        Raises:
+            ZipDumpError: It holds no dump.
+        """
+        archive = cls(path)
+        archive.format = "folder"
+        try:
+            with os.scandir(archive.path) as listing:
+                for entry in listing:
+                    if entry.is_file():
+                        archive.entries[entry.name] = entry.stat().st_size
+            archive.size = sum(archive.entries.values())
+            archive._read(_FolderFiles(archive.path), require_complete=False)
+        except OSError as error:
+            raise ZipDumpError(f"Cannot read {path}: {error.strerror or error}.") from error
+        return archive
 
-        root = self._json(zipped, _ROOT_METADATA)
+    def _read(self, files, require_complete: bool) -> None:
+        where = "zip" if self.format == "zip" else "folder"
+        if _ROOT_METADATA not in self.entries:
+            raise ZipDumpError(
+                f"The {where} holds no {_ROOT_METADATA}, so it is no dump made "
+                "by the util.dump_* tools."
+            )
+        if require_complete and _DONE_METADATA not in self.entries:
+            raise ZipDumpError(
+                f"The {where} holds no {_DONE_METADATA}, so it is no complete dump "
+                "made by the util.dump_* tools."
+            )
+
+        self.root = root = self._json(files, _ROOT_METADATA)
+        if _DONE_METADATA in self.entries:
+            self.done = self._json(files, _DONE_METADATA)
         if not isinstance(root.get("schemas"), list):
             raise ZipDumpError(
-                "The dump in the zip has a layout the MCP server cannot load "
-                "from a zip; extract it, and load the folder."
+                f"The dump in the {where} has a layout the MCP server cannot read; "
+                "load it with the shell's util.load_dump."
             )
 
         schema_basenames = root.get("basenames") or {}
         for schema in root["schemas"]:
             self.schemas.append(schema)
-            self._read_schema(zipped, schema, schema_basenames.get(schema, schema))
+            self._read_schema(files, schema, schema_basenames.get(schema, schema))
 
         self._find_chunks()
 
-    def _json(self, zipped: zipfile.ZipFile, name: str) -> dict:
+    def _json(self, files, name: str) -> dict:
         if self.entries[name] > _MAX_METADATA_BYTES:
             raise ZipDumpError(f"The dump's metadata file {name} is too large.")
         try:
-            value = json.loads(zipped.read(name).decode("utf-8"))
+            value = json.loads(files.read(name).decode("utf-8"))
         except (ValueError, UnicodeDecodeError, zipfile.BadZipFile) as error:
             raise ZipDumpError(f"The dump's metadata file {name} cannot be read: {error}.") from error
         if not isinstance(value, dict):
             raise ZipDumpError(f"The dump's metadata file {name} is no JSON object.")
         return value
 
-    def _read_schema(self, zipped, schema: str, basename: str) -> None:
+    def _read_schema(self, files, schema: str, basename: str) -> None:
         name = basename + ".json"
         if name not in self.entries:
-            raise ZipDumpError(f"The zip holds no {name}, the metadata of schema `{schema}`.")
-        metadata = self._json(zipped, name)
+            if self.done is None:
+                # a dump still being written: its schemas come later
+                return
+            raise ZipDumpError(f"The dump holds no {name}, the metadata of schema `{schema}`.")
+        metadata = self._json(files, name)
+        self.schema_metadata[schema] = metadata
         if metadata.get("includesData", True) is False:
             return
 
@@ -574,7 +637,7 @@ class DumpArchive:
             if table_name not in self.entries:
                 # a table with neither DDL nor data has no metadata of its own
                 continue
-            table_metadata = self._json(zipped, table_name)
+            table_metadata = self._json(files, table_name)
             if table_metadata.get("includesData", True) is False:
                 continue
 
@@ -653,6 +716,95 @@ class DumpArchive:
 
         others.sort(key=lambda n: (n != _ROOT_METADATA, n))
         self.metadata = others
+
+
+# --- what a dump holds -------------------------------------------------------
+
+# The names of a schema's tables and views listed, at the most; the counts
+# are always given.
+INSPECT_NAMES_LIMIT = 100
+
+
+def _limited(names) -> list:
+    return list(names or [])[:INSPECT_NAMES_LIMIT]
+
+
+def inspect_dump(path: str) -> dict:
+    """What a dump in a folder or a zip holds, from its metadata alone.
+
+    Args:
+        path (str): The dump's folder, or its zip.
+
+    Returns:
+        dict: Its kind (the dump utility that made it), whether it is
+        complete, where and when it was made and with which options, and its
+        schemas with their objects; the rows and data sizes are exact for a
+        complete dump (@.done.json) and estimates otherwise.
+
+    Raises:
+        ZipDumpError: It is no dump, or cannot be read.
+    """
+    path = os.path.abspath(path)
+    if os.path.isdir(path):
+        archive = DumpArchive.open_folder(path)
+    elif os.path.isfile(path):
+        archive = DumpArchive.open(path, require_complete=False)
+    else:
+        raise ZipDumpError(f"{path} does not exist.")
+
+    root = archive.root or {}
+    done = archive.done
+    table_rows = (done or {}).get("tableRows") or {}
+    table_bytes = (done or {}).get("tableDataBytes") or {}
+
+    schemas = []
+    for schema in archive.schemas:
+        metadata = archive.schema_metadata.get(schema) or {}
+        tables = metadata.get("tables") or []
+        views = metadata.get("views") or []
+        entry = {
+            "name": schema,
+            "table_count": len(tables),
+            "tables": _limited(tables),
+            "view_count": len(views),
+            "views": _limited(views),
+            "functions": len(metadata.get("functions") or []),
+            "procedures": len(metadata.get("procedures") or []),
+            "events": len(metadata.get("events") or []),
+        }
+        if done is not None:
+            entry["rows"] = sum((table_rows.get(schema) or {}).values())
+            entry["data_bytes"] = sum((table_bytes.get(schema) or {}).values())
+        schemas.append(entry)
+
+    info = {
+        "url": archive.path,
+        "format": archive.format,
+        "kind": root.get("origin"),
+        "complete": done is not None,
+        "dumped_by": root.get("dumper"),
+        "source": {
+            "server": root.get("server") or root.get("hostname"),
+            "server_version": root.get("serverVersion"),
+            "user": root.get("user"),
+        },
+        "begin": root.get("begin"),
+        "end": (done or {}).get("end"),
+        "options": root.get("options") or {},
+        "includes_users": "@.users.sql" in archive.entries,
+        "schema_count": len(archive.schemas),
+        "schemas": schemas,
+        # the data files as they are on disk or in the zip: compressed
+        "data_file_bytes": archive.data_bytes,
+        "size_bytes": archive.size,
+    }
+    if done is not None:
+        info["rows"] = sum(sum((t or {}).values()) for t in table_rows.values())
+        info["data_bytes"] = done.get("dataBytes")
+    else:
+        info["estimated_rows"] = root.get("estimatedRowCount")
+        info["estimated_data_bytes"] = root.get("estimatedDataSize")
+    return info
 
 
 # --- the load ----------------------------------------------------------------
