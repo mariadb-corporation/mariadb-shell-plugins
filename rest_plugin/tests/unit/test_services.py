@@ -507,6 +507,28 @@ def test_sdk_service_files_are_dumped_and_made_again(phone_book):
             assert f.read() == code
 
 
+def test_sdk_service_files_of_a_project_folder_take_the_projects_service(phone_book):
+    session = phone_book["session"]
+    # Another service, so the server has no single one to fall back on
+    session.run_sql("CREATE REST SERVICE /sdkProject")
+    try:
+        other = lib.services.get_service(url_context_root="/sdkProject", session=session)
+        with tempfile.TemporaryDirectory() as directory:
+            # A folder msm.dumpRestSdk made, made again from the server
+            with open(os.path.join(directory, "mrs.config.json"), "w") as f:
+                json.dump({"msmProject": {"path": "../shop.msm.project", "service": "/sdkProject"},
+                           "serviceId": None, "serviceUrl": "https://localhost:8443/sdkProject"},
+                          f)
+            assert dump_sdk_service_files(directory=directory, options={}, session=session) is True
+            config = get_stored_sdk_options(directory)
+            assert lib.core.id_to_uuid(config["serviceId"], "serviceId") == \
+                lib.core.convert_id_to_string(other["id"])
+            assert "msmProject" not in config
+            assert "sdkProject.ts" in os.listdir(directory)
+    finally:
+        session.run_sql("DROP REST SERVICE /sdkProject")
+
+
 def test_load_service_in_development_as_path(phone_book):
     session = phone_book["session"]
 

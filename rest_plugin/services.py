@@ -326,8 +326,17 @@ def dump_sdk_service_files(**kwargs):
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
         url_context_root = options.get("url_context_root")
+        # A folder msm.dumpRestSdk made from a schema project names the
+        # project's service; without a service given, that one is taken
+        # where the server has it, else the server's current or only one
+        project_service = (mrs_config.get("msmProject") or {}).get("service")
 
-        service = resolve_service(session, url_context_root or service_id, True, True)
+        if not url_context_root and service_id is None and project_service:
+            service = resolve_service(session, project_service, False, True)
+            if not service:
+                raise Exception("Operation cancelled. Unable to identify target service.")
+        else:
+            service = resolve_service(session, url_context_root or service_id, True, True)
 
         if service.get("enabled") == 0:
             raise Exception("Generating the MRS SDK requires a service to be enabled.")
