@@ -87,6 +87,15 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   (`test_rest_items_are_set_and_dropped_through_the_tools`) patches such a binary
   (`MSM_TEST_LSP`, else the one msm finds) into `config.get_lsp_path` and is skipped
   without one.
+- **REST client SDK of a project's service:** `msm.dump_rest_sdk(service, directory,
+  options?, schema_project_path?)` wraps `msm_plugin.modeling.dump_rest_sdk` through
+  `_in_project` with `lsp_path`, after `require_allowed_path` on `directory` (it writes
+  there). It writes the files `rest.dump_sdk_service_files` writes for a live service,
+  made from Section 180 (see msm_plugin's PROJECT_CONTEXT, "REST client SDK of a project's
+  service"); the VS Code extension's MSM Projects view calls it, and its Rebuild MRS SDK
+  calls it again for a folder whose `mrs.config.json` has `msmProject`. The REST tools
+  test also dumps through it where the binary's outline has `rest_object_details` and
+  `rest_settings`.
 - **MCP access per project (user):** every entry carries `mcpAccess`
   (file key, camelCase like `msm.project.json`; `mcp_access` in the listing),
   default False for what a `--gui` server adds or creates, True everywhere else, and

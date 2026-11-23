@@ -315,6 +315,15 @@ if paths.runtime.plugins.msm_plugin.exists():
 # Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/msm_plugin)
 create_symlink(paths.source.code, paths.runtime.plugins.msm_plugin, is_dir=True)
 
+# msm.dumpRestSdk writes its files with rest_plugin's SDK generator, so the
+# sibling plugin is loaded from this checkout too.
+rest_plugin_link = paths.runtime.plugins.root / "rest_plugin"
+rest_plugin_source = Path(paths.source.code).parent / "rest_plugin"
+if os.path.lexists(rest_plugin_link):
+    rest_plugin_link.unlink()
+if rest_plugin_source.is_dir():
+    create_symlink(rest_plugin_source, rest_plugin_link, is_dir=True)
+
 LOGS = ""
 PATTERN = ""
 # Enables verbose execution

@@ -1202,6 +1202,20 @@ def test_rest_items_are_set_and_dropped_through_the_tools(
     with open(script) as f:
         assert "CREATE OR REPLACE REST VIEW /customer ON SERVICE /svc SCHEMA /shop" in f.read()
 
+    # The service's client SDK, made from the project without a server
+    from msm_plugin.lib import rest_sdk_data
+
+    if rest_sdk_data.SDK_OUTLINE_FEATURES <= msm_lsp.outline_features(_rest_statements_lsp()):
+        directory = os.path.join(allowed_temp_dir, "svc.mrs.sdk")
+        dumped = _call(tools, "msm.dump_rest_sdk", "/svc", directory,
+                       {"service_url": "https://localhost:8443/svc"}, schema_project_path=path)
+        assert dumped["service"] == "/svc" and dumped["sdk_language"] == "TypeScript"
+        assert sorted(os.path.basename(f) for f in dumped["files"]) == [
+            "MrsBaseClasses.ts", "mrs.config.json", "svc.ts"
+        ]
+        with open(os.path.join(directory, "svc.ts")) as f:
+            assert "class SvcShopCustomer" in f.read()
+
     base = result["rows"][0]["document"]["source_hash"]
     result = _call(tools, "msm.drop_rest_object", "object", "/svc", base, schema="/shop",
                    object="/customer", schema_project_path=path)

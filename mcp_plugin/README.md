@@ -306,6 +306,7 @@ Management (`msm`) plugin:
 | `msm.drop_schema_object` | `drop_schema_object` (`msm_plugin/modeling.py`) |
 | `msm.set_rest_statements` | `set_rest_statements` (`msm_plugin/modeling.py`) |
 | `msm.drop_rest_object` | `drop_rest_object` (`msm_plugin/modeling.py`) |
+| `msm.dump_rest_sdk` | `dump_rest_sdk` (`msm_plugin/modeling.py`) |
 | `msm.list_live_schema_objects` | `lib/live_schema.list_schema_objects` (with the db group) |
 | `msm.import_live_schema` | `lib/modeling.create_project_from_live_schema` (with the db group) |
 | `msm.get_online_alter_defaults` | `get_online_alter_defaults` |
@@ -363,6 +364,9 @@ structured edits such as renames and column changes).
 `msm.set_rest_statements` and `msm.drop_rest_object` change the REST definition, MSM Section 180,
 where msm decides the place and the form: a client hands over CREATE REST statements, or
 names the service, schema or object to drop, and never edits the section's text itself.
+`msm.dump_rest_sdk` writes the REST client SDK of a service Section 180 defines, the files
+`rest.dump_sdk_service_files` writes for one on a server, with no server: msm builds the SDK
+data from mariadb-lsp's outline and the project's schema.
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of

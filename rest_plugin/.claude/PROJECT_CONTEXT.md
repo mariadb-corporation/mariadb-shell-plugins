@@ -62,6 +62,19 @@ packages with msm_plugin and mcp_plugin.
   BINARY); forward engineering emits the sqlDefinition. Assigned by the `UUID_Columns`
   plugin in `development/wb/Audit_Log_Triggers_grt.py` (switches every `BINARY(16)` column,
   adds the `UUID_v7()` default to single-column PKs, idempotent).
+- **SDK files have one writer, shared with msm.** `services.sdk_files_config(directory,
+  options)` merges the folder's stored `mrs.config.json` with the options given and checks
+  the language before anything is generated; `write_sdk_files(directory, config,
+  url_context_root, service_classes, source)` generates the code first, then writes. Both
+  `rest.dumpSdkServiceFiles` and msm's `msm.dumpRestSdk` (an SDK from a schema project's
+  Section 180, no server; msm builds the `sdk_service_data` document and passes it as
+  `lib.sdk.generate_service_sdk(service_data=)`) use them. `SDK_SOURCE_KEYS` (`serviceId`,
+  `dbConnectionUri`, `msmProject`) say where an SDK came from: each dump writes its own and
+  drops the others, so the last dump decides where a client's rebuild goes. A live dump of
+  a folder with `msmProject` and no service given takes that service where the server has
+  it, else the current or only one. The header defaults to none (the stored one is kept on a
+  rebuild; a stored copy of the former Oracle default is dropped); the SDK templates carry
+  `Copyright (c) 2026, MariaDB plc.` under Oracle's line.
 - **MariaDB-only.** 5.0.0 is the first release of `mariadb_rest_service` (4.1.6 and the
   upgrade path were dropped with the rename; there are no installations). Queries must be valid under
   `ONLY_FULL_GROUP_BY` the MariaDB way (no functional dependency, no plain columns in
@@ -322,22 +335,3 @@ packages with msm_plugin and mcp_plugin.
   `session` option was dropped on 2026-10-12, when #73 was closed.)
 - `run_tests.py -k "a or b"` is quoted with `shlex.quote` now; a pattern that misses the
   sandbox-deploying fixture still works because `init_mrs` is session-scoped.
-
-## Git state
-
-Checked at this checkpoint (2026-10-29), repo `mariadb-shell-plugins` (rest_plugin is a subfolder):
-
-```text
-$ git -C rest_plugin branch --show-current
-main
-
-$ git -C rest_plugin status --short   (one repository: every project's lines)
- M mcp_plugin/.claude/PROJECT_CONTEXT.md
- M mcp_plugin/.claude/context/oauth.md
- M msm_plugin/.claude/PROJECT_CONTEXT.md
- M rest_plugin/.claude/PROJECT_CONTEXT.md
-```
-
-- Only this checkpoint's context edits are uncommitted. Since 2026-10-12 rest_plugin
-  changed only its version (#71, 26.10.4) and the shared `LICENSE` copy (#66, #70). No
-  open rest_plugin branch.

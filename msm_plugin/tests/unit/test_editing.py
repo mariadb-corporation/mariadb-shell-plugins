@@ -42,7 +42,9 @@ from msm_plugin.lib import diagrams, editing, lsp, management, modeling
 from msm_plugin.lib.management import create_schema_project_folder
 from msm_plugin.tests.unit import helpers
 
-LSP = lsp.find_lsp()
+# MSM_TEST_LSP where it names one, so the snapshot the fixture makes and the
+# one a change makes again come from the same binary
+LSP = helpers.find_test_lsp(lambda binary: True)
 needs_lsp = pytest.mark.skipif(LSP is None, reason="no mariadb-lsp binary")
 
 
@@ -119,7 +121,7 @@ def project(tmp_path):
                  "startFigure": "o", "endFigure": "c", "visible": True},
             ],
         })
-        modeling.update_schema_definition(path)
+        modeling.update_schema_definition(path, LSP)
     return path
 
 

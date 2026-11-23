@@ -448,7 +448,7 @@ def _checking(binary: str, before_outline: dict, before: dict, changing: set, go
     unread_before = _unread(before_outline)
 
     def check(project):
-        outlined = _outline(project, binary)
+        outlined = modeling.outline(project, binary)
         new_notes = _unread(outlined) - unread_before
         if new_notes:
             _, message = next(iter(new_notes))
@@ -460,12 +460,6 @@ def _checking(binary: str, before_outline: dict, before: dict, changing: set, go
         return outlined
 
     return check
-
-
-def _outline(project, binary: str) -> dict:
-    """The project's outline, as the snapshot is made from it."""
-    script, _ = modeling._outline_input(project)
-    return lsp.outline(binary, script, project.development)
 
 
 def _start(schema_project_path: str, base_hash: str, lsp_path: Optional[str]) -> tuple:
@@ -481,7 +475,7 @@ def _move_years(schema_project_path: str, project, binary: str, outlined: dict) 
     of its own, not undone."""
     if management.update_copyright_years(schema_project_path):
         project = modeling._Project.load(schema_project_path)
-        outlined = _outline(project, binary)
+        outlined = modeling.outline(project, binary)
     return project, outlined
 
 
@@ -625,7 +619,7 @@ def set_rest_statements(
         if len(objects) != 1:
             raise ValueError("replaces goes with the statement of one REST object.")
 
-    outlined = _outline(project, binary)
+    outlined = modeling.outline(project, binary)
     # The REST object a statement renames, where it is another one
     old = None
     if renamed is not None and renamed not in keys:
@@ -753,7 +747,7 @@ def drop_rest_object(
     """
     key = _drop_key(kind, service, schema, rest_object)
     project, binary = _start(schema_project_path, base_hash, lsp_path)
-    outlined = _outline(project, binary)
+    outlined = modeling.outline(project, binary)
     if key not in _items(outlined):
         what = {"service": service, "schema": f"{schema} on {service}",
                 "object": f"{rest_object} on {service} {schema}"}[kind]
