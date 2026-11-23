@@ -402,6 +402,40 @@ def drop_rest_object(kind: str, service: str, base_hash: str, **kwargs) -> dict:
     )
 
 
+@plugin_function("msm.dumpRestSdk", shell=True, cli=True, web=True)
+def dump_rest_sdk(service: str, directory: str, **kwargs) -> dict:
+    """Writes the REST client SDK of a REST service a schema project defines
+
+    The same files rest.dumpSdkServiceFiles writes for a service on a server, made from MSM
+    Section 180 of the project without a server: what the REST statements define is read
+    with the MariaDB SQL language server's binary mariadb-lsp, the columns, keys and
+    routines from the project's schema. The folder's mrs.config.json records the project
+    (msmProject), so the SDK can be made again from it.
+
+    Args:
+        service (str): The service's path as Section 180 writes it, e.g. /svc or
+            mike,anna@/svc.
+        directory (str): The folder for the SDK files, made where it is missing.
+        **kwargs: Additional options.
+
+    Keyword Args:
+        options (dict): service_url, sdk_language (TypeScript or Python), add_app_base_class
+            and header, as rest.dumpSdkServiceFiles takes them. Those not given are the ones
+            stored in the folder, so none makes the SDK again as it was.
+        schema_project_path (str): The path to the schema project. Defaults to the working directory.
+        lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
+            the shell, on the PATH and in ~/.local/bin.
+
+    Returns:
+        directory, files (the paths written), service, sdk_language and warnings: what the
+        SDK may not have as a server would give it, and REST objects left out.
+    """
+    return lib.rest_sdk.dump_rest_sdk(
+        _project(kwargs), service, directory,
+        options=kwargs.get("options"), lsp_path=kwargs.get("lsp_path"),
+    )
+
+
 @plugin_function("msm.removeSchemaDiagram", shell=True, cli=True, web=True)
 def remove_schema_diagram(name: str, **kwargs) -> list:
     """Removes a diagram from a schema project

@@ -149,7 +149,18 @@ def generate_service_sdk(
     sdk_language: ProgrammingLanguage = "typescript",
     prepare_for_runtime=False,
     service_url=None,
+    service_data=None,
 ):
+    """The source of a service's SDK classes.
+
+    service_data is the service document sdk_service_data returns
+    (service_res: rest_schemas -> rest_objects -> data_mappings -> fields),
+    where the caller has it without a server: msm builds it from a schema
+    project's Section 180. It is the service too where none is given, and
+    the session is then used only for prepare_for_runtime.
+    """
+    if service is None:
+        service = service_data
     # If no services is given, return only the MRS runtime management TypeScript Code
     # that allows the user to manage specific MRS runtime settings
     if service is None:
@@ -181,16 +192,19 @@ def generate_service_sdk(
             return bool.from_bytes(b64decode(base64str.split(":")[-1]))
         return base64str
 
-    try:
-        sdk_data = lib.services.get_service_sdk_data(
-            session, service.get("id"), binary_formatter=binary_formatter
-        )
-    except mysqlsh.DBError as e:
-        if e.code != 1370:
-            raise e
-        # we should make a clear distinction for the case where we cannot retrieve
-        # sdk data because the user is missing "EXECUTE" permissions (BUG#)
-        sdk_data = None
+    if service_data is not None:
+        sdk_data = {"service_res": service_data}
+    else:
+        try:
+            sdk_data = lib.services.get_service_sdk_data(
+                session, service.get("id"), binary_formatter=binary_formatter
+            )
+        except mysqlsh.DBError as e:
+            if e.code != 1370:
+                raise e
+            # we should make a clear distinction for the case where we cannot retrieve
+            # sdk data because the user is missing "EXECUTE" permissions (BUG#)
+            sdk_data = None
 
     # Process Template String
     code = substitute_service_in_template(

@@ -910,6 +910,50 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
+    @tool(name="msm.dump_rest_sdk")
+    async def dump_rest_sdk(
+        ctx: Context,
+        service: str,
+        directory: str,
+        options: Optional[dict] = None,
+        schema_project_path: Optional[str] = None,
+    ) -> dict:
+        """Writes the REST client SDK of a REST service a schema project defines.
+
+        The same files rest.dump_sdk_service_files writes for a service on a
+        server, made from MSM Section 180 of the project, with no server:
+        the REST statements are read with mariadb-lsp, the columns, keys and
+        routines from the project's schema. The folder's mrs.config.json
+        records the project (msmProject: {path, service}, path relative to
+        the folder), so the SDK can be made again from it.
+
+        Args:
+            service: The service's path as Section 180 writes it (/svc,
+                mike,anna@/svc).
+            directory: The folder for the SDK files, made where it is
+                missing.
+            options: service_url, sdk_language (TypeScript or Python),
+                add_app_base_class and header, as rest.dump_sdk_service_files
+                takes them. Those not given are the ones stored in the
+                folder, so {} makes the SDK again as it was.
+            schema_project_path: The path to the schema project. Defaults to
+                the current working directory.
+
+        Returns:
+            {directory, files: the paths written, service, sdk_language,
+            warnings: what the SDK may not have as a server would give it,
+            and REST objects left out}.
+        """
+        await general.require_allowed_path(ctx, directory)
+        return await _in_project(
+            ctx,
+            schema_project_path,
+            msm_modeling.dump_rest_sdk,
+            service,
+            directory,
+            **_kwargs(options=options, lsp_path=_lsp_path()),
+        )
+
     @tool(name="msm.set_schema_statements")
     async def set_schema_statements(
         ctx: Context,

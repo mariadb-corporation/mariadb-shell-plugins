@@ -476,6 +476,37 @@ def test_dump_and_load_service(phone_book):
             session.run_sql("DROP REST SERVICE /testCopy")
 
 
+def test_sdk_service_files_are_dumped_and_made_again(phone_book):
+    session = phone_book["session"]
+
+    with tempfile.TemporaryDirectory() as directory:
+        # A folder msm.dumpRestSdk made from a schema project before
+        with open(os.path.join(directory, "mrs.config.json"), "w") as f:
+            json.dump({"msmProject": {"path": "../shop.msm.project", "service": "/test"},
+                       "serviceId": None}, f)
+
+        assert dump_sdk_service_files(
+            directory=directory,
+            options={"url_context_root": "/test", "service_url": "https://localhost:8443/test",
+                     "sdk_language": "TypeScript"},
+            session=session,
+        ) is True
+        assert sorted(os.listdir(directory)) == ["MrsBaseClasses.ts", "mrs.config.json", "test.ts"]
+        config = get_stored_sdk_options(directory)
+        # The folder now comes from the server
+        assert "msmProject" not in config
+        assert lib.core.id_to_uuid(config["serviceId"], "serviceId") == \
+            lib.core.convert_id_to_string(phone_book["service_id"])
+        assert config["sdkLanguage"] == "TypeScript"
+        with open(os.path.join(directory, "test.ts")) as f:
+            code = f.read()
+
+        # Made again from the stored options alone
+        assert dump_sdk_service_files(directory=directory, options={}, session=session) is True
+        with open(os.path.join(directory, "test.ts")) as f:
+            assert f.read() == code
+
+
 def test_load_service_in_development_as_path(phone_book):
     session = phone_book["session"]
 

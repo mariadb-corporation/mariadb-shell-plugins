@@ -314,6 +314,13 @@ def _outline_input(project: _Project) -> tuple:
     return script, hashed
 
 
+def outline(project: _Project, binary: str) -> dict:
+    """The binary's outline of the project's script, as the snapshot is made
+    from it (Section 160 blanked)."""
+    script, _ = _outline_input(project)
+    return lsp.outline(binary, script, project.development)
+
+
 def _source_hash(project: _Project, hashed: str) -> str:
     """The hash of the script without Section 160, its SOURCE files expanded."""
     expanded = source.expand_source_directives(hashed, project.development, read=project.read)[0]
