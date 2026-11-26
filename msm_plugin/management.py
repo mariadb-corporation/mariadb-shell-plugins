@@ -503,6 +503,9 @@ def prepare_release(**kwargs) -> list[str]:
             "The following file(s) have been prepared for release:\n"
             + "\n".join(files_for_release)
         )
+        # The release made the snapshot again, of the released script
+        for warning in lib.modeling.snapshot_warnings(schema_project_path):
+            print(f"WARNING: {warning}")
     else:
         return files_for_release
 

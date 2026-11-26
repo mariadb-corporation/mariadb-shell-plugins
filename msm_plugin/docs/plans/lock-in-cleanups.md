@@ -7,6 +7,8 @@ and [section-banners.md](section-banners.md).
 
 ## 1. The collation in Section 110
 
+**Done on `wip/msm-collation`.** As built, differing from the text below in two points: the replacement is `utf8mb4_uca1400_nopad_ai_ci`, not `uca1400_ai_ci` (MySQL's 0900 collations are NO PAD; on 13.1.1 `0900_ai_ci`, `_as_ci`, `_as_cs` and `0900_bin` give the same weights as `uca1400_nopad_*` / `nopad_bin` for every BMP character, while `uca1400_ai_ci` pads), and the deployment template now takes Section 110 from the target version, since its own literal 110 overrode every project's schema options after the first release. The warning: `update_schema_definition` returns `warnings`, the interactive `prepareRelease` prints them.
+
 `templates/scripts/schema_next.sql:32`, `schema_a.b.c.sql:32`,
 `schema_deployment_a.b.c.sql:32`:
 

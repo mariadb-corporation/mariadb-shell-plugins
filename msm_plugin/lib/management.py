@@ -1927,6 +1927,11 @@ def generate_deployment_script(
             "schema_identifier": get_schema_identifier(schema_name),
             "version_target": version,
             "version_comma_str": ", ".join(str(number) for number in version_as_ints),
+            # The version's own schema options (character set, collation),
+            # as a fresh install of its first release has them
+            "section_110_database_schema_creation": target_version_sections.get("110", {})
+            .get("sql_content", "")
+            .strip("\n"),
             "section_130_creation_of_helpers": target_version_sections.get("130", {})
             .get("sql_content", "")
             .strip("\n"),

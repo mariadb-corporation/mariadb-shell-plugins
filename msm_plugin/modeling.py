@@ -144,7 +144,8 @@ def update_schema_definition(**kwargs) -> dict:
 
     Returns:
         The number of tables, views, routines, triggers, events and sequences, the diagrams that
-        changed and the files written.
+        changed, the files written and warnings, e.g. about a MySQL collation MariaDB before
+        11.4.5 refuses.
     """
     result = lib.modeling.update_schema_definition(_project(kwargs), kwargs.get("lsp_path"))
     if lib.core.get_interactive_default():
@@ -154,6 +155,8 @@ def update_schema_definition(**kwargs) -> dict:
         )
         if result["changed_diagrams"]:
             print("Diagrams that lost objects: " + ", ".join(result["changed_diagrams"]))
+        for warning in result["warnings"]:
+            print(f"WARNING: {warning}")
     else:
         return result
 
