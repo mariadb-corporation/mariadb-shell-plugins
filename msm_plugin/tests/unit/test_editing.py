@@ -722,7 +722,10 @@ def test_a_merged_alter_table_is_kept_once_under_each_of_its_edits():
 def test_a_tables_online_alter_settings_follow_renames_and_drops():
     import json
 
-    text = json.dumps({"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
+    copyrights = [{"holder": "ACME Corp.", "yearOfCreation": "2026", "tracksUpdates": True}]
+    # A project of the single holder format, written as msm writes the file
+    text = json.dumps({"copyrightHolder": "ACME Corp.", "yearOfCreation": "2026",
+                       "schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
         "customer": {"maxRebuildBytes": 0}, "orders": {"lockWait": 2}, "audit": {"enabled": False}}}},
         indent=4)
     moved = editing.online_alter_settings_text(text, [
@@ -731,8 +734,10 @@ def test_a_tables_online_alter_settings_follow_renames_and_drops():
         {"op": "drop_table", "table": "audit"},
         {"op": "add_column", "table": "orders", "column": {"name": "n", "type": "INT"}},
     ])
-    assert json.loads(moved) == {"schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
-        "orders": {"lockWait": 2}, "buyer": {"maxRebuildBytes": 0}}}}
+    assert json.loads(moved) == {
+        "formatVersion": 1, "schemaName": "shop", "copyrights": copyrights,
+        "onlineAlter": {"enabled": True, "tables": {
+            "orders": {"lockWait": 2}, "buyer": {"maxRebuildBytes": 0}}}}
     # The last entry dropped: no `tables` left
     assert json.loads(editing.online_alter_settings_text(moved, [
         {"op": "drop_table", "table": "orders"}, {"op": "drop_table", "table": "buyer"}]))[

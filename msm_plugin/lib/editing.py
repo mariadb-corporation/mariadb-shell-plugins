@@ -467,7 +467,7 @@ def online_alter_settings_text(text: Optional[str], edits: list) -> Optional[str
     if setting is None:
         return None
     settings[online_alter.SETTING] = setting
-    return json.dumps(settings, indent=4)
+    return management.project_settings_text(settings)
 
 
 # -----------------------------------------------------------------------------
