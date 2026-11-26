@@ -77,9 +77,9 @@ _GUI_ARGUMENTS = {
 """,
     ),
     "msm.update_project": (
-        "new_mcp_access",
-        """            new_mcp_access: Whether LLMs may work on the project through an
-                MCP server started without --gui. Left out, it keeps its
+        "mcp_access",
+        """            mcp_access: Whether LLMs may work on the project through an MCP
+                server started without --gui. Left out, it keeps its
                 setting.
 """,
     ),
@@ -305,7 +305,7 @@ def register_msm_tools(server, function_groups=()) -> None:
 
     async def add_project(
         ctx: Context,
-        project_path: str,
+        schema_project_path: str,
         folder: Optional[str] = None,
         caption: Optional[str] = None,
         color: Optional[str] = None,
@@ -317,8 +317,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         and keeps the others, so this is safe to call again.
 
         Args:
-            project_path: The path of the schema project folder, which has to
-                hold a msm.project.json.
+            schema_project_path: The path of the schema project folder, which
+                has to hold a msm.project.json.
             folder: The folder of the list to file it in, such as "/Shop";
                 "/" is the top level. Left out, a new entry goes to the top
                 level and a listed one stays where it is.
@@ -332,10 +332,10 @@ def register_msm_tools(server, function_groups=()) -> None:
         Returns:
             The project as msm.list_projects reports it.
         """
-        await general.require_allowed_path(ctx, project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         gui = general.is_gui_mode()
         return msm_projects.add_project(
-            project_path,
+            schema_project_path,
             folder,
             caption,
             color,
@@ -348,55 +348,57 @@ def register_msm_tools(server, function_groups=()) -> None:
 
     async def update_project(
         ctx: Context,
-        project_path: str,
-        new_folder: Optional[str] = None,
-        new_caption: Optional[str] = None,
-        new_color: Optional[str] = None,
-        new_mcp_access: Optional[bool] = None,
+        schema_project_path: str,
+        folder: Optional[str] = None,
+        caption: Optional[str] = None,
+        color: Optional[str] = None,
+        mcp_access: Optional[bool] = None,
     ) -> dict:
         """Changes how a listed schema project is filed and shown.
 
         Args:
-            project_path: The project, as msm.list_projects reports it. It
-                does not have to exist on disk any more.
-            new_folder: The folder of the list to move it to, such as
+            schema_project_path: The project, as msm.list_projects reports it
+                (its project_path). It does not have to exist on disk any
+                more.
+            folder: The folder of the list to move it to, such as
                 "/Archive"; "/" is the top level. Left out, it stays where it
                 is.
-            new_caption: The caption to show it with; "" removes it. Left
-                out, it keeps its caption.
-            new_color: The color to show it in (red, orange, yellow, green,
-                blue or purple); "" removes it. Left out, it keeps its color.
+            caption: The caption to show it with; "" removes it. Left out,
+                it keeps its caption.
+            color: The color to show it in (red, orange, yellow, green, blue
+                or purple); "" removes it. Left out, it keeps its color.
 {gui_argument_doc}
 
         Returns:
             The project as msm.list_projects reports it.
         """
-        general.require_project_access(ctx, project_path)
+        general.require_project_access(ctx, schema_project_path)
         return msm_projects.update_project(
-            project_path,
-            new_folder,
-            new_caption,
-            new_color,
+            schema_project_path,
+            folder,
+            caption,
+            color,
             owner=general.get_client_identity(ctx).user,
-            mcp_access=new_mcp_access if general.is_gui_mode() else None,
+            mcp_access=mcp_access if general.is_gui_mode() else None,
         )
 
     _register_with_gui_argument(tool, "msm.update_project", update_project)
 
     @tool(name="msm.remove_project")
-    async def remove_project(ctx: Context, project_path: str) -> str:
+    async def remove_project(ctx: Context, schema_project_path: str) -> str:
         """Removes a schema project from the project list.
 
         Only the list changes: the project folder on disk is left as it is.
 
         Args:
-            project_path: The project, as msm.list_projects reports it.
+            schema_project_path: The project, as msm.list_projects reports it
+                (its project_path).
 
         Returns:
             The project path as it was listed.
         """
-        general.require_project_access(ctx, project_path)
-        return msm_projects.remove_project(project_path, owner=general.get_client_identity(ctx).user)
+        general.require_project_access(ctx, schema_project_path)
+        return msm_projects.remove_project(schema_project_path, owner=general.get_client_identity(ctx).user)
 
     @tool(name="msm.get_project_information")
     async def get_project_information(
@@ -1053,7 +1055,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     @tool(name="msm.create_schema_diagram")
     async def create_schema_diagram(
         ctx: Context,
-        name: str,
+        diagram: str,
         tables: Optional[list[str]] = None,
         schema_project_path: Optional[str] = None,
         views: Optional[list[str]] = None,
@@ -1074,7 +1076,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         since it was made.
 
         Args:
-            name: The name of the new diagram.
+            diagram: The name of the new diagram.
             tables: The tables to show. Defaults to all tables of the schema.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
@@ -1092,7 +1094,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx,
             schema_project_path,
             msm_modeling.create_schema_diagram,
-            name,
+            diagram,
             **_kwargs(
                 tables=tables, views=views, routines=routines, events=events,
                 sequences=sequences, lsp_path=_lsp_path(),
@@ -1102,7 +1104,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     @tool(name="msm.layout_schema_diagram")
     async def layout_schema_diagram(
         ctx: Context,
-        name: str,
+        diagram: str,
         tables: Optional[list[str]] = None,
         keep_placed: bool = True,
         schema_project_path: Optional[str] = None,
@@ -1124,7 +1126,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         first where the development script changed.
 
         Args:
-            name: The name of the diagram.
+            diagram: The name of the diagram.
             tables: Tables to add to the diagram. Defaults to none.
             keep_placed: Whether figures that have a position keep it.
             schema_project_path: The path to the schema project. Defaults to
@@ -1146,7 +1148,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx,
             schema_project_path,
             msm_modeling.layout_schema_diagram,
-            name,
+            diagram,
             **_kwargs(
                 tables=tables,
                 views=views,
@@ -1234,23 +1236,23 @@ def register_msm_tools(server, function_groups=()) -> None:
 
     @tool(name="msm.remove_schema_diagram")
     async def remove_schema_diagram(
-        ctx: Context, name: str, schema_project_path: Optional[str] = None
+        ctx: Context, diagram: str, schema_project_path: Optional[str] = None
     ) -> list:
         """Removes a diagram from a schema project.
 
         Args:
-            name: The name of the diagram.
+            diagram: The name of the diagram.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
             The files written.
         """
-        return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, name)
+        return await _in_project(ctx, schema_project_path, msm_modeling.remove_schema_diagram, diagram)
 
     @tool(name="msm.rename_schema_diagram")
     async def rename_schema_diagram(
-        ctx: Context, name: str, new_name: str, schema_project_path: Optional[str] = None
+        ctx: Context, diagram: str, new_name: str, schema_project_path: Optional[str] = None
     ) -> list:
         """Renames a diagram of a schema project.
 
@@ -1260,7 +1262,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         `schema_definition`, the schema row's name.
 
         Args:
-            name: The name of the diagram.
+            diagram: The name of the diagram.
             new_name: Its new name (surrounding whitespace is dropped).
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
@@ -1269,7 +1271,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             The files written; none where the name stays as it is.
         """
         return await _in_project(
-            ctx, schema_project_path, msm_modeling.rename_schema_diagram, name, new_name
+            ctx, schema_project_path, msm_modeling.rename_schema_diagram, diagram, new_name
         )
 
     @tool(name="msm.rename_schema")
@@ -1425,8 +1427,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             **_kwargs(lsp_path=_lsp_path()),
         )
 
-    @tool(name="msm.get_sql_content_from_section")
-    async def get_sql_content_from_section(
+    @tool(name="msm.get_section_sql_content")
+    async def get_section_sql_content(
         ctx: Context, file_path: str, section_id: str
     ) -> Optional[str]:
         """Returns the SQL content of an MSM section of a file.

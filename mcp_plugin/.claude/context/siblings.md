@@ -19,7 +19,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   the owner is the client identity's user (`general.get_client_identity(ctx).user`). Tools:
   `msm.list_projects` (`project_path`, `folder`, `caption`, `color`, `schema_name`,
   `exists`, `last_released_version` from `projects.list_projects` itself, plus `development_version` read by the tool, null where unreadable), `msm.add_project` (through `require_allowed_path`), `msm.update_project`
-  (`new_folder`/`new_caption`/`new_color`, left out keeps, `""` clears),
+  (`folder`/`caption`/`color`/`mcp_access` as `msm.add_project`, left out keeps, `""` clears; the project is `schema_project_path` in all three),
   `msm.remove_project` (list only, disk untouched); `msm.create_project` (with `folder`/`caption`/`color`,
   checked by `projects.normalize_details` before the folder is made) calls the
   wrapper with `add_to_project_list=False` and adds the result to the CALLER's list

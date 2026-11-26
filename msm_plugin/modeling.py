@@ -87,7 +87,7 @@ def list_schema_diagrams(**kwargs) -> dict:
         return result
 
 
-@plugin_function("msm.getSchemaDiagrams", shell=True, cli=True, web=True)
+@plugin_function("msm.get.schemaDiagrams", shell=True, cli=True, web=True)
 def get_schema_diagrams(**kwargs) -> list:
     """Returns the rows of a schema project's diagrams VIEW
 
@@ -105,7 +105,7 @@ def get_schema_diagrams(**kwargs) -> list:
     return lib.modeling.get_diagram_rows(_project(kwargs), kwargs.get("diagram"))
 
 
-@plugin_function("msm.getSchemaDiagramImage", shell=True, cli=True, web=True)
+@plugin_function("msm.get.schemaDiagramImage", shell=True, cli=True, web=True)
 def get_schema_diagram_image(diagram: str, figure_id: str, **kwargs) -> str:
     """Returns the picture of an image figure of a schema diagram
 
@@ -161,7 +161,7 @@ def update_schema_definition(**kwargs) -> dict:
         return result
 
 
-@plugin_function("msm.setSchemaDiagram", shell=True, cli=True, web=True)
+@plugin_function("msm.set.schemaDiagram", shell=True, cli=True, web=True)
 def set_schema_diagram(document: dict = None, **kwargs) -> list:
     """Adds a diagram to a schema project, or replaces the one of the same name
 
@@ -232,9 +232,9 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
     return lib.editing.edit_schema(_project(kwargs), edits, base_hash, kwargs.get("lsp_path"))
 
 
-@plugin_function("msm.getObjectTemplates", shell=True, cli=True, web=True)
+@plugin_function("msm.get.objectTemplates", shell=True, cli=True, web=True)
 def get_object_templates() -> dict:
-    """Returns msm's templates of the objects a client adds with msm.setSchemaStatements
+    """Returns msm's templates of the objects a client adds with msm.set.schemaStatements
 
     Returns:
         templates (view, procedure, function, trigger, event, sequence: the CREATE statement,
@@ -244,7 +244,7 @@ def get_object_templates() -> dict:
     return lib.editing.get_object_templates()
 
 
-@plugin_function("msm.setSchemaStatements", shell=True, cli=True, web=True)
+@plugin_function("msm.set.schemaStatements", shell=True, cli=True, web=True)
 def set_schema_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
     """Puts CREATE statements of schema objects into a schema project, where msm keeps them
 
@@ -320,7 +320,7 @@ def drop_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
     )
 
 
-@plugin_function("msm.setRestStatements", shell=True, cli=True, web=True)
+@plugin_function("msm.set.restStatements", shell=True, cli=True, web=True)
 def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs) -> dict:
     """Writes REST services, schemas and objects into MSM Section 180 of a schema project
 
@@ -534,7 +534,7 @@ def layout_schema_diagram(name: str, **kwargs) -> dict:
     """Adds tables, views, sequences, routines and events to a diagram of a schema project and lays its figures out
 
     By default only the figures without a position (the objects just added, or figures a
-    document given to msm.setSchemaDiagram leaves left and top out of) are laid out, as a block
+    document given to msm.set.schemaDiagram leaves left and top out of) are laid out, as a block
     below the others; with keep_placed set to false every table, view, sequence and group
     figure is laid out again. Figures on a layer, notes and images keep their place. Foreign keys
     between tables on the diagram that are not drawn get a connection. The schema snapshot is
