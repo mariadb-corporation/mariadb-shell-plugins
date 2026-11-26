@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+import msm_plugin.tests.unit.helpers as helpers
 from msm_plugin.management import *
 
 SCHEMA_NAME = "my_schema"
@@ -185,8 +186,7 @@ def test_create_new_project_folder():
 
         # The file states its format first and holds the notices as a list
         # only, without the single holder format's keys
-        with open(os.path.join(project_path, "msm.project.json")) as f:
-            stored = json.load(f)
+        stored = helpers.read_project_settings_file(project_path)
         assert next(iter(stored)) == "formatVersion"
         assert stored["formatVersion"] == lib.management.PROJECT_FORMAT_VERSION
         assert "copyrightHolder" not in stored and "yearOfCreation" not in stored
@@ -607,20 +607,27 @@ def test_a_write_inside_a_write_moves_the_years_once(tmp_path, monkeypatch):
     assert calls == [project_path]
 
 
+def _single_holder_project(tmp_path, year_of_creation: str) -> str:
+    """A project whose msm.project.json is of the single holder format, as an
+    msm before the `copyrights` list and the format version wrote it."""
+    project_path = _settings_project(tmp_path)
+
+    def to_single_holder(settings):
+        del settings["copyrights"], settings["formatVersion"]
+        settings["copyrightHolder"] = "ACME Corp."
+        settings["yearOfCreation"] = year_of_creation
+
+    helpers.edit_project_settings_file(project_path, to_single_holder)
+    return project_path
+
+
+def _assert_current_format(stored: dict) -> None:
+    assert stored["formatVersion"] == lib.management.PROJECT_FORMAT_VERSION
+    assert "copyrightHolder" not in stored and "yearOfCreation" not in stored
+
+
 def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path, monkeypatch):
-    temp_dir = str(tmp_path)
-    project_path = create_new_project_folder(
-        schema_name=SCHEMA_NAME, target_path=temp_dir, copyright_holder="ACME Corp."
-    )
-    settings_path = os.path.join(project_path, "msm.project.json")
-    with open(settings_path) as f:
-        raw = json.load(f)
-    # The single holder format, from before the list and the format version
-    del raw["copyrights"], raw["formatVersion"]
-    raw["copyrightHolder"] = "ACME Corp."
-    raw["yearOfCreation"] = "2020"
-    with open(settings_path, "w") as f:
-        json.dump(raw, f)
+    project_path = _single_holder_project(tmp_path, "2020")
 
     # Read as the list alone
     settings = get_project_settings(schema_project_path=project_path)
@@ -631,40 +638,29 @@ def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path, monkeypatch
 
     later = str(int(lib.management.current_year()) + 1)
     in_year(monkeypatch, later)
+    settings_path = os.path.join(project_path, "msm.project.json")
     assert lib.management.update_copyright_years(project_path)[0] == settings_path
-    with open(settings_path) as f:
-        raw = json.load(f)
-    assert raw["copyrights"] == [
+    stored = helpers.read_project_settings_file(project_path)
+    assert stored["copyrights"] == [
         {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": True,
          "yearOfLastUpdate": later}
     ]
-    assert raw["formatVersion"] == 1
-    assert "copyrightHolder" not in raw and "yearOfCreation" not in raw
+    _assert_current_format(stored)
 
 
 def test_a_legacy_project_loses_the_single_holder_keys_on_a_settings_change(tmp_path):
-    project_path = create_new_project_folder(
-        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
-    )
-    settings_path = os.path.join(project_path, "msm.project.json")
-    with open(settings_path) as f:
-        raw = json.load(f)
-    # Written by an msm that mirrored the first holder
-    del raw["formatVersion"]
-    raw["copyrightHolder"] = "ACME Corp."
-    raw["yearOfCreation"] = lib.management.current_year()
-    with open(settings_path, "w") as f:
-        json.dump(raw, f)
+    project_path = _single_holder_project(tmp_path, lib.management.current_year())
 
-    # Nothing to change: nothing written, the file stays as it is
+    # Nothing to change: nothing written
     assert lib.management.set_project_settings(project_path, {}) == []
     lib.management.set_project_settings(project_path, {"schemaDependencies": ["sakila"]})
-    with open(settings_path) as f:
-        stored = json.load(f)
-    assert stored["formatVersion"] == 1
+    stored = helpers.read_project_settings_file(project_path)
     assert stored["schemaDependencies"] == ["sakila"]
-    assert stored["copyrights"] == raw["copyrights"]
-    assert "copyrightHolder" not in stored and "yearOfCreation" not in stored
+    assert stored["copyrights"] == [
+        {"holder": "ACME Corp.", "yearOfCreation": lib.management.current_year(),
+         "tracksUpdates": True}
+    ]
+    _assert_current_format(stored)
 
 
 @pytest.mark.parametrize("version, message", [
@@ -674,16 +670,10 @@ def test_a_legacy_project_loses_the_single_holder_keys_on_a_settings_change(tmp_
     (True, "is not a format version"),
 ])
 def test_a_project_of_an_unknown_format_is_refused(tmp_path, version, message):
-    project_path = create_new_project_folder(
-        schema_name=SCHEMA_NAME, target_path=str(tmp_path), copyright_holder="ACME Corp."
-    )
-    settings_path = os.path.join(project_path, "msm.project.json")
-    with open(settings_path) as f:
-        raw = json.load(f)
-    raw["formatVersion"] = version
-    with open(settings_path, "w") as f:
-        json.dump(raw, f)
-    before = Path(settings_path).read_text()
+    project_path = _settings_project(tmp_path)
+    helpers.set_project_setting(project_path, "formatVersion", version)
+    settings_path = Path(project_path, "msm.project.json")
+    before = settings_path.read_text()
 
     with pytest.raises(ValueError, match=message):
         get_project_settings(schema_project_path=project_path)
@@ -692,7 +682,7 @@ def test_a_project_of_an_unknown_format_is_refused(tmp_path, version, message):
         lib.management.set_project_settings(project_path, {"schemaDependencies": ["sakila"]})
     with pytest.raises(ValueError, match=message):
         lib.management.update_copyright_years(project_path)
-    assert Path(settings_path).read_text() == before
+    assert settings_path.read_text() == before
 
 
 def test_license_text_holds_every_notice():

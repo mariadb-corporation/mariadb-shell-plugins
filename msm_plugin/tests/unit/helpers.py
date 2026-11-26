@@ -50,16 +50,29 @@ def query(session, sql: str) -> list:
     return msm_lib.core.MsmDbExec(sql).exec(session).items
 
 
-def set_project_setting(project_path: str, key: str, value) -> None:
-    """Sets one setting of a project's msm.project.json."""
+def read_project_settings_file(project_path: str) -> dict:
+    """A project's msm.project.json as stored, not as msm reads it."""
     import json
 
-    settings_file = os.path.join(project_path, "msm.project.json")
-    with open(settings_file) as f:
-        settings = json.load(f)
-    settings[key] = value
-    with open(settings_file, "w") as f:
+    with open(os.path.join(project_path, "msm.project.json")) as f:
+        return json.load(f)
+
+
+def edit_project_settings_file(project_path: str, change) -> dict:
+    """Rewrites a project's msm.project.json by hand, as msm would not:
+    change(settings) changes the stored content in place. Returns it."""
+    import json
+
+    settings = read_project_settings_file(project_path)
+    change(settings)
+    with open(os.path.join(project_path, "msm.project.json"), "w") as f:
         json.dump(settings, f)
+    return settings
+
+
+def set_project_setting(project_path: str, key: str, value) -> None:
+    """Sets one setting of a project's msm.project.json."""
+    edit_project_settings_file(project_path, lambda settings: settings.update({key: value}))
 
 
 def find_test_lsp(capable) -> "str | None":

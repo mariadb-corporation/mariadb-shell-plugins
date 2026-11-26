@@ -723,7 +723,7 @@ def test_a_tables_online_alter_settings_follow_renames_and_drops():
     import json
 
     copyrights = [{"holder": "ACME Corp.", "yearOfCreation": "2026", "tracksUpdates": True}]
-    # A project of the single holder format, written as msm writes the file
+    # A project of the single holder format
     text = json.dumps({"copyrightHolder": "ACME Corp.", "yearOfCreation": "2026",
                        "schemaName": "shop", "onlineAlter": {"enabled": True, "tables": {
         "customer": {"maxRebuildBytes": 0}, "orders": {"lockWait": 2}, "audit": {"enabled": False}}}},
@@ -735,7 +735,8 @@ def test_a_tables_online_alter_settings_follow_renames_and_drops():
         {"op": "add_column", "table": "orders", "column": {"name": "n", "type": "INT"}},
     ])
     assert json.loads(moved) == {
-        "formatVersion": 1, "schemaName": "shop", "copyrights": copyrights,
+        "formatVersion": management.PROJECT_FORMAT_VERSION, "schemaName": "shop",
+        "copyrights": copyrights,
         "onlineAlter": {"enabled": True, "tables": {
             "orders": {"lockWait": 2}, "buyer": {"maxRebuildBytes": 0}}}}
     # The last entry dropped: no `tables` left

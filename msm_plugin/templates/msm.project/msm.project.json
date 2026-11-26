@@ -1,8 +1,0 @@
-{
-    "formatVersion": 1,
-    "copyrights": [],
-    "customLicense": "${custom_license}",
-    "license": "${license_name}",
-    "schemaDependencies": [],
-    "schemaName": "${schema_name}"
-}

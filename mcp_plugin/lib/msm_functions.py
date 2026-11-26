@@ -1391,8 +1391,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             settings: The keys to change:
                 copyrights: [{holder, yearOfCreation (YYYY), yearOfLastUpdate
                     (YYYY, optional), tracksUpdates (whether a change in a
-                    later year moves yearOfLastUpdate along)}]; the
-                    copyrightHolder and yearOfCreation mirrors follow it.
+                    later year moves yearOfLastUpdate along)}]. The
+                    copyrightHolder and yearOfCreation keys of the older
+                    single holder format are refused.
                 license: BSD, GPL-2.0, MIT, None or CUSTOM.
                 customLicense: The text of a CUSTOM license; it may use
                     ${copyright_notices}, ${copyright_holder} and ${year}.
@@ -1408,7 +1409,8 @@ def register_msm_tools(server, function_groups=()) -> None:
                 maxInlineSectionSize: The largest section body, in
                     characters, kept inline in the development script.
                 schemaDependencies: Names of schemas this one depends on.
-                schemaName and schemaFileName cannot be changed.
+                schemaName and schemaFileName cannot be changed, nor
+                formatVersion, which msm writes.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 

@@ -70,7 +70,7 @@ through `management.project_settings_text` (`write_project_settings`, and
 `editing.online_alter_settings_text`, which `edit_schema` writes through its
 own all-or-nothing `write_texts`): `formatVersion` first, `copyrights`
 derived for a single holder file, `copyrightHolder` / `yearOfCreation`
-dropped. `get_project_settings` checks the version (`project_format_version`:
+dropped. `get_project_settings` checks the version (`check_project_format`:
 missing = 1, a later one "made by a newer MariaDB Shell", a non-integer
 refused) and hands readers the list alone, so `get_project_information`
 answers the same for a migrated and an un-migrated project (a change from

@@ -696,9 +696,10 @@ _TEMPLATE_MARKDOWN_FILES = sorted(
 )
 
 
-def project_format_version(project_settings: dict) -> int:
-    """The project format a project's msm.project.json states (1 where it
-    states none).
+def check_project_format(project_settings: dict) -> None:
+    """Refuses msm.project.json content of a format this msm does not read.
+
+    A project without `formatVersion` is of format 1.
 
     Raises:
         ValueError: For a value that is no format version, or a format this
@@ -714,25 +715,30 @@ def project_format_version(project_settings: dict) -> int:
             f"The project is of format {version}, made by a newer MariaDB Shell; this one "
             f"reads projects up to format {PROJECT_FORMAT_VERSION}. Update the MariaDB Shell."
         )
-    return version
+
+
+def _in_current_format(project_settings: dict) -> dict:
+    """msm.project.json content as this msm keeps it: the copyright notices
+    as the `copyrights` list alone (derived from a single holder format's
+    `copyrightHolder` and `yearOfCreation`, which go), and no
+    `formatVersion`, which only the file states. The one place that turns
+    an older format into the current one, for the reader and the writer."""
+    current = {
+        key: value for key, value in project_settings.items()
+        if key not in _LEGACY_COPYRIGHT_KEYS and key != PROJECT_FORMAT_VERSION_KEY
+    }
+    current["copyrights"] = get_project_copyrights(project_settings)
+    return current
 
 
 def project_settings_text(settings: dict) -> str:
-    """The text of msm.project.json holding settings, as msm writes it.
-
-    The file states the project format first, and holds its copyright
-    notices as the `copyrights` list only: settings of the single holder
-    format have their list derived (get_project_copyrights) and lose
-    `copyrightHolder` and `yearOfCreation`. Every writer of the file goes
-    through this.
-    """
-    stored = {PROJECT_FORMAT_VERSION_KEY: PROJECT_FORMAT_VERSION}
-    copyrights = get_project_copyrights(settings)
-    for key, value in settings.items():
-        if key not in _LEGACY_COPYRIGHT_KEYS and key != PROJECT_FORMAT_VERSION_KEY:
-            stored[key] = value
-    stored["copyrights"] = copyrights
-    return json.dumps(stored, indent=4)
+    """The text of msm.project.json holding settings, as msm writes it: the
+    project format first, then the settings in the current format
+    (_in_current_format). Every writer of the file goes through this."""
+    return json.dumps(
+        {PROJECT_FORMAT_VERSION_KEY: PROJECT_FORMAT_VERSION, **_in_current_format(settings)},
+        indent=4,
+    )
 
 
 def write_project_settings(schema_project_path: str, settings: dict) -> str:
@@ -802,7 +808,6 @@ def update_copyright_years(schema_project_path: str) -> list:
         # The notices first, the settings last: a write that fails part way
         # leaves the settings behind, so the next change tries again.
         written = _refresh_notice_files(schema_project_path, project_settings)
-        # A project in the single holder format gets the list written
         return [write_project_settings(schema_project_path, project_settings), *written]
 
     return lib.modeling.keeping_snapshot_current(schema_project_path, change)
@@ -1295,23 +1300,17 @@ def get_project_settings(schema_project_path: str) -> dict:
     with open(project_settings_file, "r") as f:
         try:
             project_settings = json.loads(f.read())
-        except:
-            raise ValueError(
-                f"The contents of the MSM project settings file `{project_settings_file}` is corrupted."
-            )
-
+        except ValueError:
+            project_settings = None
     if not isinstance(project_settings, dict):
         raise ValueError(
             f"The contents of the MSM project settings file `{project_settings_file}` is corrupted."
         )
-    project_format_version(project_settings)
+    check_project_format(project_settings)
 
-    # Projects written before the `copyrights` list existed only hold a single
-    # copyrightHolder, so the list is derived here and every reader gets it,
-    # the list alone.
-    project_settings["copyrights"] = get_project_copyrights(project_settings)
-    for key in _LEGACY_COPYRIGHT_KEYS:
-        project_settings.pop(key, None)
+    # Every reader gets the settings in the current format, whatever format
+    # the file has until msm writes it next
+    project_settings = _in_current_format(project_settings)
 
     return project_settings
 
@@ -2129,18 +2128,7 @@ def get_online_alter_settings(schema_project_path: str, table: str = None) -> di
     }
 
 
-def _read_raw_project_settings(schema_project_path: str) -> dict:
-    """msm.project.json's content as stored, not get_project_settings' copy,
-    which adds what it derives on reading."""
-    get_project_settings(schema_project_path)  # a project, and readable
-    with open(os.path.join(schema_project_path, "msm.project.json")) as f:
-        return json.load(f)
-
-
-# The keys of msm.project.json set_project_settings changes. The others are
-# the project's identity (schemaName, schemaFileName), its format, which msm
-# writes, or the keys of the single holder format that `copyrights` replaced
-# (copyrightHolder, yearOfCreation).
+# The keys of msm.project.json set_project_settings changes
 PROJECT_SETTING_KEYS = (
     "copyrights",
     "license",
@@ -2150,30 +2138,33 @@ PROJECT_SETTING_KEYS = (
     "maxInlineSectionSize",
     "schemaDependencies",
 )
-_IDENTITY_KEYS = ("schemaName", "schemaFileName")
+# The keys msm.project.json has, or had, that set_project_settings refuses, and why
+_UNSETTABLE_KEYS = {
+    "schemaName": "is the project's identity and cannot be changed",
+    "schemaFileName": "is the project's identity and cannot be changed",
+    PROJECT_FORMAT_VERSION_KEY: "is written by msm and cannot be set",
+    **{key: "is replaced by `copyrights`; set the copyrights instead"
+       for key in _LEGACY_COPYRIGHT_KEYS},
+}
 # Keys a project may go without: None given for one removes it
 _OPTIONAL_KEYS = (
     "customLicense", "onlineAlter", "substitutions", "maxInlineSectionSize", "schemaDependencies"
 )
 
 
-def _checked_settings(raw: dict, settings: dict) -> dict:
-    """msm.project.json's content with settings applied, each value checked
-    as msm reads it back; nothing of raw is changed."""
+def _checked_settings(current: dict, settings: dict) -> dict:
+    """A project's settings (get_project_settings) with settings applied,
+    each value checked as msm reads it back; current is not changed."""
     if not isinstance(settings, dict):
         raise ValueError("The settings must be an object of msm.project.json keys.")
     for key in settings:
-        if key in _IDENTITY_KEYS:
-            raise ValueError(f"`{key}` is the project's identity and cannot be changed.")
-        if key in _LEGACY_COPYRIGHT_KEYS:
-            raise ValueError(f"`{key}` is replaced by `copyrights`; set the copyrights instead.")
-        if key == PROJECT_FORMAT_VERSION_KEY:
-            raise ValueError(f"`{key}` is written by msm and cannot be set.")
+        if key in _UNSETTABLE_KEYS:
+            raise ValueError(f"`{key}` {_UNSETTABLE_KEYS[key]}.")
         if key not in PROJECT_SETTING_KEYS:
             raise ValueError(
                 f"Unknown project setting `{key}`; the settings are {', '.join(PROJECT_SETTING_KEYS)}."
             )
-    new = dict(raw)
+    new = dict(current)
     for key, value in settings.items():
         if value is None and key in _OPTIONAL_KEYS:
             new.pop(key, None)
@@ -2320,15 +2311,14 @@ def set_project_settings(schema_project_path: str, settings: dict, lsp_path: str
             holder format, an unknown one) or a value msm refuses on reading
             it.
     """
-    raw = _read_raw_project_settings(schema_project_path)
-    new = _checked_settings(raw, settings)
-    if new == raw:
+    old = get_project_settings(schema_project_path)
+    new = _checked_settings(old, settings)
+    if new == old:
         return []
-    if "copyrights" not in settings and _license_key(raw) == _license_key(new):
+    if "copyrights" not in settings and _license_key(old) == _license_key(new):
         # Nothing the files show
         return [write_project_settings(schema_project_path, new)]
 
-    old = get_project_settings(schema_project_path)
     if _license_key(old) == _license_key(new):
         # The years at most, set by hand: brought in where they stand
         texts, moved = None, False
