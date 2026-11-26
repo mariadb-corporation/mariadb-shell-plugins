@@ -207,7 +207,9 @@ def test_a_server_given_a_separator_uses_it_whatever_is_saved(tenant_config):
 
     assert server.resolve_tool_name_separator("_", gui=False) == "_"
     assert server.resolve_tool_name_separator("_", gui=True) == "_"
+    # The dotted default, given explicitly, wins over a saved separator too.
     assert server.resolve_tool_name_separator(".", gui=False) == "."
+    # For that server only: the saved setting is left as it was.
     assert config.get_tool_name_separator() == "-"
 
 
@@ -216,11 +218,6 @@ def test_a_server_without_one_uses_the_saved_separator_but_gui_keeps_dots(tenant
 
     assert server.resolve_tool_name_separator(None, gui=False) == "_"
     assert server.resolve_tool_name_separator(None, gui=True) == "."
-
-
-def test_an_unknown_separator_given_to_a_server_is_refused(tenant_config):
-    with pytest.raises(mysqlsh.Error, match="--toolNameSeparator must be one of"):
-        server.resolve_tool_name_separator("/", gui=False)
 
 
 def test_a_server_refuses_an_unknown_separator_before_serving(tenant_config, monkeypatch):

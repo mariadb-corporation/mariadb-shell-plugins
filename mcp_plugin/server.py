@@ -107,8 +107,7 @@ def start_server(**options) -> None:
         tool_name_separator (str): What separates a tool's group from its
             name, ".", "_" or "-", for this server only: "_" publishes
             db_list_connections instead of db.list_connections. Defaults to
-            the separator set with mcp setup --toolNameSeparator, or to "."
-            with gui, whose client calls the dotted names.
+            the mcp setup --toolNameSeparator setting ("." with gui).
 
     Returns:
         None

@@ -555,11 +555,7 @@ def resolve_tool_name_separator(separator, gui: bool) -> str:
         mysqlsh.Error: If the separator given is not one of them.
     """
     if separator is not None:
-        if separator not in config.TOOL_NAME_SEPARATORS:
-            raise mysqlsh.Error(
-                "--toolNameSeparator must be one of: "
-                f"{' '.join(config.TOOL_NAME_SEPARATORS)}."
-            )
+        config.check_tool_name_separator(separator, "--toolNameSeparator")
         return separator
     return "." if gui else config.get_tool_name_separator()
 

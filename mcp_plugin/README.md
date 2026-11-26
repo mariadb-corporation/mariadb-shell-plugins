@@ -246,7 +246,8 @@ mariadb-shell -- mcp setup --toolNameSeparator=.   # back to the default
 
 The tools' descriptions and error messages name the other tools by the same
 names. A running server keeps its names until it is restarted, and
-`mcp setup --show` reports the setting.
+`mcp setup --show` reports the saved setting, which a server started with
+`--toolNameSeparator` or `--gui` (see below) does not follow.
 
 One server can use its own separator, overriding the saved one for that server
 process only, for a machine that runs servers for clients that want different names:
