@@ -72,7 +72,11 @@ class _RecordingSession:
     """An open session that records every statement it is asked to run.
 
     It answers SELECT @@sql_mode with its sql_mode - or raises it, when that
-    is an exception - and fails the statements in fail_on.
+    is an exception - and fails the statements in fail_on. It keeps a
+    transaction as the server does: START TRANSACTION opens it, COMMIT and
+    ROLLBACK end it, and in_transaction() answers whether one is open - or
+    raises transaction, when that is an exception. A failed statement
+    leaves it as it was, as a failed INSERT does on the server.
     """
 
     def __init__(self):
@@ -80,6 +84,7 @@ class _RecordingSession:
         self.closed = False
         self.sql_mode = "STRICT_TRANS_TABLES"
         self.fail_on = set()
+        self.transaction = False
 
     def run_sql(self, sql, _params=None):
         self.statements.append(sql)
@@ -87,8 +92,18 @@ class _RecordingSession:
             raise RuntimeError("no")
         if sql == "SELECT @@sql_mode":
             return _ModeResult(self.sql_mode)
+        if sql == "START TRANSACTION":
+            self.transaction = True
+        elif sql in ("COMMIT", "ROLLBACK"):
+            self.transaction = False
 
         return helpers.MultiSetResult([None])
+
+    def in_transaction(self):
+        if isinstance(self.transaction, Exception):
+            raise self.transaction
+
+        return self.transaction
 
     def close(self):
         self.closed = True
@@ -414,6 +429,163 @@ def test_a_script_of_comments_reports_nothing_and_asks_nothing(tools):
     """There is no entry to carry the report."""
     assert tools.script("-- only a note\n", report_sql_mode=True) == []
     assert _ran(tools) == []
+
+
+# --- the transaction a failed script leaves open (issue #125) ----------------
+
+# A script that opens a transaction and fails inside it.
+_FAILING_IN_A_TRANSACTION = "START TRANSACTION; INSERT 1; INSERT 2; INSERT 3;"
+
+_TRANSACTION_KEYS = {"transaction_rolled_back", "transaction_open", "rollback_error"}
+
+
+def _session(tools, fail_on=("INSERT 2",)):
+    """Opens the stub session with a first call, and returns it.
+
+    It fails the statements in fail_on from then on.
+    """
+    tools.script("SELECT 0;")
+    session = tools.opened[0]
+    session.statements.clear()
+    session.fail_on = set(fail_on)
+    return session
+
+
+def test_the_transaction_a_failed_script_opened_is_rolled_back(tools):
+    """Read from the session, not asked for: only the ROLLBACK is sent."""
+    session = _session(tools)
+
+    results = tools.script(_FAILING_IN_A_TRANSACTION)
+
+    assert _ran(tools) == ["START TRANSACTION", "INSERT 1", "INSERT 2", "ROLLBACK"]
+    assert session.transaction is False
+    assert results[-1]["error"] == "no"
+    assert results[-1]["transaction_rolled_back"] is True
+    assert "transaction_rolled_back" not in results[0]
+
+
+def test_without_stop_on_error_it_is_rolled_back_at_the_end(tools):
+    """Every statement is attempted first; the report rides on the last."""
+    _session(tools)
+
+    results = tools.script(_FAILING_IN_A_TRANSACTION, stop_on_error=False)
+
+    assert _ran(tools)[-3:] == ["INSERT 2", "INSERT 3", "ROLLBACK"]
+    assert "error" not in results[-1]
+    assert results[-1]["transaction_rolled_back"] is True
+
+
+def test_a_failure_outside_a_transaction_rolls_nothing_back(tools):
+    """The transaction the script opens after the failure is left open.
+
+    The script means to finish it in a later call; the failure had nothing
+    to do with it.
+    """
+    session = _session(tools, fail_on=("DROP TABLE missing",))
+
+    results = tools.script(
+        "DROP TABLE missing; START TRANSACTION; INSERT 1;", stop_on_error=False
+    )
+
+    assert "ROLLBACK" not in _ran(tools)
+    assert session.transaction is True
+    assert results[0]["error"] == "no"
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_a_transaction_opened_after_the_failed_one_ended_is_left_open(tools):
+    """The failure was in a transaction the script itself rolled back."""
+    session = _session(tools)
+
+    results = tools.script(
+        "START TRANSACTION; INSERT 2; ROLLBACK; START TRANSACTION; INSERT 1;",
+        stop_on_error=False,
+    )
+
+    assert _ran(tools).count("ROLLBACK") == 1
+    assert session.transaction is True
+    assert results[1]["error"] == "no"
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_a_script_that_ends_its_transaction_has_nothing_rolled_back(tools):
+    """Its own COMMIT ended it, failure or not: nothing is open after."""
+    _session(tools)
+
+    results = tools.script(
+        "START TRANSACTION; INSERT 1; INSERT 2; COMMIT;", stop_on_error=False
+    )
+
+    assert _ran(tools)[-1] == "COMMIT"
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_the_callers_own_transaction_is_left_open_and_reported(tools):
+    """Opened in an earlier call: the caller may still mean to finish it."""
+    session = _session(tools)
+    tools.script("START TRANSACTION;")
+
+    results = tools.script("INSERT 1; INSERT 2;")
+
+    assert "ROLLBACK" not in _ran(tools)
+    assert session.transaction is True
+    assert results[-1]["transaction_open"] is True
+    assert "transaction_rolled_back" not in results[-1]
+
+
+def test_a_script_that_succeeds_leaves_its_transaction_open(tools):
+    """No failure, nothing to settle: the open transaction is the script's."""
+    session = _session(tools, fail_on=())
+
+    results = tools.script("START TRANSACTION; INSERT 1;")
+
+    assert _ran(tools) == ["START TRANSACTION", "INSERT 1"]
+    assert session.transaction is True
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_a_failed_rollback_is_reported(tools):
+    """As an XA transaction in the ACTIVE state refuses one."""
+    _session(tools, fail_on=("INSERT 2", "ROLLBACK"))
+
+    results = tools.script(_FAILING_IN_A_TRANSACTION)
+
+    assert results[-1]["rollback_error"] == "no"
+    assert "transaction_rolled_back" not in results[-1]
+
+
+def test_a_state_that_cannot_be_read_is_left_as_it_is(tools):
+    """Rolled back only when it is known that the script opened it."""
+    session = _session(tools)
+    session.transaction = RuntimeError("gone")
+
+    results = tools.script("INSERT 1; INSERT 2;")
+
+    assert "ROLLBACK" not in _ran(tools)
+    assert results[-1]["error"] == "no"
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_rollback_on_error_false_leaves_everything_as_it_was(tools):
+    """No rollback, no new keys: the behaviour before #125."""
+    session = _session(tools)
+
+    results = tools.script(_FAILING_IN_A_TRANSACTION, rollback_on_error=False)
+
+    assert _ran(tools) == ["START TRANSACTION", "INSERT 1", "INSERT 2"]
+    assert session.transaction is True
+    assert not _TRANSACTION_KEYS & set(results[-1])
+
+
+def test_the_sql_mode_is_read_after_the_rollback(tools):
+    """Not from inside the transaction that is about to end."""
+    _session(tools)
+
+    results = tools.script(_FAILING_IN_A_TRANSACTION, report_sql_mode=True)
+
+    assert _ran(tools)[-2:] == ["ROLLBACK", "SELECT @@sql_mode"]
+    assert results[-1]["transaction_rolled_back"] is True
+    assert results[-1]["sql_mode"] == "STRICT_TRANS_TABLES"
 
 
 # --- SOURCE directives ---------------------------------------------------------

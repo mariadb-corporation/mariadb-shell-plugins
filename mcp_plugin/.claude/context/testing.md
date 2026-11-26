@@ -187,10 +187,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   Verify isolation by comparing `shell.list_secrets()` on the real store before
   and after a run - it must be identical.
 
-- **`run_tests.py --only "a or b"` silently loses its quoting.** `main()` builds the pytest
-  command as an f-string and runs it with `shell=True`, so a multi-word `-k` expression is
-  re-split by the shell and pytest reports `file or directory not found: or`. Work around
-  it by embedding the quotes (`--only="'a or b'"`), or drive pytest directly:
+- **`run_tests.py --only "a or b"` works as written.** `main()` runs the pytest command
+  with `shell=True` but `shlex.quote`s the pattern, so a multi-word `-k` expression
+  reaches pytest whole. Do NOT embed extra quotes (`--only="'a or b'"`): pytest then
+  gets `'a or b'` as a string literal. To skip the runner, drive pytest directly:
   `MARIADB_SHELL_USER_CONFIG_HOME=<home> <shell> --pym pytest -c mcp_plugin/pytest-coverage.ini
   --no-cov -q mcp_plugin -k "a or b"` with the plugin symlinked into `<home>/plugins`.
   Note that `-k test_db_sql` ALONE selects nothing useful: the sandbox those tests need is

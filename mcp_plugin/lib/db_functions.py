@@ -1821,6 +1821,89 @@ def _abbreviate(text: str, limit: int = 2000) -> str:
     return stripped[:limit] + "... (truncated)"
 
 
+def _in_transaction(session) -> Optional[bool]:
+    """Whether the session has a transaction open.
+
+    By the shell's ClassicSession.in_transaction(), which sends no query
+    after a statement that succeeded (its help says when it does). A
+    transaction is open from START TRANSACTION, or from the first statement
+    on a transactional table under autocommit=0, until COMMIT or ROLLBACK.
+
+    Args:
+        session: The open shell session.
+
+    Returns:
+        True or False, or None when it cannot be read - on a closed or
+        lost session, say. None settles nothing: a transaction is rolled back
+        only when it is known that the script opened it.
+    """
+    try:
+        return bool(session.in_transaction())
+    except (mysqlsh.DBError, mysqlsh.Error, RuntimeError):
+        # A server or connection error, or "Not connected." (a RuntimeError).
+        # Anything else - a shell without in_transaction() - is a bug that
+        # must not quietly switch the rollback off.
+        return None
+
+
+def _settle_transaction(session, open_before: Optional[bool], client) -> dict:
+    """Rolls back the transaction a failed script left open, if it opened it.
+
+    Called once a statement has failed inside a transaction. A statement
+    that fails inside a transaction does not end it: the
+    statements before it stay pending and their locks stay held, on a
+    session that is kept for the next call - where the next DDL would
+    commit them implicitly. So a transaction the script opened is rolled
+    back. One that was already open when the script started belongs to the
+    caller, who opened it in an earlier call and may still finish it; it is
+    left open and reported.
+
+    Args:
+        session: The open shell session the script ran on.
+        open_before: Whether a transaction was open before the script's
+            first statement, None if that could not be read.
+        client: The client's identity, for the log.
+
+    Returns:
+        The keys for the script's last entry: transaction_rolled_back,
+        transaction_open or rollback_error. Empty when nothing is open.
+    """
+    # open_before first: when it is unknown, nothing is asked of a session
+    # that is most likely gone.
+    open_now = None if open_before is None else _in_transaction(session)
+    if open_now is None:
+        general.log_event(
+            "db.execute_sql_script: could not tell whether a transaction "
+            f"is open for {general.describe_client(client)}; left as it is"
+        )
+        return {}
+
+    if not open_now:
+        # Committed or rolled back by the script, implicitly by a DDL, or by
+        # the server itself - a deadlock rolls the whole transaction back.
+        return {}
+
+    if open_before:
+        return {"transaction_open": True}
+
+    try:
+        session.run_sql("ROLLBACK")
+    except Exception as error:  # noqa: BLE001
+        # An XA transaction in the ACTIVE state refuses a plain ROLLBACK.
+        general.log_event(
+            "db.execute_sql_script: could not roll back the transaction a "
+            f"failed script opened for {general.describe_client(client)}: "
+            f"{error}"
+        )
+        return {"rollback_error": str(error)}
+
+    general.log_event(
+        "db.execute_sql_script: rolled back the transaction a failed script "
+        f"opened for {general.describe_client(client)}"
+    )
+    return {"transaction_rolled_back": True}
+
+
 def _is_comment_only(statement: str) -> bool:
     """Whether a split-out statement holds nothing but a line comment.
 
@@ -3651,6 +3734,7 @@ def register_db_tools(server, function_groups=()) -> None:
         report_sql_mode: bool = False,
         output_format: OutputFormat = "json",
         source_dir: Optional[str] = None,
+        rollback_on_error: bool = True,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -3699,6 +3783,12 @@ def register_db_tools(server, function_groups=()) -> None:
             source_dir: The folder relative SOURCE paths of an inline
                 sql_script are taken from. Must be within the allowed
                 directories. Not with file_path, whose own folder is used.
+            rollback_on_error: True (the default) rolls back a transaction
+                the script opened when one of its statements fails. False
+                leaves it open, for a caller that manages its transactions
+                itself. Finding out after a failure clears the session's
+                warnings, so with stop_on_error false a SHOW WARNINGS right
+                after a failed statement shows none unless this is false.
 
         Returns:
             A list with one entry per statement that ran: its
@@ -3713,10 +3803,18 @@ def register_db_tools(server, function_groups=()) -> None:
 
             IMPORTANT: a failing statement does NOT raise. Its entry carries
             error (the message) and statement (the text that failed) instead
-            of result sets, so check every entry for an error key. Nothing
-            is rolled back: the statements that already ran have taken
-            effect. With stop_on_error true the statements after the failure
-            have no entries.
+            of result sets, so check every entry for an error key. With
+            stop_on_error true the statements after the failure have no
+            entries. Statements that ran outside a transaction have taken
+            effect. After a statement fails inside a transaction the script
+            opened (START TRANSACTION, or any statement under autocommit=0),
+            that transaction is rolled back if the script did not end it,
+            and the LAST entry carries
+            transaction_rolled_back: true, or rollback_error when the
+            rollback failed. A transaction that was already open before the
+            script is left open, and the last entry carries
+            transaction_open: true. With rollback_on_error false none of
+            this is done.
 
             session_restarted: true on the FIRST entry means the script ran
             on a newly opened session (the previous one closed for being
@@ -3751,6 +3849,17 @@ def register_db_tools(server, function_groups=()) -> None:
             places = expansion and _place_statements(
                 sql_script, split(sql_script), expansion, statements
             )
+            # Read before the first statement, because only then can a
+            # failure tell the transaction the script opened from one the
+            # caller opened in an earlier call. A reopened session has none.
+            open_before = (
+                rollback_on_error and not restarted and _in_transaction(session)
+            )
+            # Whether a failure left a transaction open - or where that
+            # could not be read, so the settling logs it. A failure outside
+            # one leaves nothing to roll back, even when the script opens a
+            # transaction later on and leaves it open on purpose.
+            failed_in_transaction = False
             results = []
             for position, statement in enumerate(statements):
                 index, source = places[position] if places else (position, None)
@@ -3768,7 +3877,8 @@ def register_db_tools(server, function_groups=()) -> None:
                     result, limited = _run_limited(session, statement, [], limit)
                 except Exception as error:  # noqa: BLE001
                     # Reported rather than raised, because what already ran
-                    # matters: a script is not a transaction, and a caller
+                    # matters: statements outside a transaction have taken
+                    # effect, and a caller
                     # that only sees "it failed" cannot tell how far it got
                     # or which statement to fix.
                     general.log_event(
@@ -3793,6 +3903,14 @@ def register_db_tools(server, function_groups=()) -> None:
                     if source:
                         failure["source"] = source
                     results.append(failure)
+                    # Once known, not asked again: after an error reply the
+                    # shell has to ask the server.
+                    if (
+                        rollback_on_error
+                        and not failed_in_transaction
+                        and _in_transaction(session) is not False
+                    ):
+                        failed_in_transaction = True
 
                     if stop_on_error:
                         break
@@ -3814,6 +3932,19 @@ def register_db_tools(server, function_groups=()) -> None:
                 if source:
                     shaped["source"] = source
                 results.append(shaped)
+                # A transaction the failure was in that the script has since
+                # ended leaves nothing to settle - and one it opens after
+                # that is meant to stay open. Read from this statement's
+                # reply, no query.
+                if failed_in_transaction and _in_transaction(session) is False:
+                    failed_in_transaction = False
+
+            # Settled before sql_mode is read, so that read does not run
+            # inside the transaction about to be rolled back.
+            if failed_in_transaction:
+                results[-1].update(
+                    _settle_transaction(session, open_before, client)
+                )
 
             if report_sql_mode and results:
                 results[-1]["ansi_quotes"] = ansi_quotes

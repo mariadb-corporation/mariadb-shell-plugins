@@ -677,6 +677,10 @@ class TableSession:
 
         return MultiSetResult([([self.column], [[value] for value in rows])])
 
+    def in_transaction(self):
+        """Never: it answers SELECTs, which open none under autocommit."""
+        return False
+
     def close(self):
         pass
 

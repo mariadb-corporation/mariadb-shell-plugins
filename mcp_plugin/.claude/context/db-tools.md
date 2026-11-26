@@ -89,6 +89,67 @@ handling are in [connections.md](connections.md).
   way (`2026-01-01 00:00:00.000` for DATETIME(3), `10:20:30.50` for TIME(2)),
   not with `str()` (`...:30.500000`), so a column has one form. DATE stays
   `str()`, which is already the server's form.
+- **A transaction a failed script opened is rolled back** (2026-11-23, issue
+  #125, branch `fix/issue-125-script-rollback`). A statement that fails
+  inside a transaction does not end it, and the session is kept for the next
+  call, so `START TRANSACTION; INSERT ...; <failing INSERT>` used to leave
+  the first insert pending and its locks held until the idle timeout - and a
+  later DDL on the connection would commit it implicitly. Reproduced on
+  13.1.1. Now `db.execute_sql_script(rollback_on_error=True)`:
+  - **The state comes from `session.in_transaction()`**, a shell API added
+    for this (mariadb-shell PR #157, `ClassicSession.inTransaction()`).
+    After a statement that SUCCEEDED it reads the `SERVER_STATUS_IN_TRANS`
+    flag of the reply, no query; after an ERROR reply (no status in it) it
+    sends `DO 0` and reads the flag of ITS reply (not `SELECT
+    @@in_transaction`, which MySQL servers do not have; `DO 0` touches no
+    table, so it opens nothing itself), since a failed first statement under
+    autocommit=0 opens a transaction the flags cannot show (measured by the
+    shell session), and a deadlock has ended one. A lost connection raises
+    (-> None here). **User's call, after review:** the first version of this
+    fix sent `SELECT @@in_transaction` before EVERY script, which cost a
+    round trip and replaced the session's diagnostics, so a script opening
+    with `SHOW WARNINGS`/`FOUND_ROWS()`/`ROW_COUNT()` about the previous call
+    saw the probe's. Left: after a failed call the next read does query, so
+    a failed statement's warnings/errors are gone for a later `SHOW
+    WARNINGS` - rollback_on_error=False avoids even that.
+  - Read once before the first statement (`open_before`; a just-reopened
+    session has none) and after each failure. Only a failure INSIDE a
+    transaction leads to settling (**user's call**: with
+    `stop_on_error=False`, `DROP TABLE missing; START TRANSACTION; ...`
+    leaves the script's later transaction open on purpose). Likewise once a
+    later statement SUCCEEDS with no transaction open (the script ended the
+    failed one itself), the failure is forgotten, so `START TRANSACTION;
+    <fail>; ROLLBACK; START TRANSACTION; ...` keeps its second one open
+    (read from that statement's reply, no query).
+  - `_settle_transaction` after the loop: open now and not before:
+    `ROLLBACK`, `transaction_rolled_back: true` on the LAST entry. Open
+    before too: the CALLER's (opened in an earlier call, e.g. the extension's
+    editor), left alone, `transaction_open: true` - **user's call**, rolling
+    back any open one would throw away deliberate work. Not open: nothing.
+    ROLLBACK refused (XA ACTIVE): `rollback_error`. A state that cannot be
+    read (None: closed or lost session - `mysqlsh.DBError`/`mysqlsh.Error`,
+    and "Not connected.", which the shell raises as a RuntimeError) rolls
+    back nothing and is logged. Any OTHER exception is raised: a shell or
+    stub without `in_transaction()` must not quietly switch the fix off
+    (`helpers.TableSession` answers False).
+  - Known edge, left: a script that COMMITs the caller's transaction and
+    opens its own, then fails, has it reported as the caller's
+    (`transaction_open`), since only the state before the script is known.
+    `in_transaction()` is right after `run_sql()` even with the rows
+    unfetched (the shell reads the whole reply first).
+  - Under `autocommit=0` even a SELECT on InnoDB opens a transaction
+    (measured), so the script's statements count as opening it.
+  - Settled BEFORE `report_sql_mode`'s read.
+  - `rollback_on_error=False` (**user's request**, for the extension, which
+    may track the state itself): no rollback, no keys - the behaviour before
+    #125. A plugin before this drops the unknown argument.
+  - `db.execute_sql` is unchanged (a single statement under autocommit=0
+    can leave one open too; out of the issue's scope).
+  - Tests: the transaction block of `test_db_script.py` (the recording stub
+    keeps `transaction` and answers `in_transaction()`) and
+    `_transaction_flow` in `test_db_sql.py` against the real server,
+    including `ROW_COUNT()` of the previous call surviving into a script and
+    a failed FIRST statement under autocommit=0. Needs a shell with #157.
 - **MSM SOURCE directives are expanded** by `db.execute_sql_script` (and the
   `sql` tools): see [source-includes.md](source-includes.md).
 

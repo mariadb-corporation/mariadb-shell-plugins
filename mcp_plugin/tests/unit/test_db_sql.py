@@ -448,6 +448,8 @@ async def _db_flow(uri, script_dir):
             },
         )
 
+        await _transaction_flow(call, connection_id, schema)
+
         # db.list_schemas sees the freshly created schema as a user schema, plus
         # the server's own system schemas.
         schemas_result = await call(
@@ -941,6 +943,134 @@ async def _db_flow(uri, script_dir):
             {"connection_id": connection_id, "sql": "SELECT 1"},
         )
         assert reused.is_error is True
+
+
+_TRANSACTION_KEYS = {"transaction_rolled_back", "transaction_open", "rollback_error"}
+
+
+async def _transaction_flow(call, connection_id, schema):
+    """What a failed script does with the transaction it leaves (issue #125).
+
+    Against a real server, because what matters is the server's state after
+    the call: @@in_transaction and whether the pending row is still there.
+    The session is the one the db tools keep for the next call, which is
+    where a transaction left open used to stay, with its locks.
+    """
+    items = f"`{schema}`.`items`"
+
+    async def script(sql_script, **options):
+        result = await call(
+            "db.execute_sql_script",
+            {"connection_id": connection_id, "sql_script": sql_script, **options},
+        )
+        assert result.is_error is False
+        entries = helpers.tool_payload(result)
+        return entries if isinstance(entries, list) else [entries]
+
+    async def state(item_id):
+        """The session's @@in_transaction, and whether the row is there."""
+        rows = helpers.tool_rows(await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": (
+                    "SELECT @@in_transaction AS in_trx, "
+                    f"(SELECT COUNT(*) FROM {items} WHERE id = {item_id}) AS n"
+                ),
+            },
+        ))
+        return rows[0]["in_trx"], rows[0]["n"]
+
+    async def sql(statement):
+        result = await call(
+            "db.execute_sql", {"connection_id": connection_id, "sql": statement}
+        )
+        assert result.is_error is False
+
+    def failing_insert(item_id):
+        return (
+            f"INSERT INTO {items} (id, name) VALUES ({item_id}, 'a');"
+            f"INSERT INTO {items} (id, name) VALUES ({item_id}, 'b');"
+        )
+
+    # The case of the issue: the script opened the transaction and failed in
+    # it. Rolled back - the first insert is gone and nothing is open.
+    entries = await script("START TRANSACTION;" + failing_insert(95))
+    assert "Duplicate entry" in entries[-1]["error"]
+    assert entries[-1]["transaction_rolled_back"] is True
+    assert await state(95) == (0, 0)
+
+    # Under autocommit=0 the first insert opens the transaction by itself.
+    # Back to autocommit before looking: under autocommit=0 the SELECT that
+    # looks would open a transaction of its own. SET autocommit = 1 commits
+    # whatever is pending, so the row being gone proves the rollback.
+    entries = await script("SET autocommit = 0;" + failing_insert(96))
+    assert entries[-1]["transaction_rolled_back"] is True
+    await sql("SET autocommit = 1")
+    assert await state(96) == (0, 0)
+
+    # Even a FAILED first statement opens one under autocommit=0, which the
+    # status flags of the reply before it cannot show: the session asks the
+    # server after an error. 91 is committed first, so the insert collides.
+    await sql(f"INSERT INTO {items} (id, name) VALUES (91, 'a')")
+    entries = await script(
+        f"SET autocommit = 0; INSERT INTO {items} (id, name) VALUES (91, 'b');"
+    )
+    assert "Duplicate entry" in entries[-1]["error"]
+    assert entries[-1]["transaction_rolled_back"] is True
+    await sql("SET autocommit = 1")
+    assert await state(91) == (0, 1)
+
+    # A transaction the caller opened in an earlier call is theirs: left
+    # open, with the insert before the failure still pending in it.
+    await sql("START TRANSACTION")
+    entries = await script(failing_insert(97))
+    assert entries[-1]["transaction_open"] is True
+    assert "transaction_rolled_back" not in entries[-1]
+    assert await state(97) == (1, 1)
+    await sql("ROLLBACK")
+    assert await state(97) == (0, 0)
+
+    # A script that ends its own transaction leaves nothing to settle, even
+    # with a failure inside it: its COMMIT kept the first insert.
+    entries = await script(
+        "START TRANSACTION;" + failing_insert(98) + "COMMIT;",
+        stop_on_error=False,
+    )
+    # START TRANSACTION, the insert, the failing insert, COMMIT.
+    assert "error" in entries[2]
+    assert "error" not in entries[3]
+    assert not _TRANSACTION_KEYS & set(entries[-1])
+    assert await state(98) == (0, 1)
+
+    # With stop_on_error false, a failure outside a transaction rolls back
+    # nothing: the transaction the script opens after it is meant to stay.
+    entries = await script(
+        f"DROP TABLE `{schema}`.`not_there`;"
+        f"START TRANSACTION; INSERT INTO {items} (id, name) VALUES (92, 'a');",
+        stop_on_error=False,
+    )
+    assert "error" in entries[0]
+    assert not _TRANSACTION_KEYS & set(entries[-1])
+    assert await state(92) == (1, 1)
+    await sql("ROLLBACK")
+
+    # The state is read from the session, not asked for with a query, so a
+    # script still sees the diagnostics of the call before it.
+    await sql(f"INSERT INTO {items} (id, name) VALUES (93, 'a'), (94, 'b')")
+    entries = await script("SELECT ROW_COUNT() AS n;")
+    assert helpers.result_set(entries[0])["rows"] == [{"n": 2}]
+
+    # rollback_on_error false: as before the fix, the transaction stays open.
+    entries = await script(
+        "START TRANSACTION;" + failing_insert(99), rollback_on_error=False
+    )
+    assert "error" in entries[-1]
+    assert not _TRANSACTION_KEYS & set(entries[-1])
+    assert await state(99) == (1, 1)
+    await sql("ROLLBACK")
+
+    await sql(f"DELETE FROM {items} WHERE id >= 90")
 
 
 async def _source_flow(uri, script_dir):
