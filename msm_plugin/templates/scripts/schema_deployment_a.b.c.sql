@@ -28,8 +28,7 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
 -- CREATE SCHEMA statement
 -- #############################################################################
 
-CREATE SCHEMA IF NOT EXISTS ${schema_identifier}
-    DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+${section_110_database_schema_creation}
 
 USE ${schema_identifier};
 

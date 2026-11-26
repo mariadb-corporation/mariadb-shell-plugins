@@ -487,8 +487,9 @@ def prepare_release(**kwargs) -> list[str]:
                 )
             allow_to_stay_on_same_version = True
     elif next_version is None:
-        ValueError("No next_version specified.")
+        raise ValueError("No next_version specified.")
 
+    warnings = []
     files_for_release = lib.management.prepare_release(
         schema_project_path=schema_project_path,
         version=version,
@@ -496,6 +497,7 @@ def prepare_release(**kwargs) -> list[str]:
         allow_to_stay_on_same_version=allow_to_stay_on_same_version,
         overwrite_existing=overwrite_existing,
         lsp_path=kwargs.get("lsp_path"),
+        warnings=warnings,
     )
 
     if lib.core.get_interactive_default():
@@ -503,6 +505,8 @@ def prepare_release(**kwargs) -> list[str]:
             "The following file(s) have been prepared for release:\n"
             + "\n".join(files_for_release)
         )
+        for warning in warnings:
+            print(f"WARNING: {warning}")
     else:
         return files_for_release
 

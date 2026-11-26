@@ -322,6 +322,59 @@ def same_name(a, b) -> bool:
     return isinstance(a, str) and isinstance(b, str) and a.lower() == b.lower()
 
 
+# MySQL 8's utf8mb4 collations on UCA 9.0.0 (`utf8mb4_0900_ai_ci`,
+# `utf8mb4_de_pb_0900_ai_ci`, ...). MariaDB accepts them from 11.4.5 only, and
+# refuses them before, the 10.11 the MariaDB Shell supports among them.
+MYSQL_COLLATION_MARKER = "_0900_"
+
+# The MariaDB collation that sorts and compares exactly as each generic one,
+# from 10.10 on: the same weights for every character of the BMP and NO PAD,
+# checked on 13.1.1. The language-specific ones have a
+# utf8mb4_uca1400_<language>_nopad_* counterpart instead.
+_MARIADB_COLLATIONS = {
+    "utf8mb4_0900_ai_ci": "utf8mb4_uca1400_nopad_ai_ci",
+    "utf8mb4_0900_as_ci": "utf8mb4_uca1400_nopad_as_ci",
+    "utf8mb4_0900_as_cs": "utf8mb4_uca1400_nopad_as_cs",
+    "utf8mb4_0900_bin": "utf8mb4_nopad_bin",
+}
+
+
+def mysql_collation_warnings(schema_document: dict) -> list:
+    """Warnings about the MySQL-only collations an msm-schema/1 snapshot's
+    schema, tables and columns name, as the language server read them: a
+    deployment of such a script fails on MariaDB before 11.4.5.
+
+    Returns:
+        One message per place, each naming the MariaDB collation to use
+        where there is one; none where every collation is MariaDB's.
+    """
+
+    places = [("The schema", (schema_document.get("options") or {}).get("collation"))]
+    for table in schema_document.get("tables", []):
+        name = table.get("name")
+        places.append((f"Table `{name}`", (table.get("options") or {}).get("collation")))
+        places += [
+            (f"Column `{name}`.`{column.get('name')}`", column.get("collation"))
+            for column in table.get("columns", [])
+        ]
+
+    found = []
+    for where, collation in places:
+        lowered = collation.lower() if isinstance(collation, str) else ""
+        if MYSQL_COLLATION_MARKER not in lowered:
+            continue
+        replacement = _MARIADB_COLLATIONS.get(lowered)
+        instead = (
+            f"use {replacement}, which sorts and compares the same"
+            if replacement else "use the utf8mb4_uca1400_*_nopad_* collation of its language"
+        )
+        found.append(
+            f"{where} uses {collation}, a MySQL collation that MariaDB before 11.4.5 "
+            f"refuses; {instead}."
+        )
+    return found
+
+
 def schema_document_from_outline(
     outline: dict,
     schema_name: str,

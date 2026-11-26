@@ -741,6 +741,8 @@ def test_the_snapshot_is_made_from_the_create_statements(project):
     result = modeling.update_schema_definition(project)
     assert result["tables"] == 3
     assert result["changed_diagrams"] == []
+    # A new project names MariaDB's collations only
+    assert result["warnings"] == []
 
     rows = modeling.read_diagram_rows(project)
     assert [row["name"] for row in rows] == ["schema_definition", "Main"]
@@ -771,6 +773,58 @@ def test_the_snapshot_is_made_from_the_create_statements(project):
         management.get_schema_development_file_path(project),
     )
     assert modeling.list_diagrams(project)["schema_definition"]["current"] is False
+
+
+def test_mysql_collations_are_warned_about_with_their_mariadb_counterpart():
+    snapshot = {
+        "options": {"charset": "utf8mb4", "collation": "utf8mb4_0900_ai_ci"},
+        "tables": [
+            {"name": "t", "options": {"collation": "UTF8MB4_0900_AS_CS"}, "columns": [
+                {"name": "a", "collation": "utf8mb4_de_pb_0900_ai_ci"},
+                {"name": "b", "collation": "utf8mb4_0900_bin"},
+                {"name": "c", "collation": "utf8mb4_uca1400_nopad_ai_ci"},
+                {"name": "d", "collation": None},
+            ]},
+            {"name": "u", "options": {}, "columns": []},
+        ],
+    }
+    assert diagrams.mysql_collation_warnings(snapshot) == [
+        "The schema uses utf8mb4_0900_ai_ci, a MySQL collation that MariaDB before 11.4.5 "
+        "refuses; use utf8mb4_uca1400_nopad_ai_ci, which sorts and compares the same.",
+        "Table `t` uses UTF8MB4_0900_AS_CS, a MySQL collation that MariaDB before 11.4.5 "
+        "refuses; use utf8mb4_uca1400_nopad_as_cs, which sorts and compares the same.",
+        "Column `t`.`a` uses utf8mb4_de_pb_0900_ai_ci, a MySQL collation that MariaDB before "
+        "11.4.5 refuses; use the utf8mb4_uca1400_*_nopad_* collation of its language.",
+        "Column `t`.`b` uses utf8mb4_0900_bin, a MySQL collation that MariaDB before 11.4.5 "
+        "refuses; use utf8mb4_nopad_bin, which sorts and compares the same.",
+    ]
+    assert diagrams.mysql_collation_warnings({"tables": []}) == []
+
+
+@needs_lsp
+def test_a_release_of_a_script_with_a_mysql_collation_is_warned_about(project):
+    # The collation as the language server reads it from Section 110, as a
+    # project made before MariaDB's counterpart was the template's has it
+    dev_file = management.get_schema_development_file_path(project)
+    sections = management.get_script_sections(dev_script(project))
+    management.set_section_sql_content(
+        "110",
+        sections["110"]["sql_content"].replace(
+            "utf8mb4_uca1400_nopad_ai_ci", "utf8mb4_0900_ai_ci"
+        ),
+        dev_file,
+    )
+    result = modeling.update_schema_definition(project)
+    assert result["warnings"] == [
+        "The schema uses utf8mb4_0900_ai_ci, a MySQL collation that MariaDB before 11.4.5 "
+        "refuses; use utf8mb4_uca1400_nopad_ai_ci, which sorts and compares the same."
+    ]
+    # The release makes the snapshot again and hands its warnings on
+    warnings = []
+    management.prepare_release(
+        schema_project_path=project, version="1.0.0", next_version="1.1.0", warnings=warnings
+    )
+    assert warnings == result["warnings"]
 
 
 @needs_lsp
