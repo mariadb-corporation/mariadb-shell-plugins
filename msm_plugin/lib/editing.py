@@ -466,8 +466,11 @@ def online_alter_settings_text(text: Optional[str], edits: list) -> Optional[str
     setting = online_alter.with_tables(setting, change)
     if setting is None:
         return None
+    # Written as the current format: a file of a format this msm does not
+    # read is refused rather than rewritten as format 1
+    management.check_project_format(settings)
     settings[online_alter.SETTING] = setting
-    return json.dumps(settings, indent=4)
+    return management.project_settings_text(settings)
 
 
 # -----------------------------------------------------------------------------

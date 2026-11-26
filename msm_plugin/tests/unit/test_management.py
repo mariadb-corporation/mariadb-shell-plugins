@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+import msm_plugin.tests.unit.helpers as helpers
 from msm_plugin.management import *
 
 SCHEMA_NAME = "my_schema"
@@ -183,16 +184,18 @@ def test_create_new_project_folder():
         assert os.path.exists(os.path.join(project_path, "README.md"))
         assert os.path.exists(os.path.join(project_path, "msm.project.json"))
 
-        project_settings = get_project_settings(schema_project_path=project_path)
-        assert project_settings.get("copyrightHolder", None) == COPYRIGHT_HOLDER
+        # The file states its format first and holds the notices as a list
+        # only, without the single holder format's keys
+        stored = helpers.read_project_settings_file(project_path)
+        assert next(iter(stored)) == "formatVersion"
+        assert stored["formatVersion"] == lib.management.PROJECT_FORMAT_VERSION
+        assert "copyrightHolder" not in stored and "yearOfCreation" not in stored
 
-        # The notices are held as a list, with the single holder field kept as a
-        # mirror of the first entry for readers of the earlier format.
-        year_of_creation = project_settings.get("yearOfCreation")
+        project_settings = get_project_settings(schema_project_path=project_path)
         assert project_settings.get("copyrights") == [
             {
                 "holder": COPYRIGHT_HOLDER,
-                "yearOfCreation": year_of_creation,
+                "yearOfCreation": lib.management.current_year(),
                 "tracksUpdates": True,
             }
         ]
@@ -204,7 +207,7 @@ def test_create_new_project_folder():
         assert readme.count("Copyright") == 1
         assert "MariaDB plc" not in readme
         assert readme.rstrip().endswith(
-            f"Copyright (c) {year_of_creation}, {COPYRIGHT_HOLDER}"
+            f"Copyright (c) {lib.management.current_year()}, {COPYRIGHT_HOLDER}"
         )
 
         project_info = get_project_information(schema_project_path=project_path)
@@ -444,7 +447,6 @@ def test_create_new_project_folder_with_a_year_of_creation(tmp_path):
             "yearOfLastUpdate": this_year,
         }
     ]
-    assert project_settings["yearOfCreation"] == earlier
     readme = Path(os.path.join(project_path, "README.md")).read_text()
     assert readme.rstrip().endswith(f"Copyright (c) {earlier}, {this_year}, ACME Corp.")
     dev_script = Path(
@@ -605,28 +607,82 @@ def test_a_write_inside_a_write_moves_the_years_once(tmp_path, monkeypatch):
     assert calls == [project_path]
 
 
+def _single_holder_project(tmp_path, year_of_creation: str) -> str:
+    """A project whose msm.project.json is of the single holder format, as an
+    msm before the `copyrights` list and the format version wrote it."""
+    project_path = _settings_project(tmp_path)
+
+    def to_single_holder(settings):
+        del settings["copyrights"], settings["formatVersion"]
+        settings["copyrightHolder"] = "ACME Corp."
+        settings["yearOfCreation"] = year_of_creation
+
+    helpers.edit_project_settings_file(project_path, to_single_holder)
+    return project_path
+
+
+def _assert_current_format(stored: dict) -> None:
+    assert stored["formatVersion"] == lib.management.PROJECT_FORMAT_VERSION
+    assert "copyrightHolder" not in stored and "yearOfCreation" not in stored
+
+
 def test_a_legacy_project_gets_its_copyrights_list_written(tmp_path, monkeypatch):
-    temp_dir = str(tmp_path)
-    project_path = create_new_project_folder(
-        schema_name=SCHEMA_NAME, target_path=temp_dir, copyright_holder="ACME Corp."
-    )
-    settings_path = os.path.join(project_path, "msm.project.json")
-    with open(settings_path) as f:
-        raw = json.load(f)
-    del raw["copyrights"]
-    raw["yearOfCreation"] = "2020"
-    with open(settings_path, "w") as f:
-        json.dump(raw, f)
+    project_path = _single_holder_project(tmp_path, "2020")
+
+    # Read as the list alone
+    settings = get_project_settings(schema_project_path=project_path)
+    assert settings["copyrights"] == [
+        {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": True}
+    ]
+    assert "copyrightHolder" not in settings and "yearOfCreation" not in settings
 
     later = str(int(lib.management.current_year()) + 1)
     in_year(monkeypatch, later)
+    settings_path = os.path.join(project_path, "msm.project.json")
     assert lib.management.update_copyright_years(project_path)[0] == settings_path
-    with open(settings_path) as f:
-        raw = json.load(f)
-    assert raw["copyrights"] == [
+    stored = helpers.read_project_settings_file(project_path)
+    assert stored["copyrights"] == [
         {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": True,
          "yearOfLastUpdate": later}
     ]
+    _assert_current_format(stored)
+
+
+def test_a_legacy_project_loses_the_single_holder_keys_on_a_settings_change(tmp_path):
+    project_path = _single_holder_project(tmp_path, lib.management.current_year())
+
+    # Nothing to change: nothing written
+    assert lib.management.set_project_settings(project_path, {}) == []
+    lib.management.set_project_settings(project_path, {"schemaDependencies": ["sakila"]})
+    stored = helpers.read_project_settings_file(project_path)
+    assert stored["schemaDependencies"] == ["sakila"]
+    assert stored["copyrights"] == [
+        {"holder": "ACME Corp.", "yearOfCreation": lib.management.current_year(),
+         "tracksUpdates": True}
+    ]
+    _assert_current_format(stored)
+
+
+@pytest.mark.parametrize("version, message", [
+    (2, "made by a newer MariaDB Shell"),
+    (0, "is not a format version"),
+    ("1", "is not a format version"),
+    (True, "is not a format version"),
+])
+def test_a_project_of_an_unknown_format_is_refused(tmp_path, version, message):
+    project_path = _settings_project(tmp_path)
+    helpers.set_project_setting(project_path, "formatVersion", version)
+    settings_path = Path(project_path, "msm.project.json")
+    before = settings_path.read_text()
+
+    with pytest.raises(ValueError, match=message):
+        get_project_settings(schema_project_path=project_path)
+    # Nothing that writes to the project gets past it
+    with pytest.raises(ValueError, match=message):
+        lib.management.set_project_settings(project_path, {"schemaDependencies": ["sakila"]})
+    with pytest.raises(ValueError, match=message):
+        lib.management.update_copyright_years(project_path)
+    assert settings_path.read_text() == before
 
 
 def test_license_text_holds_every_notice():
@@ -699,7 +755,7 @@ def test_create_new_project_folder_with_multiple_copyrights():
 
         project_settings = get_project_settings(schema_project_path=project_path)
         assert project_settings.get("copyrights") == copyrights
-        assert project_settings.get("copyrightHolder") == "Upstream Inc."
+        assert "copyrightHolder" not in project_settings
 
         # Both notices reach the markdown files
         readme = Path(os.path.join(project_path, "README.md")).read_text()
@@ -1677,8 +1733,9 @@ def _settings_project(tmp_path, license="MIT"):
 @pytest.mark.parametrize("settings, message", [
     ({"schemaName": "other"}, "the project's identity"),
     ({"schemaFileName": "other"}, "the project's identity"),
-    ({"copyrightHolder": "Other"}, "follows `copyrights`"),
-    ({"yearOfCreation": "2020"}, "follows `copyrights`"),
+    ({"copyrightHolder": "Other"}, "replaced by `copyrights`"),
+    ({"yearOfCreation": "2020"}, "replaced by `copyrights`"),
+    ({"formatVersion": 2}, "written by msm"),
     ({"colour": "red"}, "Unknown project setting `colour`"),
     ({"copyrights": []}, "one copyright holder or more"),
     ({"copyrights": [{"yearOfCreation": "2020"}]}, "needs a holder"),
@@ -1742,7 +1799,8 @@ def test_set_years_are_brought_into_the_notices(tmp_path):
     ]})
     assert dev_file in written and os.path.join(project_path, "README.md") in written
     settings = get_project_settings(schema_project_path=project_path)
-    assert (settings["yearOfCreation"], settings["copyrightHolder"]) == ("2020", "ACME Corp.")
+    assert settings["copyrights"] == [
+        {"holder": "ACME Corp.", "yearOfCreation": "2020", "tracksUpdates": False}]
     text = Path(dev_file).read_text()
     assert " * Copyright (c) 2020, ACME Corp.\n" in text
     assert text.count("\n") == lines_before

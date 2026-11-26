@@ -333,7 +333,13 @@ def is_project_folder(project_path) -> bool:
 
 def read_settings(project_path):
     """Returns a project's settings file as stored, or None for a folder that
-    is no project, or whose settings file cannot be read as an object."""
+    is no project, or whose settings file cannot be read as an object.
+
+    Its format is not checked (management.check_project_format): the list
+    shows a project of a newer format too. Its callers read only
+    `schemaName` and `schemaDependencies`, which keep their meaning in every
+    format.
+    """
     try:
         with open(
             os.path.join(project_path, PROJECT_SETTINGS_FILE_NAME), "r",

@@ -418,10 +418,10 @@ def _rename_in(
     warnings += [_note_warning(note, renamed, path) for note in notes]
     written += renamed.values()
 
-    raw = management._read_raw_project_settings(path)
-    raw["schemaName"] = new_name
-    raw["schemaFileName"] = new_file_name
-    written.append(management.write_project_settings(path, raw))
+    renamed_settings = management.get_project_settings(path)
+    renamed_settings["schemaName"] = new_name
+    renamed_settings["schemaFileName"] = new_file_name
+    written.append(management.write_project_settings(path, renamed_settings))
 
     written += _rename_markdown(path, old_name, new_name)
 
