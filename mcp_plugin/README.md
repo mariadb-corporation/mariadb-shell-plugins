@@ -294,7 +294,7 @@ Management (`msm`) plugin:
 | `msm.get_last_released_version` | `get_last_released_version` |
 | `msm.get_last_deployment_version` | `get_last_deployment_version` |
 | `msm.prepare_release` | `prepare_release` |
-| `msm.get_sql_content_from_section` | `get_sql_content_from_section` |
+| `msm.get_section_sql_content` | `get_sql_content_from_section` |
 | `msm.set_section_sql_content` | `set_section_sql_content` |
 | `msm.split_sections` | `split_sections` |
 | `msm.generate_deployment_script` | `generate_deployment_script` |
@@ -386,7 +386,8 @@ purple). `msm.create_project` adds the project it creates, filed and shown as it
 `folder`, `caption` and `color` arguments say; `msm.add_project` adds an
 existing one (and updates the details of one already listed); `msm.update_project`
 moves, captions or colors it, each argument left out keeping what is there and `""`
-clearing it; `msm.remove_project` takes it off the list and leaves the folder alone.
+clearing it (both take the same `folder`, `caption` and `color`, and every project
+tool names the project `schema_project_path`); `msm.remove_project` takes it off the list and leaves the folder alone.
 A project whose folder was moved or deleted stays listed with `exists` false, so it
 can be shown as missing and removed; the listing also gives each project's
 `development_version`. Adding a project goes through the allowed paths
@@ -399,7 +400,7 @@ group and whatever the allowed paths say; links are resolved first, and case is
 folded where the file system ignores it, so neither a link into such a project nor
 `SHOP.msm.project` for a listed `shop.msm.project` gets around it. Only the `--gui` server of the VS Code
 extension offers the `mcp_access` argument of `msm.create_project` and
-`msm.add_project` (and `new_mcp_access` of `msm.update_project`), so an agent can
+`msm.add_project` (and of `msm.update_project`), so an agent can
 never grant itself access. A project added through the extension starts without
 access, one an agent adds or creates with it, and an entry written before the
 setting existed has it. In [multi-tenant mode](#multi-tenant-mode) every user has a

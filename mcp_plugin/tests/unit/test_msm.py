@@ -301,7 +301,7 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
             )
             section_sql = payload(
                 await call(
-                    "msm.get_sql_content_from_section",
+                    "msm.get_section_sql_content",
                     {"file_path": dev_file, "section_id": "140"},
                 )
             )
@@ -587,13 +587,13 @@ def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_te
     ]
 
     moved = _call(
-        tools, "msm.update_project", shop, new_folder="/Archive", new_caption="Old"
+        tools, "msm.update_project", schema_project_path=shop, folder="/Archive", caption="Old"
     )
     assert moved["folder"] == "/Archive"
     assert moved["caption"] == "Old"
     assert moved["color"] == "green"
 
-    assert _call(tools, "msm.remove_project", shop) == shop
+    assert _call(tools, "msm.remove_project", schema_project_path=shop) == shop
     assert _call(tools, "msm.list_projects") == []
     assert os.path.isdir(shop)
 
@@ -669,7 +669,7 @@ def test_a_bad_detail_is_refused_before_anything_is_written(project_lists, allow
     with pytest.raises(ToolError, match="not a color"):
         _call(tools, "msm.add_project", shop, color="teal")
     with pytest.raises(ToolError, match="not in the project list"):
-        _call(tools, "msm.update_project", shop, new_folder="/Shop")
+        _call(tools, "msm.update_project", shop, folder="/Shop")
 
     assert _call(tools, "msm.list_projects") == []
 
@@ -689,14 +689,14 @@ def test_only_a_gui_server_offers_mcp_access(project_lists, gui_mode):
     gui_tools = _msm_tools()
     assert "mcp_access" in _parameters(gui_tools, "msm.create_project")
     assert "mcp_access" in _parameters(gui_tools, "msm.add_project")
-    assert "new_mcp_access" in _parameters(gui_tools, "msm.update_project")
+    assert "mcp_access" in _parameters(gui_tools, "msm.update_project")
     assert "mcp_access:" in gui_tools["msm.add_project"].__doc__
 
     general.set_gui_mode(False)
     tools = _msm_tools()
     assert "mcp_access" not in _parameters(tools, "msm.create_project")
     assert "mcp_access" not in _parameters(tools, "msm.add_project")
-    assert "new_mcp_access" not in _parameters(tools, "msm.update_project")
+    assert "mcp_access" not in _parameters(tools, "msm.update_project")
     assert "mcp_access" not in tools["msm.add_project"].__doc__
     assert "{gui_argument_doc}" not in tools["msm.update_project"].__doc__
 
@@ -708,7 +708,7 @@ def test_a_gui_server_adds_projects_without_mcp_access(project_lists, gui_mode, 
 
     assert _call(tools, "msm.add_project", shop)["mcp_access"] is False
     assert _call(tools, "msm.add_project", notes, mcp_access=True)["mcp_access"] is True
-    assert _call(tools, "msm.update_project", notes, new_mcp_access=False)[
+    assert _call(tools, "msm.update_project", notes, mcp_access=False)[
         "mcp_access"
     ] is False
 
@@ -757,9 +757,9 @@ def test_an_agent_cannot_reach_a_project_kept_from_it(project_lists, allowed_tem
         ("msm.get_project_information", (), {"schema_project_path": shop}),
         ("msm.get_released_versions", (), {"schema_project_path": shop}),
         ("msm.prepare_release", ("0.0.1",), {"schema_project_path": shop}),
-        ("msm.get_sql_content_from_section", (os.path.join(shop, "x.sql"), "100"), {}),
+        ("msm.get_section_sql_content", (os.path.join(shop, "x.sql"), "100"), {}),
         ("msm.add_project", (shop,), {"caption": "mine now"}),
-        ("msm.update_project", (shop,), {"new_folder": "/Taken"}),
+        ("msm.update_project", (shop,), {"folder": "/Taken"}),
         ("msm.remove_project", (shop,), {}),
     ]
     for name, args, kwargs in refused:
@@ -892,7 +892,7 @@ def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):
     shop = _make_project(str(tmp_path), "shop")
     project_lists.add_project(shop, mcp_access=False)
 
-    assert _call(tools, "msm.update_project", shop, new_caption="Mine")["caption"] == "Mine"
+    assert _call(tools, "msm.update_project", shop, caption="Mine")["caption"] == "Mine"
     assert _call(tools, "msm.remove_project", shop) == shop
 
 
@@ -1042,12 +1042,13 @@ def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
     with pytest.raises(Exception, match="format"):
         _call(tools, "msm.set_schema_diagram", {**_diagram(), "format": "mwb-diagram/1"}, path)
 
-    _call(tools, "msm.rename_schema_diagram", "Main", "Orders", path)
+    _call(tools, "msm.rename_schema_diagram", diagram="Main", new_name="Orders",
+          schema_project_path=path)
     assert [row["name"] for row in _call(tools, "msm.get_schema_diagrams", path)] == ["Orders"]
     with pytest.raises(Exception, match="no diagram `Main`"):
         _call(tools, "msm.rename_schema_diagram", "Main", "Other", path)
 
-    _call(tools, "msm.remove_schema_diagram", "Orders", path)
+    _call(tools, "msm.remove_schema_diagram", diagram="Orders", schema_project_path=path)
     assert _call(tools, "msm.get_schema_diagrams", path) == []
 
 
@@ -1073,7 +1074,8 @@ def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir
     tools = _msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
 
-    result = _call(tools, "msm.create_schema_diagram", "Main", ["customer"], path)
+    result = _call(tools, "msm.create_schema_diagram", diagram="Main", tables=["customer"],
+                   schema_project_path=path)
     assert (result["figures"], result["connections"]) == (1, 0)
     result = _call(tools, "msm.layout_schema_diagram", "Main", ["orders"], True, path)
     assert (result["added"], result["placed"], result["connections_added"]) == (
@@ -1083,7 +1085,8 @@ def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir
     figures = {figure["table"]: figure for figure in document["figures"]}
     assert figures["customer"]["top"] < figures["orders"]["top"]
 
-    result = _call(tools, "msm.layout_schema_diagram", "Main", None, False, path)
+    result = _call(tools, "msm.layout_schema_diagram", diagram="Main", keep_placed=False,
+                   schema_project_path=path)
     assert sorted(result["placed"]) == ["customer", "orders"]
 
 

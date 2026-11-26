@@ -1061,7 +1061,7 @@ def test_each_user_has_a_project_list_of_their_own(multi_tenant, project_lists, 
     shop = _make_project(tmp_path, "shop")
     tools = _msm_tools()
 
-    added = asyncio.run(tools["msm.add_project"](_context(ada), shop, folder="/Mine"))
+    added = asyncio.run(tools["msm.add_project"](_context(ada), schema_project_path=shop, folder="/Mine"))
     assert added["folder"] == "/Mine"
     assert asyncio.run(tools["msm.list_projects"](_context(ada))) == [
         {**added, "development_version": None, "last_released_version": None}

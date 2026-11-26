@@ -235,7 +235,7 @@ marked as such. Built across mariadb-shell-plugins #95, lsp-server #33/#34
   (msm's defaults, on); checked with `read_setting` before anything is
   written. There is no per-table or general-level setter: the user wants one
   tool for msm.project.json, not one per setting.
-  `msm.get_online_alter_defaults()` (shell `msm.getOnlineAlterDefaults`,
+  `msm.get_online_alter_defaults()` (shell `msm.get.onlineAlterDefaults`,
   served with msm, no project) gives the same `defaults`, for a live
   table's tab, so the extension keeps no copy of them.
 - **One ALTER TABLE per table and Save** (`msm.edit_schema`): each ALTER is
