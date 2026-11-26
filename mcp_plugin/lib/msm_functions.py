@@ -356,9 +356,6 @@ def register_msm_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Changes how a listed schema project is filed and shown.
 
-        Only the details given change: a detail left out (null) keeps its
-        value, and an empty string clears a caption or a color.
-
         Args:
             schema_project_path: The project, as msm.list_projects reports it
                 (its project_path). It does not have to exist on disk any
