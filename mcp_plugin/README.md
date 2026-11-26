@@ -248,6 +248,16 @@ The tools' descriptions and error messages name the other tools by the same
 names. A running server keeps its names until it is restarted, and
 `mcp setup --show` reports the setting.
 
+One server can use its own separator, overriding the saved one for that server
+process only, for a machine that runs servers for clients that want different names:
+
+```bash
+mariadb-shell -- mcp start-server --transport=stdio --toolNameSeparator=_
+```
+
+A `--gui` server, which serves the MariaDB VS Code extension, publishes the
+dotted names whatever `mcp setup` saved, unless it is given `--toolNameSeparator`.
+
 The server also answers `initialize` with **instructions**, which clients such
 as Claude Code put in the system prompt of every session. They tell the agent
 to run SQL through `db.connect`, `db.execute_sql` and `db.execute_sql_script`,
