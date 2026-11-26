@@ -1230,6 +1230,65 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
         assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
 
 
+def test_the_schema_is_created_with_the_options_of_the_deployed_version(
+    sandbox_session, temp_dir
+):
+    # Section 110 of the version deployed creates the schema: a new project
+    # with MariaDB's counterpart of MySQL's utf8mb4_0900_ai_ci, and the
+    # project's own options in every later deployment script too, not only
+    # in the first release's (the deployment template once had its own 110)
+    schema_name = "msm_schema_options"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = lib.management.get_schema_development_file_path(project)
+
+    def schema_collation():
+        return lib.core.MsmDbExec(
+            "SELECT DEFAULT_COLLATION_NAME AS c FROM information_schema.SCHEMATA "
+            "WHERE SCHEMA_NAME = ?"
+        ).exec(sandbox_session, [schema_name]).first["c"]
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="110",
+        sql_content=(
+            f"CREATE SCHEMA IF NOT EXISTS `{schema_name}`\n"
+            "    DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_as_cs;\n\n"
+            f"USE `{schema_name}`;"
+        ),
+    )
+    prepare_release(schema_project_path=project, version="1.1.0", next_version="1.2.0")
+    for version in ("1.0.0", "1.1.0"):
+        generate_deployment_script(schema_project_path=project, version=version)
+
+    with fresh_schema(sandbox_session, schema_name):
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert schema_collation() == "utf8mb4_uca1400_nopad_ai_ci"
+        # An update leaves the existing schema's options as they are
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert schema_collation() == "utf8mb4_uca1400_nopad_ai_ci"
+
+    with fresh_schema(sandbox_session, schema_name):
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert schema_collation() == "utf8mb4_uca1400_as_cs"
+
+
+def test_no_script_template_names_a_mysql_collation():
+    templates = Path(lib.management.DEVELOPMENT_SCRIPT_TEMPLATE).parent
+    for template in templates.glob("*.sql"):
+        assert lib.diagrams.MYSQL_COLLATION_MARKER not in template.read_text(), template.name
+
+
 def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir):
     # Every update script's Section 260 runs on every deployment of a later
     # version, before the target's Section 150. A procedure 1.1.0 removes and

@@ -636,7 +636,10 @@ def register_msm_tools(server, function_groups=()) -> None:
 
         Returns:
             The counts of tables, views, routines, triggers, events and
-            sequences, the diagrams that changed and the files written.
+            sequences, the diagrams that changed, the files written and
+            warnings: a MySQL collation (utf8mb4_0900_ai_ci and the like)
+            the schema, a table or a column uses, which MariaDB before
+            11.4.5 refuses, with the MariaDB collation to use instead.
         """
         return await _in_project(
             ctx,

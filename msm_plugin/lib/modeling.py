@@ -481,13 +481,15 @@ def update_schema_definition(schema_project_path: str, lsp_path: str = None) -> 
 
     Returns:
         {tables, views, routines, triggers, events, sequences} counts, the
-        diagrams that changed and the files written.
+        diagrams that changed, the files written and warnings about what
+        the schema should not keep (diagrams.mysql_collation_warnings).
     """
     project = _Project.load(schema_project_path)
     document, rows, changed = _replace_snapshot(project, _rows(project), lsp_path)
     result = {kind: len(document[kind]) for kind in diagrams.SCHEMA_OBJECT_KINDS}
     result["changed_diagrams"] = changed
     result["files"] = _write(project, rows)
+    result["warnings"] = diagrams.mysql_collation_warnings(document)
     return result
 
 
