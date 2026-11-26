@@ -104,6 +104,10 @@ def start_server(**options) -> None:
             its own address, whatever its headers say. A network of every
             address is refused. Only used by the streamable-http transport.
             Defaults to none.
+        tool_name_separator (str): What separates a tool's group from its
+            name, ".", "_" or "-", for this server only: "_" publishes
+            db_list_connections instead of db.list_connections. Defaults to
+            the mcp setup --toolNameSeparator setting ("." with gui).
 
     Returns:
         None
@@ -142,4 +146,5 @@ def start_server(**options) -> None:
         # A list, or as the CLI passes it a comma-separated string, both of
         # which lib.server.start parses and checks.
         trusted_proxies=options.get("trusted_proxies", None),
+        tool_name_separator=options.get("tool_name_separator", None),
     )

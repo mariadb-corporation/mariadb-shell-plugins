@@ -200,3 +200,30 @@ def test_mcp_setup_sets_the_separator(tenant_config, capsys):
 
     with pytest.raises(mysqlsh.Error, match="must be one of"):
         setup_cli.apply({"tool_name_separator": "/"})
+
+
+def test_a_server_given_a_separator_uses_it_whatever_is_saved(tenant_config):
+    setup_cli.apply({"tool_name_separator": "-"})
+
+    assert server.resolve_tool_name_separator("_", gui=False) == "_"
+    assert server.resolve_tool_name_separator("_", gui=True) == "_"
+    # The dotted default, given explicitly, wins over a saved separator too.
+    assert server.resolve_tool_name_separator(".", gui=False) == "."
+    # For that server only: the saved setting is left as it was.
+    assert config.get_tool_name_separator() == "-"
+
+
+def test_a_server_without_one_uses_the_saved_separator_but_gui_keeps_dots(tenant_config):
+    setup_cli.apply({"tool_name_separator": "_"})
+
+    assert server.resolve_tool_name_separator(None, gui=False) == "_"
+    assert server.resolve_tool_name_separator(None, gui=True) == "."
+
+
+def test_a_server_refuses_an_unknown_separator_before_serving(tenant_config, monkeypatch):
+    def serve(_mcp_server):
+        raise AssertionError("served")
+
+    monkeypatch.setattr(server, "_serve_stdio", serve)
+    with pytest.raises(mysqlsh.Error, match="--toolNameSeparator must be one of"):
+        server.start("127.0.0.1", 0, "stdio", ["db"], tool_name_separator="/")

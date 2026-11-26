@@ -1442,16 +1442,27 @@ def get_tool_name_separator() -> str:
     return separator if separator in TOOL_NAME_SEPARATORS else "."
 
 
+def check_tool_name_separator(separator: str, what: str = "The tool name separator") -> None:
+    """Refuses a separator that is not one of TOOL_NAME_SEPARATORS.
+
+    Args:
+        separator (str): The separator to check.
+        what (str): How the error names it, such as the option it came from.
+
+    Raises:
+        mysqlsh.Error: If the separator is not one of TOOL_NAME_SEPARATORS.
+    """
+    if separator not in TOOL_NAME_SEPARATORS:
+        raise mysqlsh.Error(f"{what} must be one of: {' '.join(TOOL_NAME_SEPARATORS)}.")
+
+
 def set_tool_name_separator(separator: str) -> None:
     """Persists what separates a tool's group from its name.
 
     Raises:
         mysqlsh.Error: If the separator is not one of TOOL_NAME_SEPARATORS.
     """
-    if separator not in TOOL_NAME_SEPARATORS:
-        raise mysqlsh.Error(
-            f"The tool name separator must be one of: {' '.join(TOOL_NAME_SEPARATORS)}."
-        )
+    check_tool_name_separator(separator)
 
     settings = get_settings()
     if separator == ".":

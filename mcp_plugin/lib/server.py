@@ -318,6 +318,7 @@ def start(
     max_connections=None,
     public_url=None,
     trusted_proxies=None,
+    tool_name_separator=None,
 ) -> None:
     """Builds and serves the MCP server using the given transport.
 
@@ -351,6 +352,9 @@ def start(
             only, see :class:`TrustedProxyMiddleware`), as a list or a
             comma-separated string, or None to take every client address from
             the TCP peer.
+        tool_name_separator (str): What separates a tool's group from its
+            name for this server only, or None (see
+            :func:`resolve_tool_name_separator`).
 
     Returns:
         None
@@ -420,6 +424,8 @@ def start(
     if multi_tenant:
         _check_multi_tenant(transport, function_groups, gui)
 
+    tool_name_separator = resolve_tool_name_separator(tool_name_separator, gui)
+
     # Disable interactive mode so the wrapped msm functions return their
     # results instead of prompting for input.
     mysqlsh.globals.shell.options.useWizards = False
@@ -455,7 +461,7 @@ def start(
     mcp_server = build_mcp_server(
         function_groups=function_groups,
         auth=auth,
-        tool_name_separator=config.get_tool_name_separator(),
+        tool_name_separator=tool_name_separator,
     )
 
     if transport == general.TRANSPORT_STDIO:
@@ -528,6 +534,30 @@ def _default_extension_groups(available) -> list:
             )
 
     return served
+
+
+def resolve_tool_name_separator(separator, gui: bool) -> str:
+    """What separates a tool's group from its name on the server being started.
+
+    A separator given to the server wins, for that server process only. Without
+    one a --gui server keeps the dotted names, whatever mcp setup
+    --toolNameSeparator saved: the MariaDB VS Code extension, its only client,
+    calls them by those names. Any other server uses the saved setting.
+
+    Args:
+        separator (str): The separator given to the server, or None.
+        gui (bool): Whether the server serves the MariaDB VS Code extension.
+
+    Returns:
+        One of :data:`mcp_plugin.lib.config.TOOL_NAME_SEPARATORS`.
+
+    Raises:
+        mysqlsh.Error: If the separator given is not one of them.
+    """
+    if separator is not None:
+        config.check_tool_name_separator(separator, "--toolNameSeparator")
+        return separator
+    return "." if gui else config.get_tool_name_separator()
 
 
 def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
