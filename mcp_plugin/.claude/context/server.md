@@ -164,6 +164,11 @@ session machinery the db tools sit on is in
   tool names (2026-10-06): `use_tool_name_separator` (before the registrars) replaces
   `server.tool` so `db.connect` registers as `db_connect` when `mcp setup
   --toolNameSeparator=_` (settings.json `toolNameSeparator`, `config.get_tool_name_separator`)
+  or `mcp start-server --toolNameSeparator=_` (that process only, wins over the setting;
+  `server.resolve_tool_name_separator`; a `--gui` server without it keeps dots whatever is
+  saved, because the VS Code extension calls the dotted names while its agent-mode server
+  for Copilot, whose client accepts only `[a-z0-9_-]`, needs `_`; both checked by
+  `config.check_tool_name_separator`; `mcp setup --show` reports the saved one only)
   and wraps each tool so its ToolError text is rewritten; `finish_tool_names` (after)
   rewrites descriptions and parameter schemas through the SDK's PRIVATE `_tool_manager`.
   Only dotted words that are registered tool names are rewritten. `finish_tool_names`
@@ -272,3 +277,10 @@ session machinery the db tools sit on is in
 
 - Don't reintroduce bg-thread+SIGTERM serving nor the interactive guard in `start()`.
   Plain GPLv2+MariaDB header. tests/ has no `__init__` (namespace pkg + `PYTHONPATH=..`).
+
+## Next steps
+
+- (Idea from the review of #134) accept the canonical dotted name on `tools/call` whatever
+  the separator a server publishes: internal callers (the VS Code extension) would then
+  not need to know it, and the `--gui` dots default and the extension's `msm[._]`
+  matching could go. The separator would then only decide what `tools/list` publishes.

@@ -57,6 +57,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   argument; the msm call inside `checked_includes`, then `projects.add_project` with the
   client as owner; new-project steps shared with `msm.create_project` through
   `_require_new_project_access`, `_add_new_project` and `_with_checked_includes`).
+  The diagram tools name the diagram with `diagram`, never `name`; the section reader is
+  `msm.get_section_sql_content`, beside `msm.set_section_sql_content`.
   `msm.get_schema_diagrams` returns diagrams through `diagrams.elide_images` (an
   ImageFigure's data URL replaced by `image_size`, so no base64 reaches the LLM), and
   `set_schema_diagram` keeps the stored picture of a figure sent without one (by id, in
