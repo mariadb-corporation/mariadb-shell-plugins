@@ -493,13 +493,6 @@ def update_schema_definition(schema_project_path: str, lsp_path: str = None) -> 
     return result
 
 
-def snapshot_warnings(schema_project_path: str) -> list:
-    """update_schema_definition's warnings, of the snapshot as stored; none
-    without one."""
-    schema = _schema_row(_rows(_Project.load(schema_project_path)))
-    return diagrams.mysql_collation_warnings(schema["document"]) if schema else []
-
-
 def _schema_row(rows: list) -> Optional[dict]:
     """The schema snapshot's row, or None."""
     return next((row for row in rows if row["format"] == diagrams.SCHEMA_FORMAT), None)

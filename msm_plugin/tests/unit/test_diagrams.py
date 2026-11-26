@@ -819,7 +819,12 @@ def test_a_release_of_a_script_with_a_mysql_collation_is_warned_about(project):
         "The schema uses utf8mb4_0900_ai_ci, a MySQL collation that MariaDB before 11.4.5 "
         "refuses; use utf8mb4_uca1400_nopad_ai_ci, which sorts and compares the same."
     ]
-    assert modeling.snapshot_warnings(project) == result["warnings"]
+    # The release makes the snapshot again and hands its warnings on
+    warnings = []
+    management.prepare_release(
+        schema_project_path=project, version="1.0.0", next_version="1.1.0", warnings=warnings
+    )
+    assert warnings == result["warnings"]
 
 
 @needs_lsp

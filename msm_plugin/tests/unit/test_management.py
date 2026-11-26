@@ -1244,7 +1244,7 @@ def test_the_schema_is_created_with_the_options_of_the_deployed_version(
         copyright_holder=COPYRIGHT_HOLDER,
         overwrite_existing=True,
     )
-    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    dev_file = lib.management.get_schema_development_file_path(project)
 
     def schema_collation():
         return lib.core.MsmDbExec(
@@ -1284,9 +1284,9 @@ def test_the_schema_is_created_with_the_options_of_the_deployed_version(
 
 
 def test_no_script_template_names_a_mysql_collation():
-    templates = Path(lib.management.__file__).parent.parent / "templates" / "scripts"
+    templates = Path(lib.management.DEVELOPMENT_SCRIPT_TEMPLATE).parent
     for template in templates.glob("*.sql"):
-        assert "_0900_" not in template.read_text(), template.name
+        assert lib.diagrams.MYSQL_COLLATION_MARKER not in template.read_text(), template.name
 
 
 def test_a_routine_added_again_survives_an_old_removal(sandbox_session, temp_dir):

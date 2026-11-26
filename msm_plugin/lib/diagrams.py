@@ -349,25 +349,29 @@ def mysql_collation_warnings(schema_document: dict) -> list:
         where there is one; none where every collation is MariaDB's.
     """
 
-    def warning(where: str, collation) -> list:
-        if not isinstance(collation, str) or MYSQL_COLLATION_MARKER not in collation.lower():
-            return []
-        replacement = _MARIADB_COLLATIONS.get(collation.lower())
+    places = [("The schema", (schema_document.get("options") or {}).get("collation"))]
+    for table in schema_document.get("tables", []):
+        name = table.get("name")
+        places.append((f"Table `{name}`", (table.get("options") or {}).get("collation")))
+        places += [
+            (f"Column `{name}`.`{column.get('name')}`", column.get("collation"))
+            for column in table.get("columns", [])
+        ]
+
+    found = []
+    for where, collation in places:
+        lowered = collation.lower() if isinstance(collation, str) else ""
+        if MYSQL_COLLATION_MARKER not in lowered:
+            continue
+        replacement = _MARIADB_COLLATIONS.get(lowered)
         instead = (
             f"use {replacement}, which sorts and compares the same"
             if replacement else "use the utf8mb4_uca1400_*_nopad_* collation of its language"
         )
-        return [
+        found.append(
             f"{where} uses {collation}, a MySQL collation that MariaDB before 11.4.5 "
             f"refuses; {instead}."
-        ]
-
-    found = warning("The schema", (schema_document.get("options") or {}).get("collation"))
-    for table in schema_document.get("tables", []):
-        name = table.get("name")
-        found += warning(f"Table `{name}`", (table.get("options") or {}).get("collation"))
-        for column in table.get("columns", []):
-            found += warning(f"Column `{name}`.`{column.get('name')}`", column.get("collation"))
+        )
     return found
 
 

@@ -1583,6 +1583,7 @@ def prepare_release(
     allow_to_stay_on_same_version: bool = False,
     overwrite_existing: bool = False,
     lsp_path: str = None,
+    warnings: list = None,
 ) -> list[str]:
     """Adds a new release to the schema project
 
@@ -1600,6 +1601,8 @@ def prepare_release(
             same version for further development work
         overwrite_existing: Whether existing files should be overwritten. Defaults to False.
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        warnings: A list that gets the snapshot's warnings
+            (diagrams.mysql_collation_warnings), when given.
 
     Returns:
         A list of filenames that have been created or changed for the release
@@ -1676,7 +1679,9 @@ def prepare_release(
     # here: lib.modeling imports this module.)
     from msm_plugin.lib import modeling
 
-    modeling.update_schema_definition(schema_project_path, lsp_path=lsp_path)
+    snapshot = modeling.update_schema_definition(schema_project_path, lsp_path=lsp_path)
+    if warnings is not None:
+        warnings.extend(snapshot["warnings"])
 
     # Get the current schema development file sections
     schema_dev_file_path = os.path.join(
@@ -1920,6 +1925,10 @@ def generate_deployment_script(
         schema_deployment_script = Template(
             strip_template_copyright_header(f.readlines())
         )
+
+    def section_sql(section_id: str) -> str:
+        return target_version_sections.get(section_id, {}).get("sql_content", "").strip("\n")
+
     schema_deployment_script = schema_deployment_script.safe_substitute(
         {
             "license": get_license_text(project_settings=project_settings),
@@ -1929,40 +1938,14 @@ def generate_deployment_script(
             "version_comma_str": ", ".join(str(number) for number in version_as_ints),
             # The version's own schema options (character set, collation),
             # as a fresh install of its first release has them
-            "section_110_database_schema_creation": target_version_sections.get("110", {})
-            .get("sql_content", "")
-            .strip("\n"),
-            "section_130_creation_of_helpers": target_version_sections.get("130", {})
-            .get("sql_content", "")
-            .strip("\n"),
-            "section_140_non_idempotent_schema_objects": indent(
-                target_version_sections.get("140", {})
-                .get("sql_content", "")
-                .strip("\n"),
-                "    ",
-            ),
-            "section_150_idempotent_schema_objects": target_version_sections.get(
-                "150", {}
-            )
-            .get("sql_content", "")
-            .strip("\n"),
-            "section_160_schema_diagrams": target_version_sections.get("160", {})
-            .get("sql_content", "")
-            .strip("\n"),
-            "section_170_authorization": indent(
-                target_version_sections.get("170", {})
-                .get("sql_content", "")
-                .strip("\n"),
-                "    ",
-            ),
-            "section_180_rest_service_definition": target_version_sections.get(
-                "180", {}
-            )
-            .get("sql_content", "")
-            .strip("\n"),
-            "section_190_removal_of_helpers": target_version_sections.get("190", {})
-            .get("sql_content", "")
-            .strip("\n"),
+            "section_110_database_schema_creation": section_sql("110"),
+            "section_130_creation_of_helpers": section_sql("130"),
+            "section_140_non_idempotent_schema_objects": indent(section_sql("140"), "    "),
+            "section_150_idempotent_schema_objects": section_sql("150"),
+            "section_160_schema_diagrams": section_sql("160"),
+            "section_170_authorization": indent(section_sql("170"), "    "),
+            "section_180_rest_service_definition": section_sql("180"),
+            "section_190_removal_of_helpers": section_sql("190"),
             "updatable_versions": ", ".join(f'"{v}"' for v in updatable_versions),
         }
     )

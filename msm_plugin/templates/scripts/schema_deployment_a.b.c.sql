@@ -30,6 +30,8 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
 
 ${section_110_database_schema_creation}
 
+USE ${schema_identifier};
+
 
 -- #############################################################################
 -- MSM Section 330: Creation of Helpers
