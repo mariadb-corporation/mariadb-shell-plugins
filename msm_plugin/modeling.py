@@ -195,7 +195,7 @@ def set_schema_diagram(document: dict = None, **kwargs) -> list:
     document = _json_argument(document, kwargs, "document", "diagram")
     if document is None:
         raise ValueError("No diagram given: pass document or document_file.")
-    return lib.modeling.set_diagram(_project(kwargs), dict(document))
+    return lib.modeling.set_diagram(_project(kwargs), _plain(document))
 
 
 @plugin_function("msm.editSchema", shell=True, cli=True, web=True)
@@ -373,13 +373,9 @@ def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs
         and whether it replaced one.
     """
     statements = _json_argument(statements, kwargs, "statements", "statements")
-    if hasattr(statements, "__iter__") and not isinstance(statements, str):
-        statements = list(statements)
-    replaces = kwargs.get("replaces")
     return lib.rest_editing.set_rest_statements(
-        _project(kwargs), statements, base_hash,
-        replaces=dict(replaces) if replaces is not None else None,
-        lsp_path=kwargs.get("lsp_path"),
+        _project(kwargs), _plain(statements), base_hash,
+        replaces=_plain(kwargs.get("replaces")), lsp_path=kwargs.get("lsp_path"),
     )
 
 

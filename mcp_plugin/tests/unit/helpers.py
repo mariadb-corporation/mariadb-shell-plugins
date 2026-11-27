@@ -809,3 +809,17 @@ def write_file(directory, relative_path, text):
         written.write(text)
 
     return path
+
+
+def msm_tools():
+    """Registers every msm tool in-process, without a server: the
+    extension's too (gui_only), with the rest of the server not in GUI mode.
+    """
+    from unittest import mock
+
+    from mcp_plugin.lib import msm_functions, tool_registrar
+
+    recorder = ToolRecorder()
+    with mock.patch.object(tool_registrar, "serves_gui_only_tools", return_value=True):
+        msm_functions.register_msm_tools(recorder, function_groups=["msm"])
+    return recorder.tools

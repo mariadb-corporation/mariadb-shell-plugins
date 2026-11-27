@@ -1594,6 +1594,21 @@ def test_without_base_hash_a_stale_snapshot_is_made_again_first(project):
 
 
 @needs_outline_objects
+@needs_edit_ops("add_trigger")
+def test_without_base_hash_a_refused_edit_writes_no_snapshot(project):
+    dev_file = management.get_schema_development_file_path(project)
+    management.set_section_sql_content(
+        "140", "\n" + TABLES_SQL + "\n\nCREATE TABLE `note` (`id` INT);\n", dev_file)
+    before = dev_script(project)
+    with pytest.raises(ValueError, match="nowhere"):
+        editing.set_schema_statements(
+            project, ["CREATE TRIGGER `tr` BEFORE INSERT ON `nowhere` FOR EACH ROW SET @x = 1"],
+            lsp_path=EDIT_LSP)
+    # The stale snapshot was made again in memory only
+    assert dev_script(project) == before
+
+
+@needs_outline_objects
 @needs_edit_ops("replace_table")
 def test_a_replaced_table_reaches_a_deployed_schema_with_its_rows(deployed):
     path, column = deployed

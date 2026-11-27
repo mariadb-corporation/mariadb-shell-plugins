@@ -514,8 +514,7 @@ def check_base_hash(project, base_hash: str) -> list:
     stored = snapshot["document"].get("source_hash") if snapshot else None
     if stored is None:
         raise StaleSchemaError(
-            "The project has no schema snapshot yet: make it with "
-            "msm.updateSchemaDefinition, read the diagrams and redo the edits."
+            "The project has no schema snapshot yet, so no base_hash matches."
         )
     if base_hash != stored:
         raise StaleSchemaError(
@@ -649,29 +648,32 @@ def edit_schema(
             for an edit that gives `at` or `form`.
     """
     _check_request(edits)
-    # The binary refuses names that went.
     project, _ = _project_at(schema_project_path, base_hash, lsp_path)
+    # The binary refuses names that went.
     return _edit(project, edits, lsp_path)
 
 
 def _project_at(schema_project_path: str, base_hash: Optional[str], lsp_path: str = None) -> tuple:
     """(project, the rows of its diagrams VIEW) for an edit: checked against
     base_hash, or, without one, with a snapshot of the development script as
-    it is, made again first where it is missing or the script was edited by
-    hand since, as prepare_release does.
+    it is, made again where it is missing or the script was edited by hand
+    since (in the rows returned; the edit's write puts it in the VIEW).
 
     Raises:
         StaleSchemaError: For a stale base_hash.
     """
     project = modeling._Project.load(schema_project_path)
     if base_hash is not None:
-        return project, check_base_hash(project, base_hash)
-    rows = modeling._rows(project)
-    if modeling._snapshot_is_current(project, modeling._schema_row(rows)):
-        return project, rows
-    modeling.update_schema_definition(schema_project_path, lsp_path)
-    project = modeling._Project.load(schema_project_path)
-    return project, modeling._rows(project)
+        try:
+            return project, check_base_hash(project, base_hash)
+        except StaleSchemaError as error:
+            raise StaleSchemaError(
+                f"{error} Or leave base_hash out to make the change against the project as it is."
+            ) from error
+    # Made in memory only: the edit's own write makes the snapshot of the
+    # script it writes, and a refused edit writes nothing
+    _, rows = modeling._current_snapshot(project, modeling._rows(project), lsp_path)
+    return project, rows
 
 
 def _edit(project, edits: list, lsp_path: str = None, check: Callable = None) -> dict:
@@ -859,9 +861,6 @@ def _object_name_problem(name) -> Optional[str]:
 
 
 STATEMENT_KINDS = ("table", "sequence", "view", "procedure", "function", "trigger", "event")
-# The kinds a statement replaces where the project has the object: those of
-# Section 150, which every deployment runs again
-REPLACED_KINDS = _NOT_KEPT_CREATES
 
 
 def _read_object(binary: str, sql, where: str, expected: dict = None) -> tuple:
@@ -1055,12 +1054,7 @@ def set_schema_statements(
     if len(set(keys)) != len(keys):
         raise ValueError("Two statements create the same object: pass one statement each.")
 
-    # After the statements are checked: without base_hash, a stale snapshot
-    # is made again, which writes the diagrams VIEW
-    try:
-        project, rows = _project_at(schema_project_path, base_hash, lsp_path)
-    except StaleSchemaError as error:
-        raise _base_hash_left_out_hint(error) from error
+    project, rows = _project_at(schema_project_path, base_hash, lsp_path)
     can_replace_table = "replace_table" in lsp.edit_ops(binary)
     snapshot = modeling._schema_row(rows)["document"]
     edits, entries, replaced_tables = [], [], set()
@@ -1079,7 +1073,7 @@ def set_schema_statements(
                 "to a new definition (lsp-server #55). Update "
                 f"{lsp.LSP_BINARY_NAME}, or the MariaDB Shell, which comes with it."
             )
-        if existing is not None and kind not in REPLACED_KINDS + ("table",):
+        if existing is not None and kind == "sequence":
             raise ValueError(
                 f"{where(index)}: the project has the {kind} `{name}` already, and msm "
                 f"does not replace a {kind}: drop it with msm.drop_schema_object, then "
@@ -1091,9 +1085,10 @@ def set_schema_statements(
         op = "replace" if existing is not None else "add"
         edit = {"op": f"{op}_{object_type}", object_type: item}
         if op == "replace" and kind == "table":
-            replaced_tables.add(existing["name"].lower())
-            if renames.get(existing["name"].lower()):
-                edit["renames"] = {"columns": dict(renames[existing["name"].lower()])}
+            key = existing["name"].lower()
+            replaced_tables.add(key)
+            if renames.get(key):
+                edit["renames"] = {"columns": dict(renames[key])}
         edits.append(edit)
     for map_name, given in (("renames", renames), ("dropped_columns", dropped_columns)):
         for table in given.keys() - replaced_tables:
@@ -1135,13 +1130,6 @@ def set_schema_statements(
             project.development, snapshot, entry["kind"], entry["name"]
         )
     return {**result, "statements": entries}
-
-
-def _base_hash_left_out_hint(error: StaleSchemaError) -> StaleSchemaError:
-    """A stale base_hash's error for a call that may leave base_hash out."""
-    return StaleSchemaError(
-        f"{error} Or leave base_hash out to make the change against the project as it is."
-    )
 
 
 def _check_table_map(value, name: str, entry_type: type) -> dict:
@@ -1221,7 +1209,4 @@ def drop_schema_object(
     edit = {"op": f"drop_{object_type}", object_type: name}
     if object_type == "routine":
         edit["kind"] = kind
-    try:
-        return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
-    except StaleSchemaError as error:
-        raise _base_hash_left_out_hint(error) from error
+    return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
