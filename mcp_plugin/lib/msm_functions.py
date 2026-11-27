@@ -100,8 +100,9 @@ def register_msm_tools(server, function_groups=()) -> None:
     Every server gets the tools an agent needs to develop, release and
     deploy a schema project with SQL; those that serve the MariaDB VS Code
     extension's views (the project list's folders, captions and colors, the
-    diagram editor, settings forms, templates, online ALTER TABLE, REST) are
-    registered gui_only (see tool_registrar.serves_gui_only_tools). Those
+    diagram pictures, settings forms, templates, online ALTER TABLE, the
+    REST SDK dump) are registered gui_only (see
+    tool_registrar.serves_gui_only_tools). Those
     that need a database connection opened with db.connect
     (msm.deploy_schema, msm.online_alter_table, msm.list_live_schema_objects,
     msm.import_live_schema) are only registered when the db function group

@@ -617,7 +617,8 @@ def _check_request(edits) -> None:
 
 @changes_project
 def edit_schema(
-    schema_project_path: str, edits: list, base_hash: Optional[str], lsp_path: str = None
+    schema_project_path: str, edits: list, base_hash: Optional[str], lsp_path: str = None,
+    *, base_hash_optional: bool = False,
 ) -> dict:
     """Makes schema edits in the project's SQL.
 
@@ -631,6 +632,8 @@ def edit_schema(
             another one, made again since. None makes them against the
             project as it is (_project_at).
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        base_hash_optional: Whether the caller's own callers may leave
+            base_hash out, which a stale base_hash's refusal then says.
 
     Returns:
         {rows, files, migration, migration_file, notes}: the rows of the
@@ -648,16 +651,27 @@ def edit_schema(
             for an edit that gives `at` or `form`.
     """
     _check_request(edits)
-    project, _ = _project_at(schema_project_path, base_hash, lsp_path)
+    project, _ = _project_at(
+        schema_project_path, base_hash, lsp_path,
+        base_hash_optional=base_hash_optional, need_rows=False,
+    )
     # The binary refuses names that went.
     return _edit(project, edits, lsp_path)
 
 
-def _project_at(schema_project_path: str, base_hash: Optional[str], lsp_path: str = None) -> tuple:
+def _project_at(
+    schema_project_path: str, base_hash: Optional[str], lsp_path: str = None,
+    base_hash_optional: bool = True, need_rows: bool = True,
+) -> tuple:
     """(project, the rows of its diagrams VIEW) for an edit: checked against
     base_hash, or, without one, with a snapshot of the development script as
     it is, made again where it is missing or the script was edited by hand
     since (in the rows returned; the edit's write puts it in the VIEW).
+
+    base_hash_optional says whether the caller may leave base_hash out, which
+    a stale one's refusal then suggests. Without need_rows, a call without
+    base_hash returns None for the rows: the edit's write makes the snapshot
+    anyway, so the binary is not run for one only to throw it away.
 
     Raises:
         StaleSchemaError: For a stale base_hash.
@@ -667,9 +681,13 @@ def _project_at(schema_project_path: str, base_hash: Optional[str], lsp_path: st
         try:
             return project, check_base_hash(project, base_hash)
         except StaleSchemaError as error:
+            if not base_hash_optional:
+                raise
             raise StaleSchemaError(
                 f"{error} Or leave base_hash out to make the change against the project as it is."
             ) from error
+    if not need_rows:
+        return project, None
     # Made in memory only: the edit's own write makes the snapshot of the
     # script it writes, and a refused edit writes nothing
     _, rows = modeling._current_snapshot(project, modeling._rows(project), lsp_path)
@@ -1209,4 +1227,4 @@ def drop_schema_object(
     edit = {"op": f"drop_{object_type}", object_type: name}
     if object_type == "routine":
         edit["kind"] = kind
-    return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
+    return edit_schema(schema_project_path, [edit], base_hash, lsp_path, base_hash_optional=True)

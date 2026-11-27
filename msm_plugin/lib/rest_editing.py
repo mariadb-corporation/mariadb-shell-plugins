@@ -465,7 +465,7 @@ def _checking(binary: str, before_outline: dict, before: dict, changing: set, go
 def _start(schema_project_path: str, base_hash: Optional[str], lsp_path: Optional[str]) -> tuple:
     """(project, binary) once base_hash is checked; without one, the
     project as it is (editing._project_at)."""
-    project, _ = editing._project_at(schema_project_path, base_hash, lsp_path)
+    project, _ = editing._project_at(schema_project_path, base_hash, lsp_path, need_rows=False)
     return project, require_lsp(lsp_path)
 
 
