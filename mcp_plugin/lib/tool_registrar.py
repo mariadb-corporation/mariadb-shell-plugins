@@ -343,13 +343,27 @@ def starts_tasks(server) -> bool:
     return getattr(server, _STARTS_TASKS, False)
 
 
+def serves_gui_only_tools() -> bool:
+    """Whether tools registered with ``gui_only=True`` are served: only by a
+    server started with ``--gui``, for the MariaDB VS Code extension. Every
+    tool counts against an MCP client's limit (GitHub Copilot in VS Code
+    takes at most 128), so a tool that serves the extension's views only is
+    left out for agents."""
+    # Imported lazily, as general imports the shell.
+    from mcp_plugin.lib import general
+
+    return general.is_gui_mode()
+
+
 def tool_registrar(server):
     """Returns a ``server.tool`` replacement bound to ``server``.
 
     The returned decorator factory forwards every argument to ``server.tool``
-    unchanged, so it accepts whatever that accepts, and one more:
+    unchanged, so it accepts whatever that accepts, and two more:
     ``starts_tasks=True`` for a tool that starts background tasks (see
-    :func:`starts_tasks`).
+    :func:`starts_tasks`), and ``gui_only=True`` for a tool only a ``--gui``
+    server serves (see :func:`serves_gui_only_tools`); elsewhere the
+    decorator leaves the function unregistered.
 
     Args:
         server: The MCPServer the tools are registered on.
@@ -358,7 +372,10 @@ def tool_registrar(server):
         A decorator factory with the same signature as ``server.tool``.
     """
 
-    def mcp_tool(*args: Any, starts_tasks: bool = False, **kwargs: Any):
+    def mcp_tool(*args: Any, starts_tasks: bool = False, gui_only: bool = False, **kwargs: Any):
+        if gui_only and not serves_gui_only_tools():
+            return lambda func: func
+
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             from mcp.server.mcpserver.exceptions import ResourceError, ToolError
             from mcp.shared.exceptions import MCPError

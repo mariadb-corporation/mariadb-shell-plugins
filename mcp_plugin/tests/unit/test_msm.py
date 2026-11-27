@@ -177,16 +177,14 @@ def test_stdio_deploy_schema_requires_the_db_group():
     assert "msm.create_project" in msm_only
     assert "msm.get_deployment_script_versions" in msm_only
 
-    # msm.online_alter_table too, and with it the task tools that follow it
-    assert "msm.online_alter_table" not in msm_only and "task.get" not in msm_only
-    assert "msm.import_live_schema" not in msm_only
+    # msm.import_live_schema too, and with it the task tools that follow it
+    assert "msm.import_live_schema" not in msm_only and "task.get" not in msm_only
     assert "msm.list_live_schema_objects" not in msm_only
-    assert "msm.get_online_alter_settings" in msm_only
-    assert "msm.get_online_alter_defaults" in msm_only
 
     with_db = helpers.list_tool_names(["msm", "db"])
     assert "msm.deploy_schema" in with_db
-    assert "msm.online_alter_table" in with_db and "task.get" in with_db
+    # A server without --gui: no gui_only tool (AGENT_TOOLS below)
+    assert "msm.online_alter_table" not in with_db and "task.get" in with_db
     assert "msm.import_live_schema" in with_db and "msm.list_live_schema_objects" in with_db
     assert "msm.get_deployment_script_versions" in with_db
     assert "db.connect" in with_db
@@ -447,64 +445,72 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                     {"project_path": p["project_path"], "folder": p["folder"]} for p in projects
                 ]
 
-                # The online ALTER TABLE setting, written and read back
-                payload(
-                    await call(
-                        "msm.set_project_settings",
-                        {
-                            "schema_project_path": project_path,
-                            "settings": {"onlineAlter": {
-                                "maxRetries": 3,
-                                "tables": {"mcp_pytest_table": {"lockWait": 2}},
-                            }},
-                        },
+                # The extension's tools (--gui only): the online ALTER TABLE
+                # setting, written and read back, and one ALTER TABLE run online
+                async with helpers.mcp_session(
+                    function_groups=["msm", "db"], gui=True
+                ) as gui_call:
+                    gui_connection = payload(
+                        await gui_call("db.connect", {"uri": sandbox.uri})
                     )
-                )
-                settings = payload(
-                    await call(
-                        "msm.get_online_alter_settings",
-                        {"schema_project_path": project_path, "table": "mcp_pytest_table"},
-                    )
-                )
-                assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
-                assert settings["options"]["maxRetries"] == 3
-
-                # One ALTER TABLE run online, as a task followed with task.get
-                started = payload(
-                    await call(
-                        "msm.online_alter_table",
-                        {
-                            "connection_id": connection_id,
-                            "schema": SCHEMA_NAME,
-                            "table": "mcp_pytest_table",
-                            "spec": "ADD COLUMN `mcp_note` INT",
-                            "options": {"lockWait": 2},
-                        },
-                    )
-                )
-                state = {"status": started["status"]}
-                for _ in range(20):
-                    if state["status"] in ("completed", "failed", "cancelled"):
-                        break
-                    state = payload(
-                        await call(
-                            "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                    payload(
+                        await gui_call(
+                            "msm.set_project_settings",
+                            {
+                                "schema_project_path": project_path,
+                                "settings": {"onlineAlter": {
+                                    "maxRetries": 3,
+                                    "tables": {"mcp_pytest_table": {"lockWait": 2}},
+                                }},
+                            },
                         )
                     )
-                assert state["status"] == "completed", state
-                assert state["result"]["method"] == "INSTANT"
-                assert state["result"]["applied"] is True
+                    settings = payload(
+                        await gui_call(
+                            "msm.get_online_alter_settings",
+                            {"schema_project_path": project_path, "table": "mcp_pytest_table"},
+                        )
+                    )
+                    assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
+                    assert settings["options"]["maxRetries"] == 3
 
-                refused = await call(
-                    "msm.online_alter_table",
-                    {
-                        "connection_id": connection_id,
-                        "schema": SCHEMA_NAME,
-                        "table": "mcp_pytest_table",
-                        "spec": "ADD COLUMN `x` INT, ALGORITHM=COPY",
-                    },
-                )
-                assert refused.is_error is True
+                    # One ALTER TABLE run online, as a task followed with task.get
+                    started = payload(
+                        await gui_call(
+                            "msm.online_alter_table",
+                            {
+                                "connection_id": gui_connection,
+                                "schema": SCHEMA_NAME,
+                                "table": "mcp_pytest_table",
+                                "spec": "ADD COLUMN `mcp_note` INT",
+                                "options": {"lockWait": 2},
+                            },
+                        )
+                    )
+                    state = {"status": started["status"]}
+                    for _ in range(20):
+                        if state["status"] in ("completed", "failed", "cancelled"):
+                            break
+                        state = payload(
+                            await gui_call(
+                                "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                            )
+                        )
+                    assert state["status"] == "completed", state
+                    assert state["result"]["method"] == "INSTANT"
+                    assert state["result"]["applied"] is True
+
+                    refused = await gui_call(
+                        "msm.online_alter_table",
+                        {
+                            "connection_id": gui_connection,
+                            "schema": SCHEMA_NAME,
+                            "table": "mcp_pytest_table",
+                            "spec": "ADD COLUMN `x` INT, ALGORITHM=COPY",
+                        },
+                    )
+                    assert refused.is_error is True
+                    await gui_call("db.close", {"connection_id": gui_connection})
             finally:
                 payload(
                     await call(
@@ -535,16 +541,6 @@ def project_lists(tmp_path, monkeypatch):
     return projects
 
 
-def _msm_tools():
-    """Registers the msm tools in-process, without a server."""
-    from mcp_plugin.lib import msm_functions
-
-    recorder = helpers.ToolRecorder()
-    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
-
-    return recorder.tools
-
-
 def _call(tools, name, *args, **kwargs):
     """Calls one of the async msm tools, as a single-tenant stdio client."""
     return asyncio.run(tools[name](None, *args, **kwargs))
@@ -568,7 +564,7 @@ def test_the_project_colors_are_the_connection_colors(project_lists):
 
 
 def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
     assert _call(tools, "msm.list_projects") == []
 
@@ -599,7 +595,7 @@ def test_the_project_list_is_managed_through_the_tools(project_lists, allowed_te
 
 
 def test_a_created_project_is_listed(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     created = _call(
         tools,
@@ -619,7 +615,7 @@ def test_a_created_project_is_listed(project_lists, allowed_temp_dir):
 def test_a_project_is_created_into_its_place_in_the_list(project_lists, allowed_temp_dir):
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     with pytest.raises(ToolError, match="not a color"):
         _call(tools, "msm.create_project", SCHEMA_NAME, allowed_temp_dir,
               copyright_holder=COPYRIGHT_HOLDER, color="teal")
@@ -636,7 +632,7 @@ def test_adding_a_project_needs_an_allowed_path(project_lists, clean_config, tmp
     """The list is no way around the allowed paths."""
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(str(tmp_path), "shop")
     assert config.is_path_allowed(shop) is False
 
@@ -647,7 +643,7 @@ def test_adding_a_project_needs_an_allowed_path(project_lists, clean_config, tmp
 
 
 def test_a_missing_project_is_listed_as_such(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
     _call(tools, "msm.add_project", shop)
     os.remove(os.path.join(shop, "msm.project.json"))
@@ -663,7 +659,7 @@ def test_a_bad_detail_is_refused_before_anything_is_written(project_lists, allow
     """The plugin's ValueError reaches the client as a tool error, nothing written."""
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
 
     with pytest.raises(ToolError, match="not a color"):
@@ -683,17 +679,51 @@ def _parameters(tools, name):
     return list(inspect.signature(tools[name]).parameters)
 
 
+# The msm tools a server without --gui serves: what an agent needs to develop,
+# release and deploy a schema project with SQL.
+AGENT_TOOLS = {
+    "msm.create_project", "msm.list_projects", "msm.get_project_information",
+    "msm.set_development_version", "msm.get_released_versions",
+    "msm.get_last_released_version", "msm.get_last_deployment_version",
+    "msm.get_deployment_script_versions", "msm.get_section_sql_content",
+    "msm.set_section_sql_content", "msm.set_schema_statements", "msm.drop_schema_object",
+    "msm.prepare_release", "msm.generate_deployment_script", "msm.deploy_schema",
+    "msm.list_live_schema_objects", "msm.import_live_schema",
+    "msm.set_rest_statements", "msm.drop_rest_object",
+    "msm.list_schema_diagrams", "msm.get_schema_diagrams", "msm.create_schema_diagram",
+    "msm.layout_schema_diagram", "msm.set_schema_diagram", "msm.rename_schema_diagram",
+    "msm.remove_schema_diagram",
+}
+
+
+def test_an_agent_is_served_the_agent_tools_and_the_extension_every_tool(gui_mode):
+    """Every tool counts against an MCP client's limit (Copilot: 128), so a
+    server without --gui leaves out what serves the extension's views."""
+    from mcp_plugin.lib import general, msm_functions
+
+    def registered():
+        recorder = helpers.ToolRecorder()
+        msm_functions.register_msm_tools(recorder, function_groups=["msm", "db"])
+        return set(recorder.tools)
+
+    every_tool = registered()
+    assert AGENT_TOOLS < every_tool
+    assert {"msm.edit_schema", "msm.get_schema_diagram_image", "msm.add_project"} <= every_tool
+    general.set_gui_mode(False)
+    assert registered() == AGENT_TOOLS
+
+
 def test_only_a_gui_server_offers_mcp_access(project_lists, gui_mode):
     from mcp_plugin.lib import general
 
-    gui_tools = _msm_tools()
+    gui_tools = helpers.msm_tools()
     assert "mcp_access" in _parameters(gui_tools, "msm.create_project")
     assert "mcp_access" in _parameters(gui_tools, "msm.add_project")
     assert "mcp_access" in _parameters(gui_tools, "msm.update_project")
     assert "mcp_access:" in gui_tools["msm.add_project"].__doc__
 
     general.set_gui_mode(False)
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     assert "mcp_access" not in _parameters(tools, "msm.create_project")
     assert "mcp_access" not in _parameters(tools, "msm.add_project")
     assert "mcp_access" not in _parameters(tools, "msm.update_project")
@@ -702,7 +732,7 @@ def test_only_a_gui_server_offers_mcp_access(project_lists, gui_mode):
 
 
 def test_a_gui_server_adds_projects_without_mcp_access(project_lists, gui_mode, tmp_path):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(str(tmp_path), "shop")
     notes = _make_project(str(tmp_path), "notes")
 
@@ -725,7 +755,7 @@ def test_a_gui_server_adds_projects_without_mcp_access(project_lists, gui_mode, 
 
 
 def test_an_agent_adds_projects_with_mcp_access(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
 
     assert _call(tools, "msm.add_project", shop)["mcp_access"] is True
@@ -745,7 +775,7 @@ def test_an_agent_cannot_reach_a_project_kept_from_it(project_lists, allowed_tem
     inside an allowed path: not listed, not read, not changed, not removed."""
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
     notes = _make_project(allowed_temp_dir, "notes")
     project_lists.add_project(shop, mcp_access=False)
@@ -773,7 +803,7 @@ def test_an_agent_cannot_reach_a_project_kept_from_it(project_lists, allowed_tem
 def test_an_agent_cannot_replace_a_project_kept_from_it(project_lists, allowed_temp_dir):
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, SCHEMA_NAME)
     project_lists.add_project(shop, mcp_access=False)
 
@@ -794,7 +824,7 @@ def test_the_working_directory_counts_for_a_project_left_out(
 ):
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
     project_lists.add_project(shop, mcp_access=False)
     monkeypatch.chdir(shop)
@@ -815,7 +845,7 @@ def test_an_agent_cannot_recreate_a_missing_project_kept_from_it(
 
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, SCHEMA_NAME)
     project_lists.add_project(shop, mcp_access=False)
     shutil.rmtree(shop)
@@ -888,7 +918,7 @@ def test_a_sql_script_in_a_project_kept_from_it_is_not_read(project_lists, allow
 
 
 def test_a_gui_server_reaches_every_project(project_lists, gui_mode, tmp_path):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(str(tmp_path), "shop")
     project_lists.add_project(shop, mcp_access=False)
 
@@ -910,7 +940,7 @@ def _rename_lsp():
 def test_a_project_kept_from_llms_is_not_renamed(project_lists, allowed_temp_dir):
     from mcp.server.mcpserver.exceptions import ToolError
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     shop = _make_project(allowed_temp_dir, "shop")
     project_lists.add_project(shop, mcp_access=False)
 
@@ -923,7 +953,7 @@ def test_a_project_kept_from_llms_is_not_renamed(project_lists, allowed_temp_dir
 
 
 def test_a_released_project_is_not_renamed_through_the_tool(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     with open(os.path.join(path, "releases", "versions", "shop_1.0.0.sql"), "w") as f:
         f.write("-- released\n")
@@ -939,7 +969,7 @@ def test_a_released_project_is_not_renamed_through_the_tool(project_lists, allow
 @pytest.mark.skipif(_rename_lsp() is None, reason="no mariadb-lsp binary that renames schemas")
 def test_a_schema_is_renamed_through_the_tool(project_lists, allowed_temp_dir, monkeypatch):
     monkeypatch.setattr(config, "get_lsp_path", _rename_lsp)
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
 
     assert _call(tools, "msm.rename_schema", None, True, path)["allowed"] is True
@@ -995,13 +1025,13 @@ def _diagram(name="Main"):
 
 
 def test_the_online_alter_defaults_need_no_project():
-    defaults = _msm_tools()["msm.get_online_alter_defaults"]()
+    defaults = helpers.msm_tools()["msm.get_online_alter_defaults"]()
     assert defaults == {"maxRebuildBytes": 10 * 1024 ** 3, "galeraMaxBytes": 256 * 1024 ** 2,
                         "nboLock": None, "maxLockedBytes": None, "lockWait": 5, "maxRetries": 10}
 
 
 def test_project_settings_are_changed_through_the_tool(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     year = _call(tools, "msm.get_project_information", path)["copyrights"][0]["yearOfCreation"]
     custom = "/*\n${copyright_notices}\n * Internal use only.\n */\n"
@@ -1026,7 +1056,7 @@ def test_project_settings_are_changed_through_the_tool(project_lists, allowed_te
 
 
 def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
 
     assert _call(tools, "msm.list_schema_diagrams", path) == {
@@ -1054,7 +1084,7 @@ def test_diagrams_are_kept_through_the_tools(project_lists, allowed_temp_dir):
 
 @pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 def test_the_schema_snapshot_is_made_through_the_tools(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     _call(tools, "msm.set_schema_diagram", _diagram(), path)
 
@@ -1071,7 +1101,7 @@ def test_the_schema_snapshot_is_made_through_the_tools(project_lists, allowed_te
 
 @pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
 
     result = _call(tools, "msm.create_schema_diagram", diagram="Main", tables=["customer"],
@@ -1092,7 +1122,7 @@ def test_diagrams_are_laid_out_through_the_tools(project_lists, allowed_temp_dir
 
 @pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 def test_sections_are_split_through_the_tools(project_lists, allowed_temp_dir):
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
 
     result = _call(tools, "msm.split_sections", ["140"], path)
@@ -1107,7 +1137,7 @@ def test_sections_are_split_through_the_tools(project_lists, allowed_temp_dir):
 def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
     from msm_plugin.lib import modeling
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     picture = "data:image/png;base64,iVBORw0KGgo="
     document = _diagram("Pics")
@@ -1131,7 +1161,7 @@ def test_pictures_stay_out_of_the_tool_results(project_lists, allowed_temp_dir):
 @pytest.mark.skipif(msm_lsp.find_lsp() is None, reason="no mariadb-lsp binary")
 def test_schema_edits_go_through_the_tool(project_lists, allowed_temp_dir, monkeypatch):
     """The binary's edit command is stood in for: a rename of `customer`."""
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     picture = "data:image/png;base64,iVBORw0KGgo="
     document = _diagram()
@@ -1190,7 +1220,7 @@ def test_rest_items_are_set_and_dropped_through_the_tools(
     from msm_plugin.lib import management
 
     monkeypatch.setattr(config, "get_lsp_path", _rest_statements_lsp)
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     _call(tools, "msm.update_schema_definition", path)
     base = _call(tools, "msm.get_schema_diagrams", path)[0]["document"]["source_hash"]
@@ -1242,7 +1272,7 @@ def test_schema_objects_are_set_and_dropped_through_the_tools(
     from mcp_plugin.lib import config
 
     monkeypatch.setattr(config, "get_lsp_path", _schema_statements_lsp)
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     _call(tools, "msm.update_schema_definition", path)
     base = _call(tools, "msm.get_schema_diagrams", path)[0]["document"]["source_hash"]
@@ -1266,7 +1296,7 @@ def test_a_diagram_include_outside_the_allowed_paths_is_refused(
     """The development script's includes are read without asking, so they are checked."""
     from msm_plugin.lib import management
 
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     path = _diagram_project(tools, allowed_temp_dir)
     outside = tmp_path / "secret.sql"
     outside.write_text("CREATE TABLE t (id INT);\n")
@@ -1326,7 +1356,7 @@ def test_a_workbench_model_is_imported_through_the_tools(project_lists, allowed_
     model = os.path.join(allowed_temp_dir, "shop.mwb")
     with zipfile.ZipFile(model, "w") as archive:
         archive.writestr("document.mwb.xml", _MWB_XML)
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     result = _call(tools, "msm.import_workbench_model", model, allowed_temp_dir,
                    copyright_holder="Example Ltd.")

@@ -1034,16 +1034,6 @@ def project_lists(tmp_path, monkeypatch):
     return projects
 
 
-def _msm_tools():
-    """Registers the msm tools in-process, without a server."""
-    from mcp_plugin.lib import msm_functions
-
-    recorder = helpers.ToolRecorder()
-    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
-
-    return recorder.tools
-
-
 def _make_project(root, name):
     """Makes a folder that passes for a schema project and returns its path."""
     folder = os.path.join(str(root), f"{name}.msm.project")
@@ -1059,7 +1049,7 @@ def test_each_user_has_a_project_list_of_their_own(multi_tenant, project_lists, 
     tenants.set_allowed_paths(ada, [str(tmp_path)])
     tenants.set_allowed_paths(bob, [str(tmp_path)])
     shop = _make_project(tmp_path, "shop")
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     added = asyncio.run(tools["msm.add_project"](_context(ada), schema_project_path=shop, folder="/Mine"))
     assert added["folder"] == "/Mine"
@@ -1081,7 +1071,7 @@ def test_a_user_lists_projects_from_their_allowed_paths_only(multi_tenant, proje
     ada = _add("ada")
     tenants.set_allowed_paths(ada, [str(tmp_path / "allowed")])
     elsewhere = _make_project(tmp_path / "elsewhere", "shop")
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     with pytest.raises(ToolError, match="Ask the administrator"):
         asyncio.run(tools["msm.add_project"](_context(ada), elsewhere))
@@ -1093,7 +1083,7 @@ def test_a_project_a_user_creates_goes_to_their_own_list(multi_tenant, project_l
                                                         tmp_path):
     ada = _add("ada")
     tenants.set_allowed_paths(ada, [str(tmp_path)])
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     created = asyncio.run(
         tools["msm.create_project"](_context(ada), "tenant_schema", str(tmp_path), "Ada")
@@ -1106,7 +1096,7 @@ def test_a_project_a_user_creates_goes_to_their_own_list(multi_tenant, project_l
 
 def test_the_msm_tools_need_the_msm_scope(multi_tenant, project_lists):
     ada = _add("ada")
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
 
     with pytest.raises(ToolError, match="mcp:msm"):
         asyncio.run(tools["msm.list_projects"](_context(ada, scopes=["mcp:db"])))
@@ -1117,7 +1107,7 @@ def test_the_msm_tools_need_the_msm_scope(multi_tenant, project_lists):
 def test_removing_a_user_removes_their_project_list(multi_tenant, project_lists, tmp_path):
     ada = _add("ada")
     tenants.set_allowed_paths(ada, [str(tmp_path)])
-    tools = _msm_tools()
+    tools = helpers.msm_tools()
     asyncio.run(tools["msm.add_project"](_context(ada), _make_project(tmp_path, "shop")))
     assert os.path.exists(project_lists.get_projects_file_path(ada))
 

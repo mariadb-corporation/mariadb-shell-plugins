@@ -86,19 +86,28 @@ _GUI_ARGUMENTS = {
 }
 
 
-def _register_with_gui_argument(tool, name, function) -> None:
-    """Registers an msm tool with its argument only a --gui server offers."""
-    register_with_gui_argument(tool, name, function, *_GUI_ARGUMENTS[name])
+def _register_with_gui_argument(tool, name, function, **options) -> None:
+    """Registers an msm tool with its argument only a --gui server offers;
+    options go to the registrar (gui_only, starts_tasks)."""
+    register_with_gui_argument(
+        lambda **kwargs: tool(**options, **kwargs), name, function, *_GUI_ARGUMENTS[name]
+    )
 
 
 def register_msm_tools(server, function_groups=()) -> None:
     """Registers the MariaDB Schema Management tools on the given server.
 
-    The tools that work on a schema project on disk are always registered.
-    Those that need a database connection opened with db.connect
+    Every server gets the tools an agent needs to develop, release and
+    deploy a schema project with SQL; those that serve the MariaDB VS Code
+    extension's views (the project list's folders, captions and colors, the
+    diagram pictures, settings forms, templates, online ALTER TABLE, the
+    REST SDK dump) are registered gui_only (see
+    tool_registrar.serves_gui_only_tools). Those
+    that need a database connection opened with db.connect
     (msm.deploy_schema, msm.online_alter_table, msm.list_live_schema_objects,
-    msm.import_live_schema) are only registered when the db function group is
-    served as well - they would have no way to obtain a connection otherwise.
+    msm.import_live_schema) are only registered when the db function group
+    is served as well - they would have no way to obtain a connection
+    otherwise.
 
     Args:
         server: The MCPServer instance to register the tools on.
@@ -267,8 +276,8 @@ def register_msm_tools(server, function_groups=()) -> None:
         The project list holds the schema projects the user works with, so a
         client can show them without searching the disk. Each is filed in a
         folder of the list and may carry a caption and a color. A project
-        enters the list through msm.add_project, or when msm.create_project
-        creates it.
+        enters the list when msm.create_project or an import creates it, or
+        when the MariaDB VS Code extension adds it.
 
         Returns:
             One entry per project, sorted by path: its "project_path", the
@@ -344,7 +353,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             default_mcp_access=not gui,
         )
 
-    _register_with_gui_argument(tool, "msm.add_project", add_project)
+    _register_with_gui_argument(tool, "msm.add_project", add_project, gui_only=True)
 
     async def update_project(
         ctx: Context,
@@ -382,9 +391,9 @@ def register_msm_tools(server, function_groups=()) -> None:
             mcp_access=mcp_access if general.is_gui_mode() else None,
         )
 
-    _register_with_gui_argument(tool, "msm.update_project", update_project)
+    _register_with_gui_argument(tool, "msm.update_project", update_project, gui_only=True)
 
-    @tool(name="msm.remove_project")
+    @tool(name="msm.remove_project", gui_only=True)
     async def remove_project(ctx: Context, schema_project_path: str) -> str:
         """Removes a schema project from the project list.
 
@@ -512,8 +521,8 @@ def register_msm_tools(server, function_groups=()) -> None:
                 for further development work.
             overwrite_existing: Overwrite existing files.
 
-        A release first makes the schema snapshot of the diagrams again (see
-        msm.update_schema_definition) and fails where it cannot. The update
+        A release first makes the schema snapshot of the diagrams again
+        from the development script, and fails where it cannot. The update
         script's Section 280 gets a DROP ... IF EXISTS of every REST
         service, schema and object, and a REMOVE AUTH APP ... IF EXISTS of
         every auth app link, the previous release's Section 180 created and
@@ -592,7 +601,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         )
         return msm_diagrams.elide_row_images(rows)
 
-    @tool(name="msm.get_schema_diagram_image")
+    @tool(name="msm.get_schema_diagram_image", gui_only=True)
     async def get_schema_diagram_image(
         ctx: Context,
         diagram: str,
@@ -617,7 +626,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm_modeling.get_schema_diagram_image, diagram, figure_id
         )
 
-    @tool(name="msm.update_schema_definition")
+    @tool(name="msm.update_schema_definition", gui_only=True)
     async def update_schema_definition(
         ctx: Context, schema_project_path: Optional[str] = None
     ) -> dict:
@@ -648,7 +657,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             **_kwargs(lsp_path=_lsp_path()),
         )
 
-    @tool(name="msm.split_sections")
+    @tool(name="msm.split_sections", gui_only=True)
     async def split_sections(
         ctx: Context,
         sections: Optional[list[str]] = None,
@@ -725,7 +734,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm_modeling.set_schema_diagram, document
         )
 
-    @tool(name="msm.edit_schema")
+    @tool(name="msm.edit_schema", gui_only=True)
     async def edit_schema(
         ctx: Context,
         edits: list,
@@ -799,7 +808,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
-    @tool(name="msm.get_object_templates")
+    @tool(name="msm.get_object_templates", gui_only=True)
     def get_object_templates() -> dict:
         """Returns msm's templates of the objects to add with msm.set_schema_statements.
 
@@ -816,7 +825,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     async def set_rest_statements(
         ctx: Context,
         statements: list[str],
-        base_hash: str,
+        base_hash: Optional[str] = None,
         replaces: Optional[dict] = None,
         schema_project_path: Optional[str] = None,
     ) -> dict:
@@ -838,8 +847,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         Args:
             statements: The CREATE statements, one item each; a new schema
                 before its objects.
-            base_hash: The source_hash of the snapshot the caller knows (as
-                for msm.edit_schema).
+            base_hash: The source_hash of the schema snapshot the caller
+                knows: refused where the snapshot was made again since.
+                Left out, the change is made against the project as it is.
             replaces: {kind: "object", service, schema, object}: the REST
                 object the one statement renames; its statements go, and the
                 renamed one takes its place. A service or schema cannot be
@@ -848,9 +858,11 @@ def register_msm_tools(server, function_groups=()) -> None:
                 the current working directory.
 
         Returns:
-            What msm.edit_schema returns (rows, files, migration,
-            migration_file, notes), and statements: [{kind, service, schema,
-            object, file, line (1-based), replaced}].
+            rows (the diagrams VIEW afterwards, the schema snapshot first,
+            with its source_hash), files (written), migration (the
+            statements kept for the next release's update script),
+            migration_file and notes, and statements: [{kind, service,
+            schema, object, file, line (1-based), replaced}].
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
@@ -870,7 +882,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         ctx: Context,
         kind: str,
         service: str,
-        base_hash: str,
+        base_hash: Optional[str] = None,
         schema: Optional[str] = None,
         object: Optional[str] = None,
         schema_project_path: Optional[str] = None,
@@ -888,16 +900,19 @@ def register_msm_tools(server, function_groups=()) -> None:
             kind: service, schema or object.
             service: The service's path as Section 180 writes it (/svc,
                 mike,anna@/svc).
-            base_hash: The source_hash of the snapshot the caller knows (as
-                for msm.edit_schema).
+            base_hash: The source_hash of the schema snapshot the caller
+                knows: refused where the snapshot was made again since.
+                Left out, the change is made against the project as it is.
             schema: The REST schema's path, for a schema or an object.
             object: The REST object's path, for an object.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
-            What msm.edit_schema returns (rows, files, migration,
-            migration_file, notes; a note says where Section 180 only names
+            rows (the diagrams VIEW afterwards, the schema snapshot first,
+            with its source_hash), files (written), migration (the
+            statements kept for the next release's update script),
+            migration_file and notes (one says where Section 180 only names
             the item, which then stays), and removed: [{file, line (1-based,
             before the change)}].
         """
@@ -915,7 +930,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
 
-    @tool(name="msm.dump_rest_sdk")
+    @tool(name="msm.dump_rest_sdk", gui_only=True)
     async def dump_rest_sdk(
         ctx: Context,
         service: str,
@@ -963,8 +978,10 @@ def register_msm_tools(server, function_groups=()) -> None:
     async def set_schema_statements(
         ctx: Context,
         statements: list[str],
-        base_hash: str,
+        base_hash: Optional[str] = None,
         expect: Optional[list[dict]] = None,
+        renames: Optional[dict[str, dict[str, str]]] = None,
+        dropped_columns: Optional[dict[str, list[str]]] = None,
         schema_project_path: Optional[str] = None,
     ) -> dict:
         """Puts CREATE statements of schema objects into a schema project, where msm keeps them.
@@ -976,26 +993,45 @@ def register_msm_tools(server, function_groups=()) -> None:
         is added (a table or sequence in MSM Section 140, the others in
         Section 150, written to run again). A view, routine, trigger or event
         the project has is replaced where it stands; an unchanged definition
-        is left as it is. A table or sequence the project has is refused:
-        change its columns, keys and options with msm.edit_schema. All
-        statements are one edit: everything is written, or nothing; the
-        snapshot is made again.
+        is left as it is. A table the project has is changed to the
+        definition given, complete as a CREATE TABLE: its columns, keys,
+        checks and options are changed where the script defines them, and
+        once the project has a release, the ALTER TABLE a deployed server
+        needs is kept for the next update script. Give the table options
+        (ENGINE, DEFAULT CHARSET, ...) as the project has them: one left out
+        is removed. A sequence the project has is refused. All statements
+        are one edit: everything is written, or nothing; the snapshot is
+        made again.
+
+        A column the new definition lacks is dropped, with its data on a
+        deployed server. Name a renamed column in renames, which keeps the
+        data. Where a dropped and an added column are alike apart from the
+        name, the call is refused unless renames names the rename or
+        dropped_columns confirms the drop.
 
         Args:
             statements: The CREATE statements, one object each.
-            base_hash: The source_hash of the snapshot the caller knows (as
-                for msm.edit_schema).
+            base_hash: The source_hash of the schema snapshot the caller
+                knows: refused where the snapshot was made again since.
+                Left out, the edit is made against the project as it is.
             expect: One {kind, name, table?} per statement (kind: table,
                 sequence, view, procedure, function, trigger or event; table
                 for a trigger). A statement that creates another object is
                 refused before anything is written.
+            renames: {table: {old column: new column}}: the columns renamed
+                in the new definitions of tables the project has.
+            dropped_columns: {table: [column]}: the columns whose drop is
+                meant where the call was refused as a possible rename.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
-            What msm.edit_schema returns (rows, files, migration,
-            migration_file, notes), and statements: [{kind, name, file, line
-            (1-based), replaced, changed}].
+            rows (the diagrams VIEW afterwards, the schema snapshot first,
+            with its source_hash), files (written), migration (the
+            statements kept for the next release's update script),
+            migration_file and notes (what could not be changed or should
+            be checked: still-referenced, no-migration, ...), and statements:
+            [{kind, name, file, line (1-based), replaced, changed}].
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
@@ -1005,7 +1041,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             msm_modeling.set_schema_statements,
             statements,
             base_hash,
-            **_kwargs(expect=expect, lsp_path=_lsp_path()),
+            **_kwargs(expect=expect, renames=renames, dropped_columns=dropped_columns,
+                      lsp_path=_lsp_path()),
         )
         result["rows"] = msm_diagrams.elide_row_images(result["rows"])
         return result
@@ -1015,13 +1052,13 @@ def register_msm_tools(server, function_groups=()) -> None:
         ctx: Context,
         kind: str,
         name: str,
-        base_hash: str,
+        base_hash: Optional[str] = None,
         schema_project_path: Optional[str] = None,
     ) -> dict:
         """Drops a table, sequence, view, procedure, function, trigger or event from a schema project.
 
-        Its statements are removed through msm.edit_schema's drop ops; once
-        the project has a release, the DROP is kept for the next update
+        Its statements are removed from the project's SQL; once the
+        project has a release, the DROP is kept for the next update
         script. Refused for an object another one needs (a table a foreign
         key references, a sequence a table uses, a trigger another one
         follows or precedes).
@@ -1029,14 +1066,18 @@ def register_msm_tools(server, function_groups=()) -> None:
         Args:
             kind: table, sequence, view, procedure, function, trigger or event.
             name: The object's name.
-            base_hash: The source_hash of the snapshot the caller knows (as
-                for msm.edit_schema).
+            base_hash: The source_hash of the schema snapshot the caller
+                knows: refused where the snapshot was made again since.
+                Left out, the drop is made against the project as it is.
             schema_project_path: The path to the schema project. Defaults to
                 the current working directory.
 
         Returns:
-            What msm.edit_schema returns (rows, files, migration,
-            migration_file, notes).
+            rows (the diagrams VIEW afterwards, the schema snapshot first,
+            with its source_hash), files (written), migration (the
+            statements kept for the next release's update script),
+            migration_file and notes (what could not be changed or should
+            be checked: still-referenced, no-migration, ...).
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
@@ -1232,7 +1273,9 @@ def register_msm_tools(server, function_groups=()) -> None:
         await _add_new_project(result["project_path"], owner, mcp_access)
         return result
 
-    _register_with_gui_argument(tool, "msm.import_workbench_model", import_workbench_model)
+    _register_with_gui_argument(
+        tool, "msm.import_workbench_model", import_workbench_model, gui_only=True
+    )
 
     @tool(name="msm.remove_schema_diagram")
     async def remove_schema_diagram(
@@ -1274,7 +1317,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm_modeling.rename_schema_diagram, diagram, new_name
         )
 
-    @tool(name="msm.rename_schema")
+    @tool(name="msm.rename_schema", gui_only=True)
     async def rename_schema(
         ctx: Context,
         new_schema_name: Optional[str] = None,
@@ -1335,7 +1378,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             mcp_access_only=not general.is_gui_mode(),
         )
 
-    @tool(name="msm.get_online_alter_defaults")
+    @tool(name="msm.get_online_alter_defaults", gui_only=True)
     def get_online_alter_defaults() -> dict:
         """Returns the online ALTER TABLE options msm uses where nothing is set.
 
@@ -1348,7 +1391,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         """
         return msm.get_online_alter_defaults()
 
-    @tool(name="msm.get_online_alter_settings")
+    @tool(name="msm.get_online_alter_settings", gui_only=True)
     async def get_online_alter_settings(
         ctx: Context, table: Optional[str] = None, schema_project_path: Optional[str] = None
     ) -> dict:
@@ -1374,7 +1417,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ctx, schema_project_path, msm.get_online_alter_settings, **_kwargs(table=table)
         )
 
-    @tool(name="msm.set_project_settings")
+    @tool(name="msm.set_project_settings", gui_only=True)
     async def set_project_settings(
         ctx: Context,
         settings: dict,
@@ -1448,6 +1491,12 @@ def register_msm_tools(server, function_groups=()) -> None:
         ctx: Context, file_path: str, section_id: str, sql_content: str
     ) -> None:
         """Sets the SQL content of an MSM section of a file.
+
+        The content is written as given: nothing follows from it. To add or
+        change a table, view, routine, trigger, event or sequence, use
+        msm.set_schema_statements, which once the project has a release
+        also keeps the ALTER TABLE a deployed server needs; a table changed
+        here in Section 140 gets none.
 
         Args:
             file_path: The path of the SQL file.
@@ -1598,7 +1647,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             # thread - and use_session now refuses to be entered anywhere else.
             return await anyio.to_thread.run_sync(_deploy)
 
-        @tool(name="msm.online_alter_table", starts_tasks=True)
+        @tool(name="msm.online_alter_table", starts_tasks=True, gui_only=True)
         async def online_alter_table(
             ctx: Context,
             connection_id: str,
@@ -1858,7 +1907,5 @@ def register_msm_tools(server, function_groups=()) -> None:
 
         # It starts a task: the task tools come with it
         _register_with_gui_argument(
-            lambda **kwargs: tool(starts_tasks=True, **kwargs),
-            "msm.import_live_schema",
-            import_live_schema,
+            tool, "msm.import_live_schema", import_live_schema, starts_tasks=True
         )

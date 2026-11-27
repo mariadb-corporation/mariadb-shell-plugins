@@ -992,7 +992,8 @@ def check_new_project(
     if license is not None and license.upper() == "CUSTOM":
         raise ValueError(
             "A CUSTOM license needs its text: create the project with a license template "
-            "and set license and customLicense with msm.set_project_settings."
+            "and set license and customLicense in the project's settings "
+            "(msm.set_project_settings, or the MariaDB VS Code extension's settings form)."
         )
     if license is not None and license not in get_available_licenses():
         raise ValueError(

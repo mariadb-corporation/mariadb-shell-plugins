@@ -294,7 +294,30 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 ### Schema management tools (`msm`)
 
 The following tools wrap the corresponding functions of the MariaDB Schema
-Management (`msm`) plugin:
+Management (`msm`) plugin. A server started without `--gui` serves only the
+tools an agent needs to develop, release and deploy a schema with SQL and to
+keep its diagrams (the others are registered `gui_only`): `create_project`,
+`list_projects`, `get_project_information`, `set_development_version`, the four
+version getters, `get_section_sql_content`, `set_section_sql_content`,
+`set_schema_statements`, `drop_schema_object`, `set_rest_statements`,
+`drop_rest_object`, the diagram tools `list_schema_diagrams`,
+`get_schema_diagrams`, `create_schema_diagram`, `layout_schema_diagram`,
+`set_schema_diagram`, `rename_schema_diagram` and `remove_schema_diagram`,
+`prepare_release`, `generate_deployment_script`, and, with the `db` group,
+`deploy_schema`, `list_live_schema_objects` and `import_live_schema`. The
+others serve the MariaDB VS Code extension's views (project list, diagram
+pictures, settings, templates, online ALTER TABLE, `edit_schema`) and are
+served with `--gui` only: every tool counts against an MCP client's limit
+(GitHub Copilot in VS Code takes at most 128).
+
+`msm.set_schema_statements` changes a table the project has to the CREATE TABLE
+given (mariadb-lsp's `replace_table`, lsp-server #55), with the ALTER TABLE for
+the next update script once the project has a release. A dropped column that
+looks renamed refuses the call until `renames` names the rename or
+`dropped_columns` confirms the drop. Without `base_hash`, it,
+`msm.drop_schema_object`, `msm.set_rest_statements` and `msm.drop_rest_object`
+work on the project as it is, making the schema
+snapshot again first where the script was edited by hand.
 
 | MCP tool | Wraps (`msm_plugin/management.py`) |
 | --- | --- |

@@ -266,6 +266,13 @@ def test_a_stale_base_hash_is_refused(project):
         rest_editing.set_rest_statements(project, ["CREATE REST SERVICE /x"], "stale", lsp_path=LSP)
 
 
+def test_without_base_hash_the_project_as_it_is_is_changed(project):
+    rest_editing.set_rest_statements(project, ["CREATE REST SERVICE /x"], lsp_path=LSP)
+    assert "CREATE OR REPLACE REST SERVICE /x;" in body(project)
+    rest_editing.drop_rest_object(project, "service", "/x", lsp_path=LSP)
+    assert "REST SERVICE /x;" not in body(project)
+
+
 def test_a_failed_check_puts_every_file_back(project, monkeypatch):
     before, rows = section_180(project), modeling.read_diagram_rows(project)
 

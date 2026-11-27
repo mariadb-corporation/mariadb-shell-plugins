@@ -1379,7 +1379,6 @@ def test_a_released_project_keeps_nothing_for_a_replaced_view(project):
 @needs_outline_objects
 @needs_edit_ops("add_view", "add_sequence")
 @pytest.mark.parametrize("statement, expect, message", [
-    ("CREATE TABLE `customer` (`id` INT)", None, "has the table `customer` already"),
     ("CREATE VIEW `v` AS SELECT 1", [{"kind": "table", "name": "v"}], "one CREATE TABLE statement"),
     ("CREATE VIEW `v` AS SELECT 1", [{"kind": "view", "name": "w"}], "creates `v`, not `w`"),
     ("CREATE TRIGGER `t` BEFORE INSERT ON `customer` FOR EACH ROW SET @x = 1",
@@ -1441,6 +1440,185 @@ def test_objects_go_back_as_the_outline_writes_them(project):
     assert view["check_option"].lower() == "local"
     # Written once in the statement (the snapshot in Section 160 has its definition too)
     assert dev_script(project).count("CHECK OPTION;") == 1
+
+
+# -----------------------------------------------------------------------------
+# Replacing a table the project has (replace_table, lsp-server #55)
+
+
+CUSTOMER_WITH_EMAIL = (
+    "CREATE TABLE `customer` (\n"
+    "    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
+    "    `email` VARCHAR(100),\n"
+    "    PRIMARY KEY (`id`)\n"
+    ")"
+)
+
+
+def released(path) -> None:
+    """Releases 1.0.0: from now on, a change keeps its migration."""
+    from msm_plugin.management import prepare_release
+
+    prepare_release(schema_project_path=path, version="1.0.0", next_version="1.0.1")
+
+
+def columns_of(result, table: str) -> list:
+    snapshot = result["rows"][0]["document"]
+    return [column["name"] for column in next(
+        item for item in snapshot["tables"] if item["name"] == table)["columns"]]
+
+
+@needs_outline_objects
+def test_a_table_is_refused_by_a_binary_without_replace_table(project, monkeypatch):
+    real_ops = lsp.edit_ops
+    monkeypatch.setattr(lsp, "edit_ops", lambda binary: real_ops(binary) - {"replace_table"})
+    before = dev_script(project)
+    with pytest.raises(ValueError, match="lsp-server #55"):
+        set_statements(project, CUSTOMER_WITH_EMAIL)
+    assert dev_script(project) == before
+
+
+@needs_outline_objects
+@needs_edit_ops("add_sequence")
+def test_a_sequence_the_project_has_is_refused(project):
+    set_statements(project, "CREATE SEQUENCE `s_order`")
+    before = dev_script(project)
+    with pytest.raises(ValueError, match="does not replace a sequence"):
+        set_statements(project, "CREATE SEQUENCE `s_order` START WITH 100")
+    assert dev_script(project) == before
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_table_is_changed_to_its_new_definition(project):
+    result = set_statements(project, CUSTOMER_WITH_EMAIL)
+    (entry,) = result["statements"]
+    assert entry["kind"] == "table" and entry["replaced"] is True and entry["changed"] is True
+    assert columns_of(result, "customer") == ["id", "email"]
+    assert "`email` VARCHAR(100)" in dev_script(project)
+    # Not released: the first release creates the table from the script
+    assert result["migration"] == [] and result["migration_file"] is None
+    assert result["rows"][0]["document"]["source_hash"] == modeling.current_source_hash(project)
+    # The project's spelling stays, IF NOT EXISTS included
+    assert "CREATE TABLE IF NOT EXISTS `customer`" in dev_script(project)
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_table_as_the_project_has_it_is_left_as_it_is(project):
+    before = dev_script(project)
+    result = set_statements(
+        project,
+        "CREATE TABLE `customer` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY (`id`))",
+    )
+    assert result["statements"][0]["changed"] is False
+    assert result["files"] == [] and dev_script(project) == before
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_released_project_keeps_the_alter_table(project):
+    released(project)
+    result = set_statements(project, CUSTOMER_WITH_EMAIL)
+    (alter,) = result["migration"]
+    assert alter.startswith("ALTER TABLE `customer` ADD COLUMN `email` VARCHAR(100)")
+    assert alter in pending(project)["240"]
+
+
+CUSTOMER_RENAMED_COLUMN = (
+    "CREATE TABLE `customer` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, "
+    "`mail` VARCHAR(100), PRIMARY KEY (`id`))"
+)
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_possible_rename_is_refused_until_it_is_said_what_it_is(project):
+    set_statements(project, CUSTOMER_WITH_EMAIL)
+    released(project)
+    before = dev_script(project)
+    with pytest.raises(ValueError, match=r"`customer`\.`email` is dropped and `mail` added") as error:
+        set_statements(project, CUSTOMER_RENAMED_COLUMN)
+    assert "The statements were not written" in str(error.value)
+    assert dev_script(project) == before
+
+    # A rename keeps the data
+    renamed = set_statements(project, CUSTOMER_RENAMED_COLUMN,
+                             renames={"Customer": {"email": "mail"}})
+    assert columns_of(renamed, "customer") == ["id", "mail"]
+    assert any("`email`" in sql and "`mail`" in sql and "DROP" not in sql
+               for sql in renamed["migration"])
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_drop_said_to_be_meant_drops_the_column(project):
+    set_statements(project, CUSTOMER_WITH_EMAIL)
+    released(project)
+    result = set_statements(project, CUSTOMER_RENAMED_COLUMN,
+                            dropped_columns={"customer": ["EMAIL"]})
+    assert columns_of(result, "customer") == ["id", "mail"]
+    assert any("DROP COLUMN `email`" in sql for sql in result["migration"])
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table", "add_view")
+@pytest.mark.parametrize("kwargs, message", [
+    ({"renames": {"orders": {"a": "b"}}}, "names the table `orders`, which no statement"),
+    ({"dropped_columns": {"customer": "email"}}, r"has to be \{table: \[column\]\}"),
+    ({"renames": {"customer": ["email"]}}, r"has to be \{table: \{old column"),
+    ({"renames": {"customer": {}, "CUSTOMER": {}}}, "names a table twice"),
+])
+def test_renames_and_dropped_columns_are_for_replaced_tables(project, kwargs, message):
+    before = dev_script(project)
+    with pytest.raises(ValueError, match=message):
+        set_statements(project, CUSTOMER_WITH_EMAIL, **kwargs)
+    assert dev_script(project) == before
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_without_base_hash_a_stale_snapshot_is_made_again_first(project):
+    # The script edited by hand: the snapshot no longer matches it
+    dev_file = management.get_schema_development_file_path(project)
+    management.set_section_sql_content(
+        "140", "\n" + TABLES_SQL + "\n\nCREATE TABLE `note` (`id` INT);\n", dev_file)
+    assert not modeling.snapshot_is_current(project)
+
+    result = editing.set_schema_statements(
+        project, ["CREATE TABLE `note` (`id` INT, `body` TEXT)"], lsp_path=EDIT_LSP)
+    # The hand-written table is known, and replaced rather than added again
+    assert result["statements"][0]["replaced"] is True
+    assert columns_of(result, "note") == ["id", "body"]
+    assert modeling.snapshot_is_current(project)
+
+
+@needs_outline_objects
+@needs_edit_ops("add_trigger")
+def test_without_base_hash_a_refused_edit_writes_no_snapshot(project):
+    dev_file = management.get_schema_development_file_path(project)
+    management.set_section_sql_content(
+        "140", "\n" + TABLES_SQL + "\n\nCREATE TABLE `note` (`id` INT);\n", dev_file)
+    before = dev_script(project)
+    with pytest.raises(ValueError, match="nowhere"):
+        editing.set_schema_statements(
+            project, ["CREATE TRIGGER `tr` BEFORE INSERT ON `nowhere` FOR EACH ROW SET @x = 1"],
+            lsp_path=EDIT_LSP)
+    # The stale snapshot was made again in memory only
+    assert dev_script(project) == before
+
+
+@needs_outline_objects
+@needs_edit_ops("replace_table")
+def test_a_replaced_table_reaches_a_deployed_schema_with_its_rows(deployed):
+    path, column = deployed
+    set_statements(path, CUSTOMER_WITH_EMAIL)
+    release(path, "1.0.1", "1.0.2")
+    assert column(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+        f"WHERE TABLE_SCHEMA = '{DEPLOYED_SCHEMA}' AND TABLE_NAME = 'customer' "
+        "ORDER BY ORDINAL_POSITION") == ["id", "email"]
+    assert column(f"SELECT `id` FROM `{DEPLOYED_SCHEMA}`.`customer`") == [7]
 
 
 def test_a_binary_that_cannot_take_outline_objects_back_is_refused(project, monkeypatch):

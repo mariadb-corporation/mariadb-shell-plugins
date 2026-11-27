@@ -514,8 +514,7 @@ def check_base_hash(project, base_hash: str) -> list:
     stored = snapshot["document"].get("source_hash") if snapshot else None
     if stored is None:
         raise StaleSchemaError(
-            "The project has no schema snapshot yet: make it with "
-            "msm.updateSchemaDefinition, read the diagrams and redo the edits."
+            "The project has no schema snapshot yet, so no base_hash matches."
         )
     if base_hash != stored:
         raise StaleSchemaError(
@@ -618,7 +617,8 @@ def _check_request(edits) -> None:
 
 @changes_project
 def edit_schema(
-    schema_project_path: str, edits: list, base_hash: str, lsp_path: str = None
+    schema_project_path: str, edits: list, base_hash: Optional[str], lsp_path: str = None,
+    *, base_hash_optional: bool = False,
 ) -> dict:
     """Makes schema edits in the project's SQL.
 
@@ -629,8 +629,11 @@ def edit_schema(
             statement goes (lib/placement.py).
         base_hash: The source_hash of the snapshot the edits were made
             against; the edits are refused where the project's snapshot is
-            another one, made again since.
+            another one, made again since. None makes them against the
+            project as it is (_project_at).
         lsp_path: The mariadb-lsp binary or its folder, instead of searching.
+        base_hash_optional: Whether the caller's own callers may leave
+            base_hash out, which a stale base_hash's refusal then says.
 
     Returns:
         {rows, files, migration, migration_file, notes}: the rows of the
@@ -648,14 +651,55 @@ def edit_schema(
             for an edit that gives `at` or `form`.
     """
     _check_request(edits)
-    project = modeling._Project.load(schema_project_path)
+    project, _ = _project_at(
+        schema_project_path, base_hash, lsp_path,
+        base_hash_optional=base_hash_optional, need_rows=False,
+    )
     # The binary refuses names that went.
-    check_base_hash(project, base_hash)
     return _edit(project, edits, lsp_path)
 
 
-def _edit(project, edits: list, lsp_path: str = None) -> dict:
-    """edit_schema on a project loaded and checked against base_hash."""
+def _project_at(
+    schema_project_path: str, base_hash: Optional[str], lsp_path: str = None,
+    base_hash_optional: bool = True, need_rows: bool = True,
+) -> tuple:
+    """(project, the rows of its diagrams VIEW) for an edit: checked against
+    base_hash, or, without one, with a snapshot of the development script as
+    it is, made again where it is missing or the script was edited by hand
+    since (in the rows returned; the edit's write puts it in the VIEW).
+
+    base_hash_optional says whether the caller may leave base_hash out, which
+    a stale one's refusal then suggests. Without need_rows, a call without
+    base_hash returns None for the rows: the edit's write makes the snapshot
+    anyway, so the binary is not run for one only to throw it away.
+
+    Raises:
+        StaleSchemaError: For a stale base_hash.
+    """
+    project = modeling._Project.load(schema_project_path)
+    if base_hash is not None:
+        try:
+            return project, check_base_hash(project, base_hash)
+        except StaleSchemaError as error:
+            if not base_hash_optional:
+                raise
+            raise StaleSchemaError(
+                f"{error} Or leave base_hash out to make the change against the project as it is."
+            ) from error
+    if not need_rows:
+        return project, None
+    # Made in memory only: the edit's own write makes the snapshot of the
+    # script it writes, and a refused edit writes nothing
+    _, rows = modeling._current_snapshot(project, modeling._rows(project), lsp_path)
+    return project, rows
+
+
+def _edit(project, edits: list, lsp_path: str = None, check: Callable = None) -> dict:
+    """edit_schema on a project loaded and checked against base_hash.
+
+    check, where given, is called with the binary's answer before anything
+    is written, and refuses the edits by raising.
+    """
     schema_project_path = project.path
 
     binary = lsp.require_lsp(lsp_path)
@@ -690,6 +734,8 @@ def _edit(project, edits: list, lsp_path: str = None) -> dict:
     if lsp.merges_alters(binary):
         request["merge_alters"] = True
     result = lsp.edit(binary, script, project.development, request)
+    if check is not None:
+        check(result)
 
     # The new texts, worked out before anything is written.
     texts = {}
@@ -833,9 +879,6 @@ def _object_name_problem(name) -> Optional[str]:
 
 
 STATEMENT_KINDS = ("table", "sequence", "view", "procedure", "function", "trigger", "event")
-# The kinds a statement replaces where the project has the object: those of
-# Section 150, which every deployment runs again
-REPLACED_KINDS = _NOT_KEPT_CREATES
 
 
 def _read_object(binary: str, sql, where: str, expected: dict = None) -> tuple:
@@ -941,9 +984,11 @@ def _check_expect(expect, count: int) -> list:
 def set_schema_statements(
     schema_project_path: str,
     statements: list,
-    base_hash: str,
+    base_hash: Optional[str] = None,
     expect: list = None,
     lsp_path: str = None,
+    renames: dict = None,
+    dropped_columns: dict = None,
 ) -> dict:
     """Puts CREATE statements of schema objects into a project, where msm
     keeps them.
@@ -953,23 +998,38 @@ def set_schema_statements(
     add_sequence, add_view, add_routine, add_trigger, add_event: a table or
     sequence in Section 140, the others in Section 150, written to run
     again, next to the objects of its kind, in a breakout file too:
-    lib/placement.py). A view,
-    routine, trigger or event the project has is replaced where it stands
-    (replace_*), the form it is written in kept; one whose definition is
-    the snapshot's already is left as it is. A table or sequence the
-    project has is refused: msm.editSchema changes its columns, keys and
-    options, which a deployed server needs ALTER statements for. All
-    statements are one edit: everything is written, or nothing.
+    lib/placement.py). A view, routine, trigger or event the project has is
+    replaced where it stands (replace_*), the form it is written in kept;
+    one whose definition is the snapshot's already is left as it is. A
+    table the project has is changed to the definition given
+    (replace_table, lsp-server #55): its columns, keys, checks and options
+    are changed where the script defines them, and once the project has a
+    release, the ALTER TABLE a deployed server needs is kept for the next
+    update script. A sequence the project has is refused. All statements
+    are one edit: everything is written, or nothing.
+
+    A column the new definition lacks is dropped, one it adds is added: a
+    rename has to be said (renames), or the migration drops the column's
+    data. Where a dropped and an added column are alike apart from the
+    name, the binary notes a possible rename, and the edit is refused
+    unless renames names it or dropped_columns confirms the drop.
 
     Args:
         schema_project_path: The project folder.
         statements: The CREATE statements, one object each, named
             unqualified; the form they are written in does not matter.
         base_hash: The source_hash of the snapshot the caller knows, as for
-            edit_schema.
+            edit_schema. Left out, the edit is made against the project as
+            it is: a snapshot that no longer matches the script is made
+            again first.
         expect: One {kind, name, table?} per statement: refused unless the
             statement creates that object (a trigger on that table).
         lsp_path: The mariadb-lsp binary or its folder.
+        renames: {table: {old column: new column}} for tables the project
+            has and the statements replace.
+        dropped_columns: {table: [column]}: the columns of tables the
+            statements replace whose drop is meant, where the binary sees a
+            possible rename.
 
     Returns:
         edit_schema's result, and statements: [{kind, name, file, line
@@ -982,18 +1042,21 @@ def set_schema_statements(
             (before lsp-server #48).
         ValueError: For a statement that is not one CREATE of an object
             named unqualified, one that is not what expect names, two of one
-            object, a table or sequence the project has, and what edit_schema
-            refuses (a name taken, an unknown table).
+            object, a sequence the project has, a table the project has
+            where the binary cannot replace one, renames or dropped_columns
+            for a table no statement replaces, a possible rename neither
+            confirms, and what edit_schema refuses (a name taken, an unknown
+            table).
     """
     if not isinstance(statements, list) or not statements:
         raise ValueError("No statements given: pass a list of CREATE statements.")
     expect = _check_expect(expect, len(statements))
+    renames = _check_table_map(renames, "renames", dict)
+    dropped_columns = _check_table_map(dropped_columns, "dropped_columns", list)
 
     def where(index):
         return f"Statement {index + 1}"
 
-    project = modeling._Project.load(schema_project_path)
-    rows = check_base_hash(project, base_hash)
     binary = lsp.require_lsp(lsp_path)
     if not lsp.edits_take_outline_objects(binary):
         raise lsp.LspError(
@@ -1009,8 +1072,10 @@ def set_schema_statements(
     if len(set(keys)) != len(keys):
         raise ValueError("Two statements create the same object: pass one statement each.")
 
+    project, rows = _project_at(schema_project_path, base_hash, lsp_path)
+    can_replace_table = "replace_table" in lsp.edit_ops(binary)
     snapshot = modeling._schema_row(rows)["document"]
-    edits, entries = [], []
+    edits, entries, replaced_tables = [], [], set()
     for index, (kind, item) in enumerate(read):
         name = item.get("name")
         existing = _snapshot_object(snapshot, kind, name)
@@ -1019,22 +1084,60 @@ def set_schema_statements(
         entry = {"kind": kind, "name": existing["name"] if existing else name,
                  "replaced": existing is not None, "changed": True}
         entries.append(entry)
-        if existing is not None and kind not in REPLACED_KINDS:
+        if existing is not None and kind == "table" and not can_replace_table:
             raise ValueError(
-                f"{where(index)}: the project has the {kind} `{name}` already. Change its "
-                "columns, keys and options with msm.editSchema, which writes the ALTER "
-                "statements a deployed server needs."
+                f"{where(index)}: the project has the table `{name}` already, and the "
+                f"MariaDB SQL language server's binary `{binary}` cannot change a table "
+                "to a new definition (lsp-server #55). Update "
+                f"{lsp.LSP_BINARY_NAME}, or the MariaDB Shell, which comes with it."
+            )
+        if existing is not None and kind == "sequence":
+            raise ValueError(
+                f"{where(index)}: the project has the {kind} `{name}` already, and msm "
+                f"does not replace a {kind}: drop it with msm.drop_schema_object, then "
+                "add the new definition; once released, a deployed server then starts it "
+                "again from its START value. To keep its current value, change it in "
+                "Section 140 and add an ALTER SEQUENCE to the update script."
             )
         # Sent as the outline has it; a replace keeps the script's spelling
         op = "replace" if existing is not None else "add"
-        edits.append({"op": f"{op}_{object_type}", object_type: item})
+        edit = {"op": f"{op}_{object_type}", object_type: item}
+        if op == "replace" and kind == "table":
+            key = existing["name"].lower()
+            replaced_tables.add(key)
+            if renames.get(key):
+                edit["renames"] = {"columns": dict(renames[key])}
+        edits.append(edit)
+    for map_name, given in (("renames", renames), ("dropped_columns", dropped_columns)):
+        for table in given.keys() - replaced_tables:
+            raise ValueError(
+                f"{map_name} names the table `{table}`, which no statement replaces: "
+                "it is for a table the project has, given with its new definition."
+            )
+
+    def refuse_unconfirmed_drops(result):
+        unconfirmed = [
+            note for note in result.get("notes", [])
+            if note.get("kind") == "possible-rename"
+            and not _confirmed_drop(dropped_columns, note)
+        ]
+        if unconfirmed:
+            raise ValueError(
+                "The statements were not written: "
+                + "; ".join(_possible_rename_problem(note) for note in unconfirmed)
+                + ". For a rename, pass renames {table: {old: new}}; to drop the column "
+                "and its data, pass dropped_columns {table: [column]}."
+            )
 
     # Sent in the order the kinds run (a function before the view that
     # calls it, a sequence before the table whose default takes from it),
     # as adds at one place keep the request's order; statements of one kind
     # keep theirs. The binary's indexes are taken back to the statements'.
     order = sorted(range(len(edits)), key=lambda index: placement.run_rank(edits[index]["op"]))
-    result = _renumbered(_edit(project, [edits[index] for index in order], lsp_path), order)
+    result = _renumbered(
+        _edit(project, [edits[index] for index in order], lsp_path, refuse_unconfirmed_drops),
+        order,
+    )
     # A replace that changes nothing writes nothing, and the binary says so
     for note in result.get("notes", []):
         if note.get("kind") == "unchanged" and isinstance(note.get("edit"), int):
@@ -1045,6 +1148,45 @@ def set_schema_statements(
             project.development, snapshot, entry["kind"], entry["name"]
         )
     return {**result, "statements": entries}
+
+
+def _check_table_map(value, name: str, entry_type: type) -> dict:
+    """renames ({table: {old: new}}) or dropped_columns ({table: [column]})
+    by the table's name in lower case; {} where left out."""
+    if value is None:
+        return {}
+
+    def valid(entry) -> bool:
+        if entry_type is list:
+            return isinstance(entry, list) and all(isinstance(column, str) for column in entry)
+        return isinstance(entry, dict) and all(
+            isinstance(old, str) and isinstance(new, str) for old, new in entry.items()
+        )
+
+    if not isinstance(value, dict) or not all(
+        isinstance(table, str) and valid(entry) for table, entry in value.items()
+    ):
+        shape = "{table: [column]}" if entry_type is list else "{table: {old column: new column}}"
+        raise ValueError(f"{name} has to be {shape}.")
+    checked = {table.lower(): entry for table, entry in value.items()}
+    if len(checked) != len(value):
+        raise ValueError(f"{name} names a table twice.")
+    return checked
+
+
+def _confirmed_drop(dropped_columns: dict, note: dict) -> bool:
+    """Whether dropped_columns confirms the drop a possible-rename note is about."""
+    columns = dropped_columns.get((note.get("table") or "").lower(), [])
+    return (note.get("column") or "").lower() in {column.lower() for column in columns}
+
+
+def _possible_rename_problem(note: dict) -> str:
+    table, column, new_name = note.get("table"), note.get("column"), note.get("new_name")
+    if not (table and column and new_name):
+        # A binary whose note names no columns: its own words
+        return note.get("message") or "a dropped column looks renamed"
+    return (f"the column `{table}`.`{column}` is dropped and `{new_name}` added with its "
+            "definition, which looks like a rename")
 
 
 def _renumbered(result: dict, order: list) -> dict:
@@ -1059,7 +1201,8 @@ def _renumbered(result: dict, order: list) -> dict:
 
 @changes_project
 def drop_schema_object(
-    schema_project_path: str, kind: str, name: str, base_hash: str, lsp_path: str = None
+    schema_project_path: str, kind: str, name: str, base_hash: Optional[str] = None,
+    lsp_path: str = None,
 ) -> dict:
     """Drops a table, sequence, view, procedure, function, trigger or event
     from a project: edit_schema's drop_table, drop_sequence, drop_view,
@@ -1071,7 +1214,9 @@ def drop_schema_object(
         schema_project_path: The project folder.
         kind: table, sequence, view, procedure, function, trigger or event.
         name: The object's name.
-        base_hash: The source_hash of the snapshot the caller knows.
+        base_hash: The source_hash of the snapshot the caller knows. Left
+            out, the drop is made against the project as it is, as by
+            set_schema_statements.
         lsp_path: The mariadb-lsp binary or its folder.
 
     Returns:
@@ -1082,4 +1227,4 @@ def drop_schema_object(
     edit = {"op": f"drop_{object_type}", object_type: name}
     if object_type == "routine":
         edit["kind"] = kind
-    return edit_schema(schema_project_path, [edit], base_hash, lsp_path)
+    return edit_schema(schema_project_path, [edit], base_hash, lsp_path, base_hash_optional=True)
