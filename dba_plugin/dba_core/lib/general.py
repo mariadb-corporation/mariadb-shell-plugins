@@ -17,7 +17,7 @@
 
 # cSpell:ignore mysqlsh MariaDB
 
-VERSION = "26.11.2"
+VERSION = "26.11.3"
 
 
 class DbaError(Exception):

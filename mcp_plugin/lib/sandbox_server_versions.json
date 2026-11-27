@@ -85,40 +85,40 @@
         },
         {
             "major": 13,
-            "minor": 1,
+            "minor": 2,
             "latestPatch": 1,
             "patches": [
                 {
                     "1": [
                         {
                             "os": "darwin-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-macos26-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "70e223c6cc7e239cb494ff87a49e116b795202bc76c0efcd11f4d527567eda28"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-macos26-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "03857d1172fd219c0480e1e835c2253df136a56818f9b6176f24ba01790623a5"
                         },
                         {
                             "os": "darwin-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-macos15-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "37eff26e4ee6115a395b037a902d9a99d76ef7b0e03df128c842c266598cbc3a"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-macos15-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "18f7e0aeeb007441a2a6cebdae518019d093956bb1eefcfc3e0475c403108e27"
                         },
                         {
                             "os": "linux-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "bee369a442e6e5e1d1b2f2e097aed26c765745e854e2517afa87d3abab53024c"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-linux-glibc2.34-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "f6e170796ace0aec62b124874537447336e2570f7bbc46a329390537a19f32d2"
                         },
                         {
                             "os": "linux-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "830bb7f36b56d72edad45e96e50e49e72030c8d7ce9db9c732fad992b2d4aedf"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-linux-glibc2.34-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "eb698f798bef44811a27e056cc68abf18c12cfc1e2160a8ea2dfb03db416f024"
                         },
                         {
                             "os": "win32-arm64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-windows-arm-64bit-sandbox.tar.gz",
-                            "sha256sum": "2c0821df0be659b975d4df9deb7bc82d6eb4b4ce209513838ab5ff9f44acc32c"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-windows-arm-64bit-sandbox.tar.gz",
+                            "sha256sum": "24017bcecb4a37967e9e207994757ed79de4c65b0402cecf0d335c2f7cdc7d19"
                         },
                         {
                             "os": "win32-x64",
-                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.2/mariadb-13.1.1-windows-x86-64bit-sandbox.tar.gz",
-                            "sha256sum": "10d8413b515c97c5eec9b3e7092fedd2d9402597ae180678365ed620a4caa6f0"
+                            "url": "https://github.com/mariadb-corporation/mariadb-shell/releases/download/v26.11.3/mariadb-13.2.1-windows-x86-64bit-sandbox.tar.gz",
+                            "sha256sum": "9edcfb3aac1353d8c041dee58b1e37f9246bea6a47a097d01d24ae884e2e1d85"
                         }
                     ]
                 }
