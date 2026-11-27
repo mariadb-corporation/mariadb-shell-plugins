@@ -462,10 +462,10 @@ def _checking(binary: str, before_outline: dict, before: dict, changing: set, go
     return check
 
 
-def _start(schema_project_path: str, base_hash: str, lsp_path: Optional[str]) -> tuple:
-    """(project, binary) once base_hash is checked."""
-    project = modeling._Project.load(schema_project_path)
-    editing.check_base_hash(project, base_hash)
+def _start(schema_project_path: str, base_hash: Optional[str], lsp_path: Optional[str]) -> tuple:
+    """(project, binary) once base_hash is checked; without one, the
+    project as it is (editing._project_at)."""
+    project, _ = editing._project_at(schema_project_path, base_hash, lsp_path)
     return project, require_lsp(lsp_path)
 
 
@@ -575,7 +575,7 @@ def _new_place(files: _Files, items: dict, includes: list, placed: dict, key: tu
 def set_rest_statements(
     schema_project_path: str,
     statements: list,
-    base_hash: str,
+    base_hash: Optional[str] = None,
     replaces: dict = None,
     lsp_path: str = None,
 ) -> dict:
@@ -588,7 +588,8 @@ def set_rest_statements(
             FUNCTION statements, one item each; a schema names its service
             (ON SERVICE), an object its service and schema (ON SERVICE /svc
             SCHEMA /schema). A new schema goes before its objects.
-        base_hash: The source_hash of the snapshot the caller knows.
+        base_hash: The source_hash of the snapshot the caller knows; left
+            out, the project as it is (editing._project_at).
         replaces: {kind: "object", service, schema, object}: the REST
             object a statement renames, whose statements go; the renamed one
             takes its place where Section 180 does not create it already.
@@ -717,7 +718,7 @@ def drop_rest_object(
     schema_project_path: str,
     kind: str,
     service: str,
-    base_hash: str,
+    base_hash: Optional[str] = None,
     schema: str = None,
     rest_object: str = None,
     lsp_path: str = None,
@@ -730,7 +731,8 @@ def drop_rest_object(
         schema_project_path: The project folder.
         kind: service, schema or object.
         service: The service's path as Section 180 writes it (mike,anna@/svc).
-        base_hash: The source_hash of the snapshot the caller knows.
+        base_hash: The source_hash of the snapshot the caller knows; left
+            out, the project as it is (editing._project_at).
         schema: The REST schema's path, for a schema or object.
         rest_object: The REST object's path, for an object.
         lsp_path: The mariadb-lsp binary or its folder.

@@ -122,3 +122,11 @@ def test_no_instructions_when_no_tools_are_served():
 def test_a_server_without_tools_sends_no_instructions():
     """Over a real stdio transport: an empty text is not sent at all."""
     assert not helpers.server_instructions([general.FUNCTION_GROUP_UTIL])
+
+
+def test_the_instructions_keep_msm_work_in_the_tools():
+    """The msm shell commands skip the projects' mcp_access check."""
+    with_msm = server.server_instructions([general.FUNCTION_GROUP_MSM])
+    assert "`mariadb-shell -- msm ...`" in with_msm
+    assert "msm.set_schema_statements" in with_msm
+    assert "mariadb-shell -- msm" not in server.server_instructions([general.FUNCTION_GROUP_DB])

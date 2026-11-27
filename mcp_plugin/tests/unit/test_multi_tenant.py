@@ -1036,10 +1036,14 @@ def project_lists(tmp_path, monkeypatch):
 
 def _msm_tools():
     """Registers the msm tools in-process, without a server."""
-    from mcp_plugin.lib import msm_functions
+    from unittest import mock
+
+    from mcp_plugin.lib import msm_functions, tool_registrar
 
     recorder = helpers.ToolRecorder()
-    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
+    # Every tool, the extension's too, with the rest of the server not in GUI mode
+    with mock.patch.object(tool_registrar, "serves_gui_only_tools", return_value=True):
+        msm_functions.register_msm_tools(recorder, function_groups=["msm"])
 
     return recorder.tools
 

@@ -199,6 +199,18 @@ def server_instructions(
             f"{name('db', 'list_connections')} lists can be opened; their "
             "passwords stay in the secret store. " + missing_server
         )
+    if general.FUNCTION_GROUP_MSM in groups:
+        rules.append(
+            "- Work on MSM schema projects through the "
+            f"{name('msm', '*')} tools, not by running "
+            "`mariadb-shell -- msm ...` from a shell or editing a project's "
+            "msm.project.json or Section 160 by hand: the shell commands skip "
+            "the check on which projects the user lets LLMs work on, and the "
+            "tools keep the schema snapshot, the diagrams and the next update "
+            "script in step. Change tables and other objects with "
+            f"{name('msm', 'set_schema_statements')}, which keeps the ALTER a "
+            "deployed server needs."
+        )
     if general.FUNCTION_GROUP_SANDBOX in groups:
         if serves_db:
             stored = (

@@ -35,6 +35,17 @@ def _project(kwargs) -> str:
     return kwargs.get("schema_project_path") or lib.core.get_working_dir()
 
 
+def _plain(value):
+    """A value as Python's own: the shell's dictionaries as dicts and its
+    arrays (any iterable but a string) as lists, at every level; anything
+    else as it is, for the lib function to refuse."""
+    if hasattr(value, "keys"):
+        return {key: _plain(value[key]) for key in value.keys()}
+    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+        return [_plain(member) for member in value]
+    return value
+
+
 def _json_argument(value, kwargs: dict, name: str, what: str):
     """An argument given as itself or, on the command line, as a JSON file
     (the keyword argument <name>_file)."""
@@ -225,11 +236,9 @@ def edit_schema(edits: list = None, base_hash: str = None, **kwargs) -> dict:
     edits = _json_argument(edits, kwargs, "edits", "edits")
     if base_hash is None:
         raise ValueError("No base_hash given: the source_hash of the snapshot the edits are for.")
-    if hasattr(edits, "__iter__") and not isinstance(edits, str) and not hasattr(edits, "keys"):
-        # The shell's dictionaries as Python's; anything else is for
-        # edit_schema to refuse, naming the edit.
-        edits = [dict(edit) if hasattr(edit, "keys") else edit for edit in edits]
-    return lib.editing.edit_schema(_project(kwargs), edits, base_hash, kwargs.get("lsp_path"))
+    return lib.editing.edit_schema(
+        _project(kwargs), _plain(edits), base_hash, kwargs.get("lsp_path")
+    )
 
 
 @plugin_function("msm.get.objectTemplates", shell=True, cli=True, web=True)
@@ -253,15 +262,24 @@ def set_schema_statements(statements: list = None, base_hash: str = None, **kwar
     mariadb-lsp. An object the project lacks is added (a table or sequence in MSM Section 140,
     the others in Section 150, written to be run again). A view, routine, trigger or event the
     project has is replaced where it stands; one whose definition is unchanged is left as it
-    is. A table or sequence the project has is refused, as msm.editSchema changes it. All
-    statements are one edit of msm.editSchema, so everything is written, or nothing.
+    is. A table the project has is changed to the definition given: its columns, keys, checks
+    and options are changed where the script defines them, and once the project has a release,
+    the ALTER TABLE a deployed server needs is kept for the next update script. A sequence the
+    project has is refused. All statements are one edit of msm.editSchema, so everything is
+    written, or nothing.
+
+    A column a table's new definition lacks is dropped, with its data on a deployed server: a
+    rename has to be given in renames. Where a dropped and an added column are alike apart
+    from the name, the edit is refused unless renames names the rename or dropped_columns
+    confirms the drop.
 
     On the command line give the statements as a JSON file with --statementsFile.
 
     Args:
         statements (list): The CREATE statements, one object each.
         base_hash (str): The source_hash of the schema snapshot the caller knows, as for
-            msm.editSchema.
+            msm.editSchema. Left out, the edit is made against the project as it is, its
+            snapshot made again first where it no longer matches the script.
         **kwargs: Additional options.
 
     Keyword Args:
@@ -269,6 +287,10 @@ def set_schema_statements(statements: list = None, base_hash: str = None, **kwar
         expect (list): One {kind, name, table} per statement. A statement that creates
             another object (a trigger on another table) is refused before anything is
             written.
+        renames (dict): {table: {old column: new column}}: the columns renamed in the new
+            definitions of tables the project has.
+        dropped_columns (dict): {table: [column]}: the columns whose drop is meant where a
+            dropped and an added column look like a rename.
         schema_project_path (str): The path to the schema project. Defaults to the working directory.
         lsp_path (str): The mariadb-lsp binary or its folder. By default it is looked for next to
             the shell, on the PATH and in ~/.local/bin.
@@ -279,21 +301,15 @@ def set_schema_statements(statements: list = None, base_hash: str = None, **kwar
         object the project had, and whether it changed anything.
     """
     statements = _json_argument(statements, kwargs, "statements", "statements")
-    if base_hash is None:
-        raise ValueError("No base_hash given: the source_hash of the snapshot the caller knows.")
-    if hasattr(statements, "__iter__") and not isinstance(statements, str):
-        statements = list(statements)
-    expect = kwargs.get("expect")
-    if expect is not None and hasattr(expect, "__iter__") and not isinstance(expect, str):
-        expect = list(expect)
     return lib.editing.set_schema_statements(
-        _project(kwargs), statements, base_hash, expect=expect,
-        lsp_path=kwargs.get("lsp_path"),
+        _project(kwargs), _plain(statements), base_hash, expect=_plain(kwargs.get("expect")),
+        lsp_path=kwargs.get("lsp_path"), renames=_plain(kwargs.get("renames")),
+        dropped_columns=_plain(kwargs.get("dropped_columns")),
     )
 
 
 @plugin_function("msm.dropSchemaObject", shell=True, cli=True, web=True)
-def drop_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
+def drop_schema_object(kind: str, name: str, base_hash: str = None, **kwargs) -> dict:
     """Drops a table, sequence, view, procedure, function, trigger or event from a schema project
 
     Its statements are removed from the development script, and the files it includes, by
@@ -304,7 +320,7 @@ def drop_schema_object(kind: str, name: str, base_hash: str, **kwargs) -> dict:
         kind (str): table, sequence, view, procedure, function, trigger or event.
         name (str): The object's name.
         base_hash (str): The source_hash of the schema snapshot the caller knows, as for
-            msm.editSchema.
+            msm.editSchema. Left out, the drop is made against the project as it is.
         **kwargs: Additional options.
 
     Keyword Args:
@@ -340,7 +356,7 @@ def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs
         statements (list): The CREATE statements, one item each; a new schema before its
             objects.
         base_hash (str): The source_hash of the schema snapshot the caller knows, as for
-            msm.editSchema.
+            msm.editSchema. Left out, the change is made against the project as it is.
         **kwargs: Additional options.
 
     Keyword Args:
@@ -357,8 +373,6 @@ def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs
         and whether it replaced one.
     """
     statements = _json_argument(statements, kwargs, "statements", "statements")
-    if base_hash is None:
-        raise ValueError("No base_hash given: the source_hash of the snapshot the caller knows.")
     if hasattr(statements, "__iter__") and not isinstance(statements, str):
         statements = list(statements)
     replaces = kwargs.get("replaces")
@@ -370,7 +384,7 @@ def set_rest_statements(statements: list = None, base_hash: str = None, **kwargs
 
 
 @plugin_function("msm.dropRestObject", shell=True, cli=True, web=True)
-def drop_rest_object(kind: str, service: str, base_hash: str, **kwargs) -> dict:
+def drop_rest_object(kind: str, service: str, base_hash: str = None, **kwargs) -> dict:
     """Removes a REST service, schema or object from MSM Section 180 of a schema project
 
     Every statement of it and of what is on it goes, with the comments right above each; a USE
@@ -383,7 +397,7 @@ def drop_rest_object(kind: str, service: str, base_hash: str, **kwargs) -> dict:
         kind (str): service, schema or object.
         service (str): The service's path as Section 180 writes it, e.g. /svc or mike,anna@/svc.
         base_hash (str): The source_hash of the schema snapshot the caller knows, as for
-            msm.editSchema.
+            msm.editSchema. Left out, the change is made against the project as it is.
         **kwargs: Additional options.
 
     Keyword Args:

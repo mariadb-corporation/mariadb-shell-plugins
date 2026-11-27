@@ -177,16 +177,14 @@ def test_stdio_deploy_schema_requires_the_db_group():
     assert "msm.create_project" in msm_only
     assert "msm.get_deployment_script_versions" in msm_only
 
-    # msm.online_alter_table too, and with it the task tools that follow it
-    assert "msm.online_alter_table" not in msm_only and "task.get" not in msm_only
-    assert "msm.import_live_schema" not in msm_only
+    # msm.import_live_schema too, and with it the task tools that follow it
+    assert "msm.import_live_schema" not in msm_only and "task.get" not in msm_only
     assert "msm.list_live_schema_objects" not in msm_only
-    assert "msm.get_online_alter_settings" in msm_only
-    assert "msm.get_online_alter_defaults" in msm_only
 
     with_db = helpers.list_tool_names(["msm", "db"])
     assert "msm.deploy_schema" in with_db
-    assert "msm.online_alter_table" in with_db and "task.get" in with_db
+    # A server without --gui: no gui_only tool (AGENT_TOOLS below)
+    assert "msm.online_alter_table" not in with_db and "task.get" in with_db
     assert "msm.import_live_schema" in with_db and "msm.list_live_schema_objects" in with_db
     assert "msm.get_deployment_script_versions" in with_db
     assert "db.connect" in with_db
@@ -447,64 +445,72 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
                     {"project_path": p["project_path"], "folder": p["folder"]} for p in projects
                 ]
 
-                # The online ALTER TABLE setting, written and read back
-                payload(
-                    await call(
-                        "msm.set_project_settings",
-                        {
-                            "schema_project_path": project_path,
-                            "settings": {"onlineAlter": {
-                                "maxRetries": 3,
-                                "tables": {"mcp_pytest_table": {"lockWait": 2}},
-                            }},
-                        },
+                # The extension's tools (--gui only): the online ALTER TABLE
+                # setting, written and read back, and one ALTER TABLE run online
+                async with helpers.mcp_session(
+                    function_groups=["msm", "db"], gui=True
+                ) as gui_call:
+                    gui_connection = payload(
+                        await gui_call("db.connect", {"uri": sandbox.uri})
                     )
-                )
-                settings = payload(
-                    await call(
-                        "msm.get_online_alter_settings",
-                        {"schema_project_path": project_path, "table": "mcp_pytest_table"},
-                    )
-                )
-                assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
-                assert settings["options"]["maxRetries"] == 3
-
-                # One ALTER TABLE run online, as a task followed with task.get
-                started = payload(
-                    await call(
-                        "msm.online_alter_table",
-                        {
-                            "connection_id": connection_id,
-                            "schema": SCHEMA_NAME,
-                            "table": "mcp_pytest_table",
-                            "spec": "ADD COLUMN `mcp_note` INT",
-                            "options": {"lockWait": 2},
-                        },
-                    )
-                )
-                state = {"status": started["status"]}
-                for _ in range(20):
-                    if state["status"] in ("completed", "failed", "cancelled"):
-                        break
-                    state = payload(
-                        await call(
-                            "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                    payload(
+                        await gui_call(
+                            "msm.set_project_settings",
+                            {
+                                "schema_project_path": project_path,
+                                "settings": {"onlineAlter": {
+                                    "maxRetries": 3,
+                                    "tables": {"mcp_pytest_table": {"lockWait": 2}},
+                                }},
+                            },
                         )
                     )
-                assert state["status"] == "completed", state
-                assert state["result"]["method"] == "INSTANT"
-                assert state["result"]["applied"] is True
+                    settings = payload(
+                        await gui_call(
+                            "msm.get_online_alter_settings",
+                            {"schema_project_path": project_path, "table": "mcp_pytest_table"},
+                        )
+                    )
+                    assert settings["enabled"] is True and settings["options"]["lockWait"] == 2
+                    assert settings["options"]["maxRetries"] == 3
 
-                refused = await call(
-                    "msm.online_alter_table",
-                    {
-                        "connection_id": connection_id,
-                        "schema": SCHEMA_NAME,
-                        "table": "mcp_pytest_table",
-                        "spec": "ADD COLUMN `x` INT, ALGORITHM=COPY",
-                    },
-                )
-                assert refused.is_error is True
+                    # One ALTER TABLE run online, as a task followed with task.get
+                    started = payload(
+                        await gui_call(
+                            "msm.online_alter_table",
+                            {
+                                "connection_id": gui_connection,
+                                "schema": SCHEMA_NAME,
+                                "table": "mcp_pytest_table",
+                                "spec": "ADD COLUMN `mcp_note` INT",
+                                "options": {"lockWait": 2},
+                            },
+                        )
+                    )
+                    state = {"status": started["status"]}
+                    for _ in range(20):
+                        if state["status"] in ("completed", "failed", "cancelled"):
+                            break
+                        state = payload(
+                            await gui_call(
+                                "task.get", {"task_id": started["task_id"], "wait_ms": 1000}
+                            )
+                        )
+                    assert state["status"] == "completed", state
+                    assert state["result"]["method"] == "INSTANT"
+                    assert state["result"]["applied"] is True
+
+                    refused = await gui_call(
+                        "msm.online_alter_table",
+                        {
+                            "connection_id": gui_connection,
+                            "schema": SCHEMA_NAME,
+                            "table": "mcp_pytest_table",
+                            "spec": "ADD COLUMN `x` INT, ALGORITHM=COPY",
+                        },
+                    )
+                    assert refused.is_error is True
+                    await gui_call("db.close", {"connection_id": gui_connection})
             finally:
                 payload(
                     await call(
@@ -537,10 +543,14 @@ def project_lists(tmp_path, monkeypatch):
 
 def _msm_tools():
     """Registers the msm tools in-process, without a server."""
-    from mcp_plugin.lib import msm_functions
+    from unittest import mock
+
+    from mcp_plugin.lib import msm_functions, tool_registrar
 
     recorder = helpers.ToolRecorder()
-    msm_functions.register_msm_tools(recorder, function_groups=["msm"])
+    # Every tool, the extension's too, with the rest of the server not in GUI mode
+    with mock.patch.object(tool_registrar, "serves_gui_only_tools", return_value=True):
+        msm_functions.register_msm_tools(recorder, function_groups=["msm"])
 
     return recorder.tools
 
@@ -681,6 +691,40 @@ def _parameters(tools, name):
     import inspect
 
     return list(inspect.signature(tools[name]).parameters)
+
+
+# The msm tools a server without --gui serves: what an agent needs to develop,
+# release and deploy a schema project with SQL.
+AGENT_TOOLS = {
+    "msm.create_project", "msm.list_projects", "msm.get_project_information",
+    "msm.set_development_version", "msm.get_released_versions",
+    "msm.get_last_released_version", "msm.get_last_deployment_version",
+    "msm.get_deployment_script_versions", "msm.get_section_sql_content",
+    "msm.set_section_sql_content", "msm.set_schema_statements", "msm.drop_schema_object",
+    "msm.prepare_release", "msm.generate_deployment_script", "msm.deploy_schema",
+    "msm.list_live_schema_objects", "msm.import_live_schema",
+    "msm.set_rest_statements", "msm.drop_rest_object",
+    "msm.list_schema_diagrams", "msm.get_schema_diagrams", "msm.create_schema_diagram",
+    "msm.layout_schema_diagram", "msm.set_schema_diagram", "msm.rename_schema_diagram",
+    "msm.remove_schema_diagram",
+}
+
+
+def test_an_agent_is_served_the_agent_tools_and_the_extension_every_tool(gui_mode):
+    """Every tool counts against an MCP client's limit (Copilot: 128), so a
+    server without --gui leaves out what serves the extension's views."""
+    from mcp_plugin.lib import general, msm_functions
+
+    def registered():
+        recorder = helpers.ToolRecorder()
+        msm_functions.register_msm_tools(recorder, function_groups=["msm", "db"])
+        return set(recorder.tools)
+
+    every_tool = registered()
+    assert AGENT_TOOLS < every_tool
+    assert {"msm.edit_schema", "msm.get_schema_diagram_image", "msm.add_project"} <= every_tool
+    general.set_gui_mode(False)
+    assert registered() == AGENT_TOOLS
 
 
 def test_only_a_gui_server_offers_mcp_access(project_lists, gui_mode):

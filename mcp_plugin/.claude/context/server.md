@@ -38,7 +38,7 @@ session machinery the db tools sit on is in
 - **GUI mode (`mcp start-server --gui`)** — the server is being driven by the MariaDB
   VS Code extension (`code_ext`) rather than by an autonomous agent. Set by
   `lib/server.start()` via `general.set_gui_mode()` **before the tools are built**,
-  because it decides which tools exist; read by exactly two places:
+  because it decides which tools exist; read by these places:
   - `config.is_path_allowed()` returns True for everything. This is the ONE chokepoint —
     both `db.execute_sql_script`'s own check and `general.require_allowed_path()` go
     through it, so there is no second place to keep in step. The allowed-path list on
@@ -46,6 +46,14 @@ session machinery the db tools sit on is in
   - `db_functions.register_db_tools()` registers `_register_connection_management_tools`
     instead of the plain `db.list_connections`, adding `db.add_connection` and
     `db.delete_connection`.
+  - `tool_registrar.serves_gui_only_tools()`: a tool registered with `gui_only=True` is
+    left unregistered without `--gui`, as every tool counts against a client's limit
+    (Copilot: 128). msm marks its 15 tools for the extension's views so; an agent gets 26
+    (the 12 of the first release plus `list_projects`, `set_schema_statements`,
+    `drop_schema_object`, `set_rest_statements`, `drop_rest_object`, the 7 diagram tools
+    but `get_schema_diagram_image` and `update_schema_definition`,
+    `list_live_schema_objects`, `import_live_schema`). The
+    in-process msm tests patch `serves_gui_only_tools` to register every tool.
 
   It is deliberately NOT something a client can ask for over the protocol: it is decided
   on the command line that started the server. Over HTTP it is allowed but WARNED about
