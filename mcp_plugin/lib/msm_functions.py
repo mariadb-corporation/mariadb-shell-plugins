@@ -860,8 +860,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             rows (the diagrams VIEW afterwards, the schema snapshot first,
             with its source_hash), files (written), migration (the
             statements kept for the next release's update script),
-            migration_file and notes), and statements: [{kind, service, schema,
-            object, file, line (1-based), replaced}].
+            migration_file and notes, and statements: [{kind, service,
+            schema, object, file, line (1-based), replaced}].
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
@@ -911,7 +911,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             rows (the diagrams VIEW afterwards, the schema snapshot first,
             with its source_hash), files (written), migration (the
             statements kept for the next release's update script),
-            migration_file and notes; a note says where Section 180 only names
+            migration_file and notes (one says where Section 180 only names
             the item, which then stays), and removed: [{file, line (1-based,
             before the change)}].
         """
@@ -1029,8 +1029,8 @@ def register_msm_tools(server, function_groups=()) -> None:
             with its source_hash), files (written), migration (the
             statements kept for the next release's update script),
             migration_file and notes (what could not be changed or should
-            be checked: still-referenced, no-migration, ...), and statements: [{kind, name, file, line (1-based),
-            replaced, changed}].
+            be checked: still-referenced, no-migration, ...), and statements:
+            [{kind, name, file, line (1-based), replaced, changed}].
         """
         from msm_plugin.lib import diagrams as msm_diagrams
 
