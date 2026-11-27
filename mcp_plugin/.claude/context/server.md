@@ -48,12 +48,15 @@ session machinery the db tools sit on is in
     `db.delete_connection`.
   - `tool_registrar.serves_gui_only_tools()`: a tool registered with `gui_only=True` is
     left unregistered without `--gui`, as every tool counts against a client's limit
-    (Copilot: 128). msm marks its 15 tools for the extension's views so; an agent gets 26
-    (the 12 of the first release plus `list_projects`, `set_schema_statements`,
-    `drop_schema_object`, `set_rest_statements`, `drop_rest_object`, the 7 diagram tools
-    but `get_schema_diagram_image` and `update_schema_definition`,
-    `list_live_schema_objects`, `import_live_schema`). The
-    in-process msm tests patch `serves_gui_only_tools` to register every tool.
+    (GitHub Copilot in VS Code: 128 per request). msm marks its 15 tools for the
+    extension's views so (project list add/update/remove, `get_schema_diagram_image`,
+    `update_schema_definition`, `split_sections`, `edit_schema`, `get_object_templates`,
+    `dump_rest_sdk`, `import_workbench_model`, `rename_schema`, the online-ALTER
+    settings/defaults, `set_project_settings`, `online_alter_table`); an agent gets the
+    other 26. Only msm uses the flag so far; db (`is_gui_mode()` branch) and extension
+    groups (`mcp["gui"]`) gate their own way, a candidate to move onto it. The
+    in-process msm tests register every tool through `helpers.msm_tools()`, which
+    patches `serves_gui_only_tools`.
 
   It is deliberately NOT something a client can ask for over the protocol: it is decided
   on the command line that started the server. Over HTTP it is allowed but WARNED about
@@ -152,6 +155,10 @@ session machinery the db tools sit on is in
   `tool_registrar.starts_tasks(server)`: a tool registered with
   `starts_tasks=True` (see dba.md); a server-instructions rule against
   asking for vendor API keys. See [dba.md](dba.md).
+- **msm server-instructions rule** (`server.server_instructions`, whenever msm is
+  served): work on projects through the msm tools, not `mariadb-shell -- msm ...` or
+  hand edits of msm.project.json / Section 160 (the shell commands skip the
+  `mcp_access` check), and change objects with `msm.set_schema_statements`.
 
 ## Files that matter
 
